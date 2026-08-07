@@ -1,33 +1,72 @@
+# =============================================================================
+# Secrets
+# =============================================================================
+# Deny-by-default. Every .env is ignored and the template is added back by
+# name, so a new .env.production or .env.staging is safe the moment it exists
+# rather than the moment someone remembers to add a rule here.
+.env*
+!.env.example
+
+# Service-account keys and certificates, matched by shape rather than by the
+# specific names we happen to have used. gcloud will name a downloaded key
+# whatever you ask it to.
+*-key.json
+*-sa.json
+*-credentials.json
+*-service-account*.json
+serviceAccountKey.json
+*.pem
+*.p8
+*.p12
+*.pfx
+*.keystore
+
+# Emulator secret values. Committing this is how a real token leaks by accident.
+.secret.local
+# Legacy Cloud Functions runtime config; can contain tokens.
+.runtimeconfig.json
+
+# =============================================================================
+# Build output and dependencies
+# =============================================================================
 node_modules/
 dist/
 out/
 .next/
+.turbo/
+coverage/
 *.tsbuildinfo
+
 # The esbuild bundle for Cloud Functions. Anchored to that one directory on
 # purpose: a bare `lib/` also matches apps/website/src/lib, which is source.
 /functions/lib/
 
-# Secrets — never commit
-.env
-.env.local
-.env*.local
-serviceAccountKey.json
-*-service-account*.json
-# Downloaded service-account keys. The narrow patterns above missed the names
-# gcloud actually produces (announcements-key.json, taksis-key.json), so match
-# the shape instead: any JSON with "key" or "sa" in the name, at any depth.
-*-key.json
-*-sa.json
-*-credentials.json
-# Emulator secret values. Committing this is how a real token leaks by accident.
-.secret.local
-
+# =============================================================================
 # Firebase
+# =============================================================================
 .firebase/
 firebase-debug.log
 firestore-debug.log
+database-debug.log
 ui-debug.log
 pubsub-debug.log
+dataconnect-debug.log
 
+# =============================================================================
+# Logs and editors
+# =============================================================================
+*.log
+npm-debug.log*
+yarn-error.log*
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# =============================================================================
 # OS
+# =============================================================================
 .DS_Store
+._*
+Thumbs.db
