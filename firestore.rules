@@ -1,0 +1,264 @@
+rules_version = '2';
+
+// Authorization lives here, not in the UI. Anything the client hides is a
+// convenience; anything this file allows is the actual policy.
+//
+// Two axes, matching packages/shared/src/roles.ts:
+//   role   — linear tier: member < servant < staff < admin
+//   groups — cross-cutting: clergy, prayerTeam, bookstore, parking
+//
+// Both come from Auth custom claims (the ID token), never from a Firestore
+// document. Reading them from /members would let a member promote themselves by
+// editing their own profile.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- claim helpers -----------------------------------------------------
+
+    function claims() {
+      return request.auth != null ? request.auth.token : {};
+    }
+
+    function roleRank() {
+      let r = claims().get('role', 'member');
+      return r == 'admin' ? 3 : r == 'staff' ? 2 : r == 'servant' ? 1 : 0;
+    }
+
+    function rankOf(role) {
+      return role == 'admin' ? 3 : role == 'staff' ? 2 : role == 'servant' ? 1 : 0;
+    }
+
+    function hasRole(role) {
+      return request.auth != null && roleRank() >= rankOf(role);
+    }
+
+    function inGroup(group) {
+      return request.auth != null && group in claims().get('groups', []);
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Cloud Functions use the Admin SDK, which bypasses these rules entirely.
+    // So "no client may write X" below still leaves X writable by our backend.
+
+    // ---- helpers for content ----------------------------------------------
+
+    // `published` is the whole switch. `publishAt` is deliberately NOT read
+    // here, and that is load-bearing rather than an omission.
+    //
+    // This rule used to be:
+    //   doc.published == true && (doc.publishAt == null || doc.publishAt <= request.time)
+    //
+    // It compiled, and `npm run rules:check` passed, and it denied every public
+    // list query in existence. Firestore evaluates a `list` against the query's
+    // *potential* result set, not the documents actually returned — so it has
+    // to prove from the query constraints alone that no disallowed document
+    // could come back. `where('published','==',true)` proves the first clause
+    // and says nothing about the second, so the whole query is rejected.
+    //
+    // Measured against the live project, empty collection:
+    //   where('published','==',true)                          -> permission-denied
+    //   where('published','==',true), where('publishAt','==',null) -> allowed
+    //
+    // That second line is the trap. It is the only query the old rule admitted,
+    // and it silently excludes every document that has a publishAt — including
+    // after that time has passed. Scheduled content would never appear, and
+    // nothing would error.
+    //
+    // So scheduling moved to where it can actually work: `publishAt` is an
+    // instruction to a scheduled Cloud Function, which flips `published` to
+    // true when the time arrives. That is required anyway — the public site is
+    // a static export, so a page going live means a rebuild, and no read-time
+    // rule can trigger one. See docs/decisions.md #10.
+    function isPublished(doc) {
+      return doc.published == true;
+    }
+
+    // ---- public content ---------------------------------------------------
+    // Readable by the world (the static export reads these at build time and
+    // the PWA caches them offline). Writable only by staff.
+
+    match /content/{pageId} {
+      allow read: if isPublished(resource.data) || hasRole('staff');
+      allow write: if hasRole('staff');
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isPublished(resource.data) || hasRole('staff');
+      allow write: if hasRole('staff');
+    }
+
+    // ---- runtime configuration --------------------------------------------
+    // Integration endpoints and feature switches that staff change without a
+    // deploy. See packages/shared/src/schema/config.ts.
+    //
+    // World-readable, deliberately: the website build reads this as an
+    // anonymous client before it has any other credential, so there is no
+    // identity to gate on. That is only acceptable because of what lives here —
+    // a project id and a collection name authorize nothing, and access to the
+    // other project is controlled by its IAM, not by the obscurity of its name.
+    //
+    // ANYTHING WRITTEN HERE IS PUBLIC. No service-account keys, no API tokens,
+    // no webhook signing secrets. Those belong in Secret Manager.
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    match /events/{eventId} {
+      // Parish calendar. Servant-only entries live in /servantEvents so this
+      // stays a path check rather than a per-doc audience filter — a filter
+      // would leak titles through list queries if anyone forgot a where().
+      allow read: if isPublished(resource.data) || hasRole('staff');
+      allow write: if hasRole('staff');
+    }
+
+    match /servantEvents/{eventId} {
+      allow read: if hasRole('servant');
+      allow write: if hasRole('staff');
+    }
+
+    // ---- members ----------------------------------------------------------
+
+    match /members/{uid} {
+      allow read: if isSelf(uid) || hasRole('staff');
+
+      // A member may edit their own profile but may NOT touch the claim
+      // mirrors — those are set by a Function after claims change.
+      allow create: if isSelf(uid)
+        && request.resource.data.roleMirror == 'member'
+        && request.resource.data.groupsMirror.size() == 0;
+
+      allow update: if isSelf(uid)
+        && request.resource.data.roleMirror == resource.data.roleMirror
+        && request.resource.data.groupsMirror == resource.data.groupsMirror;
+
+      allow update: if hasRole('admin');
+      allow delete: if hasRole('admin');
+    }
+
+    // ---- prayer requests --------------------------------------------------
+    // Privacy model: Firestore at-rest encryption (Decision #1, Option A).
+    // Bodies are plaintext and readable by clergy. Enforcement is here.
+
+    match /prayerRequests/{requestId} {
+
+      // Public requests: any signed-in member, plus the prayer team.
+      // Clergy-only requests: clergy group or admin. Staff tier alone is NOT
+      // enough — a facilities coordinator has no business reading these.
+      allow read: if (resource.data.visibility == 'public' && signedIn())
+        || inGroup('clergy')
+        || hasRole('admin');
+
+      allow create: if signedIn()
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 2000
+        && request.resource.data.visibility in ['public', 'clergy']
+        && request.resource.data.status == 'active'
+        && request.resource.data.notifiedAt == null
+        // Anonymity is real, not cosmetic: an anonymous request must not carry
+        // the uid at all, so it cannot be traced back later.
+        && (
+          (request.resource.data.anonymous == true
+            && request.resource.data.authorUid == null
+            && request.resource.data.authorName == null)
+          ||
+          (request.resource.data.anonymous == false
+            && request.resource.data.authorUid == request.auth.uid)
+        );
+
+      // The trade-off of true anonymity: with no uid stored, there is nobody to
+      // authorize an edit. Anonymous requests are clergy-managed only.
+      allow update: if (resource.data.authorUid != null && isSelf(resource.data.authorUid))
+        || inGroup('clergy')
+        || hasRole('admin');
+
+      allow delete: if inGroup('clergy') || hasRole('admin');
+    }
+
+    // ---- bookstore --------------------------------------------------------
+
+    match /products/{productId} {
+      allow read: if isPublished(resource.data);
+      allow read: if hasRole('staff');
+      // Catalog writes go through the Square sync Function or staff tooling.
+      allow write: if hasRole('staff');
+    }
+
+    match /orders/{orderId} {
+      // A member sees their own orders; bookstore volunteers see all.
+      allow read: if isSelf(resource.data.memberUid)
+        || inGroup('bookstore')
+        || hasRole('staff');
+
+      // Orders are created and advanced ONLY by Cloud Functions reconciling
+      // Square webhooks. If the client could write here, a member could mark
+      // their own order paid.
+      allow write: if false;
+    }
+
+    // ---- vehicle registration --------------------------------------------
+
+    match /vehicles/{vehicleId} {
+      // No public read: a plate-to-name mapping is exactly the kind of thing
+      // that should not be enumerable. Staff/parking only.
+      allow read: if inGroup('parking') || hasRole('staff');
+      allow read: if isSelf(resource.data.ownerUid);
+
+      // Guests register without an account (§3.5), so this is open to
+      // unauthenticated creates. That is intentional and bounded: create-only,
+      // no read, field-validated, with abuse handling in a Function.
+      allow create: if request.resource.data.plate is string
+        && request.resource.data.plate.size() >= 2
+        && request.resource.data.plate.size() <= 10
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() > 0
+        && request.resource.data.active == true
+        && (
+          (signedIn() && request.resource.data.ownerUid == request.auth.uid)
+          || request.resource.data.ownerUid == null
+        );
+
+      allow update: if isSelf(resource.data.ownerUid) || hasRole('staff');
+      allow delete: if hasRole('staff');
+    }
+
+    // ---- forms ------------------------------------------------------------
+
+    match /forms/{formId} {
+      allow read: if isPublished(resource.data);
+      allow read: if hasRole('staff');
+      allow write: if hasRole('staff');
+    }
+
+    match /formSubmissions/{submissionId} {
+      // Submitters can't re-read submissions; staff review them. Keeps one
+      // person's registration from being readable by the next.
+      allow read: if hasRole('staff');
+      allow create: if request.resource.data.formId is string;
+      allow update, delete: if hasRole('staff');
+    }
+
+    // ---- audit log --------------------------------------------------------
+
+    match /auditLog/{entryId} {
+      allow read: if hasRole('admin');
+      // Append-only, and only from the backend.
+      allow write: if false;
+    }
+
+    // Anything not matched above is denied. Adding a collection means adding a
+    // rule here on purpose, rather than inheriting an accidental allow.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

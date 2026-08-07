@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Storage holds event hero images, clergy portraits, and product photos.
+// All of it is public-read (it's on a public church website) and staff-write.
+// Nothing user-submitted lands here in MVP — prayer requests and vehicle
+// registrations are text-only, deliberately, so there's no upload surface to
+// abuse before we have moderation.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function hasRole(role) {
+      let r = request.auth != null ? request.auth.token.get('role', 'member') : 'member';
+      let rank = r == 'admin' ? 3 : r == 'staff' ? 2 : r == 'servant' ? 1 : 0;
+      let need = role == 'admin' ? 3 : role == 'staff' ? 2 : role == 'servant' ? 1 : 0;
+      return request.auth != null && rank >= need;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 8 * 1024 * 1024;
+    }
+
+    match /events/{allPaths=**} {
+      allow read: if true;
+      allow write: if hasRole('staff') && isImage();
+    }
+
+    match /clergy/{allPaths=**} {
+      allow read: if true;
+      allow write: if hasRole('admin') && isImage();
+    }
+
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow write: if hasRole('staff') && isImage();
+    }
+
+    match /content/{allPaths=**} {
+      allow read: if true;
+      allow write: if hasRole('staff') && isImage();
+    }
+
+    // Member avatars: own folder only.
+    match /members/{uid}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid && isImage();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

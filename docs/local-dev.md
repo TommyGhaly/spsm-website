@@ -1,0 +1,180 @@
+# Running locally
+
+## The short version
+
+```bash
+npm install && npm run dev
+```
+
+That serves the website at <http://localhost:3000>. It reads the **real**
+Firestore and the **real** announcements project — not emulators. For a parish
+site with no destructive client writes, that is the fastest way to see what you
+are actually shipping.
+
+Everything it needs is already in `.env`. If that file is missing you get a
+"Firebase isn't configured" panel on the page rather than a stack trace, which
+is the intended behaviour.
+
+## What runs where
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Website at :3000, against live Firestore. **Start here.** |
+| `npm run dev:backend` | Emulator suite, for rules and Functions work |
+| `npm run build` | Builds everything; website output lands in `apps/website/out` |
+| `npm run verify:scopes` | Checks every credential against the live services |
+| `npm run bulletin` | Prints this week's bulletin as the build sees it |
+| `npm run config` | Shows `config/integrations`; `-- --write` creates it |
+
+Note the `--` in `npm run config -- --write`. Without it npm eats the flag.
+
+## Where configuration actually lives
+
+Three places, and the split is deliberate:
+
+**1. `.env` at the repo root** — only what you need *before* you can reach the
+database:
+
+- the six `NEXT_PUBLIC_FIREBASE_*` values (public; they identify the project)
+- `ANNOUNCEMENTS_SERVICE_ACCOUNT` (**secret**; a private key)
+- Square and Entra values
+
+**2. Firestore, `config/integrations`** — everything else. Which project the
+bulletin lives in, which collection, and whether to show it at all. Staff can
+edit this in the Firebase console and the next build picks it up, no deploy
+needed.
+
+```
+config/integrations
+  announcements:
+    enabled        true            ← flip to false to hide the bulletin
+    projectId      weeklyannouncements-1d046
+    collectionPath bulletins
+    databaseId     ""              ← empty means (default)
+```
+
+If the document is missing, the build falls back to the defaults committed in
+`packages/shared/src/schema/config.ts` and says so in the log. Create it with:
+
+```bash
+npm run config -- --write
+```
+
+**Nothing secret goes in `config`.** It is world-readable, because the website
+build reads it anonymously before it holds any other credential. A project id
+authorizes nothing; a service-account key would authorize everything.
+
+**3. Secret Manager** — production secrets for deployed Cloud Functions
+(`npx firebase functions:secrets:set NAME`).
+
+## The one credential the build genuinely needs
+
+`ANNOUNCEMENTS_SERVICE_ACCOUNT`. The weekly bulletin lives in a different
+Firebase project, and reaching another project requires its credentials — a
+browser cannot hold those, so this read only happens during `next build`.
+
+Consequence worth knowing: **`next build` is no longer runnable from public
+config alone.** Without that key the site still builds, but the bulletin section
+is silently absent and the log says why. Whatever runs your production build
+needs the key too.
+
+It is read-only on that project — `npm run verify:scopes` proves it — so a leak
+exposes the parish bulletin, which is already public. Still not a reason to be
+careless: the variable has no `NEXT_PUBLIC_` prefix precisely so Next will not
+inline it into browser code.
+
+## When the bulletin section is missing
+
+```bash
+npm run bulletin
+```
+
+It reads `config/integrations` and then the source project, printing both. That
+covers the realistic causes in one shot: config says `enabled: false`, the
+collection path is wrong, the service account is missing or malformed, or the
+source really is empty.
+
+## Emulators
+
+Only needed for security rules and Cloud Functions.
+
+```bash
+npm run dev:backend
+```
+
+| Emulator | URL |
+|---|---|
+| Emulator UI | http://127.0.0.1:4000 |
+| Hosting | http://127.0.0.1:5002 |
+| Functions | http://127.0.0.1:5001 |
+| Firestore | 127.0.0.1:8080 |
+| Auth | 127.0.0.1:9099 |
+| Storage | 127.0.0.1:9199 |
+
+The UI at :4000 is the useful one — a Firestore data browser and a fake user
+manager that can mint custom claims, so you can test the `staff` / `clergy`
+gating without a real Entra ID tenant.
+
+Two machine-specific things:
+
+**`firebase-tools` needs JDK 21+; the default `java` here is 17.**
+
+```bash
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
+```
+
+**Port 5000 is taken by macOS ControlCenter (AirPlay).** Already handled —
+hosting is on 5002 in `firebase.json`.
+
+`functions/.secret.local` holds dummy values for secrets declared with
+`defineSecret`. Without it the emulator prompts for each one on startup and
+appears to hang. It is gitignored; keep only dummy or sandbox values in it.
+
+## Checking the security rules
+
+```bash
+npm run rules:check
+```
+
+**This is a compile check and nothing more.** It cannot tell you the policy is
+correct, and that is not a theoretical caveat — a policy that passed this check
+denied *every* public list query on the live project, and it took building a
+page to notice. See decision #10. Behavioural tests with
+`@firebase/rules-unit-testing` are still the missing piece.
+
+## Expected on a fresh clone
+
+- **Hosting emulator returns 404.** It serves `apps/website/out`; run a build
+  first.
+- **`squareWebhook` returns 503.** Deliberate. It returns 503 rather than 200 so
+  that if it is ever pointed at the real Square dashboard before the logic
+  exists, Square *retries* the event instead of discarding it as delivered.
+- **Most of the site says "Nothing here yet."** Correct — `content`, `events`,
+  and `announcements` are empty. The bulletin section is the exception, because
+  it comes from a project that already has data.
+
+## Gotcha worth knowing about
+
+`@firebase/app` is an unmet peer dependency of `@firebase/database-compat`
+(inside `firebase-admin`), and npm's workspace hoisting doesn't install it
+automatically. The emulator's functions runtime loads the `firebase-functions`
+barrel — which pulls in the database provider — so the function crashes on
+invocation with `Cannot find module '@firebase/app'` even though our code only
+imports `firebase-functions/v2/https`.
+
+It's therefore listed as an explicit dependency in `functions/package.json`. If
+you ever see that error again after a dependency bump, that's why.
+
+## Deploying
+
+```bash
+npx firebase deploy --only firestore:rules,firestore:indexes
+```
+
+```bash
+npm run build && npx firebase deploy --only hosting
+```
+
+Cloud Functions are bundled with esbuild before upload — see the comments in
+`functions/package.json` for why a workspace dependency cannot be deployed
+as-is.

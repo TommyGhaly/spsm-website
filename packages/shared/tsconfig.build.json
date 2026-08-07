@@ -1,0 +1,11 @@
+{
+  // Emits dist/. Consumers (Cloud Functions, and the Next app) import the built
+  // output rather than the TS source, so there's exactly one module format to
+  // reason about at the package boundary.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  }
+}

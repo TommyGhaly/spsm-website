@@ -1,0 +1,33 @@
+node_modules/
+dist/
+out/
+.next/
+*.tsbuildinfo
+# The esbuild bundle for Cloud Functions. Anchored to that one directory on
+# purpose: a bare `lib/` also matches apps/website/src/lib, which is source.
+/functions/lib/
+
+# Secrets — never commit
+.env
+.env.local
+.env*.local
+serviceAccountKey.json
+*-service-account*.json
+# Downloaded service-account keys. The narrow patterns above missed the names
+# gcloud actually produces (announcements-key.json, taksis-key.json), so match
+# the shape instead: any JSON with "key" or "sa" in the name, at any depth.
+*-key.json
+*-sa.json
+*-credentials.json
+# Emulator secret values. Committing this is how a real token leaks by accident.
+.secret.local
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+
+# OS
+.DS_Store

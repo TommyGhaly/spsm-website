@@ -1,0 +1,48 @@
+# Custom IAM role: READ-ONLY access to the weekly announcements Firestore.
+#
+# Create it ON THE ANNOUNCEMENTS PROJECT (not ours):
+#
+#   gcloud iam roles create spsmAnnouncementsReader \
+#     --project=<ANNOUNCEMENTS_PROJECT_ID> \
+#     --file=infra/iam/announcements-reader.yaml
+#
+# Then bind it to a dedicated service account:
+#
+#   gcloud iam service-accounts create spsm-announcements-sync \
+#     --project=<ANNOUNCEMENTS_PROJECT_ID> \
+#     --display-name="SPSM website announcements sync (read only)"
+#
+#   gcloud projects add-iam-policy-binding <ANNOUNCEMENTS_PROJECT_ID> \
+#     --member="serviceAccount:spsm-announcements-sync@<ANNOUNCEMENTS_PROJECT_ID>.iam.gserviceaccount.com" \
+#     --role="projects/<ANNOUNCEMENTS_PROJECT_ID>/roles/spsmAnnouncementsReader"
+#
+#   gcloud iam service-accounts keys create ./announcements-sa.json \
+#     --iam-account=spsm-announcements-sync@<ANNOUNCEMENTS_PROJECT_ID>.iam.gserviceaccount.com
+#
+# Put the contents of announcements-sa.json into ANNOUNCEMENTS_SERVICE_ACCOUNT,
+# then DELETE the local file. It is a private key.
+#
+# Do NOT reuse the auto-created "firebase-adminsdk-*" service account. Firebase
+# grants that one roles/editor, which would give us full write access to the
+# announcements project — the opposite of the intent here.
+#
+# Why not the built-in roles/datastore.viewer? It works, and it's a reasonable
+# shortcut. This custom role is narrower: viewer also grants index, namespace,
+# and statistics reads we have no use for.
+
+title: "SPSM Announcements Reader"
+description: >-
+  Read-only Firestore access for the SPSM website's announcement mirror.
+  Cannot create, update, or delete anything.
+stage: GA
+includedPermissions:
+  # Read individual documents.
+  - datastore.entities.get
+  # Run queries / list a collection.
+  - datastore.entities.list
+  # NOTE: datastore.databases.get was listed here on the assumption the Admin
+  # SDK needs it to open a connection. Verified 2026-08-07 against the live
+  # project: it does not. The deployed account holds only the two permissions
+  # above and reads fine. Left out deliberately — it is the difference between
+  # "can read the documents we mirror" and "can also enumerate the project's
+  # databases and indexes". Re-add only if a real call fails without it.

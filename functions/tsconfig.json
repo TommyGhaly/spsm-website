@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    // ESM, matching @spsm/shared. The Node 22 Functions runtime supports it,
+    // and keeping one module format across the monorepo avoids the
+    // CommonJS-importing-ESM breakage at the package boundary.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}
