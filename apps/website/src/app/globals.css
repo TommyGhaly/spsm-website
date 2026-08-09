@@ -241,6 +241,124 @@ main {
   color: var(--gold);
 }
 
+/* ---- buttons ---- */
+
+.button {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 0.7rem 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--paper-raised);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #74251e;
+  border-color: #74251e;
+}
+
+.button[disabled] {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* ---- forms ---- */
+
+.form {
+  max-width: var(--measure);
+  display: grid;
+  gap: 1.75rem;
+  justify-items: start;
+}
+
+.form fieldset {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  padding: 1.25rem 1.375rem 1.5rem;
+  margin: 0;
+  width: 100%;
+  display: grid;
+  gap: 1rem;
+}
+
+.form legend {
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-inline: 0.4rem;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+  flex: 1 1 12rem;
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+}
+
+.field--narrow {
+  flex: 0 0 7rem;
+}
+
+.field > span {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.field abbr {
+  color: var(--accent);
+  text-decoration: none;
+  border: 0;
+}
+
+.field input,
+.field select,
+.field textarea {
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.55rem 0.7rem;
+  width: 100%;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  border-color: var(--accent);
+}
+
+.field small {
+  color: var(--ink-faint);
+  font-size: 0.8125rem;
+}
+
+.notice ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.notice li + li {
+  margin-top: 0.4rem;
+}
+
 /* ---- weekly bulletin schedule ---- */
 
 .week {
@@ -360,4 +478,12 @@ main {
 
 .footer a {
   color: var(--ink-soft);
+}
+
+.footer__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
 }

@@ -24,7 +24,20 @@ const NAV = [
   { href: '/beliefs', label: 'Our Faith' },
   { href: '/clergy', label: 'Clergy' },
   { href: '/events', label: 'Calendar' },
+  { href: '/prayer', label: 'Prayer' },
+  { href: '/bookstore', label: 'Bookstore' },
+  { href: '/giving', label: 'Giving' },
   { href: '/contact', label: 'Contact' },
+] as const;
+
+/**
+ * Practical links that don't earn a spot in the main nav. Vehicle registration
+ * matters intensely on a festival weekend and not at all the rest of the year,
+ * so the footer is the honest place for it.
+ */
+const FOOTER_LINKS = [
+  { href: '/parking', label: 'Register a vehicle' },
+  { href: '/contact', label: 'Contact the parish office' },
 ] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -63,9 +76,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <br />
                 Wayland, Massachusetts
               </p>
-              <p>
-                <Link href="/contact">Contact the parish office</Link>
-              </p>
+              <nav aria-label="Footer">
+                <ul className="footer__links">
+                  {FOOTER_LINKS.map((item) => (
+                    <li key={item.href}>
+                      <Link href={item.href}>{item.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
             </div>
           </footer>
         </div>

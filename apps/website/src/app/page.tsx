@@ -1,10 +1,9 @@
 import Link from 'next/link';
-import { getAnnouncements, getUpcomingEvents } from '@/lib/content';
+import { getAnnouncements, AnnouncementList } from '@/features/announcements';
+import { getUpcomingEvents, EventCard } from '@/features/events';
+import { getCurrentBulletin, BulletinWeek } from '@/features/bulletin';
 import { getIntegrationsConfig } from '@/lib/config';
-import { getCurrentBulletin } from '@/lib/bulletin';
 import { EmptyState } from '@/components/Notice';
-import { BulletinWeek } from '@/components/BulletinWeek';
-import { formatEventWhen, isoOf } from '@/lib/dates';
 
 export default async function HomePage() {
   // Independent reads — no reason to make the build wait on them in sequence.
@@ -29,7 +28,8 @@ export default async function HomePage() {
       </section>
 
       {/* The bulletin is the parish's own weekly sheet, so it leads. It is
-          absent only before the first sync has run. */}
+          absent only if the source is empty or the section is switched off in
+          config/integrations. */}
       {bulletin && <BulletinWeek bulletin={bulletin} />}
 
       <section aria-labelledby="announcements-heading">
@@ -37,17 +37,7 @@ export default async function HomePage() {
         {announcements.length === 0 ? (
           <EmptyState what="announcements" collection="announcements" />
         ) : (
-          <ul className="grid">
-            {announcements.map((item) => (
-              <li key={item.id} className="card">
-                {item.pinned && <p className="meta pin">Pinned</p>}
-                <h3>
-                  {item.linkUrl ? <a href={item.linkUrl}>{item.title}</a> : item.title}
-                </h3>
-                <p>{item.body}</p>
-              </li>
-            ))}
-          </ul>
+          <AnnouncementList announcements={announcements} />
         )}
       </section>
 
@@ -59,17 +49,7 @@ export default async function HomePage() {
           <>
             <ul className="grid">
               {events.map((event) => (
-                <li key={event.id} className="card">
-                  <p className="meta">
-                    <time dateTime={isoOf(event.startAt)}>
-                      {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
-                    </time>
-                  </p>
-                  <h3>
-                    <Link href={`/events/${event.slug}`}>{event.title}</Link>
-                  </h3>
-                  <p>{event.summary}</p>
-                </li>
+                <EventCard key={event.id} event={event} />
               ))}
             </ul>
             <p style={{ marginTop: '1.5rem' }}>

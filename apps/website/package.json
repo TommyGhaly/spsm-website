@@ -4,7 +4,8 @@
   "private": true,
   "description": "Public parish website. Static export to Firebase Hosting.",
   "scripts": {
-    "dev": "next dev --port 3000",
+    "//dev": "No --port flag on purpose. Next honours $PORT and otherwise takes 3000, stepping up if it is busy — so this coexists with whatever else is already running instead of failing to start.",
+    "dev": "next dev",
     "build": "next build",
     "start": "npx serve out",
     "typecheck": "tsc --noEmit",

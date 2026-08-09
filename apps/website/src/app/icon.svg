@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Coptic cross">
+  <!--
+    An equal-armed Coptic cross with flared arm ends.
+
+    Also the fix for a real annoyance: with no icon declared, browsers request
+    /favicon.ico, which at the root falls through to the [section] dynamic
+    route and logs a generateStaticParams error on every page load in dev.
+    Next serves this file at /icon.svg and injects the <link rel="icon">, so
+    the browser stops asking for favicon.ico.
+
+    Drawn rather than bitmapped so it stays crisp at any size and needs no
+    build step. currentColor is deliberate: the browser applies the theme.
+  -->
+  <rect width="32" height="32" rx="6" fill="#8c2f26"/>
+  <g fill="#fbf9f5">
+    <!-- Vertical arm, flared at both ends. -->
+    <path d="M13.6 5.5h4.8v21h-4.8z"/>
+    <path d="M11.4 4.2h9.2v2.6h-9.2zM11.4 25.2h9.2v2.6h-9.2z"/>
+    <!-- Horizontal arm, flared to match. -->
+    <path d="M5.5 13.6h21v4.8h-21z"/>
+    <path d="M4.2 11.4h2.6v9.2H4.2zM25.2 11.4h2.6v9.2h-2.6z"/>
+  </g>
+</svg>

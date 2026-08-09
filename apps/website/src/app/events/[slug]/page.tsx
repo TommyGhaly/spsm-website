@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { getAllEvents, getEvent } from '@/lib/content';
+import { getAllEvents, getEvent } from '@/features/events';
 import { Prose } from '@/components/Prose';
 import { formatEventWhen, isoOf } from '@/lib/dates';
 
@@ -10,9 +10,9 @@ type Params = { slug: string };
 /**
  * `output: 'export'` refuses to build a dynamic segment that yields zero
  * routes. Taken literally that means "the parish has no events scheduled"
- * becomes "the website will not deploy" — which is an unacceptable thing to
- * hand to a volunteer on a Saturday. This slug keeps one route in existence so
- * the build stays green; the page 404s on it.
+ * becomes "the website will not deploy" — an unacceptable thing to hand to a
+ * volunteer on a Saturday. This slug keeps one route in existence so the build
+ * stays green; the page 404s on it.
  *
  * Underscore-prefixed so it cannot collide with a slug staff would ever type.
  */
