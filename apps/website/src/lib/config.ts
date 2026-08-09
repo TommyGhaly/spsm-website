@@ -14,9 +14,13 @@ import { doc, getDoc } from 'firebase/firestore';
 import {
   COLLECTIONS,
   CONFIG_DOC_INTEGRATIONS,
+  CONFIG_DOC_PARISH,
   DEFAULT_INTEGRATIONS_CONFIG,
+  DEFAULT_PARISH_CONFIG,
   parseIntegrationsConfig,
+  parseParishConfig,
   type IntegrationsConfig,
+  type ParishConfig,
 } from '@spsm/shared';
 import { db, isConfigured } from './firebase';
 
@@ -47,5 +51,37 @@ export async function getIntegrationsConfig(): Promise<IntegrationsConfig> {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[config] could not read settings, using built-in defaults: ${message}`);
     return DEFAULT_INTEGRATIONS_CONFIG;
+  }
+}
+
+/**
+ * Parish contact details and service times.
+ *
+ * Also never throws, but the fallback here is *blank* rather than a set of
+ * working defaults — see `DEFAULT_PARISH_CONFIG`. An address nobody has
+ * confirmed is worse than a visible gap, because a plausible wrong address is
+ * one nobody thinks to check.
+ */
+export async function getParishConfig(): Promise<ParishConfig> {
+  if (!isConfigured()) {
+    console.warn('[config] Firebase not configured; parish details unavailable.');
+    return DEFAULT_PARISH_CONFIG;
+  }
+
+  try {
+    const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_PARISH));
+    if (!snapshot.exists()) {
+      console.warn(
+        `[config] ${COLLECTIONS.config}/${CONFIG_DOC_PARISH} does not exist, so the ` +
+          `contact page has no address, phone, or service times to show. ` +
+          `Create it with: npm run config -- --write`,
+      );
+      return DEFAULT_PARISH_CONFIG;
+    }
+    return parseParishConfig(snapshot.data());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[config] could not read parish details: ${message}`);
+    return DEFAULT_PARISH_CONFIG;
   }
 }

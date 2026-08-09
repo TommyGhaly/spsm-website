@@ -241,6 +241,69 @@ main {
   color: var(--gold);
 }
 
+/* ---- definition lists (contact details) ---- */
+
+.details {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+  max-width: var(--measure);
+}
+
+.details > div {
+  display: grid;
+  gap: 0.2rem 2rem;
+  grid-template-columns: minmax(7rem, 9rem) 1fr;
+  align-items: start;
+}
+
+@media (max-width: 34rem) {
+  .details > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+.details dt {
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 0.15rem;
+}
+
+.details dd {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
+.details address {
+  font-style: normal;
+}
+
+/* ---- responsive video embed ---- */
+
+.embed {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-width: 56rem;
+  background: var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
 /* ---- buttons ---- */
 
 .button {

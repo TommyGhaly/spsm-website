@@ -16,8 +16,20 @@ import { PageHeader } from '@/components/PageHeader';
 
 type Params = { section: string };
 
+/**
+ * Sections that have a dedicated route of their own and must not be emitted
+ * here too — with `output: 'export'` both would write the same HTML file.
+ *
+ * `contact` is structured data (address, phone, service times) served from
+ * `config/parish`, so it earns a real page. Any prose in the `contact` content
+ * section is still rendered, by that page rather than this one.
+ */
+const HAS_OWN_ROUTE: readonly string[] = ['contact'];
+
 export async function generateStaticParams(): Promise<Params[]> {
-  return CONTENT_SECTIONS.map((section) => ({ section }));
+  return CONTENT_SECTIONS.filter((section) => !HAS_OWN_ROUTE.includes(section)).map(
+    (section) => ({ section }),
+  );
 }
 
 function isSection(value: string): value is ContentSection {

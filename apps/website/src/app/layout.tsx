@@ -24,6 +24,7 @@ const NAV = [
   { href: '/beliefs', label: 'Our Faith' },
   { href: '/clergy', label: 'Clergy' },
   { href: '/events', label: 'Calendar' },
+  { href: '/livestream', label: 'Watch Live' },
   { href: '/prayer', label: 'Prayer' },
   { href: '/bookstore', label: 'Bookstore' },
   { href: '/giving', label: 'Giving' },

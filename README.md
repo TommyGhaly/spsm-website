@@ -64,7 +64,8 @@ Three places, and the split is deliberate:
 | | Holds | Changed by |
 |---|---|---|
 | `.env` (gitignored) | Firebase web config, service-account keys, Square | editing the file |
-| Firestore `config/integrations` | integration endpoints, feature switches | staff, in the console — **no deploy** |
+| Firestore `config/integrations` | integration endpoints, livestream, feature switches | staff, in the console — **no deploy** |
+| Firestore `config/parish` | address, phone, email, office hours, service times | staff, in the console — **no deploy** |
 | Secret Manager | production secrets for deployed Functions | `firebase functions:secrets:set` |
 
 Only what you need *before* you can reach the database stays in `.env`.
@@ -137,6 +138,19 @@ indexes deployed, Blaze enabled, website building, weekly bulletin live on the
 homepage.
 
 Next, roughly in order:
+
+- [ ] **Fill in `config/parish`** — address, phone, email, office hours, and the
+      regular service times. Deliberately left blank rather than guessed: a
+      plausible wrong address is one nobody thinks to check. `/contact` renders
+      an honest "not published yet" until it is filled in.
+      `npm run config` shows the current state.
+- [ ] **Point the livestream at something.** `config/integrations.livestream` —
+      set `enabled: true`, pick `platform` (`youtube` / `facebook` / `custom`),
+      and give a `target`. For YouTube a channel id (`UC…`) is better than a
+      video id, because it resolves to whatever is live now and survives the
+      video changing every Sunday.
+- [ ] Write the About / Our Faith / Clergy pages into the `content` collection.
+      Those routes work; they have nothing to show.
 
 - [ ] **Behavioural rules tests** (`@firebase/rules-unit-testing`). Not
       hypothetical — `rules:check` passed a policy that denied every public list

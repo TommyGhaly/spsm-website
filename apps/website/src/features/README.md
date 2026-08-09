@@ -37,17 +37,25 @@ feature A needs a file inside feature B, that file probably belongs in
 
 | Feature | Route | State |
 |---|---|---|
-| `content` | `/about` `/beliefs` `/clergy` `/contact` | Working. Waiting on content. |
+| `content` | `/about` `/beliefs` `/clergy` | Working. Waiting on content. |
 | `events` | `/events`, `/events/[slug]` | Working. Waiting on content. |
 | `bulletin` | homepage | **Live with real data.** |
 | `announcements` | homepage | Working. Waiting on content. |
+| `parish` | `/contact` | Working. Waiting on `config/parish`. |
+| `livestream` | `/livestream` | Working. Waiting on a stream target. |
 | `bookstore` | `/bookstore` | Catalog reads. Checkout blocked on decision #5. |
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
 | `prayer` | `/prayer` | Disclosure ships; form blocked on auth being enabled. |
 | `giving` | `/giving` | Working. Needs `NEXT_PUBLIC_TITHELY_GIVING_URL`. |
 
-"Waiting on content" means the code works and the collection is empty, so the
-page renders its empty state. That is different from blocked.
+"Waiting on content" means the code works and the source is empty, so the page
+renders its empty state. That is different from blocked.
+
+Note `/contact` is a dedicated route, not part of the `[section]` content
+template — contact details are structured (an address has parts, a phone number
+is dialable) and come from `config/parish`. Because it has its own route,
+`contact` is excluded from that template's `generateStaticParams`, or both would
+try to emit the same HTML file.
 
 ## Two rules that are not style preferences
 
