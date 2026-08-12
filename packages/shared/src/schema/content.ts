@@ -26,7 +26,23 @@ export interface ContentPage extends AuditFields, Publishable {
   };
 }
 
-export const CONTENT_SECTIONS = ['about', 'beliefs', 'clergy', 'contact', 'misc'] as const;
+/**
+ * `welcome` is the onboarding section — what a newcomer or an enquirer reads
+ * first. It is deliberately separate from `about`: "who this parish is" and
+ * "what to expect if you have never been to a Coptic liturgy" are different
+ * questions, and answering the second inside the first buries it.
+ *
+ * The old Wix catechism pages (`/lesson-1`, `/lesson-2`, `/lesson-3-saint-mina`)
+ * redirect here.
+ */
+export const CONTENT_SECTIONS = [
+  'welcome',
+  'about',
+  'beliefs',
+  'clergy',
+  'contact',
+  'misc',
+] as const;
 export type ContentSection = (typeof CONTENT_SECTIONS)[number];
 
 /** Bishop David, Fr. Youhanna, Fr. Armia. */

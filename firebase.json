@@ -11,6 +11,27 @@
         "function": "squareWebhook"
       }
     ],
+    "//redirects": "Every URL the Wix site published, taken from its sitemap while it was still up — after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The odd source paths are Wix template names nobody chose. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) and are onboarding material, so they land on /welcome. Wix called ministries and past events alike `projects` — /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries, pointed at /about until each earns a page; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, so the calendar is the honest destination. /portfolio already 404s on Wix and is redirected anyway, because it costs one line.",
+    "redirects": [
+      { "source": "/who-we-are", "destination": "/about", "type": 301 },
+      { "source": "/our-beliefs", "destination": "/beliefs", "type": 301 },
+      { "source": "/team-3", "destination": "/clergy", "type": 301 },
+      { "source": "/calendar", "destination": "/events", "type": 301 },
+      { "source": "/live-streaming", "destination": "/livestream", "type": 301 },
+      { "source": "/donations", "destination": "/giving", "type": 301 },
+      { "source": "/contact-us", "destination": "/contact", "type": 301 },
+      { "source": "/services", "destination": "/contact", "type": 301 },
+      { "source": "/lesson-1", "destination": "/welcome", "type": 301 },
+      { "source": "/lesson-2", "destination": "/welcome", "type": 301 },
+      { "source": "/lesson-3-saint-mina", "destination": "/welcome", "type": 301 },
+      { "source": "/projects-7-1", "destination": "/about", "type": 301 },
+      { "source": "/projects-7-2", "destination": "/about", "type": 301 },
+      { "source": "/projects-7-3", "destination": "/about", "type": 301 },
+      { "source": "/projects-7", "destination": "/events", "type": 301 },
+      { "source": "/projects-7-4", "destination": "/events", "type": 301 },
+      { "source": "/projects-8", "destination": "/events", "type": 301 },
+      { "source": "/portfolio", "destination": "/", "type": 301 }
+    ],
     "//headers": "Cache headers for /service-worker.js and /manifest.webmanifest were removed: neither file exists yet, and there is no apps/website/public/ at all. Restore them in the same commit that adds the real PWA files.",
     "headers": [
       {
