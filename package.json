@@ -30,7 +30,17 @@
     "//config": "Shows config/integrations; --write creates it from the committed defaults.",
     "config": "npm run build --workspace @spsm/shared && node scripts/seed-config.mjs",
 
+    "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials — runs in about a second, so there is no excuse not to.",
+    "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
+
+    "//test:rules": "firestore.rules evaluated against a real emulator. This is the one that would have caught decision #10 on day one; `rules:check` only compiles. Needs a JDK.",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-spsm \"vitest run --project rules\"",
+
     "rules:check": "firebase emulators:exec --only firestore,storage --project demo-spsm \"node scripts/check-rules.mjs\"",
     "emulators": "firebase emulators:start"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "vitest": "^3.2.7"
   }
 }

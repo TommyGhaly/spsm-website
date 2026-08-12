@@ -130,17 +130,52 @@ hosting is on 5002 in `firebase.json`.
 `defineSecret`. Without it the emulator prompts for each one on startup and
 appears to hang. It is gitignored; keep only dummy or sandbox values in it.
 
-## Checking the security rules
+## Tests
+
+```bash
+npm test
+```
+
+Pure functions from `@spsm/shared` — parsers and validators. No emulator, no
+network, no credentials, about a second.
+
+```bash
+npm run test:rules
+```
+
+`firestore.rules` evaluated against a real emulator, so it needs the JDK 21
+above. **This is the suite that matters.** `npm run rules:check` compiles the
+policy and nothing more — a policy that passed *that* check denied every public
+list query on the live project, and it took building a page to notice
+(decision #10).
+
+So `tests/rules/public-reads.test.ts` asserts the queries the site actually
+issues, and going back to a `publishAt` read-time filter turns five of them red
+immediately. `tests/rules/writes.test.ts` covers the write paths that would be
+expensive to get wrong: `vehicles` (the only unauthenticated write on the site,
+and a plate-to-name map that must never be enumerable), `orders`
+(`allow write: if false`, verified against an *admin*), the clergy-vs-staff
+split on `prayerRequests`, member claim-mirror immutability, and the catch-all.
+
+Two things about these tests are deliberate and worth not "tidying up":
+
+- **Firestore is cleared once per file in `beforeAll`, never in `beforeEach`.**
+  A clear immediately followed by a seed write races, and the lost fixture makes
+  `assertFails` pass *for the wrong reason* — NOT_FOUND counts as a failure the
+  same as PERMISSION_DENIED. A green test that never exercised the policy is
+  worse than no test. Seeds are idempotent `setDoc` upserts instead.
+- **`setLogLevel('silent')`** in `tests/rules/helpers.ts`. Half these tests
+  assert a denial and the SDK logs each one at error level; left on, a passing
+  run buries any real failure in stack traces.
+
+When changing a rule, check the test can actually fail: break the rule on
+purpose, watch it go red, then restore it.
 
 ```bash
 npm run rules:check
 ```
 
-**This is a compile check and nothing more.** It cannot tell you the policy is
-correct, and that is not a theoretical caveat — a policy that passed this check
-denied *every* public list query on the live project, and it took building a
-page to notice. See decision #10. Behavioural tests with
-`@firebase/rules-unit-testing` are still the missing piece.
+Still useful — it catches a syntax error faster than a full emulator run.
 
 ## Expected on a fresh clone
 
