@@ -1,0 +1,24 @@
+---
+title: St. Simon for Seniors
+published: false
+seo.description: REPLACE — one sentence on who this is for and when it meets.
+---
+
+REPLACE this body.
+
+Wix called this page `/projects-7-3`. The old URL redirects to
+`/ministries#st-simon-for-seniors`, so anything already shared still lands here.
+
+Worth answering:
+
+- Who it is for
+- When and where it meets
+- Whether a newcomer can simply turn up, or should speak to someone first
+- Who to contact
+
+The original text is still on the Wix site while it is up. Pull anything worth
+keeping before the cutover; afterwards it is gone.
+
+This file is a `.template`, so the seed script ignores it. Copy it to
+`30-st-simon-for-seniors.md`, write the real content, set `published: true`,
+and run `npm run content`.

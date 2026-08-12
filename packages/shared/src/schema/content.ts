@@ -34,12 +34,19 @@ export interface ContentPage extends AuditFields, Publishable {
  *
  * The old Wix catechism pages (`/lesson-1`, `/lesson-2`, `/lesson-3-saint-mina`)
  * redirect here.
+ *
+ * `ministries` is the standing work of the parish — the groups that meet and
+ * serve, as distinct from `events`, which is things that happen on a date. Wix
+ * filed both under `projects` with names like `/projects-7-2`, which is how the
+ * homeless-feeding ministry ended up with a URL nobody could read, guess, or
+ * say out loud. Each ministry is a page in this section, anchored by its slug.
  */
 export const CONTENT_SECTIONS = [
   'welcome',
   'about',
   'beliefs',
   'clergy',
+  'ministries',
   'contact',
   'misc',
 ] as const;

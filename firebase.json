@@ -11,7 +11,7 @@
         "function": "squareWebhook"
       }
     ],
-    "//redirects": "Every URL the Wix site published, taken from its sitemap while it was still up — after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The odd source paths are Wix template names nobody chose. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) and are onboarding material, so they land on /welcome. Wix called ministries and past events alike `projects` — /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries, pointed at /about until each earns a page; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, so the calendar is the honest destination. /portfolio already 404s on Wix and is redirected anyway, because it costs one line.",
+    "//redirects": "Every URL the Wix site published, taken from its sitemap while it was still up — after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) and are onboarding material, so they land on /welcome. Wix filed ministries and past events alike under `projects` — /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line.",
     "redirects": [
       { "source": "/who-we-are", "destination": "/about", "type": 301 },
       { "source": "/our-beliefs", "destination": "/beliefs", "type": 301 },
@@ -24,9 +24,13 @@
       { "source": "/lesson-1", "destination": "/welcome", "type": 301 },
       { "source": "/lesson-2", "destination": "/welcome", "type": 301 },
       { "source": "/lesson-3-saint-mina", "destination": "/welcome", "type": 301 },
-      { "source": "/projects-7-1", "destination": "/about", "type": 301 },
-      { "source": "/projects-7-2", "destination": "/about", "type": 301 },
-      { "source": "/projects-7-3", "destination": "/about", "type": 301 },
+      {
+        "source": "/projects-7-1",
+        "destination": "/ministries#college-and-young-professionals",
+        "type": 301
+      },
+      { "source": "/projects-7-2", "destination": "/ministries#mother-of-mercy", "type": 301 },
+      { "source": "/projects-7-3", "destination": "/ministries#st-simon-for-seniors", "type": 301 },
       { "source": "/projects-7", "destination": "/events", "type": 301 },
       { "source": "/projects-7-4", "destination": "/events", "type": 301 },
       { "source": "/projects-8", "destination": "/events", "type": 301 },

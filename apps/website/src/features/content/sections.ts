@@ -25,6 +25,10 @@ export const SECTION_META: Record<ContentSection, { title: string; lede: string 
     title: 'Our Clergy',
     lede: 'The fathers who serve this parish.',
   },
+  ministries: {
+    title: 'Ministries',
+    lede: 'The groups that meet, serve, and welcome throughout the year.',
+  },
   contact: {
     title: 'Contact Us',
     lede: 'How to reach the parish office.',

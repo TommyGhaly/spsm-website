@@ -43,6 +43,7 @@ const NAV = [
   { href: '/about', label: 'About' },
   { href: '/beliefs', label: 'Our Faith' },
   { href: '/clergy', label: 'Clergy' },
+  { href: '/ministries', label: 'Ministries' },
   { href: '/events', label: 'Calendar' },
   { href: '/livestream', label: 'Watch Live' },
   { href: '/prayer', label: 'Prayer' },
