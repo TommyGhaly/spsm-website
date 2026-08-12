@@ -159,8 +159,8 @@ rule could never have worked even if Firestore had allowed the query.
 
 **Consequences:**
 - A future `publishAt` with `published: true` is now an inconsistent state — the
-  document is publicly readable while the site withholds it. `warnIfEmbargoed`
-  in `apps/website/src/lib/content.ts` reports it at build time.
+  document is publicly readable while the site withholds it. `withoutEmbargoed`
+  in `apps/website/src/lib/firestore.ts` reports it at build time.
 - The scheduled publisher Function does not exist yet. Until it does,
   `publishAt` does nothing and staff must flip `published` by hand.
 
