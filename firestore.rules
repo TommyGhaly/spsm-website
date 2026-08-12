@@ -125,6 +125,24 @@ service cloud.firestore {
       allow write: if hasRole('staff');
     }
 
+    // The Breeze calendar embed URL, and nothing else.
+    //
+    // Not a document under /config, and that is the whole point. `config` is
+    // `allow read: if true`, and a narrower rule cannot take that back —
+    // Firestore grants when ANY matching rule allows, so `config/servants`
+    // would be world-readable no matter what was written here. A separate
+    // collection is the only way to gate it.
+    //
+    // It has to be gated because the embed URL is itself the credential: Breeze
+    // serves the calendar to anyone who requests that URL, with no session and
+    // no referrer check. The website is a static export, so the alternative —
+    // baking it into /servants — publishes it on a CDN behind a sign-in form
+    // that stops nobody.
+    match /servantsConfig/{docId} {
+      allow read: if hasRole('servant');
+      allow write: if hasRole('admin');
+    }
+
     // ---- members ----------------------------------------------------------
 
     match /members/{uid} {

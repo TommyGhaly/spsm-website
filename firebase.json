@@ -21,6 +21,7 @@
       { "source": "/donations", "destination": "/giving", "type": 301 },
       { "source": "/contact-us", "destination": "/contact", "type": 301 },
       { "source": "/services", "destination": "/contact", "type": 301 },
+      { "source": "/servants-calendar", "destination": "/servants", "type": 301 },
       { "source": "/lesson-1", "destination": "/welcome", "type": 301 },
       { "source": "/lesson-2", "destination": "/welcome", "type": 301 },
       { "source": "/lesson-3-saint-mina", "destination": "/welcome", "type": 301 },

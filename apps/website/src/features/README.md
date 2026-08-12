@@ -47,6 +47,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
 | `prayer` | `/prayer` | Disclosure ships; form blocked on auth being enabled. |
 | `giving` | `/giving` | Working. Needs `NEXT_PUBLIC_TITHELY_GIVING_URL`. |
+| `servants` | `/servants` | **Live.** Breeze calendar, framed behind Microsoft sign-in. |
 
 "Waiting on content" means the code works and the source is empty, so the page
 renders its empty state. That is different from blocked.

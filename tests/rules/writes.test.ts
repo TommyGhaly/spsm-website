@@ -18,6 +18,7 @@ import {
   createTestEnv,
   asAnon,
   asMember,
+  asServant,
   asStaff,
   asAdmin,
   asClergy,
@@ -286,6 +287,52 @@ describe('members — claims are authoritative, the mirror is not', () => {
     await assertSucceeds(updateDoc(doc(db, 'members', 'member-3'), { displayName: 'Mina B.' }));
     await assertFails(updateDoc(doc(db, 'members', 'member-3'), { roleMirror: 'staff' }));
     await assertFails(updateDoc(doc(db, 'members', 'member-3'), { groupsMirror: ['clergy'] }));
+  });
+});
+
+describe('servantsConfig holds a bearer URL, so read is gated', () => {
+  beforeEach(() =>
+    reset(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://stphilopaterstmina.breezechms.com/embed/calendar/grid?x=1',
+        note: '',
+        manageUrl: '',
+      });
+    }),
+  );
+
+  it('denies anonymous read — the whole point of not putting it in config/', () => {
+    // `config` is `allow read: if true`, and a narrower rule cannot take that
+    // back, so this had to be its own collection. If this ever passes, the
+    // parish rota URL is public and the sign-in gate in front of it is theatre.
+    return assertFails(getDoc(doc(asAnon(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('denies a signed-in member who is not a servant', async () => {
+    await assertFails(getDoc(doc(asMember(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('allows a servant, and everyone above', async () => {
+    await assertSucceeds(getDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule')));
+    await assertSucceeds(getDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('denies writes below admin — staff may not repoint the calendar', async () => {
+    await assertFails(
+      setDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://evil.test/x',
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://evil.test/x',
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(asAdmin(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://stphilopaterstmina.breezechms.com/embed/calendar/grid?x=2',
+      }),
+    );
   });
 });
 

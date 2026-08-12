@@ -715,3 +715,14 @@ main {
   background: var(--accent);
   color: var(--paper-raised);
 }
+
+/* Breeze serves a fixed 700x800 grid, so the 16:9 video ratio above would crop
+   it to a letterbox. Give it a tall box and let the frame scroll instead —
+   a calendar squeezed to fit is a calendar nobody can read. */
+.embed--calendar {
+  aspect-ratio: auto;
+  height: min(80vh, 50rem);
+  max-width: 46rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+}

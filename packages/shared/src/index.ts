@@ -15,6 +15,7 @@ export * from './schema/config.js';
 export * from './schema/content.js';
 export * from './schema/events.js';
 export * from './schema/prayer.js';
+export * from './schema/servants.js';
 export * from './schema/commerce.js';
 export * from './schema/vehicles.js';
 

@@ -62,7 +62,12 @@ const NAV = [
  * not by browsing, so a footer link is the wrong entry point and would be the
  * site's most prominent route to its only unauthenticated write.
  */
-const FOOTER_LINKS = [{ href: '/contact', label: 'Contact the parish office' }] as const;
+const FOOTER_LINKS = [
+  { href: '/contact', label: 'Contact the parish office' },
+  // Gated, and in the footer rather than the nav: it matters weekly to a few
+  // dozen people and not at all to everyone else the main nav is for.
+  { href: '/servants', label: 'Servants schedule' },
+] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
