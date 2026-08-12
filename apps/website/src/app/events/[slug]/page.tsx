@@ -71,14 +71,15 @@ export default async function EventPage({ params }: { params: Promise<Params> })
 
       <Prose>{event.body}</Prose>
 
+      {/*
+        Only `externalUrl` is rendered. `registration.formId` points at the
+        `forms` collection, which has security rules but no schema and no
+        `/forms/[slug]` route yet — linking to it would send a parishioner
+        straight to a 404. Restore the branch when that route exists.
+      */}
       {registration?.externalUrl && (
         <p className="prose">
           <a href={registration.externalUrl}>Register for this event →</a>
-        </p>
-      )}
-      {registration?.formId && (
-        <p className="prose">
-          <Link href={`/forms/${registration.formId}`}>Register for this event →</Link>
         </p>
       )}
     </article>

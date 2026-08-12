@@ -28,6 +28,8 @@ crashing.
 | `npm run dev:backend` | Emulator suite — rules and Functions work only |
 | `npm run build` | Everything; site lands in `apps/website/out` |
 | `npm run typecheck` | All workspaces |
+| `npm test` | Parsers and validators — no emulator, ~1s |
+| `npm run test:rules` | `firestore.rules` against the emulator (needs JDK 21) |
 | `npm run verify:scopes` | Checks every credential against the live services |
 | `npm run bulletin` | Prints this week's bulletin as the build sees it |
 | `npm run config` | Shows `config/integrations`; `-- --write` creates it |
@@ -44,9 +46,10 @@ packages/shared/          imported by both frontends and by Functions
   src/schema/             document shapes, incl. config and bulletin parsing
   src/payments/           PaymentProvider interface — Square behind a seam
 apps/website/             Next.js static export
-  src/lib/content.ts      build-time reads from our Firestore
-  src/lib/bulletin.ts     build-time read from the announcements project
+  src/features/           one folder per thing the site does; each owns its data
+  src/features/*/data.ts  build-time reads — content, events, bulletin, …
   src/lib/config.ts       runtime config, read from Firestore
+  src/lib/firestore.ts    safely(), docOf(), withoutEmbargoed()
 functions/                Cloud Functions; Square webhook is a 503 stub
   src/external/           cross-project plumbing (Taksis)
 scripts/verify-scopes.mjs proves credentials work AND are scoped correctly
@@ -124,18 +127,16 @@ back only `.env.example`, and matches key material by shape (`*-key.json`,
 
 ## Status
 
-**Two console actions are blocking work.** Neither can be done from the CLI:
-
-- [ ] **Authentication → Sign-in method → enable Email/Password** (and Google).
-      The Identity Toolkit API is on, so the project *looks* configured, but the
-      provider is off: a sign-in returns `PASSWORD_LOGIN_DISABLED`. Prayer
-      requests, member profiles, and orders all need a signed-in user.
-- [ ] **Storage → Get started.** `firebase deploy --only storage` fails until
-      the bucket exists.
-
 Done: Firebase project (`spsm-database`, Firestore `us-east1`), rules and
 indexes deployed, Blaze enabled, website building, weekly bulletin live on the
-homepage.
+homepage. **Email/Password and Google sign-in are enabled, and Storage is
+turned on** — the two console actions that used to block everything else.
+
+Worth stating plainly, because the repo reads as more finished than it is: the
+*authorization* model is complete and the *authentication* half is greenfield.
+Nothing imports `firebase/auth`, no Function calls `setCustomUserClaims`, and
+`functions/` is a single 503 stub. Every role check in `firestore.rules` and
+`storage.rules` is live policy against an identity nobody can obtain yet.
 
 Next, roughly in order:
 
@@ -152,12 +153,12 @@ Next, roughly in order:
 - [ ] Write the About / Our Faith / Clergy pages into the `content` collection.
       Those routes work; they have nothing to show.
 
-- [ ] **Behavioural rules tests** (`@firebase/rules-unit-testing`). Not
-      hypothetical — `rules:check` passed a policy that denied every public list
-      query, and it took building a page to notice. Pin down first: a `staff`
-      user denied on a clergy-only prayer request, an anonymous submission not
-      writable with a uid attached, and every query the site actually issues
-      allowed.
+- [x] **Behavioural rules tests** (`@firebase/rules-unit-testing`). 40 of them,
+      `npm run test:rules`. They cover every query the site actually issues, the
+      `vehicles` write path, `orders` being unwritable even by an admin, the
+      clergy-vs-staff split, and member claim-mirror immutability. Verified by
+      mutation: reintroducing the `publishAt` read-time filter turns five red,
+      and opening `vehicles` to public reads turns three red.
 - [ ] **Rebuild on publish.** The site is only as current as its last build and
       the bulletin changes weekly, so something has to trigger a deploy.
 - [ ] **Scheduled publisher** — flip `published` when `publishAt` arrives. Until

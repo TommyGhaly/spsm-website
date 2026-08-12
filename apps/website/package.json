@@ -19,7 +19,7 @@
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0"
   },
-  "//firebase-admin": "A devDependency, not a dependency: it is used only by src/lib/bulletin.ts, which runs during `next build` to read the announcements project with its service-account key. Nothing it touches reaches the browser, and the static export ships no server code at all.",
+  "//firebase-admin": "A devDependency, not a dependency: it is used only by src/features/bulletin/data.ts, which runs during `next build` to read the announcements project with its service-account key. Nothing it touches reaches the browser, and the static export ships no server code at all.",
   "devDependencies": {
     "@types/node": "^22.20.1",
     "firebase-admin": "^14.2.0",

@@ -36,5 +36,5 @@ export const squareWebhook = onRequest(
 
 // The weekly bulletin is NOT synced here any more. The website reads the
 // announcements project directly at build time — see
-// apps/website/src/lib/bulletin.ts and docs/integrations.md. There is no
-// scheduled Function and no copy in our Firestore.
+// apps/website/src/features/bulletin/data.ts and docs/integrations.md. There is
+// no scheduled Function and no copy in our Firestore.
