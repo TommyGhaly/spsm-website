@@ -1,0 +1,24 @@
+---
+title: Who We Are
+published: false
+seo.description: REPLACE — one sentence describing the parish, for search results and link previews.
+---
+
+REPLACE this whole body with what the parish actually wants to say.
+
+This file is a `.template` so the seed script ignores it. Copy it to
+`10-who-we-are.md`, write the real content, set `published: true`, and run
+`node scripts/seed-content.mjs` to see what would change.
+
+The old Wix page at `/who-we-are` is the obvious starting point — but it is
+worth asking the parish whether it still says what they want, rather than
+migrating text nobody has read in five years.
+
+Markdown works as you would expect:
+
+## A heading
+
+A paragraph, with a [link](https://example.org) and **emphasis**.
+
+- A list
+- Another item

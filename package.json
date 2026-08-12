@@ -30,6 +30,9 @@
     "//config": "Shows config/integrations; --write creates it from the committed defaults.",
     "config": "npm run build --workspace @spsm/shared && node scripts/seed-config.mjs",
 
+    "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
+    "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
+
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials — runs in about a second, so there is no excuse not to.",
     "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
 
