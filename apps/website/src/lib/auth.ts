@@ -19,6 +19,7 @@
  * dependency tree on the homepage. Import this from /admin and /servants only.
  */
 import {
+  connectAuthEmulator,
   getAuth,
   OAuthProvider,
   signInWithPopup,
@@ -28,7 +29,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { DEFAULT_CLAIMS, isKnownRole, type SpsmClaims, type Group, GROUPS } from '@spsm/shared';
-import { firebaseApp } from './firebase';
+import { firebaseApp, usingEmulators } from './firebase';
 
 /**
  * Next inlines `process.env.NEXT_PUBLIC_*` by literal textual match, so this
@@ -37,8 +38,19 @@ import { firebaseApp } from './firebase';
  */
 const AZURE_TENANT_ID = process.env.NEXT_PUBLIC_AZURE_TENANT_ID;
 
+let authConnected = false;
+
 export function auth(): Auth {
-  return getAuth(firebaseApp());
+  const instance = getAuth(firebaseApp());
+
+  // See `usingEmulators` — the admin cannot be developed against the real
+  // project, because getting a role there means being a real member of the
+  // parish directory.
+  if (usingEmulators() && !authConnected) {
+    authConnected = true;
+    connectAuthEmulator(instance, 'http://127.0.0.1:9099', { disableWarnings: true });
+  }
+  return instance;
 }
 
 /**
@@ -73,6 +85,28 @@ export async function signInWithMicrosoft(): Promise<User> {
 
 export function signOut(): Promise<void> {
   return fbSignOut(auth());
+}
+
+/**
+ * Sign in as a seeded emulator account. **Local development only.**
+ *
+ * Throws unless `usingEmulators()`, so this cannot run against the real project
+ * even if a button for it were left on screen — and the real project has no
+ * password provider enabled anyway, deliberately.
+ *
+ * It exists because the admin is otherwise undevelopable: every role check
+ * needs a signed-in user with a claim, and against production the only way to
+ * get one is to be a real member of the parish directory. Seed a user in the
+ * Auth emulator, give it a claim, and the whole admin becomes testable — and
+ * destructive actions can be tried without doing them to the parish.
+ */
+export async function signInWithEmulatorAccount(email: string, password: string): Promise<User> {
+  if (!usingEmulators()) {
+    throw new Error('Emulator sign-in is only available with NEXT_PUBLIC_USE_EMULATORS=1.');
+  }
+  const { signInWithEmailAndPassword } = await import('firebase/auth');
+  const credential = await signInWithEmailAndPassword(auth(), email, password);
+  return credential.user;
 }
 
 /**

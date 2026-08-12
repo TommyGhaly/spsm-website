@@ -142,6 +142,60 @@ The same value has to exist wherever Functions are deployed from.
 `defineSecret`. Without it the emulator prompts for each one on startup and
 appears to hang. It is gitignored; keep only dummy or sandbox values in it.
 
+## Working on /admin
+
+`npm run dev` reads the real Firestore, which is right for the public pages and
+useless for the admin: every screen there needs a signed-in user with a role,
+and the only way to get one against the real project is to be an actual member
+of the parish Microsoft directory. So the admin is developed against the
+emulators.
+
+Two terminals. First the emulators — **use the real project id**, because the
+web app's config points at it and the client would otherwise talk to a different
+emulator namespace than the one you seed:
+
+```bash
+firebase emulators:start --only auth,firestore --project spsm-database
+```
+
+Then the site, pointed at them:
+
+```bash
+NEXT_PUBLIC_USE_EMULATORS=1 npm run dev
+```
+
+Seed yourself a user and give it a role. The emulator has no Microsoft provider,
+so this is a password account — which is why `signInWithEmulatorAccount` exists
+and why it throws unless `NEXT_PUBLIC_USE_EMULATORS=1`:
+
+```bash
+curl -X POST "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"staff@spsmwayland.org","password":"emulator-only","returnSecureToken":true}'
+```
+
+Then set the claim, substituting the `localId` from that response:
+
+```bash
+curl -X POST "http://localhost:9099/identitytoolkit.googleapis.com/v1/projects/spsm-database/accounts:update" \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer owner' \
+  -d '{"localId":"<localId>","customAttributes":"{\"role\":\"staff\",\"groups\":[]}"}'
+```
+
+`/admin` now shows an extra "Emulator sign-in" panel. It is rendered only when
+`NEXT_PUBLIC_USE_EMULATORS=1`, and the production project has no password
+provider enabled anyway.
+
+To read emulator Firestore past the security rules — for checking what the admin
+actually wrote — the emulator accepts `Authorization: Bearer owner` as admin:
+
+```bash
+curl -H "Authorization: Bearer owner" \
+  "http://localhost:8080/v1/projects/spsm-database/databases/(default)/documents/events"
+```
+
+Without that header you get a rules denial, which looks like a bug and is not.
+
 ## Tests
 
 ```bash
