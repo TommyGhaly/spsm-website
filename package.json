@@ -33,6 +33,9 @@
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
 
+    "//grant-admin": "Bootstraps the first admin by email. setMemberRole needs an admin to call it, and at the start nobody is one.",
+    "grant-admin": "npm run build --workspace @spsm/shared && node scripts/grant-admin.mjs",
+
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials — runs in about a second, so there is no excuse not to.",
     "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
 
