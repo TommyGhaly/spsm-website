@@ -237,6 +237,17 @@ main {
   margin: 0 0 0.5rem;
 }
 
+/* Quiet explanatory prose. `.meta` looks similar but uppercases, which is right
+   for a date stamp and unreadable for a sentence — a paragraph in all caps is
+   the fastest way to make a helpful note look like a warning nobody reads. */
+.note {
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0 0 0.5rem;
+}
+
 .pin {
   color: var(--gold);
 }
@@ -549,4 +560,158 @@ main {
   padding: 0;
   display: grid;
   gap: 0.35rem;
+}
+
+/* ---- admin ------------------------------------------------------------
+   Staff-only screens. Behind auth, never indexed, and deliberately plainer
+   than the public site: this is a tool, and the parish's typography is for
+   parishioners. Kept in this stylesheet rather than a module because the
+   whole site is one hand-written sheet and one exception is worse than none. */
+
+.admin {
+  --admin-gap: 1.5rem;
+}
+
+.admin-nav {
+  display: flex;
+  gap: 1.25rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: var(--admin-gap);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+}
+
+.admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: var(--admin-gap);
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+
+/* List beside form on a wide screen, stacked on a phone. Staff do use this on
+   a phone — someone adds an event from the church hall. */
+.admin-split {
+  display: grid;
+  gap: var(--admin-gap);
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .admin-split {
+    grid-template-columns: minmax(16rem, 22rem) 1fr;
+  }
+  .admin-list {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.admin-list__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-list__head h1 {
+  margin: 0;
+}
+
+.admin-list__items {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.admin-item {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.admin-item:hover {
+  border-color: var(--ink-faint);
+}
+
+.admin-item--current {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tag {
+  justify-self: start;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+}
+
+.tag--live {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.field--check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field--check input {
+  width: auto;
+  margin: 0;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.button--quiet {
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: var(--rule);
+}
+
+.button--quiet:hover {
+  background: transparent;
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+/* Destructive, and styled to look it. Delete is the one action here with no
+   undo — events are not soft-deleted. */
+.button--danger {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.button--danger:hover {
+  background: var(--accent);
+  color: var(--paper-raised);
 }

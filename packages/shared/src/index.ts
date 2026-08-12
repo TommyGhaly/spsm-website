@@ -7,6 +7,7 @@
 export * from './collections.js';
 export * from './roles.js';
 export * from './config.js';
+export * from './timezones.js';
 
 export * from './schema/common.js';
 export * from './schema/bulletin.js';
