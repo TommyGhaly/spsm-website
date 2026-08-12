@@ -126,6 +126,18 @@ export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
 **Port 5000 is taken by macOS ControlCenter (AirPlay).** Already handled —
 hosting is on 5002 in `firebase.json`.
 
+**`AZURE_TENANT_ID` has to be readable by the Functions runtime.** The sign-in
+blocking function fails closed without it, so every sign-in is refused — which
+is the correct behaviour for an unset security control, and confusing if you
+don't know that's what you're looking at. It's a `defineString` param, not a
+secret, and `functions/.env*` is gitignored, so set it locally:
+
+```bash
+echo "AZURE_TENANT_ID=$(grep '^NEXT_PUBLIC_AZURE_TENANT_ID=' .env | cut -d= -f2)" > functions/.env.local
+```
+
+The same value has to exist wherever Functions are deployed from.
+
 `functions/.secret.local` holds dummy values for secrets declared with
 `defineSecret`. Without it the emulator prompts for each one on startup and
 appears to hang. It is gitignored; keep only dummy or sandbox values in it.

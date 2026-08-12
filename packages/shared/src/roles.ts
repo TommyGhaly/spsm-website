@@ -35,8 +35,33 @@ export interface SpsmClaims {
   groups?: Group[];
 }
 
-/** Anyone not explicitly provisioned is a plain member. */
+/**
+ * What an unauthenticated visitor effectively is. Kept as the floor of the
+ * ladder because `firestore.rules` reads `claims().get('role','member')` for
+ * anyone without an explicit claim.
+ *
+ * In practice no signed-in person holds it — see `DEFAULT_SIGNIN_ROLE`.
+ */
 export const DEFAULT_CLAIMS: SpsmClaims = { role: 'member' };
+
+/**
+ * What a first successful sign-in grants.
+ *
+ * Sign-in is Microsoft-only and restricted to the parish's Entra tenant, so
+ * *being able to authenticate at all* is the qualification: a parishioner has
+ * no account, and only clergy, staff, and servants have a parish M365 address.
+ * Tenant membership is therefore the gate, and `servant` is what it opens.
+ *
+ * The consequence to keep in view: this makes the Entra app registration a
+ * security control rather than a convenience. If it is ever switched from
+ * single-tenant to multi-tenant, any Microsoft account on earth becomes a
+ * servant. `beforeUserCreated` in functions/src/auth.ts re-checks the tenant
+ * for exactly that reason.
+ *
+ * `staff` and `admin` are never granted automatically — they come from
+ * `setMemberRole`, deliberately, per person.
+ */
+export const DEFAULT_SIGNIN_ROLE: Role = 'servant';
 
 export function hasRole(claims: SpsmClaims | null, atLeast: Role): boolean {
   if (!claims) return false;
