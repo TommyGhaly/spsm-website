@@ -17,14 +17,19 @@ import { PageHeader } from '@/components/PageHeader';
 type Params = { section: string };
 
 /**
- * Sections that have a dedicated route of their own and must not be emitted
- * here too — with `output: 'export'` both would write the same HTML file.
+ * Sections this route must not emit.
  *
- * `contact` is structured data (address, phone, service times) served from
- * `config/parish`, so it earns a real page. Any prose in the `contact` content
+ * `contact` has a dedicated route — it is structured data (address, phone,
+ * service times) served from `config/parish` — and with `output: 'export'`
+ * both would write the same HTML file. Any prose in the `contact` content
  * section is still rendered, by that page rather than this one.
+ *
+ * `misc` is a catch-all for content that belongs nowhere else. It has no lede,
+ * nothing links to it, and emitting `/misc` produced a page for nobody. The
+ * section still exists so a page can be filed there without inventing a
+ * section; it just does not get a URL of its own.
  */
-const HAS_OWN_ROUTE: readonly string[] = ['contact'];
+const HAS_OWN_ROUTE: readonly string[] = ['contact', 'misc'];
 
 export async function generateStaticParams(): Promise<Params[]> {
   return CONTENT_SECTIONS.filter((section) => !HAS_OWN_ROUTE.includes(section)).map(
