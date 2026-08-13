@@ -2,14 +2,18 @@
   <!--
     An equal-armed Coptic cross with flared arm ends.
 
-    Also the fix for a real annoyance: with no icon declared, browsers request
-    /favicon.ico, which at the root falls through to the [section] dynamic
-    route and logs a generateStaticParams error on every page load in dev.
-    Next serves this file at /icon.svg and injects the <link rel="icon">, so
-    the browser stops asking for favicon.ico.
+    This is the small mark, and it is deliberately NOT the parish seal. The seal
+    (assets/St Philopater & St. Mena Logo.svg) is two saints, a horse and two
+    camels inside a lettered arch; at the 16-32px a browser tab actually renders,
+    it is an indistinct smudge. Detailed marks do not reduce. The seal is used
+    where there is room for it — the masthead, the touch icon, the OG card.
 
-    Drawn rather than bitmapped so it stays crisp at any size and needs no
-    build step. currentColor is deliberate: the browser applies the theme.
+    Drawn rather than bitmapped so it stays crisp at any size. It is also the
+    source `npm run assets` renders favicon.ico from, which is the file that
+    actually silences the /favicon.ico requests — declaring this icon does not.
+    Browsers probe /favicon.ico regardless of <link rel="icon">, and with
+    nothing there the request falls through to the [section] dynamic route and
+    500s on every page load in dev.
   -->
   <rect width="32" height="32" rx="6" fill="#8c2f26"/>
   <g fill="#fbf9f5">

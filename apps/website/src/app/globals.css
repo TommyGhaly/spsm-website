@@ -122,12 +122,15 @@ a:hover {
 .masthead__inner {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem 2rem;
   padding-block: 1.25rem;
 }
 
 .wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
   font-family: var(--font-ui);
   font-weight: 600;
   font-size: 1.0625rem;
@@ -137,13 +140,34 @@ a:hover {
   line-height: 1.2;
 }
 
-.wordmark span {
+/*
+ * Height-constrained, width auto: the seal must line up with the two lines of
+ * the wordmark, and its own aspect ratio decides how wide that makes it.
+ */
+.wordmark__seal {
+  height: 3.25rem;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.wordmark__name span {
   display: block;
   font-weight: 400;
   font-size: 0.8125rem;
   color: var(--ink-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/*
+ * On a narrow screen the parish name is the thing worth the space. The seal is
+ * the first thing to go — it is decorative here, and the name already carries
+ * the identity.
+ */
+@media (max-width: 26rem) {
+  .wordmark__seal {
+    display: none;
+  }
 }
 
 .nav {

@@ -37,6 +37,12 @@ out/
 coverage/
 *.tsbuildinfo
 
+# Images staged for upload to Firebase Storage. Regenerate with `npm run
+# assets`. Unlike the outputs under apps/website/, nothing builds or deploys
+# from these — they exist to be uploaded once — so committing them would be
+# carrying a second copy of the originals for no one's benefit.
+assets/derived/
+
 # The esbuild bundle for Cloud Functions. Anchored to that one directory on
 # purpose: a bare `lib/` also matches apps/website/src/lib, which is source.
 /functions/lib/

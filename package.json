@@ -33,6 +33,9 @@
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
 
+    "//assets": "Rebuilds the web-ready images in public/ and app/ from the originals in assets/. Run after adding a photo; --check verifies the committed outputs exist.",
+    "assets": "node scripts/optimize-assets.mjs",
+
     "//grant-admin": "Bootstraps the first admin by email. setMemberRole needs an admin to call it, and at the start nobody is one.",
     "grant-admin": "npm run build --workspace @spsm/shared && node scripts/grant-admin.mjs",
 
@@ -47,6 +50,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
+    "sharp": "^0.35.3",
     "vitest": "^3.2.7"
   }
 }

@@ -81,8 +81,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="masthead">
             <div className="wrap masthead__inner">
               <Link href="/" className="wordmark">
-                St. Philopater Mercurius &amp; St. Mina
-                <span>Coptic Orthodox Church · Wayland, MA</span>
+                {/*
+                  Decorative, hence the empty alt: the parish seal and the text
+                  beside it say the same thing, and a screen reader announcing
+                  both reads the name twice.
+
+                  Plain <img> rather than next/image — the loader is disabled
+                  under `output: 'export'` anyway, so all next/image would add
+                  here is a wrapper around an <img> we can write ourselves. The
+                  intrinsic width and height are set to reserve the space before
+                  the PNG arrives, so the nav does not jump on first paint.
+                */}
+                <img
+                  className="wordmark__seal"
+                  src="/brand/seal-64.png"
+                  srcSet="/brand/seal-64.png 1x, /brand/seal-128.png 2x, /brand/seal-192.png 3x"
+                  alt=""
+                  width={70}
+                  height={64}
+                />
+                <span className="wordmark__name">
+                  St. Philopater Mercurius &amp; St. Mina
+                  <span>Coptic Orthodox Church · Wayland, MA</span>
+                </span>
               </Link>
               <nav className="nav" aria-label="Main">
                 {NAV.map((item) => (
