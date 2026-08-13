@@ -4,6 +4,7 @@ import {
   validateVehicle,
   validatePrayerRequest,
   PRAYER_BODY_MAX_LENGTH,
+  PRAYER_NAME_MAX_LENGTH,
   type VehicleInput,
   type PrayerRequestInput,
 } from '@spsm/shared';
@@ -117,10 +118,47 @@ describe('validatePrayerRequest', () => {
   });
 
   it('refuses an anonymous request that still carries a name', () => {
-    // `anonymous: true` means the uid genuinely is not stored, so it cannot be
+    // `anonymous: true` means identity genuinely is not stored, so it cannot be
     // un-anonymized later. A name attached to it defeats the entire point.
     expect(validatePrayerRequest(prayer({ anonymous: true, authorName: 'Mina' }))).toHaveLength(1);
     expect(validatePrayerRequest(prayer({ anonymous: true, authorName: null }))).toEqual([]);
+  });
+
+  it('requires a name when the request is not anonymous', () => {
+    // Without a uid — and a parishioner has no account, by design — the name is
+    // the only thing telling the fathers who to pray for.
+    expect(validatePrayerRequest(prayer({ anonymous: false, authorName: null }))).toHaveLength(1);
+    expect(validatePrayerRequest(prayer({ anonymous: false, authorName: '   ' }))).toHaveLength(1);
+    expect(validatePrayerRequest(prayer({ anonymous: false, authorName: 'Mina' }))).toEqual([]);
+  });
+
+  it('bounds the name at the same length the rules do', () => {
+    expect(
+      validatePrayerRequest(prayer({ authorName: 'x'.repeat(PRAYER_NAME_MAX_LENGTH) })),
+    ).toEqual([]);
+    expect(
+      validatePrayerRequest(prayer({ authorName: 'x'.repeat(PRAYER_NAME_MAX_LENGTH + 1) })),
+    ).toHaveLength(1);
+  });
+
+  it('checks the contact email only when one is given', () => {
+    expect(validatePrayerRequest(prayer({ contactEmail: null }))).toEqual([]);
+    expect(validatePrayerRequest(prayer({ contactEmail: '  ' }))).toEqual([]);
+    expect(validatePrayerRequest(prayer({ contactEmail: 'mina@example.org' }))).toEqual([]);
+    expect(validatePrayerRequest(prayer({ contactEmail: 'not-an-address' }))).toHaveLength(1);
+    expect(
+      validatePrayerRequest(prayer({ contactEmail: `${'x'.repeat(250)}@example.org` })),
+    ).toHaveLength(1);
+  });
+
+  it('lets an anonymous request still ask for follow-up', () => {
+    // Contact-back survives anonymity on purpose: someone can ask to be
+    // reached without their name being attached to the request itself.
+    expect(
+      validatePrayerRequest(
+        prayer({ anonymous: true, authorName: null, contactEmail: 'mina@example.org' }),
+      ),
+    ).toEqual([]);
   });
 
   it('rejects a visibility outside the allowed set', () => {
