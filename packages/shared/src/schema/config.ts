@@ -139,11 +139,24 @@ export const DEFAULT_INTEGRATIONS_CONFIG: IntegrationsConfig = {
     databaseId: '',
   },
   livestream: {
-    // Off until a real stream target is set. An empty player is worse than no
-    // player — it reads as broken rather than as absent.
-    enabled: false,
-    platform: 'youtube',
-    target: '',
+    /*
+     * The parish's own Castr player, given by the parish on 2026-08-15. It was
+     * `enabled: false` with an empty target before that, on the principle that
+     * an empty player reads as broken rather than as absent — which no longer
+     * applies, because there is a real stream behind this one.
+     *
+     * `custom` rather than `youtube`: Castr gives an iframe `src` and it is used
+     * verbatim. See `embedUrl` in LivestreamPlayer.
+     *
+     * NOTE this is only the fallback for a *missing* `config/integrations`
+     * document. Where the document exists, `enabled` is read from it and
+     * nothing else — `parseIntegrationsConfig` requires an explicit `true` and
+     * deliberately does not fall back for that one field, so a stream cannot be
+     * switched on by accident.
+     */
+    enabled: true,
+    platform: 'custom',
+    target: 'https://player.castr.com/d_4b4563208a1c11ee85ae0f1e19e13368',
     scheduleNote: '',
     fallbackUrl: '',
   },

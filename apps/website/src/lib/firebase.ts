@@ -17,7 +17,7 @@
  * Next at build time, so a throw there means the build itself was misconfigured.
  */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
 import { getPublicConfig } from '@spsm/shared';
 
 /**
@@ -43,8 +43,36 @@ export function firebaseApp(): FirebaseApp {
   return initializeApp(getPublicConfig(publicEnv()));
 }
 
+/**
+ * Opt-in local mode, for working on anything behind a sign-in.
+ *
+ * `npm run dev` normally reads the real Firestore, which is right for the public
+ * pages — they render published content and nothing else. The admin is
+ * different: it needs a signed-in user with a role, and the only way to get one
+ * against the real project is to be a real member of the parish directory. That
+ * makes the emulators the only way to develop /admin at all, and the only way
+ * to try a destructive action without doing it to the parish.
+ *
+ * Off unless `NEXT_PUBLIC_USE_EMULATORS` is set, so the default stays "real
+ * data" and nobody ships a build wired to localhost. Next inlines the name by
+ * literal match, hence spelling it out.
+ */
+export function usingEmulators(): boolean {
+  return process.env.NEXT_PUBLIC_USE_EMULATORS === '1';
+}
+
+let firestoreConnected = false;
+
 export function db(): Firestore {
-  return getFirestore(firebaseApp());
+  const instance = getFirestore(firebaseApp());
+
+  // `connectFirestoreEmulator` throws if the instance has already been used, so
+  // this has to happen on first access and exactly once.
+  if (usingEmulators() && !firestoreConnected) {
+    firestoreConnected = true;
+    connectFirestoreEmulator(instance, '127.0.0.1', 8080);
+  }
+  return instance;
 }
 
 /**

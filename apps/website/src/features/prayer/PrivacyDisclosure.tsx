@@ -14,6 +14,14 @@
  * matter deserves to know it before they type, not after.
  *
  * Do not soften this copy without revisiting that decision.
+ *
+ * One line was corrected when the form shipped. It said public requests were
+ * readable by "any signed-in member of the parish, so the community can pray
+ * with you", which stopped being true when sign-in became Microsoft-only
+ * against the parish directory: clergy, staff and servants have accounts and a
+ * parishioner does not. It now says who actually reads them. A privacy notice
+ * that overstates the audience is the one kind of inaccuracy that is worse than
+ * saying nothing.
  */
 export function PrivacyDisclosure() {
   return (
@@ -25,8 +33,8 @@ export function PrivacyDisclosure() {
           and by site administrators. Being parish staff is not enough on its own.
         </li>
         <li>
-          <strong>Public requests</strong> are readable by any signed-in member of the
-          parish, so the community can pray with you.
+          <strong>Public requests</strong> are readable by the fathers and by the parish
+          servants who pray for them. They are not shown anywhere on this website.
         </li>
         <li>
           Requests are stored as ordinary text. They are protected by access rules, not

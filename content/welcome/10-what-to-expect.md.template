@@ -1,0 +1,26 @@
+---
+title: What to Expect
+published: false
+seo.description: REPLACE — one sentence for someone who has never been to a Coptic Orthodox liturgy.
+---
+
+REPLACE this body. The old Wix catechism pages redirect here, so this is what a
+newcomer or enquirer now lands on — write it for someone who has never been to a
+Coptic Orthodox liturgy and is deciding whether to come on Sunday.
+
+Things worth answering, if the parish agrees they matter:
+
+- When to arrive, and what happens if you are late
+- How long the liturgy lasts
+- Whether there is anything to dress or not dress in
+- Where to sit, and whether anyone will mind where you sit
+- What happens at communion, and what a visitor should do
+- Whether there is coffee afterwards and whether you are expected to stay
+
+Copy for the old lessons — "Lesson 1: Intro", "Lesson 2: Young Christ",
+"Lesson 3: Saint Mina" — is still on the Wix site while it is up. Pull anything
+worth keeping before the cutover; afterwards it is gone.
+
+This file is a `.template`, so the seed script ignores it. Copy it to
+`10-what-to-expect.md`, write the real content, set `published: true`, and run
+`npm run content`.

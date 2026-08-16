@@ -4,6 +4,7 @@ import { getContentPages } from '@/features/content';
 import { ContactDetails, ServiceTimes } from '@/features/parish';
 import { ContentPageBody } from '@/features/content';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 import { Prose } from '@/components/Prose';
 
 export const metadata: Metadata = {
@@ -37,29 +38,31 @@ export default async function ContactPage() {
     <>
       <PageHeader
         title="Contact Us"
-        lede="We would be glad to hear from you — whether you are looking for a priest, planning a visit, or asking a question for the first time."
+        lede="Whether you need to reach one of the fathers, are coming to the church for the first time, or simply have a question, the office will help."
       />
 
-      <section aria-labelledby="details-heading">
-        <h2 id="details-heading">The parish</h2>
-        <ContactDetails parish={parish} />
-      </section>
-
-      <section aria-labelledby="services-heading">
-        <h2 id="services-heading">Regular services</h2>
-        <ServiceTimes services={parish.serviceTimes} />
-      </section>
-
-      {parish.notes && (
-        <section aria-labelledby="notes-heading">
-          <h2 id="notes-heading">Visiting</h2>
-          <Prose>{parish.notes}</Prose>
+      <PageBody>
+        <section aria-labelledby="details-heading">
+          <h2 id="details-heading">The parish</h2>
+          <ContactDetails parish={parish} />
         </section>
-      )}
 
-      {extraPages.map((page) => (
-        <ContentPageBody key={page.id} page={page} />
-      ))}
+        <section aria-labelledby="services-heading">
+          <h2 id="services-heading">Regular services</h2>
+          <ServiceTimes services={parish.serviceTimes} />
+        </section>
+
+        {parish.notes && (
+          <section aria-labelledby="notes-heading">
+            <h2 id="notes-heading">Visiting</h2>
+            <Prose>{parish.notes}</Prose>
+          </section>
+        )}
+
+        {extraPages.map((page) => (
+          <ContentPageBody key={page.id} page={page} />
+        ))}
+      </PageBody>
     </>
   );
 }

@@ -1,11 +1,67 @@
 # Cross-project integrations
 
-Two external Firebase projects, with opposite permissions.
+Two external Firebase projects with opposite permissions, plus one third-party
+SaaS that predates this repo and was documented nowhere until 2026-08-12.
 
-| Integration | Direction | Project | Status |
+| Integration | Direction | Where | Status |
 |---|---|---|---|
 | Weekly announcements | **read only** | `weeklyannouncements-1d046` | **live** — read directly at build time |
 | Taksis pending vehicles | **write only** | `taksis-a8ba7` | credentials verified, **still blocked** on record shape |
+| Servants schedule | **embed only** | Breeze ChMS | **live** — framed on `/servants` behind sign-in |
+
+## Breeze ChMS — the servants schedule
+
+The parish keeps its rota in [Breeze](https://www.breezechms.com/) and publishes
+it as an embeddable calendar. Nothing in this repo talks to a Breeze API; there
+is no API key and no sync. Breeze is the source of truth and the website frames
+it, which is why the rota is never re-entered and cannot drift.
+
+Worth recording, because the rest of these docs discuss Tithe.ly at length and
+none of it applies here: **the schedule is Breeze, not Tithe.ly.** Tithe.ly is
+for giving. [Decision #2](decisions.md) evaluates Tithe.ly's ChMS (Elvanto) for
+people and calendars — that evaluation is still accurate and still unused,
+because the parish already had Breeze.
+
+### The URL is the credential
+
+The embed URL carries an encrypted `calendars` token, and Breeze serves the
+calendar to **anyone who requests that URL** — verified against the live
+endpoint: HTTP 200, no session, no referrer check, and no `X-Frame-Options` or
+`Content-Security-Policy`, which is also why framing it works at all.
+
+The website is a static export. Anything rendered into a page is a file on a CDN
+that anyone can fetch. So the URL:
+
+- is **not** in this repo, and must never be committed;
+- is **not** in `config/*`, which is `allow read: if true`;
+- lives in `servantsConfig/schedule`, gated on the `servant` claim;
+- is fetched in the browser after sign-in and assigned to the iframe
+  imperatively, so it is never serialised into the exported HTML.
+
+Set or rotate it with:
+
+```bash
+node scripts/set-servants-schedule.mjs --url '<embed url>' --write
+```
+
+Quote the URL — it contains `&`.
+
+**Be honest about the ceiling.** A signed-in servant can open dev tools, copy
+the URL, and send it to anyone; Breeze's embed is a bearer URL and nothing on
+our side changes that. What this replaces is a single shared Wix password that
+everybody knew and nobody could rotate. Access is now per person and revocable:
+disable the account and they lose the page. If the rota ever needs to be
+genuinely private, that is a conversation with Breeze about their sharing model.
+
+### One quirk worth knowing before you touch `ScheduleEmbed`
+
+The iframe's `src` is assigned in a `useEffect` after mount, not as a JSX
+attribute. Rendering `<iframe src={url}>` gives the element a src in the same
+tick it is created, and Breeze then draws its toolbar and an empty grid —
+reproducibly, on a clean load. Reloading the identical element with the
+identical URL and identical dimensions draws it correctly, which rules out both
+sizing and the `sandbox` attribute (each was suspected and cleared during
+debugging). Mounting first and assigning second is what makes it deterministic.
 
 Inspect the bulletin the way the build sees it with `npm run bulletin`.
 

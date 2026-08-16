@@ -33,6 +33,18 @@
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
 
+    "//assets": "Rebuilds the web-ready images in public/ and app/ from the originals in assets/. Run after adding a photo; --check verifies the committed outputs exist.",
+    "assets": "node scripts/optimize-assets.mjs",
+
+    "//dev:local": "The whole site against the emulators, with sample data and sign-in-able accounts. The only way to work on /admin or /servants, since both need a role and the real project only grants one to the parish directory.",
+    "dev:local": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs && NEXT_PUBLIC_USE_EMULATORS=1 npm run dev --workspace @spsm/website",
+
+    "//seed:emulator": "Re-fills the emulators without restarting the dev server.",
+    "seed:emulator": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs",
+
+    "//grant-admin": "Bootstraps the first admin by email. setMemberRole needs an admin to call it, and at the start nobody is one.",
+    "grant-admin": "npm run build --workspace @spsm/shared && node scripts/grant-admin.mjs",
+
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials — runs in about a second, so there is no excuse not to.",
     "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
 
@@ -44,6 +56,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
+    "sharp": "^0.35.3",
     "vitest": "^3.2.7"
   }
 }

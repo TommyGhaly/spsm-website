@@ -107,31 +107,67 @@ sandbox.
 
 ---
 
-## 3. Microsoft Entra ID (staff auth) — can wait
+## 3. Microsoft Entra ID — the only way to sign in
 
-Not needed until you build the servants calendar. When you get there:
+Done: the app registration exists, and `NEXT_PUBLIC_AZURE_CLIENT_ID` /
+`NEXT_PUBLIC_AZURE_TENANT_ID` are in `.env`. Recorded here for the next person.
 
 1. Azure portal → **Microsoft Entra ID → App registrations → New registration**.
-2. Redirect URI (Web): `https://<project-id>.firebaseapp.com/__/auth/handler`
-3. Copy **Application (client) ID** and **Directory (tenant) ID**.
-4. **Certificates & secrets → New client secret.** Copy the *value* immediately;
+2. **Supported account types: "Accounts in this organizational directory only"**
+   (single tenant). See the warning below — this one is not cosmetic.
+3. Redirect URI (Web): `https://<project-id>.firebaseapp.com/__/auth/handler`
+4. Copy **Application (client) ID** and **Directory (tenant) ID**.
+5. **Certificates & secrets → New client secret.** Copy the *value* immediately;
    it's shown once.
-5. Paste the client ID + secret into Firebase console → Authentication →
+6. Paste the client ID + secret into Firebase console → Authentication →
    Microsoft provider. The secret lives there, not in this repo.
 
-Note: signing in via Microsoft does **not** grant staff access on its own.
-Roles come from custom claims, set deliberately per person. See
-[`packages/shared/src/roles.ts`](../packages/shared/src/roles.ts).
+### Why single-tenant is a security control here
+
+There is no public sign-in on this site. A parishioner never authenticates —
+the calendar, bulletin, giving, and contact details are public, and prayer
+requests and vehicle registrations are written anonymously. Sign-in exists only
+for the servants schedule and the admin surface.
+
+So **tenant membership is the qualification**: only clergy, staff, and servants
+have a parish M365 address, and a first sign-in therefore grants `servant`
+automatically ([`DEFAULT_SIGNIN_ROLE`](../packages/shared/src/roles.ts)).
+
+Which means: **if that app registration is ever switched to multi-tenant, every
+Microsoft account on earth becomes a servant.** `enforceTenantOnCreate` in
+[`functions/src/auth.ts`](../functions/src/auth.ts) re-checks the `tid` claim on
+every account creation for exactly that reason, so a change in the Azure portal
+cannot silently open the door — but keep both in agreement.
+
+`staff` and `admin` are never inferred. They come from `setMemberRole`, per
+person. Bootstrap the first one with:
+
+```bash
+node scripts/grant-admin.mjs someone@spsmwayland.org --write
+```
+
+### One operational gap worth knowing
+
+When someone leaves the parish, Entra stops them signing in *afresh* — but their
+existing Firebase account and its refresh token survive, and Firebase does not
+re-check the IdP on refresh. Removing someone therefore means disabling their
+Firebase Auth user and revoking their refresh tokens, not just removing them
+from the directory.
 
 ---
 
 ## Checklist
 
 - [ ] Firebase project created, Firestore in production mode, location chosen
-- [ ] Auth providers enabled (email, Google)
+- [x] Auth provider enabled — **Microsoft only**, deliberately. Email/Password
+      and Google are off; an enabled provider nobody uses is a way in nobody
+      watches
 - [ ] Web app registered, six `NEXT_PUBLIC_FIREBASE_*` values in `.env.local`
 - [ ] Blaze upgrade + budget alert (before Functions)
 - [ ] Square developer app created, **sandbox** credentials in `.env.local`
 - [ ] Square location ID copied
 - [ ] Webhook subscription + signature key (after first Functions deploy)
-- [ ] Entra ID app registration (deferred until staff features)
+- [x] Entra ID app registration — client id and tenant id are in `.env`
+- [ ] **Confirm the app registration is single-tenant** ("Accounts in this
+      organizational directory only"). This is now a security control, not a
+      preference — see §3 below

@@ -60,14 +60,23 @@ export type PrayerRequestInput = Pick<
 >;
 
 export const PRAYER_BODY_MAX_LENGTH = 2000;
+export const PRAYER_NAME_MAX_LENGTH = 100;
+/** RFC 5321's limit on a whole address. */
+export const PRAYER_EMAIL_MAX_LENGTH = 254;
 
 /**
- * Shared by the client form and the Cloud Function that accepts the write, so
- * the two can never disagree about what counts as valid.
+ * Shared by the client form and `firestore.rules`, so the message someone sees
+ * and the constraint that actually holds cannot drift.
+ *
+ * Every bound here has a counterpart in the rules. The rules are the
+ * enforcement — this exists so a person gets a sentence instead of a
+ * permission-denied.
  */
 export function validatePrayerRequest(input: PrayerRequestInput): string[] {
   const errors: string[] = [];
   const body = input.body?.trim() ?? '';
+  const name = input.authorName?.trim() ?? '';
+  const email = input.contactEmail?.trim() ?? '';
 
   if (body.length === 0) errors.push('A prayer request cannot be empty.');
   if (body.length > PRAYER_BODY_MAX_LENGTH) {
@@ -76,8 +85,25 @@ export function validatePrayerRequest(input: PrayerRequestInput): string[] {
   if (!PRAYER_VISIBILITIES.includes(input.visibility)) {
     errors.push('Choose whether this request is public or clergy-only.');
   }
-  if (input.anonymous && input.authorName) {
-    errors.push('An anonymous request cannot carry a name.');
+
+  if (input.anonymous) {
+    if (name) errors.push('An anonymous request cannot carry a name.');
+  } else {
+    // Not a formality: without a uid — and a parishioner has no account, by
+    // design — a name is the only thing telling the fathers who to pray for.
+    if (name.length === 0) {
+      errors.push('Enter the name to pray for, or choose to send it anonymously.');
+    }
+    if (name.length > PRAYER_NAME_MAX_LENGTH) {
+      errors.push(`Please keep the name under ${PRAYER_NAME_MAX_LENGTH} characters.`);
+    }
+  }
+
+  if (email.length > PRAYER_EMAIL_MAX_LENGTH) {
+    errors.push('That email address is too long.');
+  }
+  if (email.length > 0 && !email.includes('@')) {
+    errors.push('That does not look like an email address.');
   }
   return errors;
 }

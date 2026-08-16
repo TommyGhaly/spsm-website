@@ -95,6 +95,14 @@ their own profile could otherwise promote themselves.
 different key. That separation is what lets clergy-only prayer requests stay
 closed to a facilities coordinator who is legitimately `staff`.
 
+**There is no public sign-in.** A parishioner never authenticates: the calendar,
+bulletin, giving, and contact details are public, and prayer requests and
+vehicle registrations are written anonymously. Sign-in is Microsoft-only and
+exists for the servants schedule and the admin surface. Because only clergy,
+staff, and servants have a parish M365 address, **tenant membership is the
+qualification** and a first sign-in grants `servant`. `staff` and `admin` are
+granted per person and never inferred. See [`docs/api-keys.md`](docs/api-keys.md) §3.
+
 **`publishAt` is a scheduling instruction, not a read-time filter.** Gating
 public reads on it compiled cleanly and denied every anonymous list query:
 Firestore judges a `list` by what the query *could* return, and cannot prove a

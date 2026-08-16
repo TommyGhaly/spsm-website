@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getAllEvents, getEvent } from '@/features/events';
 import { Prose } from '@/components/Prose';
+import { PageBody } from '@/components/PageBody';
+import { Icon } from '@/components/Icon';
 import { formatEventWhen, isoOf } from '@/lib/dates';
 
 type Params = { slug: string };
@@ -50,38 +52,48 @@ export default async function EventPage({ params }: { params: Promise<Params> })
 
   return (
     <article>
-      <p className="meta">
-        <Link href="/events">← Parish Calendar</Link>
-      </p>
-
-      <header className="prose">
-        <h1>{event.title}</h1>
-        <p className="lede">
-          <time dateTime={isoOf(event.startAt)}>
-            {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
-          </time>
-        </p>
-        {event.location && (
-          <p className="meta">
-            {event.location.name}
-            {event.location.address && ` · ${event.location.address}`}
-          </p>
-        )}
+      {/* Its own header band, like every other page, rather than PageHeader —
+          an event's title needs the date and location alongside it, which the
+          shared component has no slot for. */}
+      <header className="page-head">
+        <div className="wrap">
+          <div className="page-head__inner">
+            <p className="meta">
+              <Link href="/events">← Parish Calendar</Link>
+            </p>
+            <h1>{event.title}</h1>
+            <p className="lede">
+              <time dateTime={isoOf(event.startAt)}>
+                {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
+              </time>
+            </p>
+            {event.location && (
+              <p className="meta">
+                <Icon name="pin" size={14} /> {event.location.name}
+                {event.location.address && ` · ${event.location.address}`}
+              </p>
+            )}
+          </div>
+        </div>
       </header>
 
-      <Prose>{event.body}</Prose>
+      <PageBody>
+        <Prose>{event.body}</Prose>
 
-      {/*
-        Only `externalUrl` is rendered. `registration.formId` points at the
-        `forms` collection, which has security rules but no schema and no
-        `/forms/[slug]` route yet — linking to it would send a parishioner
-        straight to a 404. Restore the branch when that route exists.
-      */}
-      {registration?.externalUrl && (
-        <p className="prose">
-          <a href={registration.externalUrl}>Register for this event →</a>
-        </p>
-      )}
+        {/*
+          Only `externalUrl` is rendered. `registration.formId` points at the
+          `forms` collection, which has security rules but no schema and no
+          `/forms/[slug]` route yet — linking to it would send a parishioner
+          straight to a 404. Restore the branch when that route exists.
+        */}
+        {registration?.externalUrl && (
+          <p>
+            <a className="button" href={registration.externalUrl} rel="noopener noreferrer">
+              Register for this event
+            </a>
+          </p>
+        )}
+      </PageBody>
     </article>
   );
 }

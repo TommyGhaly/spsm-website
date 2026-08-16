@@ -38,7 +38,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | Feature | Route | State |
 |---|---|---|
 | `content` | `/about` `/beliefs` `/clergy` | Working. Waiting on content. |
-| `events` | `/events`, `/events/[slug]` | Working. Waiting on content. |
+| `events` | `/events`, `/events/[slug]`, `/admin/events` | Working, **with a staff editor**. |
 | `bulletin` | homepage | **Live with real data.** |
 | `announcements` | homepage | Working. Waiting on content. |
 | `parish` | `/contact` | Working. Waiting on `config/parish`. |
@@ -47,6 +47,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
 | `prayer` | `/prayer` | Disclosure ships; form blocked on auth being enabled. |
 | `giving` | `/giving` | Working. Needs `NEXT_PUBLIC_TITHELY_GIVING_URL`. |
+| `servants` | `/servants` | **Live.** Breeze calendar, framed behind Microsoft sign-in. |
 
 "Waiting on content" means the code works and the source is empty, so the page
 renders its empty state. That is different from blocked.
@@ -72,6 +73,13 @@ server actions, nothing to post to. A feature that writes needs a
 `'use client'` component going straight to Firestore, which is exactly why
 `firestore.rules` validates every field rather than trusting the form.
 `features/parking` is the worked example.
+
+**A feature with an admin gets a second data module.** `data.ts` is build-time:
+unauthenticated, and every query filters on `published == true`. `admin.ts` runs
+in a signed-in browser, reads drafts, and writes. They are separate files, and
+`admin.ts` is deliberately *not* re-exported from `index.ts`, so importing it is
+a conscious act rather than something a public page can do by reaching for the
+barrel. `features/events` is the worked example.
 
 ## Adding a feature
 
