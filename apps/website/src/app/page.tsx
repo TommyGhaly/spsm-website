@@ -1,28 +1,23 @@
 import Link from 'next/link';
 import { formatAddress, type ContentPage, type DocOf } from '@spsm/shared';
-import { getAnnouncements, AnnouncementList } from '@/features/announcements';
-import { getUpcomingEvents, EventCard } from '@/features/events';
 import { getCurrentBulletin, BulletinWeek } from '@/features/bulletin';
 import { bundledPortrait, getContentPages } from '@/features/content';
 import { givingUrl } from '@/features/giving';
 import { LivestreamPlayer } from '@/features/livestream';
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
-import { EmptyState } from '@/components/Notice';
 import { Icon, type IconName } from '@/components/Icon';
-import { CopticCross, Ornament } from '@/components/Ornament';
+import { CopticCross } from '@/components/Ornament';
 import { Prose } from '@/components/Prose';
-import { SectionHeading, SectionMore } from '@/components/SectionHeading';
+import { SectionHeading } from '@/components/SectionHeading';
 
 export default async function HomePage() {
   // Independent reads — no reason to make the build wait on them in sequence.
   // The bulletin is the exception: it needs the config document first, since
   // that says which project and collection to read.
-  const [config, parish, announcements, events, clergy] = await Promise.all([
+  const [config, parish, clergy] = await Promise.all([
     getIntegrationsConfig(),
     getParishConfig(),
-    getAnnouncements(4),
-    getUpcomingEvents(6),
     getContentPages('clergy'),
   ]);
   const bulletin = await getCurrentBulletin(config.announcements);
@@ -32,17 +27,14 @@ export default async function HomePage() {
 
   return (
     <>
-      <Hero livestreamEnabled={config.livestream.enabled} />
+      <Hero />
 
       <QuickFacts
-        band={band()}
+        band={`${band()} band--slim`}
         parish={parish}
         livestreamEnabled={config.livestream.enabled}
       />
 
-      {/* The fathers. Absent entirely when no clergy page is published, rather
-          than an empty band with a heading over nothing. */}
-      {clergy.length > 0 && <Clergy band={band()} clergy={clergy} />}
 
       {/* The player itself, not a link to it — someone at home on a Sunday
           morning should not have to navigate to watch. Only when a stream is
@@ -51,8 +43,9 @@ export default async function HomePage() {
           as a fault on the homepage. */}
       {config.livestream.enabled && <Livestream band={band()} config={config.livestream} />}
 
-      {/* The parish's own weekly sheet. Absent if the source is empty or the
-          section is switched off in config/integrations. */}
+      {/* The parish's own weekly sheet, and now the last practical section on
+          the page. Absent if the source is empty or the section is switched off
+          in config/integrations. */}
       {bulletin && (
         <section className={band()} aria-labelledby="bulletin-heading">
           <div className="wrap reveal">
@@ -67,48 +60,20 @@ export default async function HomePage() {
         </section>
       )}
 
-      <section className={band()} aria-labelledby="events-heading">
-        <div className="wrap reveal">
-          <SectionHeading
-            id="events-heading"
-            eyebrow="Upcoming"
-            title="Feasts and gatherings"
-            note="The feasts of the coming weeks, with the classes and gatherings around them."
-          />
-          {events.length === 0 ? (
-            <EmptyState what="events" collection="events" />
-          ) : (
-            <>
-              <ul className="grid reveal-stagger">
-                {events.map((event) => (
-                  <EventCard key={event.id} event={event} />
-                ))}
-              </ul>
-              <SectionMore href="/events">See the full calendar</SectionMore>
-            </>
-          )}
-        </div>
-      </section>
+      {/* The fathers, directly above the offering. Absent entirely when no
+          clergy page is published, rather than an empty band with a heading
+          over nothing.
 
-      <section className={band()} aria-labelledby="announcements-heading">
-        <div className="wrap reveal">
-          <SectionHeading
-            id="announcements-heading"
-            eyebrow="From the parish"
-            title="Announcements"
-            note="Word from the parish office and the ministries."
-          />
-          {announcements.length === 0 ? (
-            <EmptyState what="announcements" collection="announcements" />
-          ) : (
-            <AnnouncementList announcements={announcements} />
-          )}
-        </div>
-      </section>
+          Not dealt a band: this is the page's one accent ground, and it is safe
+          to pin precisely because the alternation around it is paper/sunken.
+          Tinted differs from both, so whichever of the conditional sections
+          above happens to precede it, the boundary still reads. */}
+      {clergy.length > 0 && <Clergy clergy={clergy} />}
 
-      <NewHere />
-
-      <Giving band={band()} />
+      {/* Not dealt a band: the offering is the deep one, which is the end of
+          the page rather than another turn in the alternation. It reads as
+          deliberate wherever the conditional sections above leave it. */}
+      <Giving />
     </>
   );
 }
@@ -117,19 +82,32 @@ export default async function HomePage() {
  * Deals out the `band` classes in render order, alternating paper and sunken.
  *
  * The alternation is what stops a long page reading as one column of beige, and
- * two of the sections it runs through — the bulletin and the clergy — are
- * conditional. Written by hand, the classes are correct only for the case where
- * both are present: switch the bulletin off in `config/integrations`, or publish
- * no clergy page, and two sunken bands run together with the boundary between
- * two unrelated sections invisible.
+ * three of the four sections it runs through — the livestream, the bulletin and
+ * the clergy — are conditional. Written by hand, the classes would be correct
+ * only for the case where all three are present: switch the bulletin off in
+ * `config/integrations`, publish no clergy page, or configure no stream, and two
+ * matching bands run together with the boundary between two unrelated sections
+ * invisible.
+ *
+ * **The alternate ground is `band--sunken`, and it is meant to be barely
+ * visible.** This briefly alternated with the much stronger `band--tinted`, on
+ * the reasoning that sunken paper is only about 4% darker than paper and so the
+ * alternation never really landed. It landed: the page came out striped, one
+ * saturated band per section down its whole length. A background rhythm is
+ * supposed to be felt rather than counted, and the gold hairline along each
+ * sunken band is already doing most of the separating.
+ *
+ * The one section that keeps a colour of its own is the clergy — see `Clergy`.
+ * One accent band among neutral ones reads as emphasis; five read as stripes.
  *
  * Dealing them out is correct because JSX evaluates its children in source
  * order and short-circuits the conditional ones, so a section that does not
  * render never takes a turn. The consequence to know: these calls must stay in
  * the same order as the sections themselves.
  *
- * The closing `band--deep` is not part of this. It is the end of the page
- * rather than another alternation, and it reads as deliberate wherever it lands.
+ * The offering's `band--deep` is not part of this and does not take a turn. It
+ * is the end of the page rather than another alternation, and it reads as
+ * deliberate wherever the conditional sections above leave it.
  */
 function alternatingBands(): () => string {
   let sunken = false;
@@ -142,63 +120,131 @@ function alternatingBands(): () => string {
 /**
  * The homepage hero.
  *
- * This now carries **a photograph of this parish's own sanctuary** — the
- * iconostasis at Wayland, with the four living creatures above it and a priest
- * at the altar. That is a change of kind, not degree: every other photograph in
- * `assets/` is either a different church or of unverified provenance, which is
- * why this hero used to be built out of type and ornament with a stock image
- * dimmed to 14% behind it.
+ * Three photographs, cross-fading behind the parish's name.
  *
- * Because it is the parish, the rules that governed the old backdrop no longer
- * apply. It gets real alt text, it is carried at full strength rather than as
- * texture, and it may be presented as this church, because it is.
+ * ---------------------------------------------------------------------------
+ * The provenance rule this markup enforces.
+ *
+ * Only the first frame is this parish. `HomeScreen.png` — the iconostasis at
+ * Wayland, the four living creatures above it, a priest at the altar — is the
+ * one photograph in `assets/` that is verifiably ours, and it is the one frame
+ * here that carries `alt` text naming the church.
+ *
+ * The other two are the Egyptian/Gulf backdrops. `assets/README.md` is explicit
+ * that they are **not this building** and must not be captioned or described as
+ * it, so they are `alt=""` and `aria-hidden`: decorative texture in a moving
+ * collage, asserting nothing. To a screen reader this hero is one photograph of
+ * one sanctuary, which is the only claim this repo can stand behind.
+ *
+ * Their licence is also still unverified. If they came off the old Wix site,
+ * that licence does not travel here. The fix is real photography of the Wayland
+ * building, not re-labelling these — see the README.
+ * ---------------------------------------------------------------------------
  *
  * The seal is deliberately gone from the hero. It is in the masthead directly
- * above, and against a photograph this detailed a second detailed mark is two
+ * above, and against photography this detailed a second detailed mark is two
  * things competing for the same attention.
  */
-function Hero({ livestreamEnabled }: { livestreamEnabled: boolean }) {
+function Hero() {
   return (
     <section className="hero" aria-labelledby="hero-heading">
       {/*
-        Real alt text, unlike the backdrop this replaces. It describes what a
-        visitor would see on walking in, because that is the question the
-        photograph is answering.
-
-        `fetchPriority="high"` and no lazy loading: this is the largest element
-        above the fold on the site's most-visited page, so it is the Largest
-        Contentful Paint. Deferring it is deferring the page.
+        One wrapper around all three frames, because the drift and the parallax
+        belong to the *frame* rather than to any one photograph. Animating them
+        here leaves each `.hero__frame` free to own its opacity, and animations
+        writing different properties on different elements cannot clobber one
+        another — the trap the existing breathe/parallax pair already documents.
       */}
-      {/*
-        `<picture>`, because this is art direction rather than resolution
-        switching. The landscape frame is 2.6:1 and a phone hero is about 0.6:1,
-        so `object-fit: cover` would discard three quarters of the width and
-        leave only the red curtain behind the altar — no icons, no altar, just a
-        smear. The 3:4 source below 40rem is cropped around the altar instead.
+      <div className="hero__frames">
+        {/*
+          Frame one, and the only one with a name.
 
-        One `alt` for both, on the `img`: they are the same photograph of the
-        same room, and `<source>` carries no alt of its own.
-      */}
-      <picture>
-        <source
-          media="(max-width: 40rem)"
-          srcSet="/img/home-sanctuary-portrait-600.webp 600w, /img/home-sanctuary-portrait-900.webp 900w"
-          sizes="100vw"
-          width={900}
-          height={1200}
-        />
-        <img
-          className="hero__photo"
-          src="/img/home-sanctuary-1600.webp"
-          srcSet="/img/home-sanctuary-1000.webp 1000w, /img/home-sanctuary-1600.webp 1600w, /img/home-sanctuary-2400.webp 2400w"
-          sizes="100vw"
-          alt="The sanctuary at St. Philopater Mercurius & St. Mina: the iconostasis, its icons of Christ and the Theotokos, and a priest serving at the altar."
-          width={2400}
-          height={1104}
-          fetchPriority="high"
-          decoding="async"
-        />
-      </picture>
+          `<picture>`, because this is art direction rather than resolution
+          switching. The landscape frame is 2.6:1 and a phone hero is about
+          0.6:1, so `object-fit: cover` would discard three quarters of the
+          width and leave only the red curtain behind the altar — no icons, no
+          altar, just a smear. The 3:4 source below 40rem is cropped around the
+          altar instead.
+
+          `fetchPriority="high"` and no lazy loading: this is the largest
+          element above the fold on the site's most-visited page, so it is the
+          Largest Contentful Paint. Deferring it is deferring the page. The two
+          frames after it are the opposite case — not visible for the first
+          eight seconds — and are lazy.
+
+          One `alt` for both sources, on the `img`: they are the same photograph
+          of the same room, and `<source>` carries no alt of its own.
+
+          **All three frames now use the same two crops**, cut in
+          `scripts/optimize-assets.mjs` rather than steered from CSS. Before
+          that, each frame was its source image's native shape — the towers shot
+          is 1.52:1 against this one's 2.59:1 — so `object-fit` cropped 40% off
+          its height and took the crosses with it, and the subject jumped on
+          every fade. Matched geometry is what makes this read as one camera.
+        */}
+        <picture>
+          <source
+            media="(max-width: 40rem)"
+            srcSet="/img/home-sanctuary-portrait-600.webp 600w, /img/home-sanctuary-portrait-900.webp 900w"
+            sizes="100vw"
+            width={900}
+            height={1200}
+          />
+          <img
+            className="hero__frame hero__frame--1"
+            src="/img/home-sanctuary-1600.webp"
+            srcSet="/img/home-sanctuary-1000.webp 1000w, /img/home-sanctuary-1600.webp 1600w, /img/home-sanctuary-2400.webp 2400w"
+            sizes="100vw"
+            alt="The sanctuary at St. Philopater Mercurius & St. Mina: the iconostasis, its icons of Christ and the Theotokos, and a priest serving at the altar."
+            /* 926, not the 1104 this said before. The file is 2400×926; a wrong
+               ratio here reserves the wrong box and the page jumps on load. */
+            width={2400}
+            height={926}
+            fetchPriority="high"
+            decoding="async"
+          />
+        </picture>
+
+        {/* Frames two and three: decorative, per the provenance note above.
+            Neither is this building, so neither says anything about itself.
+            Both get the same portrait art direction as frame one — a phone is
+            the case where a wrong crop is most obvious, not least. */}
+        <picture>
+          <source
+            media="(max-width: 40rem)"
+            srcSet="/img/hero-domes-portrait-600.webp 600w, /img/hero-domes-portrait-900.webp 900w"
+            sizes="100vw"
+          />
+          <img
+            className="hero__frame hero__frame--2"
+            src="/img/hero-domes-1600.webp"
+            srcSet="/img/hero-domes-1000.webp 1000w, /img/hero-domes-1600.webp 1600w"
+            sizes="100vw"
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+          />
+        </picture>
+        <picture>
+          <source
+            media="(max-width: 40rem)"
+            srcSet="/img/hero-towers-portrait-600.webp 600w, /img/hero-towers-portrait-900.webp 900w"
+            sizes="100vw"
+          />
+          <img
+            className="hero__frame hero__frame--3"
+            src="/img/hero-towers-1600.webp"
+            srcSet="/img/hero-towers-1000.webp 1000w, /img/hero-towers-1600.webp 1600w"
+            sizes="100vw"
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+          />
+        </picture>
+      </div>
+
       <div className="hero__veil" />
 
       <div className="wrap hero__inner">
@@ -206,30 +252,23 @@ function Hero({ livestreamEnabled }: { livestreamEnabled: boolean }) {
 
         <h1 id="hero-heading">St. Philopater Mercurius &amp; St. Mina</h1>
 
+        {/* The gold rule draws itself in under the name. With the three buttons
+            gone, this is what keeps the hero from ending on a paragraph. */}
+        <span className="hero__rule" aria-hidden="true" />
+
         <p className="hero__lede">
           Here the Divine Liturgy is offered as the Church has offered it since the
           Apostles. Whoever you are, you are welcome to come and pray with us.
         </p>
-
-        <div className="hero__actions">
-          {/* `/welcome` used to be the primary action here. It is now reached by
-              NFC tap only, so the hero sends a first-time visitor to the two
-              things they actually need: when we pray, and where we are. */}
-          <Link className="button" href="/contact">
-            Times of prayer
-          </Link>
-          <Link className="button button--ghost" href="/about">
-            About the parish
-          </Link>
-          {/* Only offered when a stream is actually configured. A "Watch live"
-              button leading to an empty player reads as a broken site. */}
-          {livestreamEnabled && (
-            <Link className="button button--ghost" href="/livestream">
-              Watch live
-            </Link>
-          )}
-        </div>
       </div>
+
+      {/*
+        A quiet cue that the page continues, in place of the buttons. It is not
+        a control — everything it could have pointed at is one scroll or one nav
+        item away — so it is hidden from the accessibility tree rather than
+        announced as a link that isn't there.
+      */}
+      <span className="hero__scroll" aria-hidden="true" />
     </section>
   );
 }
@@ -290,10 +329,12 @@ function QuickFacts({
       ? {
           icon: 'play',
           label: 'Praying from home',
-          // The player is further down this same page, so this jumps to it
-          // rather than sending someone to `/livestream` for something they are
-          // already looking at. That route still exists and is still in the nav.
-          body: <a href="#livestream">Watch the Liturgy live →</a>,
+          // `/livestream`, not the `#livestream` anchor this used to be. The
+          // in-page jump saved a navigation but landed the reader in the middle
+          // of the homepage with no page change to confirm the link had done
+          // anything — and the destination page carries the schedule note and
+          // the fallback link that the embedded player on the homepage does not.
+          body: <Link href="/livestream">Watch the Liturgy live →</Link>,
         }
       : {
           icon: 'door',
@@ -316,9 +357,11 @@ function QuickFacts({
           {facts.map((fact) => (
             <li className="fact" key={fact.label}>
               <span className="fact__icon">
-                {/* Larger than the 20px it was inside a filled disc: a bare
-                    glyph has no plate around it to give it presence. */}
-                <Icon name={fact.icon} size={26} />
+                {/* 18px, beside the text rather than over it. This went 20 → 26
+                    when the filled disc came off, on the reasoning that a bare
+                    glyph has no plate to give it presence — but presence is
+                    what this row is not supposed to have. */}
+                <Icon name={fact.icon} size={18} />
               </span>
               <div className="fact__body">
                 <h3>{fact.label}</h3>
@@ -349,12 +392,12 @@ function QuickFacts({
  * finite — a bishop and the parish priests — and truncating it would mean the
  * homepage silently dropping a father the moment a fourth is appointed.
  */
-function Clergy({ band, clergy }: { band: string; clergy: DocOf<ContentPage>[] }) {
+function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
   return (
     // `id`, because the footer links here now that the page is gone. The
     // stylesheet's `scroll-padding-top` keeps the heading clear of the sticky
     // masthead when someone arrives on `/#clergy`.
-    <section id="clergy" className={band} aria-labelledby="clergy-heading">
+    <section id="clergy" className="band band--tinted" aria-labelledby="clergy-heading">
       <div className="wrap reveal">
         <SectionHeading
           id="clergy-heading"
@@ -490,90 +533,119 @@ function Livestream({
 }
 
 /**
- * The offering, last on the page.
+ * The offering, last on the page — and now the page's one full-colour band.
  *
- * Quiet on purpose, and on the sunken ground rather than the dark one. The
- * closing band above it is the invitation; putting the ask in the page's most
- * emphatic slot, straight after "come and pray with us", turns the invitation
- * into a preamble for it.
+ * ---------------------------------------------------------------------------
+ * It used to be a heading and two buttons on the same paper as everything above
+ * it, which made the one section with something to ask the least memorable
+ * thing on the page. It is now a full-bleed photograph with the deep ground
+ * carried over it as a veil.
+ *
+ * The photograph is `Donation.png`, at Tommy's direction, and its being the
+ * *background* rather than a panel is his too. `assets/README.md` records it as
+ * generic stock of unverified provenance — that is the open item on it, and not
+ * a thing to quietly swap back.
+ *
+ * What the markup adds is the verse as **text**: 2 Corinthians 9:7, the one the
+ * pipeline crops off `Coptic_Church_Verse.jpg` precisely so it can be set in
+ * HTML instead of baked into pixels. See the README's note on that crop.
+ * ---------------------------------------------------------------------------
  *
  * A link out rather than a form. The giving flow is a Tithe.ly-hosted page and
  * this site never touches a card number — see features/giving.
  */
-function Giving({ band }: { band: string }) {
+function Giving() {
   const url = givingUrl();
 
   return (
-    <section id="giving" className={band} aria-labelledby="giving-heading">
-      <div className="wrap reveal">
-        <SectionHeading
-          id="giving-heading"
-          eyebrow="Offering"
-          title="Supporting the parish"
-          note="What is offered here sustains the church, its services, and the poor."
-        />
+    <section id="giving" className="band band--deep giving" aria-labelledby="giving-heading">
+      {/*
+        The photograph is the section's ground now rather than a framed panel
+        beside the text.
 
-        <div className="hero__actions">
-          {/*
-            The direct link when there is one, because a visitor who has decided
-            to give should not be routed through a page whose job is to tell
-            them where to go. `/giving` then follows as the quieter second
-            action, for anyone who wants to read first.
+        An `<img>` rather than a CSS `background-image`, for the reason the hero
+        uses one: `srcSet`/`sizes` let the browser pick a width, and a 1600px
+        file behind a phone-width band is most of a megabyte spent on
+        decoration. `aria-hidden` and empty `alt` because it is exactly that.
+      */}
+      <img
+        className="giving__photo"
+        src="/img/backdrop-giving-1600.webp"
+        srcSet="/img/backdrop-giving-800.webp 800w, /img/backdrop-giving-1600.webp 1600w"
+        sizes="100vw"
+        alt=""
+        aria-hidden="true"
+        width={1600}
+        height={1030}
+        loading="lazy"
+        decoding="async"
+      />
+      {/*
+        The veil is not optional decoration here — it is what keeps the heading,
+        the note and the button readable over a photograph whose right half is a
+        blown-out sunrise. See `.giving__veil`.
+      */}
+      <div className="giving__veil" />
 
-            With no URL configured there is only one destination worth offering,
-            and two buttons pointing at the same page is a choice that isn't one.
-          */}
-          {url ? (
-            <>
-              <a className="button" href={url} rel="noopener noreferrer" target="_blank">
-                Give online
-              </a>
-              <Link className="button button--ghost" href="/giving">
-                About giving
+      <div className="wrap giving__inner reveal">
+        <div className="giving__body">
+          <SectionHeading
+            id="giving-heading"
+            eyebrow="Offering"
+            title="Supporting the parish"
+            note="What is offered here sustains the church, its services, and the poor."
+          />
+
+          <div className="hero__actions">
+            {/*
+              The direct link when there is one, because a visitor who has
+              decided to give should not be routed through a page whose job is
+              to tell them where to go. `/giving` then follows as the quieter
+              second action, for anyone who wants to read first.
+
+              With no URL configured there is only one destination worth
+              offering, and two buttons at the same page is a choice that isn't.
+            */}
+            {url ? (
+              <>
+                <a className="button" href={url} rel="noopener noreferrer" target="_blank">
+                  Give online
+                </a>
+                <Link className="button button--ghost" href="/giving">
+                  About giving
+                </Link>
+              </>
+            ) : (
+              <Link className="button" href="/giving">
+                How to give
               </Link>
-            </>
-          ) : (
-            <Link className="button" href="/giving">
-              How to give
-            </Link>
+            )}
+          </div>
+
+          {url && (
+            <p className="meta giving__note">
+              Opens Tithe.ly, which processes the payment. The parish website never
+              sees your card details.
+            </p>
           )}
-        </div>
 
-        {url && (
-          <p className="meta" style={{ marginTop: 'var(--space-md)' }}>
-            Opens Tithe.ly, which processes the payment. The parish website never sees
-            your card details.
+          {/*
+            The verse, as text.
+
+            This is the one typeset across the top of `Coptic_Church_Verse.jpg`
+            and cropped out by the asset pipeline — `assets/README.md` says so,
+            and says that if the giving page wants it, it goes in the markup. It
+            does, so here it is: selectable, translatable, and legible to a
+            screen reader, which text baked into a JPEG is none of.
+
+            It moved out of the old `<figcaption>` when the photograph became
+            the background: a caption belongs to a figure, and there is no
+            longer a figure for it to belong to.
+          */}
+          <p className="giving__verse">
+            “God loves a cheerful giver.”
+            <cite>2 Corinthians 9:7</cite>
           </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/** Closing invitation, on the dark ground so the page ends deliberately. */
-function NewHere() {
-  return (
-    <section className="band band--deep" aria-labelledby="new-here-heading">
-      <div className="wrap" style={{ textAlign: 'center' }}>
-        <Ornament />
-        <h2 id="new-here-heading">Come and see</h2>
-        <p className="lede" style={{ margin: '0 auto', maxWidth: '46ch' }}>
-          You need not know the hymns, nor the language, nor when to stand. Come and
-          pray with us, and someone will gladly stand beside you.
-        </p>
-        <div
-          className="hero__actions hero__actions--center"
-          style={{ marginTop: 'var(--space-lg)' }}
-        >
-          {/* Both buttons here pointed at NFC-only routes — `/welcome` and
-              `/prayer`. What remains of the invitation is the practical part:
-              when the Liturgy is served, and what the Church confesses. */}
-          <Link className="button" href="/contact">
-            Times of prayer
-          </Link>
-          <Link className="button button--ghost" href="/beliefs">
-            What we believe
-          </Link>
         </div>
       </div>
     </section>

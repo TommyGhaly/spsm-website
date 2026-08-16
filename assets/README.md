@@ -37,6 +37,25 @@ table records what is known; **unknown is not the same as cleared.**
 | `Coptic_pattern.png` | AI-generated | Not used. See below. |
 | `Festival.jpg` | Parish | Not used. Past event. |
 | `SPSM-Church-Image.jpg` | Old Wix site | Not used. 176×176 thumbnail. |
+| `brand/instagram.svg`, `brand/facebook.svg`, `brand/youtube.svg` | Official brand marks | Third-party trademarks. See below. |
+
+### The three social marks are not ours to redraw
+
+`brand/*.svg` are the official Instagram, Facebook and YouTube glyphs, copied
+through to `public/brand/` **unchanged** — not minified, not recoloured, not
+redrawn to match the stroke weight of `components/Icon.tsx`. A brand mark is
+recognisable because its outline is fixed, and an SVG minifier that rounds
+coordinates is a quiet way to ship three slightly-wrong logos.
+
+They are the single copy of that path data. The footer paints them with CSS
+`mask-image` and `currentColor` (see `.social-icon`), which is what lets one
+flat file per platform serve both the resting colour and the gold hover without
+a second, recoloured set — and why there is no React component duplicating the
+coordinates.
+
+Each platform's brand guidelines permit a monochrome mark used to link to your
+own profile, which is the only use here. The accounts themselves are in
+`DEFAULT_PARISH_CONFIG.social` and overridable from `config/parish`.
 
 ### `HomeScreen.png` is the first usable photograph of this sanctuary
 
@@ -80,10 +99,21 @@ diocese's official portrait instead.
 churches — sandstone, desert light, domes. This parish is a New England building
 in Wayland, Massachusetts.
 
-They are used only as dimmed backdrops behind text, where they read as texture
-rather than as a photograph of this parish. They must not be captioned, given
-alt text describing them as this church, or used anywhere a visitor would take
-them for the building they are trying to find.
+They must not be captioned, given alt text describing them as this church, or
+used anywhere a visitor would take them for the building they are trying to
+find.
+
+**They are now in the homepage hero, and that was Tommy's explicit call on
+2026-08-16.** The hero cross-fades three frames: the Wayland sanctuary, then
+these two. He was shown this rule before choosing it. The constraint is kept the
+only way it can be — **only the sanctuary frame carries `alt` text.** Both of
+these are `alt=""` and `aria-hidden`, so nothing on the page claims either is
+this parish, and to a screen reader the hero remains one photograph of one
+room. See the note on `Hero` in `apps/website/src/app/page.tsx`.
+
+Their hero crops are separate outputs (`hero-domes-*`, `hero-towers-*`), cut to
+the sanctuary's own 2.591:1 and 3:4 so the three frames share geometry. The
+older `backdrop-*` outputs are still generated and are currently unused.
 
 Their licence is also unverified. If they came off the old Wix site, a Wix stock
 licence does not travel to Firebase Hosting. Replace them as soon as there is

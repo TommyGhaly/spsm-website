@@ -21,7 +21,17 @@ import { SITE_ORIGIN } from './layout';
  */
 
 // Routes that exist as real pages and are not driven by the content collection.
-const FIXED_ROUTES = ['/', '/events', '/livestream', '/giving', '/contact'] as const;
+// `/calendar` and `/events` are both here: they are two views of one collection
+// rather than one page and a duplicate of it, and each is worth finding on its
+// own — "parish calendar" and "upcoming events" are different searches.
+const FIXED_ROUTES = [
+  '/',
+  '/calendar',
+  '/events',
+  '/livestream',
+  '/giving',
+  '/contact',
+] as const;
 
 // `clergy` joins these because it is no longer a route: the biographies are
 // disclosures on the homepage, which is already listed above. Keep this in step

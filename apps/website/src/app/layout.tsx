@@ -49,12 +49,21 @@ const NAV = [
   // redundant link.
   { href: '/', label: 'Home' },
   { href: '/about', label: 'About' },
-  { href: '/beliefs', label: 'Our Faith' },
-  { href: '/events', label: 'Calendar' },
-  { href: '/livestream', label: 'Watch Live' },
+  // Two entries, two views of the `events` collection, and they are not
+  // duplicates: `/calendar` is the month grid you scan by date, `/events` the
+  // ordered list of what is coming up. See the note at the top of
+  // app/calendar/page.tsx.
+  { href: '/calendar', label: 'Calendar' },
+  { href: '/events', label: 'Events' },
+  { href: '/livestream', label: 'Live' },
   { href: '/giving', label: 'Giving' },
   { href: '/contact', label: 'Contact' },
 ] as const;
+
+// `/beliefs` has come off the top bar pending a decision to make it a
+// subcategory of something rather than a seventh sibling. The page, its footer
+// link and its sitemap entry are all untouched — this is a change to the header
+// only, and nothing 404s.
 
 // `/bookstore` is intentionally absent. The route works, but `products` is
 // empty, so a nav item leads a visitor to an empty state — which reads as a
@@ -98,10 +107,14 @@ const FOOTER_LINKS = [
  * homepage is a better answer than not being answered.
  */
 const FOOTER_EXPLORE = [
+  // "Our faith" carries more weight here now that `/beliefs` is off the top bar.
   { href: '/beliefs', label: 'Our faith' },
   { href: '/#clergy', label: 'Our clergy' },
   { href: '/ministries', label: 'Ministries' },
-  { href: '/events', label: 'Parish calendar' },
+  // Was `/events` under this label, which is now the *other* page's name. One
+  // link, pointed at the page that actually is the calendar; `/events` is in
+  // the top bar and does not need a second entry point down here.
+  { href: '/calendar', label: 'Parish calendar' },
   { href: '/giving', label: 'Giving' },
 ] as const;
 
@@ -121,6 +134,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // more; see ThemeRuntime.
   const parish = await getParishConfig();
   const address = formatAddress(parish.address);
+
+  /*
+   * The parish's social accounts, in a fixed order, minus any that are unset.
+   *
+   * Built here rather than in the markup so the footer can ask one question —
+   * "are there any?" — instead of three, and so the empty case renders no list
+   * at all rather than an empty `<ul>`. `parseParishConfig` has already
+   * rejected anything that is not an absolute http(s) URL, so these are safe to
+   * put straight in an `href`.
+   */
+  const social = [
+    { name: 'instagram', label: 'Instagram', href: parish.social.instagram },
+    { name: 'facebook', label: 'Facebook', href: parish.social.facebook },
+    { name: 'youtube', label: 'YouTube', href: parish.social.youtube },
+  ].filter((account) => account.href !== '');
 
   return (
     <html lang="en">
@@ -186,12 +214,62 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     width={140}
                     height={128}
                   />
-                  <p className="footer__name">
-                    St. Philopater Mercurius
-                    <br />
-                    &amp; St. Mina
-                  </p>
-                  <p>Coptic Orthodox Church</p>
+                  {/*
+                    No hardcoded `<br />` any more.
+
+                    It forced the break after "Mercurius", which left "& St.
+                    Mina" alone on a short second line at every width — a ragged
+                    two-line name beside a centred seal. The name now wraps
+                    where the column actually ends, and `text-wrap: balance`
+                    evens the lines out; see `.footer__name`.
+                  */}
+                  <p className="footer__name">St. Philopater Mercurius &amp; St. Mina</p>
+                  <p className="footer__kicker">Coptic Orthodox Church</p>
+
+                  {/*
+                    Only rendered when the parish has actually filled these in.
+                    See `ParishSocial` — the defaults are empty strings, because
+                    an icon pointing at a guessed account is worse than no icon.
+                  */}
+                  {social.length > 0 && (
+                    <ul className="footer__social">
+                      {social.map((account) => (
+                        <li key={account.name}>
+                          <a
+                            href={account.href}
+                            /*
+                              `noopener` for the usual reason, and `noreferrer`
+                              with it. `rel="me"` is the one worth explaining:
+                              it is how a profile and a site claim each other,
+                              and it is what makes a Mastodon-style verified
+                              link resolve back here.
+                            */
+                            rel="me noopener noreferrer"
+                            target="_blank"
+                          >
+                            {/*
+                              The mark is painted by CSS `mask-image` from
+                              `public/brand/<name>.svg` — see `.social-icon`.
+                              The path data therefore lives in exactly one
+                              place, the file in `assets/brand/`, rather than
+                              being duplicated into a React component that can
+                              drift from it.
+                            */}
+                            <span
+                              className={`social-icon social-icon--${account.name}`}
+                              aria-hidden="true"
+                            />
+                            {/* The link's accessible name. The mark is a
+                                background, so without this the link announces
+                                as its bare URL. */}
+                            <span className="visually-hidden">
+                              {account.label} (opens in a new tab)
+                            </span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 <nav aria-labelledby="footer-explore">

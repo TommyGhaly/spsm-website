@@ -18,7 +18,7 @@ export default function NotFound() {
       <PageBody>
         <div className="prose">
           <p>
-            Try the <Link href="/events">parish calendar</Link>, the{' '}
+            Try the <Link href="/calendar">parish calendar</Link>, the{' '}
             <Link href="/about">about page</Link>, or{' '}
             <Link href="/contact">contact the office</Link> and we&apos;ll point you to it.
           </p>

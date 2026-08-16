@@ -549,11 +549,110 @@ for (const [source, slug] of [
   write(join(PUBLIC, 'img/backdrop-towers-1600.webp'), await webp(towers, { width: 1600, quality: 72 }));
   write(join(PUBLIC, 'img/backdrop-towers-800.webp'), await webp(towers, { width: 800, quality: 70 }));
 
+  /*
+   * Hero crops of the same two buildings, cut to the hero's own geometry.
+   *
+   * ---------------------------------------------------------------------
+   * Why these exist rather than reusing the `backdrop-*` files above.
+   *
+   * The hero cross-fades three photographs in one fixed box. The backdrops
+   * are their source images' native shapes — the towers shot is 1.52:1
+   * against the sanctuary's 2.59:1 — so `object-fit: cover` had to throw
+   * away 40% of the towers' height to fill the same frame, and it took the
+   * crosses off the top of the building to do it. Three photographs of three
+   * different shapes cross-fading in one box also means the subject jumps
+   * on every transition.
+   *
+   * So all three frames are cut to the *same* two aspect ratios the
+   * sanctuary already uses: 2.591:1 landscape and 3:4 portrait. Matched
+   * geometry is what makes the fade read as one camera rather than as a
+   * slideshow, and it means the CSS needs no per-image `object-position`
+   * fudging — the crop decision lives here, next to the pixels, where it can
+   * be seen.
+   *
+   * `HERO_LANDSCAPE` must stay in step with the sanctuary crop above.
+   * ---------------------------------------------------------------------
+   */
+  const HERO_LANDSCAPE = 2.591;
+  const HERO_PORTRAIT = 0.75;
+
+  /** A centred window of `ratio`, nudged by `focusX`/`focusY` (0–1 of the slack). */
+  const window_ = (meta, ratio, focusX = 0.5, focusY = 0.5) => {
+    // Fit the largest box of this ratio inside the source, then slide it.
+    const byWidth = meta.width / ratio <= meta.height;
+    const width = byWidth ? meta.width : Math.round(meta.height * ratio);
+    const height = byWidth ? Math.round(meta.width / ratio) : meta.height;
+    return {
+      left: Math.round((meta.width - width) * focusX),
+      top: Math.round((meta.height - height) * focusY),
+      width,
+      height,
+    };
+  };
+
+  {
+    const meta = await sharp(towers).metadata();
+    // `focusY: 0.06` — hard against the top. The crosses and the bell towers
+    // are the subject and they are in the top third; a centred crop of a
+    // 1.52:1 building shot from below is sky and masonry with the crosses
+    // gone. The 0.06 leaves a little sky above them rather than cutting them
+    // flush with the frame edge.
+    const land = window_(meta, HERO_LANDSCAPE, 0.5, 0.06);
+    write(join(PUBLIC, 'img/hero-towers-1600.webp'), await webp(towers, { width: 1600, quality: 74, extract: land }));
+    write(join(PUBLIC, 'img/hero-towers-1000.webp'), await webp(towers, { width: 1000, quality: 72, extract: land }));
+
+    // Portrait keeps both towers rather than centring on the gap between
+    // them, which is why this is centred horizontally and again pulled up.
+    const port = window_(meta, HERO_PORTRAIT, 0.5, 0.04);
+    write(join(PUBLIC, 'img/hero-towers-portrait-900.webp'), await webp(towers, { width: 900, quality: 74, extract: port }));
+    write(join(PUBLIC, 'img/hero-towers-portrait-600.webp'), await webp(towers, { width: 600, quality: 72, extract: port }));
+  }
+
+  {
+    // Cut from the verse-cropped region, not the raw file — otherwise the
+    // typeset "2 Corinthians 9:7" comes back into the hero.
+    const meta = { width: extract.width, height: extract.height };
+    const offset = (win) => ({ ...win, top: win.top + extract.top });
+
+    // Already 2.6:1 after the verse crop, so the landscape window is very
+    // nearly the whole thing.
+    const land = offset(window_(meta, HERO_LANDSCAPE, 0.5, 0.5));
+    write(join(PUBLIC, 'img/hero-domes-1600.webp'), await webp(verse, { width: 1600, quality: 74, extract: land }));
+    write(join(PUBLIC, 'img/hero-domes-1000.webp'), await webp(verse, { width: 1000, quality: 72, extract: land }));
+
+    // `focusX: 0.78` — the right of this frame is the blue stained glass and
+    // the gold cross, which is the only strong colour in either backdrop.
+    // A centred portrait crop would be a wall.
+    const port = offset(window_(meta, HERO_PORTRAIT, 0.78, 0.5));
+    write(join(PUBLIC, 'img/hero-domes-portrait-900.webp'), await webp(verse, { width: 900, quality: 74, extract: port }));
+    write(join(PUBLIC, 'img/hero-domes-portrait-600.webp'), await webp(verse, { width: 600, quality: 72, extract: port }));
+  }
+
   // 4.8 MB PNG of a photograph — PNG is the wrong container for continuous
   // tone and is essentially the entire reason for that number.
   const hands = join(SRC, 'Donation.png');
   write(join(PUBLIC, 'img/backdrop-giving-1600.webp'), await webp(hands, { width: 1600, quality: 72 }));
   write(join(PUBLIC, 'img/backdrop-giving-800.webp'), await webp(hands, { width: 800, quality: 70 }));
+}
+
+// ── Social brand marks ──────────────────────────────────────────────────────
+// Instagram, Facebook and YouTube, copied through unchanged.
+//
+// Not ours, and so not optimised, recoloured, or redrawn. A brand mark is
+// recognisable because its outline is fixed; running these through an SVG
+// minifier that rounds coordinates is a small, silent way to ship three
+// slightly-wrong logos. They are already ~1 KB each.
+//
+// They are painted with `currentColor` at the CSS `mask-image` that consumes
+// them (see `.social-icon`), which is why one flat file per platform serves
+// both the footer's resting colour and its gold hover without a second copy.
+{
+  for (const name of ['instagram', 'facebook', 'youtube']) {
+    write(
+      join(PUBLIC, `brand/${name}.svg`),
+      readFileSync(join(SRC, `brand/${name}.svg`)),
+    );
+  }
 }
 
 // ── Iconography ─────────────────────────────────────────────────────────────

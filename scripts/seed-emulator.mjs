@@ -127,6 +127,11 @@ await put('config/parish', {
     { name: 'Vespers', day: 'Saturday', time: '6:00 PM' },
     { name: 'Midweek Liturgy', day: 'Wednesday', time: '8:00 – 10:00 AM' },
   ],
+  // `social` is deliberately not overridden here. Unlike the address and phone
+  // above — which are unverified scrapes from the old Wix pages and so must not
+  // masquerade as real — the accounts in DEFAULT_PARISH_CONFIG came from the
+  // parish and are correct, so the emulator should exercise exactly what
+  // production renders.
   notes: 'Local emulator data — not the parish’s published details.',
 });
 
