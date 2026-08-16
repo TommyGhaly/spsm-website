@@ -197,4 +197,41 @@ describe('config is world-readable and admin-written', () => {
       }),
     );
   });
+
+  /**
+   * The theme document, covered separately from `integrations` on purpose.
+   *
+   * It is a *different document* under the same `match /config/{docId}` rule, so
+   * these assertions look redundant — and they are exactly the kind that stops
+   * being redundant the moment somebody adds a narrower rule for one document
+   * and assumes it restricts the others. It cannot: Firestore grants when any
+   * matching rule allows, which is the trap `servantsConfig` exists to avoid.
+   *
+   * The read matters most. The site is a static export whose build reads this
+   * anonymously, before it holds any credential — if this were ever gated, every
+   * page would silently fall back to the bundled theme with only a build-log
+   * warning to say so.
+   */
+  it('allows the anonymous build-time read of config/theme', async () => {
+    await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'config', 'theme')));
+  });
+
+  it('denies anonymous and staff writes to config/theme', async () => {
+    // Restyling the whole site is an admin action. It is also a defacement
+    // vector — the parsed document is interpolated into every page's <style>.
+    await assertFails(
+      setDoc(doc(asAnon(env).firestore(), 'config', 'theme'), { color: { accent: '#000000' } }),
+    );
+    await assertFails(
+      setDoc(doc(asStaff(env).firestore(), 'config', 'theme'), { color: { accent: '#000000' } }),
+    );
+  });
+
+  it('allows admin writes to config/theme', async () => {
+    await assertSucceeds(
+      setDoc(doc(asAdmin(env).firestore(), 'config', 'theme'), {
+        color: { accent: '#8c2f26' },
+      }),
+    );
+  });
 });

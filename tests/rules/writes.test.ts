@@ -18,6 +18,7 @@ import {
   createTestEnv,
   asAnon,
   asMember,
+  asServant,
   asStaff,
   asAdmin,
   asClergy,
@@ -286,6 +287,204 @@ describe('members — claims are authoritative, the mirror is not', () => {
     await assertSucceeds(updateDoc(doc(db, 'members', 'member-3'), { displayName: 'Mina B.' }));
     await assertFails(updateDoc(doc(db, 'members', 'member-3'), { roleMirror: 'staff' }));
     await assertFails(updateDoc(doc(db, 'members', 'member-3'), { groupsMirror: ['clergy'] }));
+  });
+});
+
+/** What features/prayer/data.ts actually writes. */
+function prayerDoc(overrides: Record<string, unknown> = {}) {
+  return {
+    body: 'Please pray for my mother.',
+    visibility: 'clergy',
+    anonymous: false,
+    authorUid: null,
+    authorName: 'Mina',
+    contactEmail: null,
+    status: 'active',
+    notifiedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    updatedBy: null,
+    ...overrides,
+  };
+}
+
+describe('prayer requests can be submitted without an account', () => {
+  beforeEach(() => reset());
+
+  it('allows an anonymous stranger to ask for prayer', async () => {
+    // The whole point: sign-in is Microsoft-only for the parish directory, so
+    // requiring it would mean only staff could ask.
+    await assertSucceeds(
+      addDoc(collection(asAnon(env).firestore(), 'prayerRequests'), prayerDoc()),
+    );
+  });
+
+  it('allows a genuinely anonymous request with no name at all', async () => {
+    await assertSucceeds(
+      addDoc(
+        collection(asAnon(env).firestore(), 'prayerRequests'),
+        prayerDoc({ anonymous: true, authorName: null }),
+      ),
+    );
+  });
+
+  it('refuses an anonymous request that still carries a name', async () => {
+    // Anonymity is enforced by omitting identity, not by a flag. If this ever
+    // passes, "anonymous" is cosmetic and the privacy model is a lie.
+    await assertFails(
+      addDoc(
+        collection(asAnon(env).firestore(), 'prayerRequests'),
+        prayerDoc({ anonymous: true, authorName: 'Mina' }),
+      ),
+    );
+  });
+
+  it('refuses a named request with no name to pray for', async () => {
+    await assertFails(
+      addDoc(
+        collection(asAnon(env).firestore(), 'prayerRequests'),
+        prayerDoc({ anonymous: false, authorName: null }),
+      ),
+    );
+  });
+
+  it('refuses an unauthenticated writer claiming somebody else’s uid', async () => {
+    await assertFails(
+      addDoc(
+        collection(asAnon(env).firestore(), 'prayerRequests'),
+        prayerDoc({ authorUid: 'member-1' }),
+      ),
+    );
+  });
+
+  it('lets a signed-in servant attach their own uid, but not another', async () => {
+    await assertSucceeds(
+      addDoc(
+        collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'),
+        prayerDoc({ authorUid: 'servant-1' }),
+      ),
+    );
+    await assertFails(
+      addDoc(
+        collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'),
+        prayerDoc({ authorUid: 'someone-else' }),
+      ),
+    );
+  });
+
+  it('bounds the body, the name, and the email', async () => {
+    const db = asAnon(env).firestore();
+    await assertFails(addDoc(collection(db, 'prayerRequests'), prayerDoc({ body: '' })));
+    await assertFails(
+      addDoc(collection(db, 'prayerRequests'), prayerDoc({ body: 'x'.repeat(2001) })),
+    );
+    await assertFails(
+      addDoc(collection(db, 'prayerRequests'), prayerDoc({ authorName: 'x'.repeat(101) })),
+    );
+    await assertFails(
+      addDoc(
+        collection(db, 'prayerRequests'),
+        prayerDoc({ contactEmail: `${'x'.repeat(250)}@example.org` }),
+      ),
+    );
+  });
+
+  it('refuses smuggled extra fields', async () => {
+    // An open write endpoint with no key whitelist is a free document store.
+    await assertFails(
+      addDoc(
+        collection(asAnon(env).firestore(), 'prayerRequests'),
+        prayerDoc({ payload: 'x'.repeat(500) }),
+      ),
+    );
+  });
+
+  it('refuses a request that arrives pre-answered or pre-notified', async () => {
+    const db = asAnon(env).firestore();
+    await assertFails(
+      addDoc(collection(db, 'prayerRequests'), prayerDoc({ status: 'answered' })),
+    );
+    await assertFails(
+      addDoc(collection(db, 'prayerRequests'), prayerDoc({ notifiedAt: new Date() })),
+    );
+  });
+
+  it('still refuses anonymous reads — submitting is not seeing', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'prayerRequests', 'p1'), prayerDoc());
+    });
+    await assertFails(getDoc(doc(asAnon(env).firestore(), 'prayerRequests', 'p1')));
+  });
+});
+
+describe('formSubmissions is closed until the feature exists', () => {
+  beforeEach(() => reset());
+
+  it('denies an unauthenticated create', async () => {
+    // This was `allow create: if formId is string` — one field checked, no size
+    // bound, no auth, for a feature with no schema and no UI. Anyone could
+    // write arbitrary documents to a billed project.
+    await assertFails(
+      addDoc(collection(asAnon(env).firestore(), 'formSubmissions'), {
+        formId: 'anything',
+        payload: 'x'.repeat(1000),
+      }),
+    );
+  });
+
+  it('denies it even for staff and admin, so nothing quietly depends on it', async () => {
+    await assertFails(
+      addDoc(collection(asStaff(env).firestore(), 'formSubmissions'), { formId: 'x' }),
+    );
+    await assertFails(
+      addDoc(collection(asAdmin(env).firestore(), 'formSubmissions'), { formId: 'x' }),
+    );
+  });
+});
+
+describe('servantsConfig holds a bearer URL, so read is gated', () => {
+  beforeEach(() =>
+    reset(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://stphilopaterstmina.breezechms.com/embed/calendar/grid?x=1',
+        note: '',
+        manageUrl: '',
+      });
+    }),
+  );
+
+  it('denies anonymous read — the whole point of not putting it in config/', () => {
+    // `config` is `allow read: if true`, and a narrower rule cannot take that
+    // back, so this had to be its own collection. If this ever passes, the
+    // parish rota URL is public and the sign-in gate in front of it is theatre.
+    return assertFails(getDoc(doc(asAnon(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('denies a signed-in member who is not a servant', async () => {
+    await assertFails(getDoc(doc(asMember(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('allows a servant, and everyone above', async () => {
+    await assertSucceeds(getDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule')));
+    await assertSucceeds(getDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule')));
+  });
+
+  it('denies writes below admin — staff may not repoint the calendar', async () => {
+    await assertFails(
+      setDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://evil.test/x',
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://evil.test/x',
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(asAdmin(env).firestore(), 'servantsConfig', 'schedule'), {
+        embedUrl: 'https://stphilopaterstmina.breezechms.com/embed/calendar/grid?x=2',
+      }),
+    );
   });
 });
 

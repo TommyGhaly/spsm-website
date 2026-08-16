@@ -79,7 +79,20 @@ describe('parseIntegrationsConfig — field-by-field fallback', () => {
     for (const junk of [null, undefined, 'a string', 42, []]) {
       expect(() => parseIntegrationsConfig(junk)).not.toThrow();
     }
-    expect(parseIntegrationsConfig(null).livestream.target).toBe('');
+    // Against the constant, not a literal. This asserted `''` until the parish
+    // gave us a real Castr URL to commit as the default, at which point a test
+    // named "returns the committed defaults" was failing for saying otherwise.
+    expect(parseIntegrationsConfig(null).livestream.target).toBe(
+      DEFAULT_INTEGRATIONS_CONFIG.livestream.target,
+    );
+
+    // `enabled` is the one field with no fallback, and that now *diverges* from
+    // the committed default rather than agreeing with it: the default is on,
+    // because there is a stream, but a document that predates the stream and
+    // says nothing about it must still resolve to off. Anything else turns a
+    // player on under a parish that never asked for one.
+    expect(DEFAULT_INTEGRATIONS_CONFIG.livestream.enabled).toBe(true);
+    expect(parseIntegrationsConfig(null).livestream.enabled).toBe(false);
   });
 });
 

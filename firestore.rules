@@ -125,6 +125,24 @@ service cloud.firestore {
       allow write: if hasRole('staff');
     }
 
+    // The Breeze calendar embed URL, and nothing else.
+    //
+    // Not a document under /config, and that is the whole point. `config` is
+    // `allow read: if true`, and a narrower rule cannot take that back —
+    // Firestore grants when ANY matching rule allows, so `config/servants`
+    // would be world-readable no matter what was written here. A separate
+    // collection is the only way to gate it.
+    //
+    // It has to be gated because the embed URL is itself the credential: Breeze
+    // serves the calendar to anyone who requests that URL, with no session and
+    // no referrer check. The website is a static export, so the alternative —
+    // baking it into /servants — publishes it on a CDN behind a sign-in form
+    // that stops nobody.
+    match /servantsConfig/{docId} {
+      allow read: if hasRole('servant');
+      allow write: if hasRole('admin');
+    }
+
     // ---- members ----------------------------------------------------------
 
     match /members/{uid} {
@@ -157,22 +175,48 @@ service cloud.firestore {
         || inGroup('clergy')
         || hasRole('admin');
 
-      allow create: if signedIn()
+      // Open to unauthenticated writers, and it has to be.
+      //
+      // This required `signedIn()` when sign-in was expected to be for
+      // everyone. It is not: authentication is Microsoft-only against the
+      // parish Entra tenant, so clergy, staff and servants have accounts and a
+      // parishioner deliberately does not. Keeping the requirement would mean
+      // the only people who could ask for prayer are the people you would ask
+      // in person anyway.
+      //
+      // So this is bounded the way `vehicles` is — create-only, no read, every
+      // field checked, and abuse handled in a Function rather than here.
+      allow create: if request.resource.data.keys().hasOnly([
+          'body', 'visibility', 'anonymous', 'authorUid', 'authorName',
+          'contactEmail', 'status', 'notifiedAt',
+          'createdAt', 'updatedAt', 'updatedBy'
+        ])
         && request.resource.data.body is string
         && request.resource.data.body.size() > 0
         && request.resource.data.body.size() <= 2000
         && request.resource.data.visibility in ['public', 'clergy']
         && request.resource.data.status == 'active'
         && request.resource.data.notifiedAt == null
-        // Anonymity is real, not cosmetic: an anonymous request must not carry
-        // the uid at all, so it cannot be traced back later.
+        && (request.resource.data.contactEmail == null
+          || (request.resource.data.contactEmail is string
+            && request.resource.data.contactEmail.size() <= 254))
+        // A uid may only ever be your own. An unauthenticated writer must leave
+        // it null rather than claiming to be a member.
+        && request.resource.data.authorUid == (signedIn() ? request.auth.uid : null)
         && (
+          // Anonymity is real, not cosmetic: no uid *and* no name, so there is
+          // nothing to trace back later — including by us.
           (request.resource.data.anonymous == true
             && request.resource.data.authorUid == null
             && request.resource.data.authorName == null)
           ||
+          // Otherwise they told us what to call them. Unverified when they are
+          // not signed in, which is fine: it is a name for the fathers to pray
+          // with, not an identity claim that authorizes anything.
           (request.resource.data.anonymous == false
-            && request.resource.data.authorUid == request.auth.uid)
+            && request.resource.data.authorName is string
+            && request.resource.data.authorName.size() > 0
+            && request.resource.data.authorName.size() <= 100)
         );
 
       // The trade-off of true anonymity: with no uid stored, there is nobody to
@@ -243,7 +287,23 @@ service cloud.firestore {
       // Submitters can't re-read submissions; staff review them. Keeps one
       // person's registration from being readable by the next.
       allow read: if hasRole('staff');
-      allow create: if request.resource.data.formId is string;
+
+      // CLOSED, deliberately, until the forms feature exists.
+      //
+      // This used to be `if request.resource.data.formId is string`, which
+      // validated one field and nothing else: no size bound, no field
+      // whitelist, no check that the referenced form exists or is open, and no
+      // authentication. That is an unauthenticated writer creating arbitrary
+      // documents of arbitrary size, on a billed project, for a feature that
+      // has no schema, no route, and no UI. Nothing legitimate used it.
+      //
+      // The honest fix is not a tighter guess at a shape nobody has designed.
+      // `forms` and `formSubmissions` have collection names and rules and no
+      // TypeScript type; when that type is written, this rule gets written
+      // beside it and can validate against something real. Until then the
+      // collection behaves like every other unopened one in this file.
+      allow create: if false;
+
       allow update, delete: if hasRole('staff');
     }
 

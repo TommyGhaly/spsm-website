@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getProducts, ProductGrid } from '@/features/bookstore';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Bookstore',
@@ -26,11 +27,13 @@ export default async function BookstorePage() {
         lede="Books, icons, and church goods. Purchases are made in person at the bookstore."
       />
 
-      {products.length === 0 ? (
-        <EmptyState what="products" collection="products" />
-      ) : (
-        <ProductGrid products={products} />
-      )}
+      <PageBody>
+        {products.length === 0 ? (
+          <EmptyState what="products" collection="products" />
+        ) : (
+          <ProductGrid products={products} />
+        )}
+      </PageBody>
     </>
   );
 }

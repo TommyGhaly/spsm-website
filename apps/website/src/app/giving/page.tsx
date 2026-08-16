@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { GivingPanel, givingUrl } from '@/features/giving';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Giving',
@@ -12,9 +13,11 @@ export default function GivingPage() {
     <>
       <PageHeader
         title="Giving"
-        lede="Thank you for supporting the ministry of the parish."
+        lede="What is offered here sustains the church, its services, and the poor."
       />
-      <GivingPanel givingUrl={givingUrl()} />
+      <PageBody>
+        <GivingPanel givingUrl={givingUrl()} />
+      </PageBody>
     </>
   );
 }
