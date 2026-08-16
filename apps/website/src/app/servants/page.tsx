@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AdminGate } from '../admin/AdminGate';
 import { ScheduleEmbed } from '@/features/servants';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 
 /**
  * The servants schedule.
@@ -30,9 +31,11 @@ export default function ServantsPage() {
         title="Servants Schedule"
         lede="Who is serving, and when. Signed in with your parish Microsoft account — no separate password."
       />
-      <AdminGate requires="servant" area="servants schedule">
-        <ScheduleEmbed />
-      </AdminGate>
+      <PageBody>
+        <AdminGate requires="servant" area="servants schedule">
+          <ScheduleEmbed />
+        </AdminGate>
+      </PageBody>
     </>
   );
 }

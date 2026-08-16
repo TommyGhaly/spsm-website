@@ -13,14 +13,19 @@
  * real phone number with a blank default would be a genuinely bad afternoon.
  * Use `--force` to overwrite deliberately.
  *
+ * `--only=<id>` narrows it to one document, and is the safe way to push a theme
+ * change: `--force` on its own overwrites all three, so re-publishing the design
+ * tokens would take the parish's real address and phone number down with them.
+ *
  * Usage:
  *   npm run config                  # show what is there now
  *   npm run config -- --write       # create anything missing
- *   npm run config -- --write --force
+ *   npm run config -- --write --force --only=theme
  */
 import {
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
+  DEFAULT_THEME,
 } from '../packages/shared/dist/index.js';
 import { accessToken, documentUrl, fromFirestore, toFieldMap } from './lib/firestore-rest.mjs';
 
@@ -30,10 +35,25 @@ const write = process.argv.includes('--write');
 const force = process.argv.includes('--force');
 const project = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
-const DOCS = [
+const ALL_DOCS = [
   { id: 'integrations', defaults: DEFAULT_INTEGRATIONS_CONFIG },
   { id: 'parish', defaults: DEFAULT_PARISH_CONFIG },
+  // Design tokens. Unlike the two above, seeding this is optional — the site
+  // ships the same values in its bundle and renders identically without the
+  // document. Writing it is what makes the theme *editable*, so it is worth
+  // doing before handing the console to anyone.
+  { id: 'theme', defaults: DEFAULT_THEME },
 ];
+
+const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length);
+const DOCS = only ? ALL_DOCS.filter((doc) => doc.id === only) : ALL_DOCS;
+
+// An unrecognised id would otherwise select nothing and print a clean, empty,
+// entirely successful run — which reads exactly like a write that worked.
+if (only && DOCS.length === 0) {
+  console.error(`Unknown --only=${only}. Expected one of: ${ALL_DOCS.map((d) => d.id).join(', ')}`);
+  process.exit(1);
+}
 
 const authHeader = { Authorization: `Bearer ${accessToken()}` };
 const urlFor = (id) => documentUrl(project, `config/${id}`);

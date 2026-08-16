@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getUpcomingEvents, EventCard } from '@/features/events';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Parish Calendar',
@@ -19,15 +20,17 @@ export default async function EventsPage() {
         lede="Liturgies, classes, and gatherings. Times are shown in Eastern Time."
       />
 
-      {events.length === 0 ? (
-        <EmptyState what="events" collection="events" />
-      ) : (
-        <ul className="grid">
-          {events.map((event) => (
-            <EventCard key={event.id} event={event} showLocation />
-          ))}
-        </ul>
-      )}
+      <PageBody>
+        {events.length === 0 ? (
+          <EmptyState what="events" collection="events" />
+        ) : (
+          <ul className="grid">
+            {events.map((event) => (
+              <EventCard key={event.id} event={event} showLocation />
+            ))}
+          </ul>
+        )}
+      </PageBody>
     </>
   );
 }

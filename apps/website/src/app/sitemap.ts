@@ -14,15 +14,20 @@ import { SITE_ORIGIN } from './layout';
  * `output: 'export'` still runs this during `next build` and writes
  * `out/sitemap.xml`.
  *
- * Not listed, deliberately: `/admin` (staff tooling, also `noindex`),
- * `/parking` (reached by NFC tap, not by search), and `/misc` (no longer
- * emitted at all).
+ * Not listed, deliberately: `/admin` (staff tooling, also `noindex`), `/misc`
+ * (no longer emitted at all), and the three NFC routes — `/parking`, `/prayer`,
+ * and `/welcome` — which are reached by tapping a tag, not by searching. Nothing
+ * on the site links to them either; see NAV in layout.tsx.
  */
 
 // Routes that exist as real pages and are not driven by the content collection.
-const FIXED_ROUTES = ['/', '/events', '/livestream', '/giving', '/contact', '/prayer'] as const;
+const FIXED_ROUTES = ['/', '/events', '/livestream', '/giving', '/contact'] as const;
 
-const EXCLUDED_SECTIONS: readonly string[] = ['contact', 'misc'];
+// `clergy` joins these because it is no longer a route: the biographies are
+// disclosures on the homepage, which is already listed above. Keep this in step
+// with NOT_A_PAGE in [section]/page.tsx — a sitemap advertising a URL the export
+// never wrote is worse than no sitemap.
+const EXCLUDED_SECTIONS: readonly string[] = ['contact', 'clergy', 'misc', 'welcome'];
 
 export const dynamic = 'force-static';
 

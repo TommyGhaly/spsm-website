@@ -11,11 +11,11 @@ import type { ContentSection } from '@spsm/shared';
 export const SECTION_META: Record<ContentSection, { title: string; lede: string }> = {
   welcome: {
     title: 'Welcome',
-    lede: 'New here, or curious? Start with this.',
+    lede: 'If you are coming for the first time, begin here.',
   },
   about: {
     title: 'About the Parish',
-    lede: 'Who we are, and how we came to be here.',
+    lede: 'This parish, its history, and the Church to which it belongs.',
   },
   beliefs: {
     title: 'Our Faith',
@@ -27,7 +27,7 @@ export const SECTION_META: Record<ContentSection, { title: string; lede: string 
   },
   ministries: {
     title: 'Ministries',
-    lede: 'The groups that meet, serve, and welcome throughout the year.',
+    lede: 'How the parish serves, teaches, and gathers through the year.',
   },
   contact: {
     title: 'Contact Us',

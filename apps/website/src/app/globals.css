@@ -1,32 +1,21 @@
 /*
- * Base styles. Deliberately plain CSS with custom properties rather than a
- * utility framework: the parish will outlive whatever is fashionable, and a
- * volunteer picking this up in three years can read it.
+ * The parish's stylesheet.
  *
- * Swap the palette here and the whole site follows.
+ * Every colour, size, space, and radius here reads a custom property that comes
+ * from `config/theme` in Firestore, emitted into a <style> element by
+ * `emitThemeCss` in the root layout. **There are no literal colours or type
+ * sizes in this file**, and that is the rule to keep: a hardcoded `#992a21`
+ * here is a value the parish cannot change, and one that the mobile app will
+ * disagree with. See packages/shared/src/schema/theme.ts.
+ *
+ * The fallbacks in `var(--x, y)` are not a second opinion about the design.
+ * They exist so this sheet still renders if it is ever loaded without the
+ * theme element — a `next dev` hot reload mid-edit, or a future preview pane.
+ *
+ * Deliberately plain CSS with custom properties rather than a utility framework
+ * or CSS modules: the parish will outlive whatever is fashionable, and a
+ * volunteer picking this up in three years can read it.
  */
-
-:root {
-  --ink: #1c1a17;
-  --ink-soft: #4a453e;
-  --ink-faint: #7a736a;
-
-  --paper: #fbf9f5;
-  --paper-raised: #ffffff;
-  --rule: #e5dfd4;
-
-  /* Liturgical red and gold, muted enough to read as typography rather than
-     decoration. */
-  --accent: #8c2f26;
-  --accent-soft: #f5eae8;
-  --gold: #9a7b3f;
-
-  --measure: 68ch;
-  --gutter: clamp(1rem, 4vw, 2.5rem);
-
-  --font-body: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
 
 *,
 *::before,
@@ -36,43 +25,74 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+  /* Anchored headings (`/ministries#mother-of-mercy`) otherwise land under the
+     sticky masthead. Kept a little above the bar's own height — see `.masthead`,
+     which is 5rem plus its rule — so the heading clears it rather than touching. */
+  scroll-padding-top: 6.5rem;
+}
+
+/* Honour a reader who has asked their OS for less movement. Every transition
+   and transform in this sheet is decorative, so all of it can go. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
   margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-body);
-  font-size: 1.0625rem;
-  line-height: 1.65;
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-ink, #1c1614);
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-body, 1.0625rem);
+  line-height: var(--leading-relaxed, 1.65);
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1,
 h2,
 h3,
+h4,
 nav,
 .ui {
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, system-ui, sans-serif);
 }
 
 h1 {
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  margin: 0 0 0.5em;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+  letter-spacing: var(--tracking-tight, -0.02em);
+  margin: 0 0 var(--space-md, 1rem);
 }
 
 h2 {
-  font-size: clamp(1.25rem, 2.5vw, 1.5rem);
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-  margin: 2.5rem 0 0.75rem;
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-snug, 1.25);
+  letter-spacing: var(--tracking-tight, -0.02em);
+  margin: 0 0 var(--space-md, 1rem);
+}
+
+h3 {
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.25);
+  margin: 0 0 var(--space-sm, 0.5rem);
 }
 
 a {
-  color: var(--accent);
+  color: var(--color-accent, #992a21);
   text-underline-offset: 0.15em;
+  text-decoration-thickness: from-font;
 }
 
 a:hover {
@@ -81,23 +101,53 @@ a:hover {
 
 /* Visible focus. Removing this is an accessibility regression, not a polish. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent, #992a21);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+img,
+svg {
+  max-width: 100%;
 }
 
 .skip-link {
   position: absolute;
   left: -9999px;
   top: 0;
-  background: var(--paper-raised);
-  padding: 0.75rem 1rem;
+  background: var(--color-paper-raised, #fdf7f4);
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
   z-index: 100;
 }
 
 .skip-link:focus {
   left: 0;
 }
+
+/*
+ * Present to a screen reader, absent to the eye.
+ *
+ * For the case where a landmark needs a name but a visible heading over
+ * self-explanatory content would be clutter — the homepage's three visiting
+ * tiles, for instance. `clip-path` with a 1px box rather than `display: none`,
+ * which would remove it from the accessibility tree too and defeat the point.
+ *
+ * Distinct from `.skip-link`, which is hidden until *focused*. Anything using
+ * this is not focusable and never appears.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- layout primitives ------------------------------------------------- */
 
 .shell {
   min-height: 100dvh;
@@ -107,37 +157,216 @@ a:hover {
 
 .wrap {
   width: 100%;
-  max-width: 72rem;
+  max-width: var(--shell-width, 72rem);
   margin-inline: auto;
-  padding-inline: var(--gutter);
+  padding-inline: var(--space-gutter, 1.5rem);
 }
 
-/* ---- header ---- */
+/*
+ * A page's content column, below its header band. See components/PageBody.tsx
+ * for why the container lives in the pages rather than the layout.
+ *
+ * The owl selector gives every page the same rhythm between its top-level
+ * blocks without each page choosing a margin — and without a bare `section`
+ * rule that would also hit sections nested inside features.
+ */
+.page-body {
+  padding-bottom: var(--space-section, 4rem);
+}
 
+.page-body > * + * {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+/* Narrower than `.wrap`, for reading. A 72rem-wide paragraph is unreadable; the
+   measure is what keeps a line of prose to roughly twelve words. */
+.prose {
+  max-width: var(--measure, 68ch);
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose blockquote {
+  margin-block: 0 1.1em;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose h2 {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+.prose h3 {
+  margin-top: var(--space-lg, 1.5rem);
+}
+
+.prose blockquote {
+  margin-inline: 0;
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid var(--color-gold, #b08d43);
+  color: var(--color-ink-soft, #4b413e);
+  font-style: italic;
+}
+
+.lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * A full-bleed horizontal band.
+ *
+ * Sections alternate between `paper` and this so a long page reads as distinct
+ * parts rather than one column of text — the single biggest structural
+ * improvement available without any photography.
+ */
+.band {
+  padding-block: var(--space-section, 4rem);
+}
+
+.band--sunken {
+  background: var(--color-paper-sunken, #eeddd7);
+  border-block: 1px solid var(--color-rule, #e0cac3);
+}
+
+/*
+ * A gold hairline along the top of each sunken band.
+ *
+ * One pixel, and it is most of what stops the page reading as beige-on-beige.
+ * The bands were previously separated only by `--color-rule`, which is a
+ * near-invisible warm grey; this gives every section boundary a deliberate
+ * edge in the parish's own gold.
+ */
+.band--sunken {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+}
+
+.band--deep {
+  /*
+   * A gradient rather than a flat fill, so the band reads as depth instead of as
+   * a black rectangle.
+   *
+   * The light end was `azureDeep`, the sanctuary blue of the murals, back when
+   * `deep` was a navy and the two were a few degrees apart on the wheel. Against
+   * a red `deep` that same gradient ran blue to red across the band and looked
+   * like a printing error. Both stops are now on the accent's hue.
+   *
+   * The lift is the masthead's 18%, and for the masthead's reason: the band's
+   * section eyebrow is gold, it sits at the top-left where a `150deg` gradient
+   * is lightest, and gold on raw `accentStrong` is 3.5:1. Held here it is 4.69.
+   */
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 18%, var(--color-deep, #481010)) 0%,
+    var(--color-deep, #481010) 55%,
+    var(--color-deep, #481010) 100%
+  );
+  color: var(--color-ink-inverse, #f9efec);
+  border-block: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+}
+
+.band--deep h1,
+.band--deep h2,
+.band--deep h3 {
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.band--deep .lede {
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 78%, transparent);
+}
+
+main {
+  flex: 1;
+}
+
+/* ---- masthead ---------------------------------------------------------- */
+
+/*
+ * The masthead is dark red, not tinted white.
+ *
+ * Tinting the paper was not enough on its own: `paperRaised` at 88% opacity is
+ * a white bar however warm the hex is, and the bar is the first thing on every
+ * page. With the footer and the closing band already in oxblood, a dark header
+ * bookends the site in the parish's colour instead of floating a pale strip
+ * above it.
+ *
+ * The gradient runs a lifted `deep` into `deep` on the diagonal, pairing with
+ * `.band--deep` so the top and bottom of the page are made of one thing.
+ *
+ * **Opaque, and the light end is only just off `deep`** — both are contrast
+ * constraints, not taste. Gold is the header's second colour: it is the
+ * subtitle, the current nav item, and the focus ring. Gold needs 4.5:1 and
+ * measures 3.5:1 on `accentStrong`, and 3.0:1 once a translucent bar picks up
+ * the pale page beneath it. 18% of the way from `deep` toward `accentStrong` is
+ * about the most lift the gradient can take: gold reads 4.69:1 at that point,
+ * 4.96 at the dark end. At the 28% this started as, it was 4.41 and failing.
+ *
+ * So: no `backdrop-filter`, and re-check gold against the *light* end before
+ * touching either stop.
+ */
 .masthead {
-  border-bottom: 1px solid var(--rule);
-  background: var(--paper-raised);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 18%, var(--color-deep, #481010)) 0%,
+    var(--color-deep, #481010) 62%
+  );
+  color: var(--color-ink-inverse, #f9efec);
+  /* Vestment trim: the gold hairline is what separates the bar from the page
+     below it, in place of the near-invisible `rule` a white header needed. */
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+/*
+ * The global focus ring is `accent`, a dark red — which on the dark red bar is
+ * very nearly invisible. Gold is the only colour in the palette that separates
+ * from this ground, so keyboard focus in the header switches to it.
+ *
+ * Scoped to `.masthead` rather than changing the global ring, which is correct
+ * everywhere else it appears.
+ */
+.masthead :focus-visible {
+  outline-color: var(--color-gold, #b08d43);
 }
 
 .masthead__inner {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 2rem;
-  padding-block: 1.25rem;
+  /*
+   * The wordmark and the nav are two different things and want a clear gap
+   * between them, not the one rem they had. There is room: at the narrowest
+   * width the inline nav shows at all, the two measure 1003px together inside a
+   * content box of 1171.
+   */
+  gap: var(--space-xl, 2.5rem);
+  padding-block: var(--space-md, 1rem);
+  min-height: 5rem;
 }
 
 .wordmark {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 1.0625rem;
-  letter-spacing: -0.01em;
-  color: var(--ink);
+  gap: var(--space-md, 1rem);
+  color: var(--color-ink-inverse, #f9efec);
   text-decoration: none;
-  line-height: 1.2;
+  line-height: var(--leading-snug, 1.2);
+  /*
+   * Shrinkable, and `min-width: 0` with it.
+   *
+   * These were `flex-shrink: 0`, which on a phone made the wordmark overflow the
+   * masthead and pushed the Menu button clean off the right edge — the
+   * navigation was unreachable at 375px, with nothing on screen to suggest it
+   * existed. A flex item also will not shrink below its content's intrinsic
+   * width without `min-width: 0`, so both are needed.
+   */
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 /*
@@ -150,147 +379,1501 @@ a:hover {
   flex-shrink: 0;
 }
 
+/*
+ * The parish name is set in the display serif, not the UI sans it used to be.
+ *
+ * It is a name on a letterhead, not a control, and beside the seal the serif is
+ * what makes the two read as one mark. The small sans-serif capitals beneath it
+ * are the contrast that keeps the pair from reading as one grey block.
+ */
+.wordmark__name {
+  display: block;
+  min-width: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight, -0.01em);
+  transition: color 150ms ease;
+}
+
 .wordmark__name span {
   display: block;
-  font-weight: 400;
-  font-size: 0.8125rem;
-  color: var(--ink-faint);
-  letter-spacing: 0.04em;
+  margin-top: 0.15rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 500;
+  font-size: var(--type-micro, 0.8125rem);
+  /*
+   * Gold, which the old white header could not have: on paper it measures about
+   * 3:1 and fails as text. On the dark bar it is 5.2:1 and passes, so the one
+   * line that names the parish's city gets to be the parish's own gold.
+   */
+  color: var(--color-gold, #b08d43);
+  letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
 }
 
+/* The whole mark is a link home; the name answering to the pointer is what says
+   so, since a seal cannot underline. */
+.wordmark:hover .wordmark__name {
+  color: var(--color-gold, #b08d43);
+}
+
 /*
- * On a narrow screen the parish name is the thing worth the space. The seal is
- * the first thing to go — it is decorative here, and the name already carries
- * the identity.
+ * On a phone the parish name is the thing worth the space, and the Menu button
+ * must be reachable. So the subtitle goes and the name shrinks enough to sit on
+ * two lines beside a smaller seal. The full name and the subtitle are both in
+ * the footer of every page.
+ *
+ * This block must stay *after* the `.wordmark__name span` rule above. Both have
+ * the same specificity, so source order decides — placed before it, the
+ * `display: block` won and the subtitle stayed on screen at 375px.
  */
-@media (max-width: 26rem) {
+@media (max-width: 30rem) {
+  .masthead__inner {
+    gap: var(--space-sm, 0.5rem);
+    padding-block: var(--space-sm, 0.5rem);
+    min-height: 4.25rem;
+  }
+
+  .wordmark {
+    gap: var(--space-sm, 0.5rem);
+  }
+
   .wordmark__seal {
+    height: 2.5rem;
+  }
+
+  /* Set on `.wordmark__name` rather than `.wordmark`, which no longer carries a
+     font size of its own — the name and the subtitle each set their own. */
+  .wordmark__name {
+    font-size: var(--type-small, 0.9375rem);
+  }
+
+  .wordmark__name span {
     display: none;
+  }
+
+  .nav-toggle {
+    /* Keeps the label from being the thing that wraps. */
+    flex-shrink: 0;
   }
 }
 
+/* ---- navigation -------------------------------------------------------- */
+
+/*
+ * Ten top-level links, one row.
+ *
+ * `nowrap` is load-bearing rather than cosmetic. Allowed to wrap, the nav
+ * silently became three ragged rows above the fold on every page — and it did
+ * that at 1280px, which is most desktop windows. Now it either fits on one line
+ * or the disclosure below takes over; there is no in-between state to get
+ * wrong.
+ *
+ * The measurements that set the 72rem breakpoint: ten items at this padding are
+ * about 690px, and the wordmark without its subtitle is about 310px. Those plus
+ * the gutters need roughly 1030px to fit at all, so the changeover has to sit
+ * above that with room to spare — a label growing by one word must not silently
+ * re-break the header.
+ */
 .nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  /*
+   * Was 2px, which put seven labels in a row so tight they read as one long
+   * string — "AboutOur FaithCalendar" at a glance. The padding below does most
+   * of the separating; this is the gap between the pills themselves.
+   */
+  gap: var(--space-xs, 0.25rem);
   margin-left: auto;
-  font-size: 0.9375rem;
+  font-size: var(--type-small, 0.9375rem);
 }
 
+/*
+ * Inverse type on the dark bar, one step down from the wordmark.
+ *
+ * `inkInverse` at 88% rather than flat: the parish name is the loudest thing in
+ * the header and seven nav labels at the same weight would compete with it. The
+ * difference is small enough that the links still measure over 11:1.
+ */
 .nav a {
-  color: var(--ink-soft);
+  position: relative;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
   text-decoration: none;
-  padding-block: 0.25rem;
-  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-full, 999px);
+  white-space: nowrap;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
+/*
+ * Hover fills a pill rather than only recolouring the word, which at this size
+ * was a change small enough to miss.
+ *
+ * The fill is white at 12%, not a palette colour: on a red ground every tint in
+ * the theme is either invisible or a second red, and a wash of the type's own
+ * colour is what reads as the label lighting up.
+ */
 .nav a:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  color: var(--color-ink-inverse, #f9efec);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
 }
 
-/* ---- main ---- */
+/*
+ * A short gold bar under the page you are on.
+ *
+ * Deliberately a different device from the hover pill, not a stronger version of
+ * it: the two states have to be legible at the same time, because the pointer is
+ * very often resting on the link you are already on. Gold rather than red so it
+ * cannot be mistaken for the hover tint either.
+ *
+ * `transform: scaleX` rather than animating `width`, so it runs on the
+ * compositor and never triggers layout — this is in the masthead, which is
+ * sticky and repaints on every scroll frame.
+ */
+.nav a::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0.2rem;
+  width: 1.25rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-gold, #b08d43);
+  transform: translateX(-50%) scaleX(0);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-main {
+.nav a[aria-current='page']::after {
+  transform: translateX(-50%) scaleX(1);
+}
+
+/* The page you are on. `aria-current` rather than a class, so the styling and
+   the screen-reader announcement can never disagree. */
+.nav a[aria-current='page'] {
+  color: var(--color-gold, #b08d43);
+  font-weight: 600;
+}
+
+/* A visual full stop between browsing links and the one that asks for money. */
+.nav__give {
+  margin-left: var(--space-sm, 0.5rem);
+}
+
+/*
+ * The hamburger, and the two halves of the responsive nav.
+ *
+ * Ten top-level links do not fit a phone. Below 64rem the inline nav is
+ * replaced by a disclosure panel; above it, the toggle is hidden. Both markup
+ * trees are always present and CSS chooses — which is what lets this work in a
+ * static export with no JavaScript needed for the desktop case.
+ */
+.nav-toggle {
+  display: none;
+  margin-left: auto;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 500;
+  color: var(--color-ink-inverse, #f9efec);
+  background: transparent;
+  /* Gold, like the bar's own bottom edge. `rule` is a paper colour and was
+     invisible against the dark ground. */
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  /* Pill, to match the shape the inline links take on the wider screen — it is
+     the same control in a different form and should look like it. */
+  border-radius: var(--radius-full, 999px);
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.nav-toggle:hover,
+/* Open, it is the thing the panel below belongs to, so it stays lit while the
+   panel is down rather than reverting the moment the pointer leaves. */
+.nav-toggle[aria-expanded='true'] {
+  color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
+  border-color: var(--color-gold, #b08d43);
+}
+
+.nav-panel {
+  display: none;
+}
+
+/*
+ * The wordmark's second line used to be hidden above the changeover, on the
+ * grounds that the inline nav needed every pixel. It does not — that was
+ * measured when the nav had ten items and `--shell-width` was 1152.
+ *
+ * With seven items in a 1280 shell the header had roughly 400px of empty middle
+ * and no statement of where the parish is, on the one page width where there was
+ * room for both. Measured just above 78rem, the narrowest viewport at which the
+ * inline nav shows at all: wordmark 406px and nav 596px, plus the 40px between
+ * them, inside a content box of 1171.
+ *
+ * That ~128px of slack is the budget. A nav item added or a label lengthened
+ * spends it, and the failure is silent — the wordmark wraps rather than the nav
+ * collapsing — so re-measure here before adding to NAV in layout.tsx.
+ */
+
+@media (max-width: 78rem) {
+  .nav {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: flex;
+  }
+
+  /*
+   * Absolutely positioned, and that is a fix rather than a flourish.
+   *
+   * `SiteNav` renders the panel as a sibling of the inline nav and the toggle,
+   * so in flow it became a third flex item of `.masthead__inner` and laid out
+   * *inside* the header row — the links appeared in a clipped column off the
+   * right edge. Taking it out of flow is what puts it below the masthead.
+   *
+   * The containing block is `.masthead`, which is `position: sticky` and
+   * therefore positioned; `top: 100%` is the bottom of the header. It inherits
+   * that element's `z-index: 50`, so it paints over the page rather than
+   * pushing the hero down as it opens.
+   */
+  .nav-panel--open {
+    display: block;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    /* Continues the bar rather than hanging a white sheet off it — the panel is
+       the same navigation, just unfolded, and on a phone it is the navigation.
+       Opaque, not translucent: it scrolls over page content. */
+    border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+    background: var(--color-deep, #481010);
+    box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
+    /* The panel can be taller than a phone in landscape. */
+    max-height: min(70dvh, 32rem);
+    overflow-y: auto;
+  }
+
+  .nav-panel__links {
+    list-style: none;
+    margin: 0;
+    /* `padding-inline: 0` explicitly. Setting only `padding-block` leaves the
+       UA's 40px `padding-inline-start` on the `ul`, which indented every link
+       40px past the masthead's gutter — visibly misaligned with the wordmark
+       directly above it. */
+    padding-block: var(--space-sm, 0.5rem);
+    padding-inline: 0;
+    display: grid;
+  }
+
+  .nav-panel__links a {
+    position: relative;
+    display: block;
+    /* 0.85rem, not 0.5: with 17px text this is the difference between a 41px
+       row and a 47px one, and 44px is the smallest thing a thumb hits reliably. */
+    padding: 0.85rem 0;
+    font-family: var(--font-ui, system-ui, sans-serif);
+    font-size: var(--type-body, 1.0625rem);
+    color: var(--color-ink-inverse, #f9efec);
+    text-decoration: none;
+    /* The divider is the type's own colour at 15%, for the same reason the hover
+       pill is: `rule` is a paper colour and disappears on this ground. */
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 15%, transparent);
+  }
+
+  .nav-panel__links li:last-child a {
+    border-bottom: 0;
+  }
+
+  .nav-panel__links a[aria-current='page'] {
+    color: var(--color-gold, #b08d43);
+    font-weight: 600;
+  }
+
+  /*
+   * The same gold marker the inline nav uses, stood on its end in the gutter.
+   *
+   * Offset by `space-sm` into the panel's padding, which is the gutter and never
+   * narrower than 18px, so the bar sits in empty space rather than being clipped
+   * by the panel edge.
+   */
+  .nav-panel__links a[aria-current='page']::before {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--space-sm, 0.5rem));
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 1.4rem;
+    border-radius: 2px;
+    background: var(--color-gold, #b08d43);
+  }
+}
+
+/* ---- hero -------------------------------------------------------------- */
+
+/*
+ * The homepage hero: a photograph of this parish's own sanctuary, with the
+ * heading sitting in the darkened lower third.
+ *
+ * Bottom-anchored rather than centred, and that is driven by the image. The
+ * photograph's subject — the iconostasis, the altar, the priest — occupies the
+ * upper two thirds, so centring the text would put the parish's name across the
+ * icons. Anchoring it low leaves the image legible and gives the gradient a
+ * natural place to be darkest.
+ */
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(26rem, 76vh, 42rem);
+  background: var(--color-deep, #481010);
+  color: var(--color-ink-inverse, #f9efec);
+  overflow: hidden;
+}
+
+.hero__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /*
+   * `center 34%` keeps the altar and the icons above it in frame when the hero
+   * is shorter than the photograph's 2.6:1 — which is every viewport narrower
+   * than about 1100px. Dead centre crops the tops of the murals.
+   */
+  object-position: center 34%;
+  /*
+   * A warm grade, because the murals in this photograph are blue.
+   *
+   * This is the only large cool surface left on the site, and directly under a
+   * dark red masthead it read as the page having two unrelated colour schemes.
+   * Pulling the saturation down a little and pushing the remainder warm lets the
+   * photograph sit in the same room as the chrome around it.
+   *
+   * Deliberately light: at `saturate(0.62) sepia(0.3)` this was a sepia
+   * photograph — obviously filtered, and it flattened the icons the picture is
+   * here to show. Enough to take the blue cast off, not enough to notice as an
+   * effect. A veil cannot do this job at any strength, since a red wash over
+   * blue is purple.
+   *
+   * **Delete this line to get the original colours back** — nothing else
+   * depends on it.
+   */
+  filter: saturate(0.82) sepia(0.14);
+}
+
+/*
+ * The portrait source is cropped tight around the altar already, so it wants to
+ * sit high rather than at 34% — the mural above the altar is the top of that
+ * composition and centring it cuts the cross off.
+ */
+@media (max-width: 40rem) {
+  .hero__photo {
+    object-position: center top;
+  }
+}
+
+/*
+ * Legibility, and nothing more.
+ *
+ * The old version of this had to crush a stock photograph of a *different*
+ * church down to texture. This one is the parish's own sanctuary, so the job
+ * inverts: show as much of the photograph as the text can survive. Transparent
+ * across the top two thirds where the icons are, ramping to near-solid only
+ * under the heading.
+ */
+/*
+ * Two gradients, because the text and the photograph want opposite things.
+ *
+ * The vertical one darkens the lower third, where the heading sits. On its own
+ * it was not enough: the heading crosses the middle of the frame, which is the
+ * priest, the altar cloth and a lit screen — the busiest, brightest region in
+ * the picture. So a second gradient weights the left, where the text block
+ * actually is, and leaves the right side — the Pantocrator icon and the murals —
+ * essentially untouched.
+ *
+ * The result protects the words without flattening the photograph, which a
+ * single stronger vertical gradient would have done.
+ */
+.hero__veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-deep, #481010) 62%, transparent) 0%,
+      color-mix(in srgb, var(--color-deep, #481010) 28%, transparent) 42%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      color-mix(in srgb, var(--color-deep, #481010) 12%, transparent) 34%,
+      color-mix(in srgb, var(--color-deep, #481010) 62%, transparent) 68%,
+      color-mix(in srgb, var(--color-deep, #481010) 88%, transparent) 100%
+    );
+}
+
+.hero__inner {
+  position: relative;
+  padding-block: var(--space-xl, 2.5rem) var(--space-section, 4rem);
+  display: grid;
+  gap: var(--space-md, 1rem);
+  justify-items: start;
+  text-align: left;
+}
+
+.hero h1 {
+  font-size: var(--type-display, 3rem);
+  margin: 0;
+  max-width: 22ch;
+  color: var(--color-ink-inverse, #f9efec);
+  /* The heading sits on a photograph, not a flat fill, so it needs its own
+     shadow — the gradient alone cannot guarantee contrast against a bright
+     vestment or a lit window that happens to land behind a letter. */
+  text-shadow: 0 2px 18px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+.hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  max-width: 46ch;
+  margin: 0;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+  text-shadow: 0 1px 12px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+/*
+ * The gold eyebrow needs help that the gradient does not give it.
+ *
+ * It sits high in the hero where the veil is nearly transparent, and gold on a
+ * sunlit mural of pale blue and cream is close to invisible — it was legible in
+ * the old hero only because that one was 92% flat dark. So: a lighter gold, and
+ * its own shadow. Small uppercase text is the first thing to fail a contrast
+ * check over a photograph, and it is carrying the parish's location.
+ */
+.hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 45%, var(--color-ink-inverse, #f9efec));
+  text-shadow: 0 1px 10px color-mix(in srgb, var(--color-deep, #481010) 85%, transparent);
+  margin: 0;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.75rem);
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+/*
+ * The hero's buttons are left-aligned with its heading; the closing band's are
+ * centred under centred text. `text-align: center` on the parent does not do
+ * this — these are flex items, so they need `justify-content`, which is exactly
+ * the trap that left them hugging the left edge when the hero went
+ * left-aligned.
+ */
+.hero__actions--center {
+  justify-content: center;
+}
+
+/* ---- motion ------------------------------------------------------------
+ *
+ * All of it CSS, none of it JavaScript, and that is a correctness decision as
+ * much as a weight one.
+ *
+ * The obvious way to do scroll reveals is IntersectionObserver, which means the
+ * server has to render the content already hidden. On a static export that
+ * yields a page whose text is invisible until JavaScript runs — so a slow
+ * connection, a blocked bundle, or a crawler that does not execute scripts sees
+ * a blank homepage. Scroll-driven CSS animations have no such failure mode.
+ *
+ * The fallback chain, deliberately, ends visible in every case:
+ *   - reduced motion  → the whole block is skipped; nothing animates.
+ *   - no `view()`     → `animation-timeline` is dropped, leaving a 0s animation
+ *                       that lands on its end state immediately. Visible.
+ *   - supported       → reveals on scroll.
+ *
+ * That third line is the rule the rest of this block has to obey, and it is
+ * easy to break: an animation whose *end* state is hidden — anything that fades
+ * something out as it leaves — lands on "invisible" in an engine without
+ * `view()`, and the hero disappears for that reader. So every exit-shaped
+ * animation below sits inside `@supports (animation-timeline: view())`, and
+ * everything outside that guard ends visible. Check this before adding one.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /*
+   * A slow breathing zoom across the sanctuary photograph. 32s and 6% of scale:
+   * at this speed it reads as the room breathing rather than as an animation,
+   * which is the difference between "alive" and "distracting" on a page someone
+   * may leave open through a liturgy.
+   *
+   * `scale` as its own property rather than inside a `transform`, because the
+   * parallax below animates `translate` on this same element. Individual
+   * transform properties compose; two animations both writing `transform` do
+   * not — the later one in the list wins outright and the breath would stop.
+   */
+  .hero__photo {
+    animation: hero-breathe 32s ease-in-out infinite alternate;
+    will-change: scale;
+  }
+
+  /* The hero's own text, on load rather than on scroll — it is already in view. */
+  .hero__inner > * {
+    animation: rise-in 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  .hero__inner > :nth-child(1) { animation-delay: 80ms; }
+  .hero__inner > :nth-child(2) { animation-delay: 180ms; }
+  .hero__inner > :nth-child(3) { animation-delay: 300ms; }
+  .hero__inner > :nth-child(4) { animation-delay: 420ms; }
+
+  /*
+   * Everything below the fold reveals as it scrolls in.
+   *
+   * `animation-range: entry 10% cover 26%` finishes the reveal well before the
+   * element reaches the middle of the screen — a reveal still in progress when
+   * you are trying to read is worse than none.
+   */
+  .reveal {
+    animation: rise-in linear both;
+    animation-timeline: view();
+    animation-range: entry 10% cover 26%;
+  }
+
+  /* Staggered children, for a grid of cards. Capped at six: past that the last
+     card waits long enough to look broken rather than choreographed. */
+  .reveal-stagger > * {
+    animation: rise-in linear both;
+    animation-timeline: view();
+  }
+  .reveal-stagger > :nth-child(1) { animation-range: entry 8% cover 22%; }
+  .reveal-stagger > :nth-child(2) { animation-range: entry 11% cover 25%; }
+  .reveal-stagger > :nth-child(3) { animation-range: entry 14% cover 28%; }
+  .reveal-stagger > :nth-child(4) { animation-range: entry 17% cover 31%; }
+  .reveal-stagger > :nth-child(5) { animation-range: entry 20% cover 34%; }
+  .reveal-stagger > :nth-child(n + 6) { animation-range: entry 23% cover 37%; }
+
+  /*
+   * The gold rule before a section eyebrow draws itself in.
+   *
+   * The same gesture the cards already make on hover — a rule scaling from its
+   * left edge — which is what ties the two together rather than making this a
+   * second, unrelated effect. It ends at full width, so it is safe outside the
+   * `@supports` guard.
+   */
+  .section-head__eyebrow::before {
+    transform-origin: left center;
+    animation: rule-draw linear both;
+    animation-timeline: view();
+    animation-range: entry 12% cover 30%;
+  }
+
+  /*
+   * Everything from here down is scroll-*exit* motion, which needs the guard:
+   * without a timeline these animations would land on their end state — a hero
+   * that has faded out and a photograph pushed 3% down the frame — and stay
+   * there.
+   */
+  @supports (animation-timeline: view()) {
+    /*
+     * Parallax on the sanctuary photograph: it falls behind the page as you
+     * scroll away from it, which is what gives the top of the site depth
+     * instead of the whole hero sliding off as one flat sheet.
+     *
+     * 2.5% of travel against a scale that never drops below 1.08 — so the image
+     * overhangs its frame by 4% on every edge and the parallax can never drag a
+     * blank strip into view at the top. Both are percentages of the hero's own
+     * height, so the 1.5% of margin between them holds at every viewport rather
+     * than only at the one it was checked on. Changing either number means
+     * re-checking that (scale - 1) / 2 still exceeds the travel.
+     *
+     * `exit` rather than `cover`: the hero is at the top of the document, so a
+     * `cover` range would already be part-way through at scroll zero and the
+     * photograph would load visibly offset. `exit 0%` is the moment the hero
+     * starts leaving, which is the first pixel of scroll.
+     */
+    .hero__photo {
+      animation:
+        hero-breathe 32s ease-in-out infinite alternate,
+        hero-parallax linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, exit 0% exit 100%;
+      will-change: scale, translate;
+    }
+
+    /*
+     * The hero's text recedes rather than scrolls: it lifts a little and fades
+     * as the band goes, so the section beneath arrives onto a clear ground.
+     * Finished by 70% of the exit, well before the text would have left anyway
+     * — a fade still running at the top edge of the screen reads as a bug.
+     */
+    .hero__inner {
+      animation: recede linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 70%;
+    }
+
+    /*
+     * The photograph dims as it goes, so the hero recedes into shadow rather
+     * than simply sliding off the top still at full brightness.
+     *
+     * The veil's own gradients are `background-image`; this animates the
+     * `background-color` underneath them, which composites below the gradients
+     * and so deepens the transparent top of the frame — the part the gradients
+     * deliberately leave alone — without touching the text's contrast ramp.
+     */
+    .hero__veil {
+      animation: veil-deepen linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 80%;
+    }
+  }
+}
+
+@keyframes hero-breathe {
+  from {
+    scale: 1.08;
+  }
+  to {
+    scale: 1.14;
+  }
+}
+
+@keyframes hero-parallax {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 2.5%;
+  }
+}
+
+@keyframes recede {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -3rem, 0);
+  }
+}
+
+@keyframes veil-deepen {
+  from {
+    background-color: transparent;
+  }
+  to {
+    background-color: color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
+  }
+}
+
+@keyframes rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/*
+ * The reveal itself: up, in, and very slightly out from the page.
+ *
+ * The scale is 1.5% and is doing more work than it looks like it should. A pure
+ * translate reads as content sliding into position; adding the smallest amount
+ * of scale reads as it settling, and that is the difference between a page that
+ * animates and a page that feels composed. Any more and cards visibly grow.
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- ornament ---------------------------------------------------------- */
+
+/*
+ * A rule with a Coptic cross at its centre, used between sections.
+ *
+ * The cross is drawn geometrically from the form itself. Note what is
+ * deliberately absent: any Coptic *lettering*. The one AI-generated image in
+ * `assets/` was dropped precisely because its "Coptic" script spelled nothing,
+ * and inventing letterforms here would be the same error in SVG. Ornament is
+ * safe; text is not ours to invent.
+ */
+.ornament {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  color: var(--color-gold, #b08d43);
+  margin-block: var(--space-lg, 1.5rem);
+  /*
+   * An explicit width, because the flanking rules are `flex: 1` and need
+   * something to divide. Inside the hero's `justify-items: center` grid this
+   * element otherwise shrink-wraps to the cross and the rules render at zero
+   * width — visibly just a small cross, with no hint that anything is missing.
+   * Capped so it stays an ornament rather than a full-width divider.
+   */
+  width: 100%;
+  max-width: 26rem;
+  margin-inline: auto;
+}
+
+.ornament::before,
+.ornament::after {
+  content: '';
   flex: 1;
-  padding-block: clamp(2rem, 5vw, 3.5rem);
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-rule, #e0cac3) 20%,
+    var(--color-rule, #e0cac3) 80%,
+    transparent
+  );
 }
 
-.prose {
-  max-width: var(--measure);
+.ornament svg {
+  flex-shrink: 0;
 }
 
-.prose p,
-.prose ul,
-.prose ol {
-  margin-block: 0 1.1em;
+.ornament--start::before {
+  display: none;
 }
 
-.lede {
-  font-size: 1.1875rem;
-  color: var(--ink-soft);
+/* ---- section headings -------------------------------------------------- */
+
+.section-head {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  margin-bottom: var(--space-lg, 1.5rem);
 }
 
-/* ---- cards / lists ---- */
+/*
+ * The eyebrow carries a short gold rule before it — the same mark the ornament
+ * uses, at label scale. It is what makes a section heading look composed rather
+ * than like a paragraph that happens to be small and gold.
+ */
+.section-head__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 88%, var(--color-ink, #1c1614));
+  margin: 0;
+}
+
+.section-head__eyebrow::before {
+  content: '';
+  width: 1.75rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-gold, #b08d43);
+  flex-shrink: 0;
+}
+
+/* On the dark closing band the gold needs to lift off the ground, not sink. */
+.band--deep .section-head__eyebrow {
+  color: var(--color-gold, #b08d43);
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+.section-head__note {
+  margin: 0;
+  color: var(--color-ink-soft, #4b413e);
+  font-size: var(--type-small, 0.9375rem);
+  max-width: var(--measure, 68ch);
+}
+
+/* The "see everything" link that follows a truncated list. */
+.section-more {
+  margin-top: var(--space-lg, 1.5rem);
+}
+
+.section-more a {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.35rem);
+}
+
+.section-more a:hover {
+  text-decoration: underline;
+}
+
+/* ---- page header ------------------------------------------------------- */
+
+.page-head {
+  background: var(--color-paper-raised, #fdf7f4);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  padding-block: var(--space-section, 4rem);
+  margin-bottom: var(--space-section, 4rem);
+}
+
+.page-head__inner {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  max-width: var(--measure, 68ch);
+}
+
+.page-head h1 {
+  margin: 0;
+}
+
+.page-head .lede {
+  margin: 0;
+}
+
+/* ---- cards / lists ----------------------------------------------------- */
 
 .grid {
   display: grid;
-  gap: 1.25rem;
+  gap: var(--space-md, 1.25rem);
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
   padding: 0;
   margin: 0;
   list-style: none;
 }
 
+.grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+}
+
 .card {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 1.25rem 1.375rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.35rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-md, 1.25rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+}
+
+/*
+ * A gold rule along the top edge of every card, drawn in on hover.
+ *
+ * Scales from the left in 240ms. This is the main piece of colour in what is
+ * otherwise a grid of cream rectangles, and because it is a `transform` on a
+ * pseudo-element it costs nothing to animate.
+ */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0;
+  background: linear-gradient(
+    to right,
+    var(--color-gold, #b08d43),
+    var(--color-accent, #992a21)
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Lift only cards that actually go somewhere. A hover animation on a card with
+   no link is a promise the page does not keep. */
+.card--link:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e0cac3));
+}
+
+.card--link:hover::before {
+  transform: scaleX(1);
 }
 
 .card h3 {
-  font-family: var(--font-ui);
-  font-size: 1.0625rem;
-  margin: 0 0 0.35rem;
-  line-height: 1.3;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-subheading, 1.0625rem);
+  margin: 0;
 }
 
 .card h3 a {
   text-decoration: none;
-  color: var(--ink);
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * Stretches the card's link over the whole card, so the hit target is the card
+ * rather than the few words of its title — which matters most on a phone, where
+ * the title may be two lines of a 300px-wide box.
+ */
+.card--link h3 a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 .card h3 a:hover {
-  color: var(--accent);
+  color: var(--color-accent, #992a21);
 }
 
 .card p {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
+  color: var(--color-ink-soft, #4b413e);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/* Pushes anything tagged as footer matter to the bottom, so a row of cards with
+   different amounts of text still has its metadata on one line. */
+.card__foot {
+  margin-top: auto;
+  padding-top: var(--space-sm, 0.5rem);
 }
 
 .meta {
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
-  letter-spacing: 0.03em;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.03em);
   text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 0 0 0.5rem;
+  color: var(--color-ink-faint, #6f5f5a);
+  margin: 0;
 }
 
 /* Quiet explanatory prose. `.meta` looks similar but uppercases, which is right
    for a date stamp and unreadable for a sentence — a paragraph in all caps is
    the fastest way to make a helpful note look like a warning nobody reads. */
 .note {
-  font-family: var(--font-ui);
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: var(--ink-soft);
-  margin: 0 0 0.5rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+  margin: 0 0 var(--space-sm, 0.5rem);
 }
 
 .pin {
-  color: var(--gold);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.3rem);
+  color: var(--color-gold, #b08d43);
 }
 
-/* ---- definition lists (contact details) ---- */
+/* Icons sitting inline in a line of metadata. Optical rather than baseline
+   alignment: an icon's baseline is its bottom edge, so aligning it truly would
+   leave it sitting visibly high. */
+.meta svg {
+  vertical-align: -0.15em;
+}
+
+/* ---- people (clergy biographies) --------------------------------------- */
+
+/*
+ * A biography: portrait beside name and prose.
+ *
+ * `person--portrait` is applied only when an image actually resolved, so a
+ * parish that has not uploaded portraits yet gets a clean single column rather
+ * than a row of empty frames. That is the common case today — the portraits are
+ * staged in `assets/derived/` and not yet in Storage.
+ */
+.person {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+  padding-bottom: var(--space-xl, 2.5rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.person:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+@media (min-width: 44rem) {
+  .person--portrait {
+    grid-template-columns: 14rem 1fr;
+    align-items: start;
+  }
+}
+
+.person__portrait {
+  width: 100%;
+  max-width: 14rem;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  /* `top`, not `center`: these are 4:5 portraits and centre-cropping a portrait
+     is how you cut off a forehead. The build already crops to the north edge for
+     the same reason; this keeps that true if the box ratio ever drifts. */
+  object-position: top;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+}
+
+.person__body {
+  min-width: 0;
+  max-width: var(--measure, 68ch);
+}
+
+.person__body h2 {
+  margin-bottom: var(--space-xs, 0.25rem);
+}
+
+.person__body .meta {
+  margin-bottom: var(--space-md, 1rem);
+}
+
+/* ---- clergy on the homepage -------------------------------------------- */
+
+/*
+ * The fathers, as disclosures side by side. This is the whole of the clergy
+ * content — there is no `/clergy` page behind it any more — so each card has to
+ * be able to carry a full biography as well as a name, and it does that by
+ * keeping the biography shut until it is asked for.
+ *
+ * `align-items: start` is what makes the disclosures work in a row: without it
+ * every card stretches to the height of the tallest, so opening one father's
+ * biography would pull two empty cards down beside it.
+ */
+.clergy {
+  display: grid;
+  gap: var(--space-md, 1.25rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: start;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Three tracks at desk width, rather than as many as fit. A fourth father would
+ * otherwise squeeze the row to four narrow columns and make the other three
+ * worse; on a fourth, this wraps to a second line instead.
+ */
+@media (min-width: 62rem) {
+  .clergy {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.cleric {
+  background: var(--color-paper-raised, #fff);
+  border: 1px solid var(--color-rule, #e4ded2);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  /* Keeps the portrait's corners inside the row's own radius, and stops the
+     closing animation painting outside the box on the way down. */
+  overflow: hidden;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.cleric:hover,
+.cleric[open] {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e4ded2));
+}
+
+.cleric[open] {
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+}
+
+/*
+ * The closed row, which is also the control that opens it.
+ *
+ * `list-style: none` *and* the WebKit pseudo-element: Safari draws its triangle
+ * from `::-webkit-details-marker` and ignores the first, so removing only one of
+ * them leaves the marker in exactly one browser. The chevron that replaces them
+ * is ours, so it is the same shape everywhere.
+ */
+.cleric__summary {
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+  cursor: pointer;
+  list-style: none;
+  /* The card is a button. Dragging a selection out of it is never the intent. */
+  user-select: none;
+}
+
+.cleric__summary::-webkit-details-marker {
+  display: none;
+}
+
+.cleric__summary:hover h3 {
+  color: var(--color-accent, #992a21);
+}
+
+/* The rank, the name, and the chevron: one row under the portrait, with the
+   chevron pinned to the right edge of the card. */
+.cleric__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  padding: 0 var(--space-md, 1rem) var(--space-md, 1rem);
+}
+
+/*
+ * The portrait runs the full width of the card, above the name, and bleeds to
+ * its edges — the card's own `overflow: hidden` rounds the top corners for it.
+ *
+ * 4:5, which is exactly the ratio `optimize-assets.mjs` crops these files to, so
+ * the whole photograph is shown and `object-fit` has nothing to cut. It makes
+ * for tall cards — the portrait is the section — and that is the intent.
+ *
+ * The `cover` and `object-position` below are therefore not doing anything to
+ * the three files that ship. They are there for a portrait uploaded later to
+ * `person.portraitPath` at some other ratio: that one gets cropped rather than
+ * squashed, and cropped from the top, because centre-cropping a portrait is how
+ * you cut off a forehead.
+ */
+.cleric__portrait {
+  width: 100%;
+  /*
+   * `height: auto` is load-bearing, not tidying. The `width`/`height`
+   * attributes on the `<img>` — which are there so the card does not reflow
+   * when the file lands — are presentational hints for the CSS `height`
+   * property, so without this the aspect ratio below is ignored the moment both
+   * dimensions are specified and the face is stretched down the card.
+   */
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: top;
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+/* The medallion is not a photograph and must not pretend to be one: it keeps
+   the card's padding rather than bleeding to the edges. */
+.cleric__mark {
+  margin: var(--space-md, 1rem) 0 0 var(--space-md, 1rem);
+}
+
+/*
+ * On a phone the cards are a single column, and a full-width portrait makes each
+ * one taller than the screen — three of them is well over a thousand pixels of
+ * scrolling to get past three names. So below 34rem the same markup lays out as
+ * a compact row: a small portrait at the left, the name beside it. Still the
+ * whole photograph, just at thumbnail size.
+ *
+ * No change to the DOM. The summary is already a grid of [portrait, line], so
+ * giving it two tracks is the whole of it.
+ */
+@media (max-width: 34rem) {
+  .cleric__summary {
+    grid-template-columns: 5.5rem 1fr;
+    align-items: center;
+    gap: var(--space-md, 1rem);
+    padding: var(--space-sm, 0.75rem);
+  }
+
+  /* Inset here rather than bleeding to the card's edge, so it reads as a
+     thumbnail beside the name rather than as a cropped banner. */
+  .cleric__portrait {
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .cleric__line {
+    padding: 0;
+  }
+
+  /* Reserving two lines is what keeps a row of cards even; stacked, it only
+     leaves a gap under "Priest". */
+  .cleric__id .meta {
+    min-height: 0;
+  }
+}
+
+/*
+ * What stands where a portrait would go for a father who has none.
+ *
+ * A medallion with the parish's cross, at the same scale as the icon plates in
+ * the quick-facts row so the two sections read as one design. It is ornament
+ * rather than a placeholder: it does not reserve a portrait-shaped hole, so a
+ * row without a photograph looks composed rather than unfinished.
+ */
+.cleric__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-full, 999px);
+  color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+}
+
+.cleric__id {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Two lines reserved for the rank, whether or not it needs them.
+ *
+ * "Bishop of the Coptic Orthodox Diocese of New York and New England" wraps to
+ * two lines in a card this wide; "Priest" does not. The cards cannot stretch to
+ * a common height — `align-items: start` on the grid is what lets one open
+ * without dragging its neighbours down — so without a floor here the three
+ * names sit at three different heights and the row of cards ends ragged, which
+ * looks like a mistake rather than like a bishop having a longer title.
+ *
+ * `em`, not the token, so the reserved height is two lines of whatever font
+ * size actually won rather than of the size this rule hoped for.
+ */
+.cleric__id .meta {
+  display: block;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-snug, 1.25);
+  min-height: calc(2em * var(--leading-snug, 1.25));
+  margin-bottom: var(--space-xs, 0.25rem);
+}
+
+.cleric__id h3 {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  margin: 0;
+  transition: color 150ms ease;
+}
+
+/* Points down when closed and up when open — the one piece of state this
+   control has, so it is worth turning rather than swapping. */
+.cleric__chevron {
+  flex-shrink: 0;
+  color: var(--color-ink-faint, #7c746a);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms ease;
+}
+
+.cleric[open] .cleric__chevron {
+  transform: rotate(180deg);
+  color: var(--color-accent, #992a21);
+}
+
+/*
+ * The biography, opening inside the card it belongs to.
+ *
+ * A rule above it rather than more space: the card is already bounded, and the
+ * line is what separates "who this is" from "his life" without another 1.5rem
+ * of gap in a column that is only 22rem wide to begin with.
+ */
+.cleric__bio {
+  padding: var(--space-md, 1rem);
+  border-top: 1px solid var(--color-rule, #e4ded2);
+}
+
+/* A card column is narrow, so the biography needs to be a size that survives
+   it. `.prose` is set for a full-width page. */
+.cleric__bio .prose {
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/*
+ * The open and the close, animated.
+ *
+ * `::details-content` is the only way to do this without JavaScript, and it
+ * needs `interpolate-size` to have something to animate *to* — `auto` is not an
+ * interpolable height on its own. Both are recent, hence the `@supports`: where
+ * either is missing the disclosure opens instantly, which is what it did before
+ * and is not a failure.
+ *
+ * `content-visibility` has to be in the transition list with `allow-discrete`,
+ * or the content is hidden outright for the whole of the closing animation and
+ * the row collapses on an empty box.
+ */
+@supports (interpolate-size: allow-keywords) and (selector(::details-content)) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+
+  .cleric::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 320ms cubic-bezier(0.16, 1, 0.3, 1),
+      content-visibility 320ms allow-discrete;
+  }
+
+  .cleric[open]::details-content {
+    block-size: auto;
+  }
+}
+
+/* ---- quick facts ------------------------------------------------------- */
+
+/*
+ * The three things a first-time visitor came for: when, where, and what to
+ * expect. Directly under the hero, because a visitor who has to use the nav to
+ * find the service time has already been failed once.
+ */
+/*
+ * ---------------------------------------------------------------------------
+ * These are *facts*, and they are now set as facts rather than as controls.
+ *
+ * They used to be three raised, bordered, drop-shadowed tiles that lifted on
+ * hover, each with a filled icon disc — which is the visual grammar of a
+ * button. Two of the three are not clickable at all, so the row was promising
+ * an interaction it could not keep, and the one that *is* a link looked no
+ * different from the two that are not.
+ *
+ * What replaces the chrome is typography and one hairline: an inscription cut
+ * into the band rather than three objects placed on it. The time of the Liturgy
+ * is set in the display face at reading size — it is the single most-wanted
+ * line on the site and was previously the smallest text in its own tile.
+ * ---------------------------------------------------------------------------
+ */
+.facts {
+  display: grid;
+  gap: var(--space-lg, 2rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fact {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: var(--space-xs, 0.3rem);
+  padding-inline: var(--space-md, 1rem);
+}
+
+/*
+ * A hairline *between* the three rather than around each, which is what makes
+ * them one inscription instead of three cards. Gold, fading out at both ends —
+ * the same mark `.ornament` makes horizontally, turned on its side.
+ *
+ * `border-image` because a plain border cannot fade. The `1` at the end is the
+ * slice value and is not optional; without it the gradient is not drawn at all.
+ */
+@media (min-width: 48rem) {
+  .fact + .fact {
+    border-left: 1px solid transparent;
+    border-image: linear-gradient(
+        to bottom,
+        transparent,
+        color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent) 25%,
+        color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent) 75%,
+        transparent
+      )
+      1;
+  }
+}
+
+/* Stacked, the same rule runs across instead of down. */
+@media (max-width: 48rem) {
+  .fact + .fact {
+    padding-top: var(--space-lg, 2rem);
+    border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+  }
+}
+
+/*
+ * The glyph, with the disc taken off it.
+ *
+ * All three are gold now rather than red, dark red and gold. Three colours were
+ * doing real work while each sat on a filled disc — they told the tiles apart
+ * at a glance — but as bare glyphs, three different colours read as three
+ * unrelated marks. Gold is what every other piece of ornament on this page is,
+ * so the row now joins the eyebrows and the cross instead of competing.
+ */
+.fact__icon {
+  display: block;
+  color: var(--color-gold, #b08d43);
+  margin-bottom: var(--space-xs, 0.35rem);
+}
+
+.fact__body {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  min-width: 0;
+}
+
+.fact__body h3 {
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The answer itself, in the display face. This is the line someone opened the
+   page to read; it should not be set at the size reserved for captions. */
+.fact__body p {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.3);
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * A fact that happens to be a link. Underlined at rest rather than on hover:
+ * with the tiles gone, the underline is the only thing left distinguishing the
+ * one clickable answer from the two that are simply text.
+ */
+.fact__body a {
+  font-family: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.fact__body a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ---- definition lists (contact details) -------------------------------- */
 
 .details {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 1.25rem;
-  max-width: var(--measure);
+  gap: var(--space-lg, 1.25rem);
+  max-width: var(--measure, 68ch);
 }
 
 .details > div {
   display: grid;
-  gap: 0.2rem 2rem;
+  gap: var(--space-xs, 0.2rem) var(--space-xl, 2rem);
   grid-template-columns: minmax(7rem, 9rem) 1fr;
   align-items: start;
+  padding-bottom: var(--space-lg, 1.25rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.details > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 @media (max-width: 34rem) {
@@ -300,18 +1883,18 @@ main {
 }
 
 .details dt {
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
-  letter-spacing: 0.04em;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.04em);
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--color-ink-faint, #6f5f5a);
   padding-top: 0.15rem;
 }
 
 .details dd {
   margin: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-xs, 0.35rem);
   justify-items: start;
 }
 
@@ -319,16 +1902,20 @@ main {
   font-style: normal;
 }
 
-/* ---- responsive video embed ---- */
+/* ---- responsive video embed -------------------------------------------- */
 
 .embed {
   position: relative;
   aspect-ratio: 16 / 9;
   width: 100%;
   max-width: 56rem;
-  background: var(--ink);
-  border-radius: 6px;
+  /* Centred, because the homepage band it now sits in is wider than the cap —
+     left-aligned it left a third of the band empty beside the player. */
+  margin-inline: auto;
+  background: var(--color-deep, #481010);
+  border-radius: var(--radius-lg, 16px);
   overflow: hidden;
+  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
 }
 
 .embed iframe {
@@ -339,26 +1926,43 @@ main {
   border: 0;
 }
 
-/* ---- buttons ---- */
+/* ---- buttons ----------------------------------------------------------- */
 
 .button {
-  display: inline-block;
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
   font-weight: 500;
-  line-height: 1.2;
-  padding: 0.7rem 1.25rem;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  background: var(--accent);
-  color: var(--paper-raised);
+  line-height: var(--leading-snug, 1.2);
+  padding: var(--space-sm, 0.7rem) var(--space-md, 1.25rem);
+  border: 1px solid var(--color-accent, #992a21);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
   text-decoration: none;
   cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.button {
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease,
+    box-shadow 200ms ease;
 }
 
 .button:hover {
-  background: #74251e;
-  border-color: #74251e;
+  background: var(--color-accent-strong, #731d16);
+  border-color: var(--color-accent-strong, #731d16);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-accent, #992a21) 32%, transparent);
+}
+
+/* Returns to rest on press. Without this the button stays lifted while held,
+   which reads as unresponsive on a touch screen. */
+.button:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .button[disabled] {
@@ -366,47 +1970,108 @@ main {
   cursor: progress;
 }
 
-/* ---- forms ---- */
+/*
+ * On a dark red ground the primary button turns gold.
+ *
+ * A red button on `deep` used to be a red button on navy, with all the contrast
+ * that implies. Now the two are the same hue three steps apart and the call to
+ * action was the quietest thing in the band. Gold is the palette's only other
+ * liturgical colour, and `ink` on it reads 6.9:1.
+ *
+ * Not applied to `.hero`, whose ground is a photograph: the button sits over the
+ * darkest part of it and red still separates cleanly there.
+ */
+.band--deep .button:not(.button--ghost):not(.button--quiet) {
+  background: var(--color-gold, #b08d43);
+  border-color: var(--color-gold, #b08d43);
+  color: var(--color-ink, #1c1614);
+}
+
+.band--deep .button:not(.button--ghost):not(.button--quiet):hover {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 82%, var(--color-ink, #1c1614));
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 82%, var(--color-ink, #1c1614));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+/* Secondary action. On the hero's dark ground this needs to be legible against
+   `deep` rather than against `paper`, hence `currentColor`. */
+.button--ghost {
+  background: transparent;
+  border-color: color-mix(in srgb, currentColor 40%, transparent);
+  color: currentColor;
+}
+
+.button--ghost:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border-color: currentColor;
+}
+
+.button--quiet {
+  background: transparent;
+  color: var(--color-ink-soft, #4b413e);
+  border-color: var(--color-rule, #e0cac3);
+}
+
+.button--quiet:hover {
+  background: transparent;
+  border-color: var(--color-ink-faint, #6f5f5a);
+  color: var(--color-ink, #1c1614);
+}
+
+/* Destructive, and styled to look it. Delete is the one action in the admin
+   with no undo — events are not soft-deleted. */
+.button--danger {
+  background: transparent;
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+.button--danger:hover {
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+/* ---- forms ------------------------------------------------------------- */
 
 .form {
-  max-width: var(--measure);
+  max-width: var(--measure, 68ch);
   display: grid;
-  gap: 1.75rem;
+  gap: var(--space-lg, 1.75rem);
   justify-items: start;
 }
 
 .form fieldset {
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper-raised);
-  padding: 1.25rem 1.375rem 1.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  padding: var(--space-md, 1.25rem);
   margin: 0;
   width: 100%;
   display: grid;
-  gap: 1rem;
+  gap: var(--space-md, 1rem);
 }
 
 .form legend {
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
-  letter-spacing: 0.06em;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
-  color: var(--ink-faint);
-  padding-inline: 0.4rem;
+  color: var(--color-ink-faint, #6f5f5a);
+  padding-inline: var(--space-xs, 0.4rem);
 }
 
 .field-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: var(--space-md, 1rem);
 }
 
 .field {
   display: grid;
-  gap: 0.3rem;
+  gap: var(--space-xs, 0.3rem);
   flex: 1 1 12rem;
-  font-family: var(--font-ui);
-  font-size: 0.875rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
 }
 
 .field--narrow {
@@ -414,12 +2079,12 @@ main {
 }
 
 .field > span {
-  color: var(--ink-soft);
+  color: var(--color-ink-soft, #4b413e);
   font-weight: 500;
 }
 
 .field abbr {
-  color: var(--accent);
+  color: var(--color-accent, #992a21);
   text-decoration: none;
   border: 0;
 }
@@ -428,72 +2093,107 @@ main {
 .field select,
 .field textarea {
   font: inherit;
-  font-size: 1rem;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 0.55rem 0.7rem;
+  /* 1rem, not smaller: iOS Safari zooms the whole page when a focused input's
+     text is under 16px, and the resulting layout jump looks like a bug. */
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper, #f6e8e3);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-sm, 0.55rem) var(--space-sm, 0.7rem);
   width: 100%;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .field input:focus-visible,
 .field select:focus-visible,
 .field textarea:focus-visible {
-  border-color: var(--accent);
+  border-color: var(--color-accent, #992a21);
+  box-shadow: 0 0 0 3px var(--color-accent-soft, #f6d8d0);
 }
 
 .field small {
-  color: var(--ink-faint);
-  font-size: 0.8125rem;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-size: var(--type-micro, 0.8125rem);
 }
 
-.notice ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.1rem;
+.field--check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
 }
 
-.notice li + li {
-  margin-top: 0.4rem;
+.field--check input {
+  width: auto;
+  margin: 0;
 }
 
-/* ---- weekly bulletin schedule ---- */
+/* ---- weekly schedule (bulletin and service times) ---------------------- */
 
 .week {
   list-style: none;
   padding: 0;
-  margin: 1.5rem 0 0;
-  border-top: 1px solid var(--rule);
+  margin: 0;
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
 }
 
+/*
+ * A day is a card rather than a table row.
+ *
+ * The bulletin's own shape is irregular — some days have one service, some have
+ * five, some carry a note. A table forces every day into the same height and
+ * leaves most cells blank; a card per day lets each be as tall as it needs.
+ */
 .week__day {
-  border-bottom: 1px solid var(--rule);
-  padding-block: 1rem;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-md, 1rem);
   display: grid;
-  gap: 0.25rem 2rem;
-  grid-template-columns: minmax(9rem, 12rem) 1fr;
+  gap: var(--space-sm, 0.5rem) var(--space-lg, 2rem);
+  grid-template-columns: minmax(8rem, 10rem) 1fr;
   align-items: start;
 }
 
-@media (max-width: 34rem) {
+@media (max-width: 40rem) {
   .week__day {
     grid-template-columns: 1fr;
   }
 }
 
+/* The day the visitor is reading this on. Sunday liturgy is what most people
+   open the page for, so the current day earns being findable at a glance. */
+.week__day--today {
+  border-color: var(--color-accent, #992a21);
+  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
+}
+
 .week__day h3 {
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
   margin: 0;
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }
 
 .week__day h3 time {
   display: block;
   font-weight: 400;
-  font-size: 0.8125rem;
-  color: var(--ink-faint);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
   font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.week__today-flag {
+  display: block;
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-accent, #992a21);
 }
 
 .week__day ul {
@@ -501,81 +2201,147 @@ main {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-sm, 0.5rem);
 }
 
+/*
+ * A fixed first column, not `auto`.
+ *
+ * Each row is its own grid — they are separate `li` elements — so `auto` sized
+ * every row to its own time string and the service names came out ragged:
+ * "Vespers" started further right than "Matins & Divine Liturgy" two rows above.
+ * A fixed track is what makes the names line up as a column.
+ *
+ * The width is measured, not guessed. The widest real string in the parish's
+ * bulletin, "11:00am – 12:30pm", renders at 137px here — against the 8.5rem
+ * (136px) this first used, so it wrapped onto two lines. It needs genuine slack
+ * rather than a tighter fit, because `--font-ui` is a *system* font stack: the
+ * same string is a different width on macOS, Windows, and Android, and a column
+ * sized to one of them wraps on the others.
+ */
 .week__day ul li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+  display: grid;
+  grid-template-columns: 10.5rem 1fr;
+  gap: var(--space-xs, 0.25rem) var(--space-md, 0.75rem);
   align-items: baseline;
 }
 
+/* Belt to the braces above: if a time string ever does exceed the column, it
+   should run into the gap rather than break a range across two lines, which
+   reads as two separate times. */
 .week__time {
-  font-family: var(--font-ui);
-  font-size: 0.875rem;
-  color: var(--accent);
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  .week__day ul li {
+    grid-template-columns: 1fr;
+  }
+}
+
+.week__time {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-accent, #992a21);
   font-variant-numeric: tabular-nums;
-  min-width: 5.5rem;
+  font-weight: 500;
 }
 
 .week__day em {
-  color: var(--ink-faint);
-  font-size: 0.9375rem;
-  flex-basis: 100%;
+  grid-column: 1 / -1;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-size: var(--type-small, 0.9375rem);
 }
 
-/* ---- empty / notice states ---- */
+/* ---- empty / notice states -------------------------------------------- */
 
 .notice {
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--gold);
-  background: var(--paper-raised);
-  border-radius: 0 6px 6px 0;
-  padding: 1.25rem 1.5rem;
-  max-width: var(--measure);
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
-  color: var(--ink-soft);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid var(--color-gold, #b08d43);
+  background: var(--color-paper-raised, #fdf7f4);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  padding: var(--space-md, 1.25rem) var(--space-lg, 1.5rem);
+  max-width: var(--measure, 68ch);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
 }
 
 .notice h2 {
   margin-top: 0;
-  font-size: 1.0625rem;
-  color: var(--ink);
+  font-size: var(--type-subheading, 1.0625rem);
+  color: var(--color-ink, #1c1614);
 }
 
 .notice code {
-  background: var(--accent-soft);
+  background: var(--color-accent-soft, #f6d8d0);
   padding: 0.1em 0.35em;
-  border-radius: 3px;
+  border-radius: var(--radius-sm, 3px);
   font-size: 0.9em;
 }
 
-.notice--alarm {
-  border-left-color: var(--accent);
+.notice ul {
+  margin: var(--space-sm, 0.5rem) 0 0;
+  padding-left: 1.1rem;
 }
 
-/* ---- footer ---- */
+.notice li + li {
+  margin-top: var(--space-xs, 0.4rem);
+}
+
+.notice--alarm {
+  border-left-color: var(--color-accent, #992a21);
+}
+
+/* ---- footer ------------------------------------------------------------ */
 
 .footer {
-  border-top: 1px solid var(--rule);
-  background: var(--paper-raised);
-  padding-block: 2rem;
-  font-family: var(--font-ui);
-  font-size: 0.875rem;
-  color: var(--ink-faint);
+  background: var(--color-deep, #481010);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
+  padding-block: var(--space-section, 3rem);
+  /* The homepage's closing call-to-action is also on `deep`, so without this the
+     two run together into one 1000px slab of dark. A gold hairline reads as a
+     deliberate join rather than as a missing background. */
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  /* No top margin, deliberately. The homepage ends on a `band--deep`, and a
+     strip of paper between two dark blocks reads as a rendering fault. Bottom
+     spacing above the footer is `.page-body`'s padding, or the last band's. */
 }
 
+/*
+ * 13rem, not 15rem. At the shell's full width the four columns plus their gaps
+ * came to 1080px against 1072px available — eight pixels short, which dropped
+ * "Parish" onto a row of its own and left the footer looking unfinished. A
+ * narrower minimum leaves room for the track count to be right.
+ */
 .footer__inner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 2.5rem;
-  justify-content: space-between;
+  display: grid;
+  gap: var(--space-xl, 2.5rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+
+.footer h2 {
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-gold, #b08d43);
+  margin: 0 0 var(--space-md, 1rem);
 }
 
 .footer a {
-  color: var(--ink-soft);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--color-ink-inverse, #f9efec);
+  text-decoration: underline;
+}
+
+.footer p {
+  margin: 0 0 var(--space-sm, 0.5rem);
 }
 
 .footer__links {
@@ -583,7 +2349,37 @@ main {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.footer__brand {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  justify-items: start;
+}
+
+.footer__seal {
+  height: 3.5rem;
+  width: auto;
+}
+
+.footer__name {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  color: var(--color-ink-inverse, #f9efec);
+  line-height: var(--leading-snug, 1.3);
+  margin: 0;
+}
+
+.footer__bottom {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 15%, transparent);
+  font-size: var(--type-micro, 0.8125rem);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.5rem) var(--space-lg, 1.5rem);
+  justify-content: space-between;
 }
 
 /* ---- admin ------------------------------------------------------------
@@ -593,29 +2389,30 @@ main {
    whole site is one hand-written sheet and one exception is worse than none. */
 
 .admin {
-  --admin-gap: 1.5rem;
+  --admin-gap: var(--space-lg, 1.5rem);
+  padding-block: var(--space-lg, 1.5rem);
 }
 
 .admin-nav {
   display: flex;
-  gap: 1.25rem;
-  padding-block: 0.75rem;
-  border-bottom: 1px solid var(--rule);
+  gap: var(--space-md, 1.25rem);
+  padding-block: var(--space-sm, 0.75rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
   margin-bottom: var(--admin-gap);
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
 }
 
 .admin-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-md, 1rem);
   flex-wrap: wrap;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-sm, 0.5rem) var(--space-sm, 0.75rem);
   margin-bottom: var(--admin-gap);
-  background: var(--accent-soft);
-  border-radius: 4px;
+  background: var(--color-accent-soft, #f6d8d0);
+  border-radius: var(--radius-sm, 4px);
 }
 
 /* List beside form on a wide screen, stacked on a phone. Staff do use this on
@@ -632,7 +2429,7 @@ main {
   }
   .admin-list {
     position: sticky;
-    top: 1rem;
+    top: 5rem;
   }
 }
 
@@ -640,7 +2437,7 @@ main {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-md, 1rem);
 }
 
 .admin-list__head h1 {
@@ -649,95 +2446,58 @@ main {
 
 .admin-list__items {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: var(--space-md, 1rem) 0 0;
   padding: 0;
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-sm, 0.5rem);
   max-height: 70vh;
   overflow-y: auto;
 }
 
 .admin-item {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-xs, 0.2rem);
   width: 100%;
   text-align: left;
-  padding: 0.625rem 0.75rem;
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
+  padding: var(--space-sm, 0.625rem) var(--space-sm, 0.75rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 6px);
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
 
 .admin-item:hover {
-  border-color: var(--ink-faint);
+  border-color: var(--color-ink-faint, #6f5f5a);
 }
 
 .admin-item--current {
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-color: var(--color-accent, #992a21);
+  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
 }
 
 .tag {
   justify-self: start;
-  font-family: var(--font-ui);
-  font-size: 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  color: var(--color-ink-faint, #6f5f5a);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 3px);
   padding: 0.05rem 0.35rem;
 }
 
 .tag--live {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.field--check {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.field--check input {
-  width: auto;
-  margin: 0;
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
 }
 
 .admin-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-sm, 0.75rem);
   flex-wrap: wrap;
-}
-
-.button--quiet {
-  background: transparent;
-  color: var(--ink-soft);
-  border-color: var(--rule);
-}
-
-.button--quiet:hover {
-  background: transparent;
-  border-color: var(--ink-faint);
-  color: var(--ink);
-}
-
-/* Destructive, and styled to look it. Delete is the one action here with no
-   undo — events are not soft-deleted. */
-.button--danger {
-  background: transparent;
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.button--danger:hover {
-  background: var(--accent);
-  color: var(--paper-raised);
 }
 
 /* Breeze serves a fixed 700x800 grid, so the 16:9 video ratio above would crop
@@ -747,6 +2507,7 @@ main {
   aspect-ratio: auto;
   height: min(80vh, 50rem);
   max-width: 46rem;
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
 }

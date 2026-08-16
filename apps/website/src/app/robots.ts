@@ -10,8 +10,9 @@ import { SITE_ORIGIN } from './layout';
  * about keeping a sign-in page out of search results, which is a support
  * question nobody needs, not about hiding anything.
  *
- * `/parking` is excluded for a different reason — it is reached by tapping an
- * NFC tag on the day, and a search result for it is only ever a wrong turn.
+ * `/parking`, `/prayer`, and `/welcome` are excluded for a different reason —
+ * each is reached by tapping an NFC tag, and a search result for one is only
+ * ever a wrong turn into a page that assumes you are already standing there.
  */
 export const dynamic = 'force-static';
 
@@ -20,7 +21,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/admin/', '/parking'],
+      disallow: ['/admin', '/admin/', '/parking', '/prayer', '/welcome'],
     },
     sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     host: SITE_ORIGIN,

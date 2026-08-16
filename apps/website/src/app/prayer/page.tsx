@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { PrayerForm, PrivacyDisclosure } from '@/features/prayer';
 import { PageHeader } from '@/components/PageHeader';
+import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Prayer Requests',
@@ -30,12 +31,13 @@ export default function PrayerPage() {
     <>
       <PageHeader
         title="Prayer Requests"
-        lede="The fathers of the parish pray for the intentions entrusted to them. You do not need an account, and you may send a request without giving your name."
+        lede="The fathers of the parish pray for those who ask. You need no account, and you may write without giving your name."
       />
 
-      <PrivacyDisclosure />
-
-      <PrayerForm />
+      <PageBody>
+        <PrivacyDisclosure />
+        <PrayerForm />
+      </PageBody>
     </>
   );
 }

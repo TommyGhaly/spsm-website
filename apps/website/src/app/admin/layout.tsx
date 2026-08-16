@@ -32,7 +32,9 @@ const ADMIN_NAV = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="admin">
+    // `wrap` here because the root layout no longer centres page content — the
+    // public pages have full-bleed bands and do it themselves.
+    <div className="admin wrap">
       <nav className="admin-nav" aria-label="Admin">
         {ADMIN_NAV.map((item) => (
           <Link key={item.href} href={item.href}>

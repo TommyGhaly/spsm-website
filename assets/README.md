@@ -10,8 +10,11 @@ Originals are kept at full size on purpose. They are the only copy of some of
 this, and a 3000px photo is worth having when someone wants a different crop
 next year. The cost is ~21 MB in the repo, paid once.
 
-`derived/` is the staging area for images bound for Firebase Storage rather than
-the bundle — clergy portraits today. See the destination split in
+There is no `derived/` any more. It held a second copy of each clergy portrait,
+staged for a Firebase Storage upload that never happened, and once the site
+started shipping those portraits in the bundle it meant three fathers with five
+files each. Every output has one home now: `apps/website/public/` or
+`apps/website/src/app/`. See the destination split in
 `scripts/optimize-assets.mjs`.
 
 ## Provenance and licensing
@@ -22,6 +25,7 @@ table records what is known; **unknown is not the same as cleared.**
 | File | Source | Status |
 | --- | --- | --- |
 | `St Philopater & St. Mena Logo.svg` | Parish/diocese seal | Parish's own mark. Vector, converted from PDF. |
+| `HomeScreen.png` | Parish — livestream frame | **This parish's own sanctuary.** The homepage hero. See below. |
 | `Father-Youhanna.jpg` | Parish | Assumed parish-owned. Same session as Fr. Armia. |
 | `Father-Armia.jpg` | Parish | Assumed parish-owned. |
 | `Bishop-David.jpg` | "Photo From The Heart by Nash", 2014 | **Watermarked.** Parish states it owns this; written confirmation still outstanding. See below. |
@@ -33,6 +37,32 @@ table records what is known; **unknown is not the same as cleared.**
 | `Coptic_pattern.png` | AI-generated | Not used. See below. |
 | `Festival.jpg` | Parish | Not used. Past event. |
 | `SPSM-Church-Image.jpg` | Old Wix site | Not used. 176×176 thumbnail. |
+
+### `HomeScreen.png` is the first usable photograph of this sanctuary
+
+Added 2026-08-13, and it changes what the homepage can be. Everything else in
+this directory is either a different church or of unrecorded provenance, which is
+why the hero was previously built from type and ornament over a stock image
+dimmed to 14%. This is the Wayland iconostasis — the four living creatures, the
+Theotokos and Pantocrator icons, a priest at the altar — so it may be captioned,
+given real alt text, and presented as this parish, because it is.
+
+Two caveats that shaped how it is used:
+
+- **It is a livestream frame** (5061×2325; a camera rig and a tablet are visible
+  near the edges). Downscaling to hero width hides the softness. Do not use it
+  above ~2400px, and do not upscale it.
+- **It contains identifiable people** — a priest, a young deacon serving, and
+  congregation in the front rows. `optimize-assets.mjs` crops away the bottom
+  16% of the frame, which is composition *and* privacy: it drops most of the
+  seated congregation while tightening onto the iconostasis. Clergy and servants
+  visibly serving a public liturgy is a different matter from publishing
+  recognisable shots of parishioners in the pews, and the crop keeps that line.
+
+**Still worth confirming with the parish:** that they are content to publish a
+frame showing the people it shows. The `photoApprovals` collection was deferred
+past the September cutover, so there is no workflow enforcing this — it is a
+conversation, not a feature.
 
 ### Bishop David's portrait carries a visible copyright notice
 
