@@ -89,6 +89,28 @@ export interface ParishConfig {
   serviceTimes: ServiceTime[];
   /** Anything that doesn't fit the fields above. Markdown. */
   notes: string;
+  /** Where the parish is on social platforms. Any or all may be empty. */
+  social: ParishSocial;
+}
+
+/**
+ * The parish's social accounts, as full profile URLs.
+ *
+ * URLs rather than handles, and that is the decision to keep. A handle needs
+ * the site to know how to build a URL for each platform, which puts a mapping
+ * in code that changes when a platform changes its URL shape — and it cannot
+ * express the ones that do not fit, like a YouTube channel that has `/@handle`
+ * on one account and `/channel/UC…` on another. A URL is what the parish can
+ * copy out of their own address bar, which is also the only form they can check
+ * is right.
+ *
+ * Empty string means "no account", not "unknown": every renderer omits the icon
+ * entirely rather than linking somewhere broken.
+ */
+export interface ParishSocial {
+  instagram: string;
+  facebook: string;
+  youtube: string;
 }
 
 export interface ServiceTime {
@@ -178,6 +200,26 @@ export const DEFAULT_PARISH_CONFIG: ParishConfig = {
   officeHours: '',
   serviceTimes: [],
   notes: '',
+  /*
+   * The only fields in this default that are not blank.
+   *
+   * Everything else here stays empty because a plausible wrong address is one
+   * nobody thinks to check. These three are different in kind: they were given
+   * by the parish directly, they are public pages anyone can verify in a
+   * second, and unlike an address there is no half-right version of a profile
+   * URL — it either opens the parish's account or it obviously does not.
+   *
+   * `config/parish` still overrides them, so the parish can move an account
+   * without a deploy.
+   */
+  social: {
+    instagram: 'https://www.instagram.com/spsmchurch',
+    facebook: 'https://www.facebook.com/waylandcopticchurch',
+    // Supplied as `http://`. Normalised to https here rather than at render
+    // time: YouTube redirects http → https anyway, and shipping an http link
+    // means every visitor pays a redirect and any middlebox sees the request.
+    youtube: 'https://www.youtube.com/@WaylandCopticChurch',
+  },
 };
 
 /**
@@ -224,6 +266,7 @@ export function parseIntegrationsConfig(raw: unknown): IntegrationsConfig {
 export function parseParishConfig(raw: unknown): ParishConfig {
   const doc = asRecord(raw);
   const address = asRecord(doc?.['address']);
+  const social = asRecord(doc?.['social']);
   const blank = DEFAULT_PARISH_CONFIG;
 
   return {
@@ -239,7 +282,47 @@ export function parseParishConfig(raw: unknown): ParishConfig {
     officeHours: str(doc?.['officeHours']) ?? blank.officeHours,
     serviceTimes: parseServiceTimes(doc?.['serviceTimes']),
     notes: str(doc?.['notes']) ?? blank.notes,
+    social: {
+      instagram: socialUrl(social?.['instagram'], blank.social.instagram),
+      facebook: socialUrl(social?.['facebook'], blank.social.facebook),
+      youtube: socialUrl(social?.['youtube'], blank.social.youtube),
+    },
   };
+}
+
+/**
+ * A social profile URL, or `''` if it is not one we will link to.
+ *
+ * Staff edit `config/parish` by hand in the Firebase console, so the realistic
+ * failure is not an attack — it is someone pasting `@spsmchurch`, or
+ * `www.instagram.com/…` with no scheme, and the footer then emitting a relative
+ * link that resolves to a 404 on this site. Requiring an absolute `http(s)` URL
+ * makes that fail visibly here rather than quietly in the markup.
+ *
+ * `javascript:` and `data:` are excluded by the same check, which matters
+ * because this value goes straight into an `href`.
+ *
+ * **Absent and invalid are different, and that is the whole shape of this
+ * function.** A key that is not in the document at all falls back to the parish
+ * default — that is how three accounts survive a document, like the live one,
+ * that has never had a `social` field written to it. A key that *is* there and
+ * is unusable returns `''`, hiding the icon: whoever typed `@spsmchurch` was
+ * trying to change the link, and quietly showing the old one instead conceals
+ * the mistake. An explicit empty string is a deliberate "remove this icon" and
+ * is honoured the same way.
+ */
+function socialUrl(raw: unknown, fallback: string): string {
+  if (raw === undefined || raw === null) return fallback;
+
+  const value = str(raw);
+  if (!value) return '';
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function parseServiceTimes(raw: unknown): ServiceTime[] {

@@ -1,6 +1,7 @@
 import type { Bulletin, BulletinEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { PARISH_TIME_ZONE } from '@/lib/dates';
+import { bulletinImageUrl } from './media';
 
 /**
  * This week's bulletin, as mirrored from the announcements project.
@@ -33,11 +34,17 @@ export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
 
       {bulletin.announcements.length > 0 && (
         <ul className="grid reveal-stagger" style={{ marginBottom: 'var(--space-lg)' }}>
-          {bulletin.announcements.map((item) => (
-            <li key={item.sourceId} className="card">
-              <p>{item.text}</p>
-            </li>
-          ))}
+          {bulletin.announcements.map((item) => {
+            const image = bulletinImageUrl(item.image);
+            return (
+              <li key={item.sourceId} className={image ? 'card card--aside' : 'card'}>
+                {image && <Media url={image} className="card__thumb" />}
+                <div className="card__text">
+                  <p>{item.text}</p>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -46,14 +53,23 @@ export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
           is how the paper sheet reads, not how a screen should. */}
       {bulletin.multiDayEvents.length > 0 && (
         <ul className="grid reveal-stagger" style={{ marginBottom: 'var(--space-lg)' }}>
-          {bulletin.multiDayEvents.map((event) => (
-            <li key={event.sourceId} className="card">
-              <p className="meta">{formatDateRange(event.startDate, event.endDate)}</p>
-              <h3>{event.name}</h3>
-              {describeTime(event) && <p>{describeTime(event)}</p>}
-              {event.notes && <p>{event.notes}</p>}
-            </li>
-          ))}
+          {bulletin.multiDayEvents.map((event) => {
+            const image = bulletinImageUrl(event.image);
+            return (
+              <li key={event.sourceId} className={image ? 'card card--aside' : 'card'}>
+                {/* A thumbnail beside the text, not a banner above it. As a
+                    16:9 header this was the largest thing in the section and
+                    it dwarfed the week it was introducing. */}
+                {image && <Media url={image} className="card__thumb" />}
+                <div className="card__text">
+                  <p className="meta">{formatDateRange(event.startDate, event.endDate)}</p>
+                  <h3>{event.name}</h3>
+                  {describeTime(event) && <p>{describeTime(event)}</p>}
+                  {event.notes && <p>{event.notes}</p>}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -77,15 +93,32 @@ export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
                   {isToday && <span className="week__today-flag">Today</span>}
                 </h3>
                 <ul>
-                  {day.events.map((event) => (
-                    <li key={event.sourceId}>
-                      <span className="week__time">
-                        {describeTime(event) || <Icon name="clock" size={15} />}
-                      </span>
-                      <span>{event.name}</span>
-                      {event.notes && <em>{event.notes}</em>}
-                    </li>
-                  ))}
+                  {day.events.map((event) => {
+                    const image = bulletinImageUrl(event.image);
+                    return (
+                      <li key={event.sourceId}>
+                        {/*
+                          The picture the parish already attached to this
+                          service, where there is one.
+
+                          About a third of a week has none — Hymns Class, Sunday
+                          School, Servants Meeting — and those rows get an empty
+                          cell rather than a placeholder. The column is reserved
+                          for the whole week either way, which is what keeps the
+                          times aligned down every card; a gap reads as "no
+                          picture for this one", whereas a stand-in mark would
+                          read as one that failed to load.
+                        */}
+                        <Media url={image} className="week__thumb" />
+
+                        <span className="week__time">
+                          {describeTime(event) || <Icon name="clock" size={15} />}
+                        </span>
+                        <span className="week__name">{event.name}</span>
+                        {event.notes && <em>{event.notes}</em>}
+                      </li>
+                    );
+                  })}
                 </ul>
               </li>
             );
@@ -93,6 +126,40 @@ export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
         </ul>
       )}
     </>
+  );
+}
+
+/**
+ * An event's picture, as a background rather than an `<img>`.
+ *
+ * ---------------------------------------------------------------------------
+ * This is the one deliberate choice in this file, so: **these images are
+ * hotlinked from a Firebase Storage bucket in another project, with a download
+ * token in the query string.** That follows the same rule as the bulletin text
+ * itself — read through, never mirrored — but it means the parish can rotate a
+ * token, delete an image, or re-upload it under a new name at any time, and
+ * this page would not know until a reader saw it.
+ *
+ * A broken `<img>` renders a torn-page icon and its alt text. A broken
+ * background renders as the element's own background — here, nothing at all,
+ * which is exactly what a service with no picture already looks like. For
+ * decorative thumbnails on a cross-project hotlink, failing to a blank space is
+ * the better failure: the row is still complete without it.
+ *
+ * Nothing is lost accessibly by not being an `<img>`: the service's name is
+ * beside it in text, so an `alt` could only repeat it.
+ * ---------------------------------------------------------------------------
+ *
+ * Renders the element even with no URL, so the grid column it occupies stays
+ * reserved and the times line up down a day whose services are a mix.
+ */
+function Media({ url, className }: { url: string | null; className: string }) {
+  return (
+    <span
+      className={url ? `${className} ${className}--filled` : className}
+      aria-hidden="true"
+      style={url ? { backgroundImage: `url("${url}")` } : undefined}
+    />
   );
 }
 

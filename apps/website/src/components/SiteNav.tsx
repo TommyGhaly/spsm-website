@@ -46,9 +46,14 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
   /**
    * Marks the section you are in, not just the exact URL.
    *
-   * `/events/summer-camp` should light up "Calendar" — a visitor reading an
-   * event has not left the calendar. The `startsWith` needs the `/` guard or
-   * `/about` would also match a hypothetical `/about-our-school`.
+   * `/events/summer-camp` should light up "Events" — a visitor reading an event
+   * has not left the section they came from. The `startsWith` needs the `/`
+   * guard or `/about` would also match a hypothetical `/about-our-school`.
+   *
+   * Note this marks "Events" and not "Calendar" for an individual event, even
+   * though `/calendar` also links to those pages. Two nav items lit at once
+   * would be `aria-current="page"` twice, which tells a screen-reader user they
+   * are in two places; the event lives under `/events/`, so that is the one.
    *
    * Home is exact-match only. Every path begins with `/`, so the prefix rule
    * would mark it as the current page on every page of the site — two nav items

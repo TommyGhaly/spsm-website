@@ -5,19 +5,26 @@ import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
-  title: 'Parish Calendar',
+  title: 'Events',
   description:
-    'Liturgies, classes, and parish events at St. Philopater Mercurius & St. Mina in Wayland, MA.',
+    'Upcoming liturgies, classes, and parish events at St. Philopater Mercurius & St. Mina in Wayland, MA.',
 };
 
+/**
+ * What is coming up, in order.
+ *
+ * Retitled from "Parish Calendar" when `/calendar` was added: that name now
+ * belongs to the month grid, and two items in the same nav bar leading to two
+ * pages with the same title is the reader's problem to untangle, not theirs.
+ */
 export default async function EventsPage() {
   const events = await getUpcomingEvents(100);
 
   return (
     <>
       <PageHeader
-        title="Parish Calendar"
-        lede="Liturgies, classes, and gatherings. Times are shown in Eastern Time."
+        title="Events"
+        lede="Everything coming up, soonest first. Times are shown in Eastern Time."
       />
 
       <PageBody>

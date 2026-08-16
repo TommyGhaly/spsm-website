@@ -128,6 +128,68 @@ describe('parseParishConfig', () => {
   });
 });
 
+/**
+ * The social URLs go straight into a footer `href`, and staff paste them in by
+ * hand. The two realistic mistakes are a bare handle and a scheme-less domain;
+ * both would emit a *relative* link that 404s on this site rather than opening
+ * the account. The dangerous one is rarer but cheaper to exclude than to
+ * explain.
+ */
+describe('parseParishConfig — social links', () => {
+  it('defaults to the parish’s own accounts, all https', () => {
+    // These three are the one part of the parish default that is not blank —
+    // supplied by the parish and publicly verifiable. See DEFAULT_PARISH_CONFIG.
+    const social = parseParishConfig(null).social;
+    expect(social.instagram).toBe('https://www.instagram.com/spsmchurch');
+    expect(social.facebook).toBe('https://www.facebook.com/waylandcopticchurch');
+    expect(social.youtube).toBe('https://www.youtube.com/@WaylandCopticChurch');
+    // The YouTube URL was given as http. Nothing here should ship http.
+    for (const url of Object.values(social)) {
+      expect(url.startsWith('https://')).toBe(true);
+    }
+  });
+
+  it('lets config/parish override an account without a deploy', () => {
+    const social = parseParishConfig({
+      social: { instagram: 'https://www.instagram.com/moved-account/' },
+    }).social;
+    expect(social.instagram).toBe('https://www.instagram.com/moved-account/');
+    // The two not overridden keep the defaults rather than being blanked.
+    expect(social.facebook).toBe('https://www.facebook.com/waylandcopticchurch');
+  });
+
+  it('rejects a bare handle and a scheme-less domain', () => {
+    // Both would render as a relative href and 404 on this site. Rejected means
+    // "no icon", not "fall back to the default" — a staff member who typed a
+    // handle meant to change the link, and silently showing the old one hides
+    // the mistake.
+    const social = parseParishConfig({
+      social: { instagram: '@spsmchurch', facebook: 'www.facebook.com/waylandcopticchurch' },
+    }).social;
+    expect(social.instagram).toBe('');
+    expect(social.facebook).toBe('');
+  });
+
+  it('rejects non-http schemes, so the href cannot become script', () => {
+    const social = parseParishConfig({
+      social: {
+        instagram: 'javascript:alert(1)',
+        facebook: 'data:text/html,<script>alert(1)</script>',
+        youtube: 'ftp://example.org/channel',
+      },
+    }).social;
+    expect(social).toEqual({ instagram: '', facebook: '', youtube: '' });
+  });
+
+  it('survives social being the wrong shape entirely', () => {
+    // Not an object → no per-key values to read, so every platform falls back.
+    expect(parseParishConfig({ social: 'instagram.com/spsm' }).social).toEqual(
+      DEFAULT_PARISH_CONFIG.social,
+    );
+    expect(parseParishConfig({ social: [] }).social).toEqual(DEFAULT_PARISH_CONFIG.social);
+  });
+});
+
 describe('hasParishDetails', () => {
   it('is false for the blank default, so /contact renders an honest empty state', () => {
     expect(hasParishDetails(DEFAULT_PARISH_CONFIG)).toBe(false);

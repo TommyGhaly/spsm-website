@@ -25,19 +25,43 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
   /* Anchored headings (`/ministries#mother-of-mercy`) otherwise land under the
      sticky masthead. Kept a little above the bar's own height — see `.masthead`,
      which is 5rem plus its rule — so the heading clears it rather than touching. */
   scroll-padding-top: 6.5rem;
 }
 
+/*
+ * Smooth scrolling **only when a fragment is being scrolled to**, and this is a
+ * bug fix rather than a refinement.
+ *
+ * `scroll-behavior: smooth` on `html` unconditionally is what made every nav
+ * link land halfway down the new page. On navigation the router scrolls the
+ * document back to the top, and a smooth `html` turns that instant jump into an
+ * animation — which the next paint interrupts, leaving the reader wherever the
+ * animation had got to. The further down the old page you were, the further
+ * down the new one you arrived, which is exactly the symptom.
+ *
+ * `:has(:target)` restricts smoothness to the case it was added for: a link to
+ * a fragment, like `/#clergy` from the footer or `#livestream` from the facts
+ * row. A route change has no `:target`, so it gets the instant scroll the
+ * router expects and lands at the top.
+ *
+ * `:has()` is required for this to work at all. Where it is unsupported the
+ * declaration never applies and every scroll is instant — the correct
+ * behaviour, minus the polish, which is the right way for this to degrade.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(:target) {
+    scroll-behavior: smooth;
+  }
+}
+
 /* Honour a reader who has asked their OS for less movement. Every transition
    and transform in this sheet is decorative, so all of it can go. */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+  /* No `html { scroll-behavior: auto }` here any more — the smooth rule above
+     is already inside `no-preference`, so there is nothing left to undo. */
   *,
   *::before,
   *::after {
@@ -228,8 +252,26 @@ svg {
   padding-block: var(--space-section, 4rem);
 }
 
+/*
+ * The sunken band, with a warm cast rather than a flat fill.
+ *
+ * `--color-paper-sunken` on its own alternated with `--color-paper` as two
+ * shades of the same beige, which is what made a long page read as one column
+ * of it. A very slight gold wash across the top of each sunken band gives the
+ * alternation a *hue* difference as well as a value one — the page reads as
+ * warm-then-neutral instead of beige-then-beige.
+ *
+ * Both stops are the theme's own gold, so this adds no colour that
+ * `config/theme` does not already control. Change the gold and this follows.
+ */
 .band--sunken {
-  background: var(--color-paper-sunken, #eeddd7);
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-gold, #b08d43) 9%, transparent),
+      transparent 22rem
+    ),
+    var(--color-paper-sunken, #eeddd7);
   border-block: 1px solid var(--color-rule, #e0cac3);
 }
 
@@ -243,6 +285,32 @@ svg {
  */
 .band--sunken {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+}
+
+/*
+ * A third ground, for the clergy.
+ *
+ * The page alternated between exactly two beiges — `--color-paper` and
+ * `--color-paper-sunken`, which differ by about 4% of lightness — so a section
+ * boundary was carried entirely by a hairline. This is a real hue shift rather
+ * than a third value of the same colour: the accent mixed into the sunken
+ * paper, which lands on a dusty rose that is unmistakably not the band above it
+ * and still sits inside the parish's own palette.
+ *
+ * Both stops are theme tokens, so this follows `config/theme` like everything
+ * else. The gold hairlines top and bottom are the same mark `.band--sunken`
+ * uses, doubled — this band has a distinct ground on both sides, so it needs
+ * closing as well as opening.
+ */
+.band--tinted {
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-accent, #992a21) 7%, transparent),
+      transparent 26rem
+    ),
+    color-mix(in srgb, var(--color-accent, #992a21) 6%, var(--color-paper-sunken, #eeddd7));
+  border-block: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 32%, transparent);
 }
 
 .band--deep {
@@ -742,10 +810,24 @@ main {
   overflow: hidden;
 }
 
-.hero__photo {
+/*
+ * The moving frame that holds all three photographs.
+ *
+ * The drift and the scroll parallax live here rather than on the images, so
+ * each `.hero__frame` is free to own `opacity` for the cross-fade. Two
+ * animations on the same element writing the same property do not compose — the
+ * later one wins outright — and that is exactly the trap the breathe/parallax
+ * pair below documents. Splitting the element sidesteps it entirely.
+ */
+.hero__frames {
   position: absolute;
   inset: 0;
   z-index: -2;
+}
+
+.hero__frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -773,15 +855,50 @@ main {
    * depends on it.
    */
   filter: saturate(0.82) sepia(0.14);
+
+  /*
+   * The cross-fade's resting state, and it is the fallback that matters.
+   *
+   * Every frame but the first is transparent until an animation moves it. Under
+   * `prefers-reduced-motion: reduce` the whole motion block is skipped, so what
+   * remains is frame one at full opacity and the other two invisible — the
+   * parish's own sanctuary, alone and still, which is the correct hero for a
+   * reader who has asked for no movement. Do not give these a non-zero opacity
+   * here to "fix" a flash; that would stack three photographs at once.
+   */
+  opacity: 0;
+}
+
+.hero__frame--1 {
+  opacity: 1;
 }
 
 /*
- * The portrait source is cropped tight around the altar already, so it wants to
- * sit high rather than at 34% — the mural above the altar is the top of that
- * composition and centring it cuts the cross off.
+ * The two decorative frames, held back from the sanctuary but no longer drained.
+ *
+ * They were at `saturate(.55) … brightness(.82)`, which did stop them jumping
+ * forward — by throwing away the only strong colour either one has. The domes
+ * frame is deep blue stained glass and gold; the towers frame is a hard blue
+ * sky. Desaturated to a warm grey they were three near-identical sepia
+ * photographs taking turns, which is a duller hero than one photograph.
+ *
+ * So: most of the colour back, and the separation carried by brightness alone.
+ * They still sit behind the sanctuary, they just do it without going grey.
+ */
+.hero__frame--2,
+.hero__frame--3 {
+  filter: saturate(0.95) sepia(0.06) brightness(0.9);
+}
+
+/*
+ * All three frames now share the sanctuary's two crops — 2.591:1 and 3:4, cut
+ * in `scripts/optimize-assets.mjs`. This rule is therefore about the *box*, not
+ * about any one image: the portrait sources are 0.75 and a phone hero is nearer
+ * 0.6, so the remaining crop is horizontal, and `top` keeps the crosses and the
+ * altar's mural in frame rather than centring on the masonry below them.
  */
 @media (max-width: 40rem) {
-  .hero__photo {
+  .hero__frame {
     object-position: center top;
   }
 }
@@ -837,15 +954,102 @@ main {
   text-align: left;
 }
 
+/*
+ * The parish's full name, on one line at every width.
+ *
+ * "St. Philopater Mercurius & St. Mina" is 35 characters, and at a fixed
+ * `--type-display` it wrapped to two lines on everything narrower than a large
+ * desktop — breaking after "St." and orphaning "Mina", which reads as two
+ * saints' names cut in half rather than one dedication.
+ *
+ * So the size follows the viewport instead of the type scale. `white-space:
+ * nowrap` is the guarantee; the `min()` is what stops that guarantee from
+ * overflowing, and both of its terms are measured rather than guessed.
+ *
+ * Measured on the rendered page: this face sets the name at **17.6× the font
+ * size** in width. The line has `100vw - 2 × --space-gutter` to live in while
+ * `.wrap` is still fluid, and `--shell-width - 2 × --space-gutter` once the
+ * column has capped. `4.4vw` sits under the first with room to spare — the
+ * spare is deliberate, since the ratio shifts if the display face falls back to
+ * Georgia.
+ *
+ * The second term is `calc()` over the tokens rather than a rem literal, and
+ * that is the part worth keeping. `--shell-width` is a *theme* value: it comes
+ * out of `config/theme` in Firestore as a number, so staff can change the
+ * column width without touching this file. A hardcoded ceiling would be correct
+ * only for today's 1280 and would start overflowing the moment someone narrowed
+ * it. Dividing the actual column by 18.5 — the measured 17.6 plus margin —
+ * tracks whatever they set. See packages/shared/src/schema/theme.ts.
+ *
+ * **No lower bound, on purpose.** A `clamp()` floor is the one thing that can
+ * break this: below about 340px the floor stops the text shrinking while the
+ * viewport keeps going, and the name overflows the screen. Shrinking without
+ * limit is correct for a line that may not wrap.
+ *
+ * `max-width` is gone rather than raised. A character cap on a line that cannot
+ * wrap is two rules arguing over the same decision.
+ *
+ * If the parish's name ever changes, re-measure the 17.6 and redo this.
+ */
 .hero h1 {
-  font-size: var(--type-display, 3rem);
+  font-size: min(
+    4.4vw,
+    calc((var(--shell-width, 72rem) - 2 * var(--space-gutter, 1.5rem)) / 18.5)
+  );
   margin: 0;
-  max-width: 22ch;
+  white-space: nowrap;
   color: var(--color-ink-inverse, #f9efec);
   /* The heading sits on a photograph, not a flat fill, so it needs its own
      shadow — the gradient alone cannot guarantee contrast against a bright
      vestment or a lit window that happens to land behind a letter. */
   text-shadow: 0 2px 18px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+/*
+ * The gold rule under the name.
+ *
+ * The hero used to end on three buttons. With those gone the block finishes on
+ * a paragraph of body copy, and the eye has nothing to stop against — so this
+ * takes their place as the closing mark. It is the same gesture the section
+ * eyebrows make (`.section-head__eyebrow::before`), which is what keeps it from
+ * reading as a new invention: one gold hairline, drawn from the left.
+ */
+.hero__rule {
+  display: block;
+  width: min(14rem, 42vw);
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--color-gold, #b08d43) 85%, transparent),
+    color-mix(in srgb, var(--color-gold, #b08d43) 15%, transparent)
+  );
+}
+
+/*
+ * The scroll cue, bottom centre: a short vertical hairline with a travelling
+ * highlight, rather than a bouncing chevron.
+ *
+ * `justify-self` is not enough here — this is a child of `.hero`, which is a
+ * flex row anchored to `flex-end`, so it is absolutely positioned out of that
+ * flow instead of fighting it.
+ */
+.hero__scroll {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-md, 1rem);
+  translate: -50% 0;
+  width: 1px;
+  height: 2.5rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 22%, transparent);
+}
+
+/* Hidden on short viewports, where the hero's own text is already close enough
+   to the fold that a cue below it is just clutter over the photograph. */
+@media (max-height: 34rem) {
+  .hero__scroll {
+    display: none;
+  }
 }
 
 .hero__lede {
@@ -884,17 +1088,6 @@ main {
   margin-top: var(--space-sm, 0.5rem);
 }
 
-/*
- * The hero's buttons are left-aligned with its heading; the closing band's are
- * centred under centred text. `text-align: center` on the parent does not do
- * this — these are flex items, so they need `justify-content`, which is exactly
- * the trap that left them hugging the left edge when the hero went
- * left-aligned.
- */
-.hero__actions--center {
-  justify-content: center;
-}
-
 /* ---- motion ------------------------------------------------------------
  *
  * All of it CSS, none of it JavaScript, and that is a correctness decision as
@@ -921,20 +1114,85 @@ main {
  */
 @media (prefers-reduced-motion: no-preference) {
   /*
-   * A slow breathing zoom across the sanctuary photograph. 32s and 6% of scale:
-   * at this speed it reads as the room breathing rather than as an animation,
-   * which is the difference between "alive" and "distracting" on a page someone
-   * may leave open through a liturgy.
+   * A slow breathing zoom across the whole frame. 32s and 6% of scale: at this
+   * speed it reads as the room breathing rather than as an animation, which is
+   * the difference between "alive" and "distracting" on a page someone may
+   * leave open through a liturgy.
    *
    * `scale` as its own property rather than inside a `transform`, because the
    * parallax below animates `translate` on this same element. Individual
    * transform properties compose; two animations both writing `transform` do
    * not — the later one in the list wins outright and the breath would stop.
    */
-  .hero__photo {
+  .hero__frames {
     animation: hero-breathe 32s ease-in-out infinite alternate;
     will-change: scale;
   }
+
+  /*
+   * The cross-fade: 27s round, nine seconds a frame.
+   *
+   * Nine seconds is chosen to be *slow enough not to be a carousel*. The eye
+   * should notice the room has changed, not watch it change — a hero that
+   * cycles every three or four seconds turns the parish's name into a caption
+   * on a slideshow. The fade itself is about a second, long enough that no
+   * boundary snaps.
+   *
+   * ---------------------------------------------------------------------
+   * **Frame one never animates its opacity. It is the base layer, always at
+   * 1, and the other two fade in and out on top of it.**
+   *
+   * This is a fix, not a preference. When all three shared one fade, the
+   * cycle began with every frame at `opacity: 0` — so for the first second
+   * after load the hero was a flat `--color-deep` rectangle with no
+   * photograph in it, and the LCP image was invisible at first paint. Every
+   * hand-off had a smaller version of the same dip, because an incoming
+   * frame ramping up cannot cover an outgoing one that is already leaving.
+   *
+   * Pinning the bottom layer removes the whole class of problem: the frames
+   * are painted in DOM order, so whatever 2 and 3 are doing, there is always
+   * an opaque sanctuary underneath. It also means the parish's own
+   * photograph is the one that is always on screen, which is the right frame
+   * to give that role to.
+   * ---------------------------------------------------------------------
+   *
+   * `infinite` on the document timeline, so unlike everything under the
+   * `@supports` guard below there is no "end state" to land on — the loop never
+   * finishes. That is what lets a fade-to-zero live safely outside the guard.
+   *
+   * Adding a fourth photograph means changing the duration, the delays, *and*
+   * the percentages in `hero-cross`, which are a function of how many frames
+   * share the round.
+   */
+  /*
+   * Two animations per frame: the fade, and a slow push of its own.
+   *
+   * The second one is what stops the hero reading as one still picture being
+   * swapped for another — each photograph is already moving by the time it
+   * becomes visible. Directions alternate (in, out, in) so consecutive frames
+   * do not repeat the same gesture.
+   *
+   * `scale` and never below 1. The frames are sized to their parent, and the
+   * parent's own breath is what provides the overhang the parallax eats into; a
+   * child scaling under 1 would shrink inside that and pull a bare edge into
+   * view. Scaling up only can never do that, which is why this drifts by zoom
+   * rather than by `translate` or `object-position` — `translate` would have to
+   * be budgeted against the parallax, and `object-position` would override the
+   * portrait crop that the `max-width: 40rem` rule sets on frame one.
+   *
+   * One `animation-duration` for two names is not an oversight: a single value
+   * in an `animation-*` list is used by every name in it.
+   */
+  .hero__frame {
+    animation-duration: 27s;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: opacity, scale;
+  }
+  /* The base layer: drifts, but never fades. See above. */
+  .hero__frame--1 { animation-name: hero-push-in; }
+  .hero__frame--2 { animation-name: hero-cross, hero-push-out; animation-delay: 9s; }
+  .hero__frame--3 { animation-name: hero-cross, hero-push-in; animation-delay: 18s; }
 
   /* The hero's own text, on load rather than on scroll — it is already in view. */
   .hero__inner > * {
@@ -944,6 +1202,36 @@ main {
   .hero__inner > :nth-child(2) { animation-delay: 180ms; }
   .hero__inner > :nth-child(3) { animation-delay: 300ms; }
   .hero__inner > :nth-child(4) { animation-delay: 420ms; }
+
+  /*
+   * The gold rule draws itself out from the left instead of rising in with its
+   * siblings, taking its place in the same cascade: eyebrow, name, rule, lede.
+   *
+   * `.hero__inner > .hero__rule` rather than `.hero__rule`, and that matters —
+   * the stagger above is `:nth-child(n)`, which is a pseudo-class and so outruns
+   * a bare class. At equal specificity this rule's delay would lose to the
+   * 300ms on `:nth-child(3)` and the timing would silently drift the moment the
+   * hero's children are reordered.
+   */
+  .hero__inner > .hero__rule {
+    transform-origin: left center;
+    animation: rule-draw 700ms cubic-bezier(0.16, 1, 0.3, 1) 300ms backwards;
+  }
+
+  /*
+   * A highlight travelling down the scroll cue, once every three seconds. The
+   * hairline itself is always there; this is the only part that moves, which is
+   * why it reads as an indicator rather than as an animated arrow.
+   */
+  .hero__scroll::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 45%;
+    background: var(--color-gold, #b08d43);
+    animation: scroll-hint 3s ease-in-out infinite;
+  }
 
   /*
    * Everything below the fold reveals as it scrolls in.
@@ -994,23 +1282,27 @@ main {
    */
   @supports (animation-timeline: view()) {
     /*
-     * Parallax on the sanctuary photograph: it falls behind the page as you
-     * scroll away from it, which is what gives the top of the site depth
-     * instead of the whole hero sliding off as one flat sheet.
+     * Parallax on the whole frame: it falls behind the page as you scroll away
+     * from it, which is what gives the top of the site depth instead of the
+     * whole hero sliding off as one flat sheet.
      *
-     * 2.5% of travel against a scale that never drops below 1.08 — so the image
-     * overhangs its frame by 4% on every edge and the parallax can never drag a
-     * blank strip into view at the top. Both are percentages of the hero's own
-     * height, so the 1.5% of margin between them holds at every viewport rather
-     * than only at the one it was checked on. Changing either number means
+     * 2.5% of travel against a scale that never drops below 1.08 — so the frame
+     * overhangs by 4% on every edge and the parallax can never drag a blank
+     * strip into view at the top. Both are percentages of the hero's own height,
+     * so the 1.5% of margin between them holds at every viewport rather than
+     * only at the one it was checked on. Changing either number means
      * re-checking that (scale - 1) / 2 still exceeds the travel.
+     *
+     * The per-frame push in the block above only ever scales *up* from 1, so it
+     * adds to this margin and never eats into it. That is the invariant to keep
+     * if those keyframes are ever retuned.
      *
      * `exit` rather than `cover`: the hero is at the top of the document, so a
      * `cover` range would already be part-way through at scroll zero and the
      * photograph would load visibly offset. `exit 0%` is the moment the hero
      * starts leaving, which is the first pixel of scroll.
      */
-    .hero__photo {
+    .hero__frames {
       animation:
         hero-breathe 32s ease-in-out infinite alternate,
         hero-parallax linear both;
@@ -1045,6 +1337,76 @@ main {
       animation-timeline: view();
       animation-range: exit 0% exit 80%;
     }
+  }
+}
+
+/*
+ * One overlay frame's turn. Used by frames 2 and 3 only — frame 1 is the base
+ * layer and does not fade at all.
+ *
+ * A third of the round is 33.33%, and the whole of that third is spent visible:
+ * up over the first 4%, held to 29.33%, down by 33.33%. Both the rise and the
+ * fall happen over an opaque frame 1, so neither can expose the band's
+ * background — which is the entire reason the base layer is pinned.
+ *
+ * These percentages are a function of there being three frames. Adding a fourth
+ * means recomputing all of them, not just adding a delay.
+ */
+@keyframes hero-cross {
+  0% {
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  29.33% {
+    opacity: 1;
+  }
+  33.33% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/*
+ * The per-frame push. Never below 1 — see the parallax note in the motion
+ * block; a frame narrower than its box exposes the hero's flat background at
+ * the edges.
+ */
+@keyframes hero-push-in {
+  from {
+    scale: 1;
+  }
+  to {
+    scale: 1.07;
+  }
+}
+
+@keyframes hero-push-out {
+  from {
+    scale: 1.07;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+/*
+ * The travelling highlight in the scroll cue. It clears the bottom of the
+ * hairline before restarting, and rests at the end of each cycle rather than
+ * running continuously — a mark moving without pause reads as a loading bar.
+ */
+@keyframes scroll-hint {
+  0% {
+    transform: translateY(-100%);
+  }
+  60% {
+    transform: translateY(222%);
+  }
+  100% {
+    transform: translateY(222%);
   }
 }
 
@@ -1205,6 +1567,17 @@ main {
   color: var(--color-gold, #b08d43);
 }
 
+/*
+ * The note is `--color-ink-soft`, a warm near-black tuned for paper. It became a
+ * real problem the moment the offering moved onto `band--deep`: dark grey on a
+ * dark red ground is close to unreadable, and that note is the sentence saying
+ * what the offering pays for. `h2` and `.lede` already have their inverted
+ * cases a few rules above; this was the one that was missing.
+ */
+.band--deep .section-head__note {
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 78%, transparent);
+}
+
 .section-head h2 {
   margin: 0;
 }
@@ -1284,6 +1657,50 @@ main {
   padding: var(--space-md, 1.25rem);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
   transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+}
+
+/*
+ * A card with a small picture *beside* its text — a bulletin announcement or a
+ * multi-day event with one attached in the announcements app.
+ *
+ * This was a full-width 16:9 banner across the top of the card and it was much
+ * too loud: two of those introducing the week were the largest images in the
+ * section, above the schedule they were meant to sit alongside. A 4rem square
+ * at the start of the row says "there is a picture of this" without becoming
+ * the subject.
+ */
+.card--aside {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-md, 1rem);
+}
+
+.card__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.35rem);
+  min-width: 0;
+}
+
+/*
+ * A background rather than an `<img>`, for the reason set out on `Media` in
+ * features/bulletin/BulletinWeek.tsx: these are hotlinked from another
+ * project's Storage bucket with a rotatable token, and a background that fails
+ * leaves a blank space rather than a torn-page icon.
+ *
+ * `flex-shrink: 0` because a flex item with a background and no content is
+ * perfectly happy to be squashed to nothing by a long neighbour, and a fixed
+ * size is the whole point of this element.
+ */
+.card__thumb {
+  flex-shrink: 0;
+  width: 4rem;
+  height: 4rem;
+  border-radius: var(--radius-sm, 5px);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
 }
 
 /*
@@ -1749,21 +2166,42 @@ main {
  * line on the site and was previously the smallest text in its own tile.
  * ---------------------------------------------------------------------------
  */
+/*
+ * The band this sits in is deliberately shorter than a content section.
+ *
+ * At the full `--space-section` above and below, three short lines of text got
+ * as much vertical room as the clergy or the week's schedule, which is the
+ * definition of a section being more prominent than it should be. This is a
+ * strip of reference information under the hero, not a chapter.
+ */
+.band--slim {
+  padding-block: var(--space-lg, 2rem);
+}
+
 .facts {
   display: grid;
-  gap: var(--space-lg, 2rem);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-md, 1.25rem) var(--space-lg, 2rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/*
+ * Icon beside the text rather than centred above it.
+ *
+ * Stacked and centred, each fact was a little monument: glyph, then label, then
+ * answer, all on their own lines down the middle of a column. Three of those
+ * read as three feature tiles. Set as a row — a small mark, then two tight
+ * lines of text, left-aligned — the same three facts read as a caption strip,
+ * which is what they are.
+ */
 .fact {
   display: grid;
-  justify-items: center;
-  text-align: center;
-  gap: var(--space-xs, 0.3rem);
-  padding-inline: var(--space-md, 1rem);
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--space-sm, 0.7rem);
+  text-align: left;
 }
 
 /*
@@ -1771,44 +2209,58 @@ main {
  * them one inscription instead of three cards. Gold, fading out at both ends —
  * the same mark `.ornament` makes horizontally, turned on its side.
  *
+ * Held at 22% rather than 45%. At the old strength three gold verticals were
+ * the most saturated thing in the band, and a divider that outweighs what it
+ * divides is drawing attention to the wrong object.
+ *
  * `border-image` because a plain border cannot fade. The `1` at the end is the
  * slice value and is not optional; without it the gradient is not drawn at all.
  */
 @media (min-width: 48rem) {
   .fact + .fact {
+    padding-left: var(--space-lg, 2rem);
     border-left: 1px solid transparent;
     border-image: linear-gradient(
         to bottom,
         transparent,
-        color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent) 25%,
-        color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent) 75%,
+        color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent) 25%,
+        color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent) 75%,
         transparent
       )
       1;
   }
 }
 
-/* Stacked, the same rule runs across instead of down. */
+/* Stacked, the rule runs across instead of down — and much tighter than the
+   2rem it was. Three stacked facts separated by section-sized gaps was most of
+   why this band was so tall on a phone. */
 @media (max-width: 48rem) {
   .fact + .fact {
-    padding-top: var(--space-lg, 2rem);
-    border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+    padding-top: var(--space-md, 1.25rem);
+    border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 90%, transparent);
   }
 }
 
 /*
  * The glyph, with the disc taken off it.
  *
- * All three are gold now rather than red, dark red and gold. Three colours were
+ * All three are gold rather than red, dark red and gold. Three colours were
  * doing real work while each sat on a filled disc — they told the tiles apart
  * at a glance — but as bare glyphs, three different colours read as three
- * unrelated marks. Gold is what every other piece of ornament on this page is,
- * so the row now joins the eyebrows and the cross instead of competing.
+ * unrelated marks.
+ *
+ * Now also dimmed and shrunk. These are markers for three lines of text, not
+ * illustrations: at full gold and 26px they were the first thing the eye landed
+ * on in the band, ahead of the Liturgy time they are labelling. Held back to a
+ * tint of the same gold, they still separate the three facts without competing
+ * with them.
  */
+/* `margin-top` rather than `margin-bottom` now that the glyph is beside the
+   text: it optically aligns to the small-caps label rather than to the box. */
 .fact__icon {
   display: block;
-  color: var(--color-gold, #b08d43);
-  margin-bottom: var(--space-xs, 0.35rem);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  margin-top: 1px;
 }
 
 .fact__body {
@@ -1817,23 +2269,34 @@ main {
   min-width: 0;
 }
 
+/* `500` rather than `600`, and the tracking eased. Small uppercase text at
+   semibold is shouting; these are labels on facts, not headings in their own
+   right. */
 .fact__body h3 {
   font-size: var(--type-micro, 0.8125rem);
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
-  color: var(--color-ink-faint, #6f5f5a);
+  color: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 80%, transparent);
   margin: 0;
-  font-weight: 600;
+  font-weight: 500;
 }
 
-/* The answer itself, in the display face. This is the line someone opened the
-   page to read; it should not be set at the size reserved for captions. */
+/*
+ * The answer itself, in the display face.
+ *
+ * Kept in the display face — this is still the line someone opened the page to
+ * read — but no longer set at subheading size in full-strength ink. The band
+ * sits directly under a hero carrying the parish's name at up to 3.9rem, and at
+ * `--type-subheading` these three lines were reading as a second heading row
+ * competing with it. Body size in softened ink lets the hero stay the loudest
+ * thing above the fold, which is the point of the section being subtle.
+ */
 .fact__body p {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
-  line-height: var(--leading-snug, 1.3);
-  color: var(--color-ink, #1c1614);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.35);
+  color: color-mix(in srgb, var(--color-ink, #1c1614) 78%, transparent);
 }
 
 /*
@@ -2146,15 +2609,48 @@ main {
  * five, some carry a note. A table forces every day into the same height and
  * leaves most cells blank; a card per day lets each be as tall as it needs.
  */
+/*
+ * A day is a card rather than a table row — and the card now has a coloured
+ * spine and a day-name set like a heading instead of like a form label.
+ *
+ * What it looked like before: seven near-white rounded rectangles with a hairline
+ * border, a 15px sans-serif weekday, and a column of times. Nothing wrong, and
+ * nothing to look at — the single blandest section on the homepage, carrying
+ * the information most people came for.
+ *
+ * Three changes do the work, and none of them adds a colour the theme does not
+ * already have:
+ *   - a gold spine down the left edge, going accent-red on today;
+ *   - the weekday in the display face at reading size, with the date under it;
+ *   - a warm tint on the card so it lifts off the band instead of matching it.
+ */
+/*
+ * The card is now built out of two grounds, not one near-white one.
+ *
+ * The previous pass added a gold spine and a tinted wash and it was still, in
+ * substance, a white box — `--color-paper-raised` is #fdf7f4, which is white
+ * with a rumour of warmth, and seven of them stacked is the blandest thing the
+ * homepage can do with the information most people came for.
+ *
+ * So the day column becomes a *filled* panel in the parish's deep red, and the
+ * services sit on warm paper beside it. That is a real value contrast rather
+ * than another tint of beige, and it costs no new colour: `--color-deep` and
+ * `--color-gold` are already the masthead and the ornament.
+ *
+ * `overflow: hidden` so the filled panel takes the card's corner radius, and
+ * `padding: 0` because the padding now belongs to the two panels rather than to
+ * the card around them.
+ */
 .week__day {
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-md, 8px);
-  padding: var(--space-md, 1rem);
+  padding: 0;
+  overflow: hidden;
   display: grid;
-  gap: var(--space-sm, 0.5rem) var(--space-lg, 2rem);
-  grid-template-columns: minmax(8rem, 10rem) 1fr;
-  align-items: start;
+  gap: 0;
+  grid-template-columns: minmax(8rem, 11rem) 1fr;
+  align-items: stretch;
 }
 
 @media (max-width: 40rem) {
@@ -2163,45 +2659,99 @@ main {
   }
 }
 
-/* The day the visitor is reading this on. Sunday liturgy is what most people
-   open the page for, so the current day earns being findable at a glance. */
-.week__day--today {
-  border-color: var(--color-accent, #992a21);
-  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
-}
-
+/*
+ * The filled day panel. A gradient rather than a flat fill for the reason
+ * `.band--deep` uses one: a flat dark rectangle reads as a hole in the page,
+ * a graded one reads as depth.
+ */
 .week__day h3 {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
   margin: 0;
-  line-height: var(--leading-snug, 1.4);
+  padding: var(--space-md, 1rem);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-accent, #992a21) 22%, var(--color-deep, #481010)),
+    var(--color-deep, #481010)
+  );
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  font-weight: 400;
+  line-height: var(--leading-snug, 1.3);
+  color: var(--color-ink-inverse, #f9efec);
 }
 
 .week__day h3 time {
   display: block;
-  font-weight: 400;
+  margin-top: 2px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 600;
   font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-gold, #b08d43);
   font-variant-numeric: tabular-nums;
-  text-transform: none;
-  letter-spacing: normal;
 }
 
+
+/*
+ * The day the visitor is reading this on. Sunday liturgy is what most people
+ * open the page for, so the current day earns being findable at a glance.
+ *
+ * With the panel filled, today is the *inverse* of the other six — gold ground,
+ * dark text — which is far louder than the old red hairline and still changes
+ * only colour, never geometry, so nothing shifts as the week moves through.
+ */
+.week__day--today {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 55%, var(--color-rule, #e0cac3));
+}
+
+.week__day--today h3 {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-gold, #b08d43) 88%, #fff),
+    var(--color-gold, #b08d43)
+  );
+  color: var(--color-deep, #481010);
+}
+
+.week__day--today h3 time {
+  color: color-mix(in srgb, var(--color-deep, #481010) 78%, transparent);
+}
+
+/* A filled pill rather than red text. Beneath a date that is now itself gold or
+   red, a third coloured line of small caps was three things shouting; a solid
+   chip reads as a badge and stops competing with them. */
+/* On the gold panel this is dark-on-light, so the pill inverts too — a red chip
+   on gold is two saturated colours fighting over 60 pixels. */
 .week__today-flag {
-  display: block;
+  display: inline-block;
+  margin-top: var(--space-xs, 0.35rem);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-deep, #481010);
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.75rem);
   font-weight: 600;
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
-  color: var(--color-accent, #992a21);
 }
 
+/*
+ * The services, on warm paper beside the filled day panel.
+ *
+ * The padding lives on this rule rather than on a `.week__day > ul` of its own,
+ * and that is not a style preference — the two selectors have identical
+ * specificity, so whichever came second won outright, and the separate rule
+ * lost its padding here silently. The times ended up flush against the red
+ * panel with no gap at all.
+ */
 .week__day ul {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--space-md, 1rem);
   display: grid;
   gap: var(--space-sm, 0.5rem);
+  align-content: start;
 }
 
 /*
@@ -2221,36 +2771,360 @@ main {
  */
 .week__day ul li {
   display: grid;
-  grid-template-columns: 10.5rem 1fr;
+  /* Thumbnail, time, name. The thumbnail column is reserved on every row,
+     including the ones with no picture, so the times stay in a column down the
+     whole week rather than stepping in and out. */
+  grid-template-columns: 3rem 10.5rem 1fr;
   gap: var(--space-xs, 0.25rem) var(--space-md, 0.75rem);
-  align-items: baseline;
+  align-items: center;
+  /* A hairline between services, so a day with five of them reads as five
+     entries rather than as a paragraph of times. Not on the first. */
+  padding-top: var(--space-sm, 0.5rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 55%, transparent);
 }
 
-/* Belt to the braces above: if a time string ever does exceed the column, it
-   should run into the gap rather than break a range across two lines, which
-   reads as two separate times. */
-.week__time {
-  white-space: nowrap;
+.week__day ul li:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
+/*
+ * The service's picture from the announcements app.
+ *
+ * Two states, and the empty one is deliberate. `.week__thumb` on its own is an
+ * invisible spacer holding the column open; `--filled` is added only when there
+ * is a URL to show. A service with no picture therefore shows *nothing* rather
+ * than a placeholder mark — there is no picture, which is not a failure and
+ * should not look like one.
+ *
+ * No `background-color` fallback: with the category colours gone there is
+ * nothing meaningful to fall back to, so a dead Storage token degrades to the
+ * same blank cell as "no picture attached". See the note on `Media`.
+ */
+.week__thumb {
+  width: 3rem;
+  height: 3rem;
+}
+
+.week__thumb--filled {
+  border-radius: var(--radius-sm, 5px);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* A hairline, so a pale photograph still has an edge against the card. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+.week__name {
+  line-height: var(--leading-snug, 1.35);
+}
+
+/* Stacked, the thumbnail keeps its place beside the time and the name runs the
+   full width beneath them. */
 @media (max-width: 30rem) {
   .week__day ul li {
-    grid-template-columns: 1fr;
+    grid-template-columns: 3rem 1fr;
+  }
+
+  .week__name {
+    grid-column: 1 / -1;
   }
 }
 
+/* One rule, not the two this was split across. `white-space: nowrap` is belt to
+   the measured column width above: if a time string ever does exceed it, it
+   should run into the gap rather than break a range across two lines, which
+   reads as two separate times. */
 .week__time {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
   color: var(--color-accent, #992a21);
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
+/* The note under a service. From column 2, so it hangs under the time and the
+   name rather than starting beneath the thumbnail. */
 .week__day em {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   color: var(--color-ink-faint, #6f5f5a);
   font-size: var(--type-small, 0.9375rem);
+}
+
+@media (max-width: 30rem) {
+  .week__day em {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- the offering ------------------------------------------------------ */
+
+/*
+ * The one full-colour band on the homepage, and the section that most needed to
+ * stop looking like every other one. See the note on `Giving` in app/page.tsx.
+ *
+ * The photograph is the ground; `.band--deep` still supplies the fallback fill
+ * under it and the inverted heading colours over it.
+ *
+ * `isolation: isolate` matters: the photo and the veil sit on negative
+ * z-indexes, and without a stacking context of their own they would slide
+ * behind the section's own background and disappear. Same reason `.hero` has it.
+ */
+.giving {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.giving__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /*
+   * `center 40%` rather than dead centre. The reaching hands are in the middle
+   * third of the frame and the band is much wider than the photograph is tall,
+   * so a centred crop pushes them to the bottom edge and fills the band with
+   * empty sky.
+   */
+  object-position: center 40%;
+}
+
+/*
+ * What makes the text readable over a sunrise — and no more than that.
+ *
+ * Two gradients, the same division of labour the hero's veil uses: one weights
+ * the left, where the words are, and one takes the top off the whole frame.
+ *
+ * **Deliberately lighter than the first version**, which ran the left edge at a
+ * flat 100% and never dropped below 40% anywhere. That was a dark red panel
+ * with a rumour of a photograph behind it — the picture may as well not have
+ * been there. The left is now 78% and the right clears entirely, so the hands
+ * and the sunrise are actually visible, and only the column the text occupies
+ * is protected.
+ *
+ * The floor is set by contrast, not by taste: the note over the strongest part
+ * of the veil needs to stay legible. Anything below about 70% on that first
+ * stop starts to fail it — check before lightening further.
+ */
+.giving__veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-deep, #481010) 78%, transparent) 0%,
+      color-mix(in srgb, var(--color-deep, #481010) 62%, transparent) 38%,
+      color-mix(in srgb, var(--color-deep, #481010) 26%, transparent) 72%,
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-deep, #481010) 30%, transparent),
+      color-mix(in srgb, var(--color-deep, #481010) 12%, transparent)
+    );
+}
+
+/*
+ * One column now. The photograph was the right-hand column; with it behind the
+ * whole band, a second column would be an empty half.
+ *
+ * The measure is capped so the text does not run the full width of the band and
+ * out over the brightest part of the picture — the veil is strongest on the
+ * left, and this keeps the words inside that.
+ */
+.giving__inner {
+  position: relative;
+  max-width: 46rem;
+}
+
+.giving__body {
+  min-width: 0;
+}
+
+.giving__note {
+  margin-top: var(--space-md, 1rem);
+  /* `.meta` is a warm grey tuned for paper. Over the photograph it is invisible,
+     and this line is the one that says the site never sees a card number. */
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
+}
+
+/*
+ * The verse. Set as a quotation rather than a caption now that there is no
+ * figure for it to caption — larger, in the display face, with a gold rule
+ * before it.
+ */
+.giving__verse {
+  margin: var(--space-lg, 2rem) 0 0;
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-lede, 1.125rem);
+  font-style: italic;
+  line-height: var(--leading-snug, 1.4);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-ink-inverse, #f9efec));
+  text-shadow: 0 1px 10px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+.giving__verse cite {
+  display: block;
+  margin-top: var(--space-xs, 0.35rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-style: normal;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-gold, #b08d43);
+}
+
+/* ---- month calendar ---------------------------------------------------- */
+
+/*
+ * The scroll container for a month grid. See the note in app/calendar/page.tsx:
+ * the overflow has to be on the table's parent, because a table cannot be its
+ * own scroll container.
+ *
+ * `min-width` on the table rather than a narrower grid on phones, because seven
+ * columns squeezed into 320px gives cells one word wide — a calendar you cannot
+ * read is worse than one you have to push sideways.
+ */
+.calendar-scroll {
+  overflow-x: auto;
+  /* Room for the focus ring on a link in the leftmost column, which a plain
+     `overflow-x: auto` would otherwise clip. */
+  padding: 2px;
+  margin-inline: -2px;
+}
+
+.calendar {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+  /* Fixed, so seven equal columns are seven equal columns regardless of whether
+     one Wednesday has four events in it and the rest have none. Without this a
+     single long event title widens its column and skews the whole month. */
+  table-layout: fixed;
+}
+
+.calendar + .calendar-scroll,
+.calendar-scroll + .calendar-scroll {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+/*
+ * The month name. A `<caption>` rather than an `<h2>` above the table, so the
+ * heading is bound to the table it names — a screen reader announces it on
+ * entering the grid, which is exactly when "August 2026" is needed.
+ */
+.calendar__caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.25rem);
+  color: var(--color-ink, #1c1614);
+  padding-bottom: var(--space-sm, 0.75rem);
+}
+
+.calendar th {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--color-ink-faint, #6f5f5a);
+  text-align: left;
+  padding: 0 0 var(--space-xs, 0.4rem) var(--space-xs, 0.4rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+}
+
+/* The dotted underline browsers put under `<abbr title>` reads as a mistake in
+   a table header. The full name is still in the title attribute for anything
+   that surfaces it. */
+.calendar th abbr {
+  text-decoration: none;
+}
+
+.calendar__cell {
+  vertical-align: top;
+  width: calc(100% / 7);
+  height: 6.5rem;
+  padding: var(--space-xs, 0.4rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  /* Only the outer edge of the grid should read as an edge; the inner lines are
+     the grid itself. Collapsed borders give one shared hairline throughout. */
+  border-top: 0;
+}
+
+/* Days outside the month are ruled but blank — the shape of the month is
+   information, so the cells stay rather than being dropped. */
+.calendar__cell--empty {
+  background: color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 45%, transparent);
+}
+
+.calendar__cell--has {
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.calendar__day {
+  display: block;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  margin-bottom: var(--space-xs, 0.3rem);
+}
+
+/* A day with something on it says so before you read the entry. */
+.calendar__cell--has .calendar__day {
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+.calendar__events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.calendar__event {
+  display: block;
+  padding: 3px 5px;
+  border-radius: var(--radius-sm, 4px);
+  border-left: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 10%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-snug, 1.3);
+  color: var(--color-ink, #1c1614);
+  text-decoration: none;
+}
+
+.calendar__event:hover {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+}
+
+.calendar__time {
+  display: block;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Titles are clamped to two lines. A cell is a fixed height, and one event
+ * called "Divine Liturgy for the feast of St. Marina the nun" would otherwise
+ * push its row to three times the height of every other row in the month.
+ */
+.calendar__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 /* ---- empty / notice states -------------------------------------------- */
@@ -2352,23 +3226,138 @@ main {
   gap: var(--space-sm, 0.5rem);
 }
 
+/*
+ * The brand block: seal, name, kicker, social row.
+ *
+ * `gap` is tighter than the old 1rem and the name/kicker pair is bound together
+ * by a margin of its own instead, so the three lines read as one lockup rather
+ * than as four separately spaced paragraphs.
+ */
 .footer__brand {
   display: grid;
-  gap: var(--space-md, 1rem);
+  gap: var(--space-sm, 0.6rem);
   justify-items: start;
 }
 
 .footer__seal {
   height: 3.5rem;
   width: auto;
+  margin-bottom: var(--space-xs, 0.35rem);
 }
 
+/*
+ * The parish's name, set to match the masthead wordmark rather than to be a
+ * slightly different size and colour in the same typeface.
+ *
+ * `text-wrap: balance` is the fix for what a hardcoded `<br />` was doing badly:
+ * when the name does need two lines, the browser now splits it evenly instead
+ * of leaving "& St. Mina" stranded on a short second line. Where the column is
+ * wide enough it stays on one.
+ *
+ * `max-width` in `ch` keeps it from running the full width of a wide footer
+ * column and colliding with the "Explore" heading beside it.
+ */
 .footer__name {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   color: var(--color-ink-inverse, #f9efec);
-  line-height: var(--leading-snug, 1.3);
+  line-height: var(--leading-snug, 1.25);
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+  max-width: 20ch;
   margin: 0;
+}
+
+/* "Coptic Orthodox Church" — the same small-caps treatment the masthead gives
+   it, so the two lockups match instead of merely resembling each other. */
+.footer__kicker {
+  margin: 0;
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/* ---- footer social ------------------------------------------------------ */
+
+.footer__social {
+  list-style: none;
+  margin: var(--space-xs, 0.4rem) 0 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-sm, 0.6rem);
+}
+
+/*
+ * A bordered circle each, rather than three bare glyphs.
+ *
+ * Against the footer's dark ground three small filled shapes float with no
+ * relationship to each other. A ring gives them a shared, deliberate footprint
+ * and, more practically, a 2.5rem hit target: a bare 18px mark is well under
+ * the 24px minimum a touch target wants.
+ */
+.footer__social a {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 28%, transparent);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.footer__social a:hover {
+  color: var(--color-deep, #481010);
+  background: var(--color-gold, #b08d43);
+  border-color: var(--color-gold, #b08d43);
+  /* `.footer a:hover` underlines, which on an icon draws a stray line under the
+     glyph inside its ring. */
+  text-decoration: none;
+}
+
+/*
+ * The brand marks themselves, painted as masks rather than embedded as markup.
+ *
+ * `background: currentColor` through a `mask-image` of the SVG. The point is
+ * that the file in `public/brand/` is the *only* copy of each path: an inline
+ * React component would be a second copy of the same coordinates, and the two
+ * drift the first time one is touched. This way the mark is a build artifact
+ * from `assets/brand/`, like every other image on the site.
+ *
+ * It also keeps them themeable. An `<img>` cannot inherit `currentColor`, so
+ * the gold-on-hover state above would need a second set of recoloured files;
+ * a mask just takes whatever colour the link is.
+ *
+ * `-webkit-` prefixed alongside the standard property: unprefixed `mask-image`
+ * is still not universal in older Safari, and a mask that does not apply paints
+ * a solid `currentColor` square — a visibly broken icon rather than a plain one.
+ */
+.social-icon {
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.social-icon--instagram {
+  -webkit-mask-image: url('/brand/instagram.svg');
+  mask-image: url('/brand/instagram.svg');
+}
+
+.social-icon--facebook {
+  -webkit-mask-image: url('/brand/facebook.svg');
+  mask-image: url('/brand/facebook.svg');
+}
+
+.social-icon--youtube {
+  -webkit-mask-image: url('/brand/youtube.svg');
+  mask-image: url('/brand/youtube.svg');
 }
 
 .footer__bottom {
