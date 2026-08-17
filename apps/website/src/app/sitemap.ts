@@ -28,6 +28,10 @@ const FIXED_ROUTES = [
   '/',
   '/calendar',
   '/events',
+  // Added when the bookstore joined the main nav. It was missing here for as
+  // long as nothing linked to it, which made it unreachable by search as well
+  // as by browsing; a page in the top bar should be findable.
+  '/bookstore',
   '/livestream',
   '/giving',
   '/contact',
