@@ -14,43 +14,32 @@
   "scripts": {
     "//dev": "The everyday one: the website at http://localhost:3000. Builds @spsm/shared first because the app imports its compiled dist/, not its TypeScript source.",
     "dev": "npm run build --workspace @spsm/shared && npm run dev --workspace @spsm/website",
-
     "//dev:backend": "Emulator suite, for rules and Cloud Functions work. Unrelated to `dev` — the website talks to the real Firestore, not the emulator.",
     "dev:backend": "npm run build --workspace @spsm/shared && npm run build --workspace @spsm/functions && npm run emulators",
-
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspace @spsm/shared && npm run build --workspaces --if-present",
-
     "//verify:scopes": "Checks every credential in .env against the live services, and that the two external service accounts are scoped the way docs/integrations.md claims.",
     "verify:scopes": "node scripts/verify-scopes.mjs",
-
     "//bulletin": "Prints this week's bulletin exactly as the site build reads it. First stop when the homepage bulletin section is missing.",
     "bulletin": "npm run build --workspace @spsm/shared && node scripts/read-bulletin.mjs",
-
     "//config": "Shows config/integrations; --write creates it from the committed defaults.",
     "config": "npm run build --workspace @spsm/shared && node scripts/seed-config.mjs",
-
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
-
+    "//catalog": "Mirror the Square bookstore catalog into Firestore products.",
+    "catalog": "npm run build --workspace @spsm/shared && node scripts/sync-catalog.mjs",
     "//assets": "Rebuilds the web-ready images in public/ and app/ from the originals in assets/. Run after adding a photo; --check verifies the committed outputs exist.",
     "assets": "node scripts/optimize-assets.mjs",
-
     "//dev:local": "The whole site against the emulators, with sample data and sign-in-able accounts. The only way to work on /admin or /servants, since both need a role and the real project only grants one to the parish directory.",
     "dev:local": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs && NEXT_PUBLIC_USE_EMULATORS=1 npm run dev --workspace @spsm/website",
-
     "//seed:emulator": "Re-fills the emulators without restarting the dev server.",
     "seed:emulator": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs",
-
     "//grant-admin": "Bootstraps the first admin by email. setMemberRole needs an admin to call it, and at the start nobody is one.",
     "grant-admin": "npm run build --workspace @spsm/shared && node scripts/grant-admin.mjs",
-
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials — runs in about a second, so there is no excuse not to.",
     "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
-
     "//test:rules": "firestore.rules evaluated against a real emulator. This is the one that would have caught decision #10 on day one; `rules:check` only compiles. Needs a JDK.",
     "test:rules": "firebase emulators:exec --only firestore --project demo-spsm \"vitest run --project rules\"",
-
     "rules:check": "firebase emulators:exec --only firestore,storage --project demo-spsm \"node scripts/check-rules.mjs\"",
     "emulators": "firebase emulators:start"
   },
