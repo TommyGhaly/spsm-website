@@ -7,8 +7,8 @@ import { useEffect, useId, useState } from 'react';
 /**
  * The main navigation, in two forms.
  *
- * The link list does not fit across a phone — it was ten items, it is seven now,
- * and seven still wraps. The old markup let it, which produced ragged rows above
+ * The link list does not fit across a phone — it was ten items, it is eight now,
+ * and eight still wraps. The old markup let it, which produced ragged rows above
  * the fold on every page. So: an inline row on a wide screen, and a disclosure
  * panel below 64rem. Both trees are always rendered and CSS picks — see `.nav` /
  * `.nav-panel` in globals.css.

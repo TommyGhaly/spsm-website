@@ -55,6 +55,10 @@ const NAV = [
   // app/calendar/page.tsx.
   { href: '/calendar', label: 'Calendar' },
   { href: '/events', label: 'Events' },
+  // The catalog page has existed since the bookstore feature shipped and was
+  // reachable only by typing the URL — nothing on the site linked to it. It is
+  // in the sitemap now for the same reason.
+  { href: '/bookstore', label: 'Bookstore' },
   { href: '/livestream', label: 'Live' },
   { href: '/giving', label: 'Giving' },
   { href: '/contact', label: 'Contact' },
