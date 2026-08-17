@@ -42,7 +42,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | `bulletin` | homepage | **Live with real data.** |
 | `announcements` | homepage | Working. Waiting on content. |
 | `parish` | `/contact` | Working. Waiting on `config/parish`. |
-| `livestream` | `/livestream` | Working. Waiting on a stream target. |
+| `livestream` | `/livestream`, homepage | **Live.** Castr player when streaming; `/livestream` falls back to a notice above the YouTube archive, the homepage section removes itself. |
 | `bookstore` | `/bookstore` | Catalog reads. Checkout blocked on decision #5. |
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
 | `prayer` | `/prayer` | Disclosure ships; form blocked on auth being enabled. |

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { wallClockToInstant, instantToWallClock, zoneAbbreviation } from '@spsm/shared';
+import {
+  wallClockToInstant,
+  instantToWallClock,
+  zoneAbbreviation,
+  partOfDay,
+} from '@spsm/shared';
 
 /**
  * Staff type a wall-clock time into the events admin and never think about
@@ -112,5 +117,60 @@ describe('zoneAbbreviation', () => {
   it('distinguishes daylight from standard time, which is the point', () => {
     expect(zoneAbbreviation(new Date('2026-07-04T13:00:00Z'), NY)).toBe('EDT');
     expect(zoneAbbreviation(new Date('2026-01-04T14:00:00Z'), NY)).toBe('EST');
+  });
+});
+
+/**
+ * Naming a past service by the part of day it fell in, rather than by a clock
+ * time. The zone is what makes this non-trivial: these instants are UTC, and a
+ * liturgy at 11:52 UTC is a *morning* one in Wayland — bucketing on the raw UTC
+ * hour would put half the parish's services in the wrong part of the day.
+ */
+describe('partOfDay', () => {
+  it('names the parish\'s real services correctly', () => {
+    // The Sunday liturgy of 2026-08-16, which actually began at 07:52 Eastern.
+    expect(partOfDay(new Date('2026-08-16T11:52:52Z'), NY)).toBe('Morning');
+    // The Saturday evening service before it, 18:40 Eastern.
+    expect(partOfDay(new Date('2026-08-15T22:40:47Z'), NY)).toBe('Evening');
+  });
+
+  it('buckets across the whole day', () => {
+    const at = (easternHour: number) =>
+      partOfDay(wallClockToInstant(`2026-08-16T${String(easternHour).padStart(2, '0')}:00`, NY) as Date, NY);
+
+    expect(at(5)).toBe('Morning');
+    expect(at(11)).toBe('Morning');
+    expect(at(12)).toBe('Afternoon');
+    expect(at(16)).toBe('Afternoon');
+    expect(at(17)).toBe('Evening');
+    expect(at(21)).toBe('Evening');
+    expect(at(22)).toBe('Night');
+    expect(at(23)).toBe('Night');
+    expect(at(0)).toBe('Night');
+    expect(at(4)).toBe('Night');
+  });
+
+  it('reads the hour in the given zone, not in UTC', () => {
+    // 01:00 UTC is the previous evening in Wayland. Bucketing on the UTC hour
+    // would call this Night and move it to the wrong day besides.
+    const instant = new Date('2026-08-16T01:00:00Z');
+    expect(partOfDay(instant, NY)).toBe('Evening');
+    expect(partOfDay(instant, 'UTC')).toBe('Night');
+  });
+
+  it('handles midnight, which is where an h23/h12 mix-up would show', () => {
+    // Midnight formats as "24" under `hour12: false` in some locales, which
+    // falls through every bucket. It must read as 0 and land in Night.
+    expect(partOfDay(wallClockToInstant('2026-08-16T00:00', NY) as Date, NY)).toBe('Night');
+  });
+
+  it('survives DST, so a service does not change part of day in November', () => {
+    // 08:00 Eastern either side of the change: EDT in August, EST in December.
+    expect(partOfDay(wallClockToInstant('2026-08-16T08:00', NY) as Date, NY)).toBe('Morning');
+    expect(partOfDay(wallClockToInstant('2026-12-16T08:00', NY) as Date, NY)).toBe('Morning');
+  });
+
+  it('returns an empty string for an invalid date', () => {
+    expect(partOfDay(new Date('nonsense'), NY)).toBe('');
   });
 });

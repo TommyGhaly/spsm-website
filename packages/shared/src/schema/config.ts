@@ -58,6 +58,77 @@ export interface LivestreamConfig {
   scheduleNote: string;
   /** Where to watch if the embed fails or is blocked. */
   fallbackUrl: string;
+  /**
+   * YouTube channel id (`UC…`) whose past streams are listed under the player,
+   * or `''` for no archive.
+   *
+   * Separate from `target` on purpose, and the separation is the point: the
+   * parish broadcasts through Castr and *restreams* to YouTube, so the thing
+   * playing live and the thing holding the back catalogue are two different
+   * services. Reusing `target` would tie them together and break the moment the
+   * live provider changes again — which it already has once.
+   *
+   * A channel id is public information, so it is safe in a world-readable
+   * document. It is also the only form that works: the archive is read from
+   * `youtube.com/feeds/videos.xml?channel_id=…`, which does not accept an
+   * `@handle`.
+   */
+  archiveChannelId: string;
+}
+
+/**
+ * A past broadcast.
+ *
+ * Note there is no `title`. Every stream on the parish's channel is published
+ * under the identical name — "St Philopater & St Mina Coptic Orthodox Church
+ * Live Stream" — so a list led by title is fifteen identical rows. When it
+ * happened is the only thing that distinguishes one liturgy from another, so
+ * that is what the list is built on.
+ */
+export interface PastStream {
+  /** YouTube video id. */
+  id: string;
+  /**
+   * When the broadcast **began**, as an ISO 8601 instant.
+   *
+   * ---------------------------------------------------------------------------
+   * This is emphatically not the feed's `<published>`, and the difference is
+   * the whole reason this field is named the way it is.
+   *
+   * `<published>` is when YouTube published the *recording*, which happens when
+   * the stream ends and the VOD is processed — hours after the liturgy. Built on
+   * that, this list showed the Sunday morning liturgy of 2026-08-16 as "11:36
+   * PM", and showed Saturday evening's service under Sunday's date. Every row
+   * was wrong, in both the time and often the day.
+   *
+   * The real start time comes from `startTimestamp` on the video's watch page.
+   * See `parseWatchPageStart`.
+   * ---------------------------------------------------------------------------
+   */
+  startedAt: string;
+  /** Thumbnail URL, or `''` if the feed gave none. */
+  thumbnailUrl: string;
+}
+
+/** One entry of the channel feed, before its true start time is known. */
+export interface FeedVideo {
+  id: string;
+  /** When the *recording* was published — a fallback, not the air time. */
+  publishedAt: string;
+  thumbnailUrl: string;
+}
+
+/**
+ * True for something shaped like a YouTube channel id.
+ *
+ * `UC` followed by 22 characters of base64url. Checked rather than trusted
+ * because the realistic mistake is someone pasting `@WaylandCopticChurch` or a
+ * full channel URL into this field, and both of those produce a feed request
+ * that returns 404 — a silent empty archive that looks like "the parish has no
+ * past streams" rather than like a typo.
+ */
+export function isYouTubeChannelId(value: string): boolean {
+  return /^UC[A-Za-z0-9_-]{22}$/.test(value);
 }
 
 export const LIVESTREAM_PLATFORMS = ['youtube', 'facebook', 'custom'] as const;
@@ -181,6 +252,16 @@ export const DEFAULT_INTEGRATIONS_CONFIG: IntegrationsConfig = {
     target: 'https://player.castr.com/d_4b4563208a1c11ee85ae0f1e19e13368',
     scheduleNote: '',
     fallbackUrl: '',
+    /*
+     * The parish's own YouTube channel, resolved from the `@WaylandCopticChurch`
+     * handle in `DEFAULT_PARISH_CONFIG.social` on 2026-08-17 and confirmed
+     * against the feed, which returns "St Philopater & St Mina Coptic Orthodox
+     * Church" and a stream most days.
+     *
+     * The handle is not usable here — the feed endpoint takes a channel id only —
+     * which is why this is stored resolved rather than derived at build time.
+     */
+    archiveChannelId: 'UC6xlDBsD02-k7M5o-51CUQw',
   },
 };
 
@@ -259,8 +340,32 @@ export function parseIntegrationsConfig(raw: unknown): IntegrationsConfig {
       target: str(livestream?.['target']) ?? fallback.livestream.target,
       scheduleNote: str(livestream?.['scheduleNote']) ?? fallback.livestream.scheduleNote,
       fallbackUrl: str(livestream?.['fallbackUrl']) ?? fallback.livestream.fallbackUrl,
+      archiveChannelId: channelId(
+        livestream?.['archiveChannelId'],
+        fallback.livestream.archiveChannelId,
+      ),
     },
   };
+}
+
+/**
+ * A usable channel id, or `''`.
+ *
+ * Same absent-versus-invalid split as `socialUrl` above, for the same reason: a
+ * key that is not in the document falls back to the parish's own channel, which
+ * is how the archive survives a config document written before this field
+ * existed. A key that *is* there and is not a channel id returns `''`, hiding
+ * the archive — whoever typed a handle or a full URL was trying to change which
+ * channel is listed, and quietly listing the old one instead conceals that.
+ * An explicit empty string is a deliberate "no archive" and is honoured.
+ */
+function channelId(raw: unknown, fallback: string): string {
+  if (raw === undefined || raw === null) return fallback;
+
+  const value = str(raw);
+  if (!value) return '';
+
+  return isYouTubeChannelId(value) ? value : '';
 }
 
 export function parseParishConfig(raw: unknown): ParishConfig {

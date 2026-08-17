@@ -96,6 +96,55 @@ describe('parseIntegrationsConfig — field-by-field fallback', () => {
   });
 });
 
+/**
+ * The channel whose past streams are listed under the player. It follows the
+ * same absent-versus-invalid rule as the social URLs below, and for the same
+ * reason — see `channelId` in packages/shared/src/schema/config.ts.
+ */
+describe('parseIntegrationsConfig — the livestream archive channel', () => {
+  it('falls back to the parish channel when the key is absent', () => {
+    // This is what keeps the archive working against the live config document,
+    // which was written before this field existed.
+    expect(parseIntegrationsConfig({ livestream: {} }).livestream.archiveChannelId).toBe(
+      DEFAULT_INTEGRATIONS_CONFIG.livestream.archiveChannelId,
+    );
+    expect(parseIntegrationsConfig({}).livestream.archiveChannelId).toBe(
+      DEFAULT_INTEGRATIONS_CONFIG.livestream.archiveChannelId,
+    );
+  });
+
+  it('honours an explicit empty string as "no archive"', () => {
+    expect(
+      parseIntegrationsConfig({ livestream: { archiveChannelId: '' } }).livestream
+        .archiveChannelId,
+    ).toBe('');
+  });
+
+  it('hides the archive rather than showing the old channel when the value is unusable', () => {
+    // Someone pasting a handle was *trying* to change which channel is listed.
+    // Quietly listing the previous one instead conceals the mistake.
+    for (const wrong of [
+      '@WaylandCopticChurch',
+      'https://www.youtube.com/@WaylandCopticChurch',
+      'https://www.youtube.com/channel/UC6xlDBsD02-k7M5o-51CUQw',
+      'UCtooshort',
+      42,
+    ]) {
+      expect(
+        parseIntegrationsConfig({ livestream: { archiveChannelId: wrong } }).livestream
+          .archiveChannelId,
+      ).toBe('');
+    }
+  });
+
+  it('keeps a well-formed channel id', () => {
+    expect(
+      parseIntegrationsConfig({ livestream: { archiveChannelId: 'UCxQNRqQk14A3NVYUO0O14Ng' } })
+        .livestream.archiveChannelId,
+    ).toBe('UCxQNRqQk14A3NVYUO0O14Ng');
+  });
+});
+
 describe('parseParishConfig', () => {
   it('falls back to blank, never to a plausible guess', () => {
     // A plausible wrong address is one nobody thinks to check.

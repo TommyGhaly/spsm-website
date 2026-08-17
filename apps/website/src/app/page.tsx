@@ -3,7 +3,7 @@ import { formatAddress, type ContentPage, type DocOf } from '@spsm/shared';
 import { getCurrentBulletin, BulletinWeek } from '@/features/bulletin';
 import { bundledPortrait, getContentPages } from '@/features/content';
 import { givingUrl } from '@/features/giving';
-import { LivestreamPlayer } from '@/features/livestream';
+import { LivestreamPlayer, ShowWhenLive, livestreamProbeUrl } from '@/features/livestream';
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
 import { Icon, type IconName } from '@/components/Icon';
@@ -40,8 +40,19 @@ export default async function HomePage() {
           morning should not have to navigate to watch. Only when a stream is
           actually configured: `LivestreamPlayer` renders an honest "not set up"
           notice when it is not, which belongs on `/livestream` and would read
-          as a fault on the homepage. */}
-      {config.livestream.enabled && <Livestream band={band()} config={config.livestream} />}
+          as a fault on the homepage.
+
+          Note it takes a fixed `band--deep` rather than a turn of `band()`,
+          and that is load-bearing. This section removes itself at *view* time
+          when nothing is being streamed (see `Livestream`), but `band()`
+          alternates at *build* time — so consuming a turn here would leave the
+          two sections either side of it with the same tint on every one of the
+          many hours the stream is off. A ground that is neither of the two
+          alternating tints sits correctly next to both, whether this section is
+          in the page or not, and a dark frame suits a video besides. */}
+      {config.livestream.enabled && (
+        <Livestream band="band band--deep" config={config.livestream} />
+      )}
 
       {/* The parish's own weekly sheet, and now the last practical section on
           the page. Absent if the source is empty or the section is switched off
@@ -517,18 +528,33 @@ function Livestream({
   band: string;
   config: Awaited<ReturnType<typeof getIntegrationsConfig>>['livestream'];
 }) {
+  /*
+   * The whole section disappears when nothing is being streamed, rather than
+   * standing there with a notice in place of the player.
+   *
+   * That is the opposite of what `/livestream` does, deliberately. This is the
+   * page most visitors see first, and a "Watch the Liturgy" heading with no
+   * liturgy behind it advertises something that is not there. `/livestream` is
+   * a page *about* watching, so it owes an answer either way; the homepage owes
+   * none, and the stream is off far more hours of the week than it is on.
+   *
+   * `probe={false}` on the player because `ShowWhenLive` has already asked —
+   * see that component and the prop's note.
+   */
   return (
-    <section id="livestream" className={band} aria-labelledby="livestream-heading">
-      <div className="wrap reveal">
-        <SectionHeading
-          id="livestream-heading"
-          eyebrow="Live"
-          title="Watch the Liturgy"
-          note="For those who cannot be with us in person — the sick, the homebound, and those travelling."
-        />
-        <LivestreamPlayer config={config} />
-      </div>
-    </section>
+    <ShowWhenLive probeUrl={livestreamProbeUrl(config)}>
+      <section id="livestream" className={band} aria-labelledby="livestream-heading">
+        <div className="wrap reveal">
+          <SectionHeading
+            id="livestream-heading"
+            eyebrow="Live"
+            title="Watch the Liturgy"
+            note="For those who cannot be with us in person — the sick, the homebound, and those travelling."
+          />
+          <LivestreamPlayer config={config} probe={false} />
+        </div>
+      </section>
+    </ShowWhenLive>
   );
 }
 

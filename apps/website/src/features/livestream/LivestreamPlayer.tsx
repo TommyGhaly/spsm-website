@@ -1,4 +1,5 @@
-import type { LivestreamConfig } from '@spsm/shared';
+import { isCastrTarget, type LivestreamConfig } from '@spsm/shared';
+import { LiveFrame } from './LiveFrame';
 
 /**
  * The liturgy stream.
@@ -9,11 +10,27 @@ import type { LivestreamConfig } from '@spsm/shared';
  * since the video id changes every week — while Facebook needs its plugin
  * wrapper and anything else needs its iframe src verbatim.
  *
- * A static export can't know whether a stream is live at view time, so this
- * always renders the player. YouTube's channel embed handles that itself,
- * showing the upcoming or most recent stream when nothing is live.
+ * This component stays a server component and decides only what can be decided
+ * at build time: whether a stream is configured at all, and what its embed URL
+ * is. Whether it is *live* is a different kind of question — the answer changes
+ * hourly — so it belongs to `LiveFrame`, which asks in the reader's browser.
  */
-export function LivestreamPlayer({ config }: { config: LivestreamConfig }) {
+export function LivestreamPlayer({
+  config,
+  wide = false,
+  probe = true,
+}: {
+  config: LivestreamConfig;
+  /** See `LiveFrame`. Set on `/livestream`, not on the homepage section. */
+  wide?: boolean;
+  /**
+   * Off when an ancestor has already established that the stream is live — the
+   * homepage, where `ShowWhenLive` wraps the whole section. Without this the
+   * player would ask Castr the same question its own wrapper just asked, which
+   * is two requests per page load and two answers that can disagree on screen.
+   */
+  probe?: boolean;
+}) {
   if (!config.enabled || !config.target) {
     return (
       <div className="notice">
@@ -41,16 +58,7 @@ export function LivestreamPlayer({ config }: { config: LivestreamConfig }) {
 
   return (
     <>
-      <div className="embed">
-        <iframe
-          src={src}
-          title="Parish livestream"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          loading="lazy"
-        />
-      </div>
+      <LiveFrame src={src} probeUrl={probe ? livestreamProbeUrl(config) : null} wide={wide} />
 
       {config.scheduleNote && <p className="meta">{config.scheduleNote}</p>}
 
@@ -64,6 +72,23 @@ export function LivestreamPlayer({ config }: { config: LivestreamConfig }) {
       )}
     </>
   );
+}
+
+/**
+ * Where to read this stream's live status, or `null` if it can't be asked.
+ *
+ * Only a Castr target answers this question — see `isCastrTarget`. `null` means
+ * "don't ask", and every consumer then behaves as the site did before any of
+ * this existed: the player renders unconditionally.
+ *
+ * Note this deliberately tests `config.target` and not the embed URL: the embed
+ * URL is the *embeddable* form, which for YouTube and Facebook is a URL on
+ * their domains rather than on the parish's provider.
+ */
+export function livestreamProbeUrl(config: LivestreamConfig): string | null {
+  const target = config.target.trim();
+  if (!config.enabled || !target) return null;
+  return isCastrTarget(target) ? target : null;
 }
 
 /** Null when the target can't be turned into something embeddable. */
