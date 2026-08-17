@@ -121,3 +121,47 @@ export function zoneAbbreviation(instant: Date, timeZone: string): string {
   }).formatToParts(instant);
   return parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
 }
+
+/**
+ * "Morning" / "Afternoon" / "Evening" / "Night" — which part of the day an
+ * instant falls in, in a named zone.
+ *
+ * Used instead of a clock time when naming a past service. A liturgy is not an
+ * appointment anyone can still keep, so "7:52 AM" spends precision on a
+ * recording nobody is going to arrive at — and it implies a punctuality the
+ * source cannot support, since a stream starts when someone presses a button
+ * and not when the service does. "Morning" is what the reader is actually
+ * choosing between.
+ *
+ * Afternoon is here despite not being one of the three words normally needed:
+ * without it a midday service reads as "Evening", and a wrong label is worse
+ * than an extra one. The parish's own services land almost entirely in Morning
+ * and Evening.
+ *
+ * The boundaries are deliberately generous at both ends of the day. Something
+ * beginning at 04:30 is the tail of the night before, not an early morning;
+ * something at 22:30 is Night, which is where Midnight Praises belongs.
+ */
+export function partOfDay(instant: Date, timeZone: string): string {
+  // Guarded before formatting, not after: `Intl.DateTimeFormat.format` throws a
+  // RangeError on an invalid Date rather than returning something falsy, so a
+  // check on the result never runs. Same contract as `instantToWallClock`.
+  if (Number.isNaN(instant.getTime())) return '';
+
+  // `hourCycle: 'h23'` rather than `hour12: false`, which is not the same thing:
+  // several locales render midnight as "24" under the latter, and 24 falls
+  // through every comparison below into the wrong bucket.
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(instant),
+  );
+
+  if (Number.isNaN(hour)) return '';
+  if (hour >= 5 && hour < 12) return 'Morning';
+  if (hour >= 12 && hour < 17) return 'Afternoon';
+  if (hour >= 17 && hour < 22) return 'Evening';
+  return 'Night';
+}

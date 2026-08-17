@@ -9,6 +9,8 @@ export * from './roles.js';
 export * from './config.js';
 export * from './timezones.js';
 export * from './firestoreRest.js';
+export * from './youtube.js';
+export * from './castr.js';
 
 export * from './schema/common.js';
 export * from './schema/bulletin.js';

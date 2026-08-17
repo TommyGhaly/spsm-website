@@ -9,9 +9,20 @@
  * Using this rather than writing `<div className="wrap">` at each call site
  * means the vertical rhythm between a page header and its body is defined once.
  */
-export function PageBody({ children }: { children: React.ReactNode }) {
+export function PageBody({
+  children,
+  /**
+   * Set on a page that has no `PageHeader` above it, which is `/livestream` and
+   * nothing else. That band supplies the top spacing on every other page, so a
+   * page without one has to restate it — see `.page-body--flush`.
+   */
+  flush = false,
+}: {
+  children: React.ReactNode;
+  flush?: boolean;
+}) {
   return (
-    <div className="wrap page-body">
+    <div className={`wrap page-body${flush ? ' page-body--flush' : ''}`}>
       {children}
     </div>
   );

@@ -7,7 +7,7 @@
  * for anything in the evening. `Event.timeZone` exists for exactly this, and
  * the default below is the parish's own zone rather than the host's.
  */
-import { toDate, type Timestamped } from '@spsm/shared';
+import { partOfDay, toDate, type Timestamped } from '@spsm/shared';
 
 export const PARISH_TIME_ZONE = 'America/New_York';
 
@@ -55,6 +55,20 @@ export function formatEventWhen(
   return sameDay
     ? `${day} · ${startTime} – ${formatTime(endAt, timeZone)}`
     : `${day}, ${startTime} – ${formatDate(endAt, timeZone)}, ${formatTime(endAt, timeZone)}`;
+}
+
+/**
+ * "Morning" / "Afternoon" / "Evening" / "Night", in the parish's zone.
+ *
+ * For naming a past service, where a clock time is false precision — see
+ * `partOfDay` in @spsm/shared.
+ */
+export function formatPartOfDay(
+  value: Timestamped | null | undefined,
+  timeZone = PARISH_TIME_ZONE,
+): string {
+  const date = toDate(value);
+  return date ? partOfDay(date, timeZone) : '';
 }
 
 /** Machine-readable, for <time dateTime>. */

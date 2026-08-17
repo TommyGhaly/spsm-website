@@ -202,6 +202,25 @@ svg {
   margin-top: var(--space-xl, 2.5rem);
 }
 
+/*
+ * A page that opens straight into its content, with no `PageHeader` band above
+ * it. Only `/livestream`, where the banner filled the first screen and pushed
+ * the player below the fold.
+ *
+ * The band was what separated content from the masthead, so that gap has to be
+ * restated here. Stated explicitly rather than left to the `* + *` rule above,
+ * which on that page measures from a `visually-hidden` h1 — spacing that would
+ * silently collapse to nothing the day someone removed it. The second rule
+ * neutralises that accidental margin so the two do not stack.
+ */
+.page-body--flush {
+  padding-top: var(--space-xl, 2.5rem);
+}
+
+.page-body--flush > .visually-hidden:first-child + * {
+  margin-top: 0;
+}
+
 /* Narrower than `.wrap`, for reading. A 72rem-wide paragraph is unreadable; the
    measure is what keeps a line of prose to roughly twelve words. */
 .prose {
@@ -1701,6 +1720,23 @@ main {
   background-position: center;
   background-repeat: no-repeat;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+/*
+ * The video-shaped variant, for a past livestream.
+ *
+ * Wider than the square above because a 4rem square of a wide video frame shows
+ * almost nothing of it — a still of a sanctuary cropped to a square is usually
+ * a column and a wall.
+ *
+ * `cover` (inherited) is doing real work here. YouTube's feed gives
+ * `hqdefault.jpg`, which is a 4:3 file with the 16:9 frame letterboxed inside
+ * it; scaling that to fill a 16:9 box crops exactly the black bars off the top
+ * and bottom. `contain` would faithfully preserve them.
+ */
+.card__thumb--wide {
+  width: 7rem;
+  height: 3.9375rem;
 }
 
 /*
@@ -3492,6 +3528,113 @@ main {
 /* Breeze serves a fixed 700x800 grid, so the 16:9 video ratio above would crop
    it to a letterbox. Give it a tall box and let the frame scroll instead —
    a calendar squeezed to fit is a calendar nobody can read. */
+/*
+ * The player at full column width, for `/livestream` — where it is the reason
+ * the page exists rather than one section among several.
+ *
+ * `.embed`'s 56rem cap is right on the homepage, where a full-width video would
+ * outweigh everything around it. This page has nothing to outweigh: the header
+ * band is gone and the archive sits below, so the cap was only leaving empty
+ * gutters either side of the thing people came for.
+ */
+.embed--stage {
+  max-width: none;
+}
+
+/*
+ * What stands in for the player when nothing is being streamed.
+ *
+ * **A band a few lines tall, not a video-sized box, and that is the point.**
+ * Saying "nothing is on" inside a 16:9 frame is a large empty rectangle
+ * carrying one sentence, and it pushed the recent services — the thing there
+ * actually is to watch — below the fold. This states the same fact in a
+ * quarter of the height and lets the archive come up to meet it.
+ *
+ * Built on the deep ground with two radial washes so it reads as a deliberate
+ * card rather than as a failure to load, which is exactly how Castr's own black
+ * "Stream Offline" box reads and the reason any of this exists.
+ */
+.standby-band {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: var(--space-lg, 1.75rem) var(--space-md, 1.25rem);
+  border-radius: var(--radius-lg, 16px);
+  background:
+    radial-gradient(
+      120% 180% at 50% 0%,
+      color-mix(in srgb, var(--color-gold, #b08d43) 14%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      100% 200% at 50% 100%,
+      color-mix(in srgb, var(--color-accent, #992a21) 24%, transparent),
+      transparent 70%
+    ),
+    var(--color-deep, #481010);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+}
+
+.standby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  max-width: 40rem;
+}
+
+.standby__mark {
+  color: var(--color-gold, #b08d43);
+  /* Sits the cross a little away from the words it introduces, so the group
+     reads as ornament-then-statement rather than as one crowded stack. */
+  margin-bottom: var(--space-xs, 0.3rem);
+}
+
+.standby__title {
+  font-family: var(--font-display, Georgia, serif);
+  /* A step down from `--type-heading`: this band sits directly above the
+     "Recent services" heading, and two headings of the same size next to each
+     other leaves neither leading. */
+  font-size: var(--type-subheading, 1.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-ink-inverse, #fdf7f4);
+  margin: 0;
+}
+
+.standby__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  /* Not the full paper colour: a second line at the same weight as the heading
+     competes with it, and this one is genuinely secondary. */
+  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 72%, transparent);
+  margin: 0;
+}
+
+/*
+ * The moment before Castr has answered. The band is already in place — only
+ * its wording differs — so all this does is hold the text back from asserting
+ * itself before it means anything.
+ *
+ * A pulse rather than a spinner: this normally resolves in a few hundred
+ * milliseconds, and a spinner appearing and vanishing that fast is more
+ * distracting than the thing it describes. Honours `prefers-reduced-motion`
+ * for free, via the blanket rule near the top of this sheet.
+ */
+.standby-band--checking .standby {
+  animation: standby-settle 1.6s ease-in-out infinite;
+}
+
+@keyframes standby-settle {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
 .embed--calendar {
   aspect-ratio: auto;
   height: min(80vh, 50rem);
