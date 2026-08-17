@@ -1850,6 +1850,148 @@ main {
   vertical-align: -0.15em;
 }
 
+/* ---- bookstore --------------------------------------------------------- */
+
+/*
+ * The shop grid.
+ *
+ * Narrower columns than `.grid`'s 19rem, because these cells are led by a book
+ * cover rather than by a paragraph: at 19rem eleven books filled three sparse
+ * rows of very large images. 13.5rem gives four across on a desktop and two on
+ * a phone, which is the density a shop is read at.
+ */
+.shop {
+  display: grid;
+  gap: var(--space-lg, 1.75rem) var(--space-md, 1.25rem);
+  grid-template-columns: repeat(auto-fill, minmax(min(46%, 13.5rem), 1fr));
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 0.6rem);
+}
+
+/*
+ * The picture area, and the reason this layout survives a real catalog.
+ *
+ * A fixed **square** box with the cover *contained* inside it, never cropped.
+ *
+ * Square because that is what the parish's photographs are: all nine covers in
+ * the live catalog are 1:1 (3105×3105, and one 160×160). This started as a 3:4
+ * portrait on the assumption that book covers are portrait, which letterboxed
+ * every single one and left a quarter of each cell empty.
+ *
+ * Contained rather than cropped, even so. The catalog will not stay all-square
+ * the first time someone photographs a tall icon, and `cover` would slice the
+ * title off it. A letterbox is a worse-looking cell; a crop is a wrong one.
+ */
+.shop-item__frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  padding: var(--space-sm, 0.75rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.shop-item:hover .shop-item__frame {
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e0cac3));
+}
+
+.shop-item__cover {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  /* Square's cutouts are on white; a hairline keeps them from bleeding into
+     the paper ground and looking like a floating label. */
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
+}
+
+/*
+ * Shown where a book has no cover in Square — three of the eleven today.
+ *
+ * The parish's own cross on the sunken ground, not a grey "no image" box: this
+ * is a shelf with a plain binding on it, which is an honest thing for a book to
+ * look like, rather than a rendering failure.
+ */
+.shop-item__placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm, 5px);
+  background: var(--color-paper-sunken, #eeddd7);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+.shop-item__flag {
+  position: absolute;
+  top: var(--space-sm, 0.5rem);
+  left: var(--space-sm, 0.5rem);
+  padding: 0.2rem 0.5rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  letter-spacing: var(--tracking-wide, 0.03em);
+  text-transform: uppercase;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Dimmed, not hidden: a reader looking for a title should find it and learn it
+   is out of stock, rather than conclude the shop never had it. */
+.shop-item--sold .shop-item__frame {
+  opacity: 0.55;
+}
+
+.shop-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.25rem);
+}
+
+.shop-item__name {
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-body, 1rem);
+  line-height: var(--leading-snug, 1.3);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  margin: 0;
+}
+
+.shop-item__blurb {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+  margin: 0;
+}
+
+/*
+ * The price in the display face, at the size a shop states a price.
+ *
+ * `margin-top: auto` pins it to the bottom of the cell, so a row of books with
+ * titles of different lengths still has its prices on one line — the thing the
+ * eye scans a shop grid for.
+ */
+.shop-item__price {
+  margin: var(--space-xs, 0.3rem) 0 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  color: var(--color-accent, #992a21);
+}
+
 /* ---- people (clergy biographies) --------------------------------------- */
 
 /*
