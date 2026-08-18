@@ -2097,10 +2097,10 @@ main {
  * sunken bands use.
  */
 .sheet {
-  width: min(72rem, calc(100vw - 2rem));
+  width: min(66rem, calc(100vw - 2rem));
   max-height: min(48rem, calc(100dvh - 3rem));
   overflow: auto;
-  padding: var(--space-xl, 2.25rem);
+  padding: var(--space-lg, 1.6rem);
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-rule, #e0cac3));
   border-top: 3px solid var(--color-gold, #b08d43);
   border-radius: var(--radius-lg, 14px);
@@ -2155,72 +2155,149 @@ main {
  * do not have to be hunted for in a paragraph.
  */
 /*
- * Gallery, then what the book is, then the magnified view — three columns, all
- * of them real.
+ * Cover, magnified view, text — in that order, left to right.
  *
- * The magnifier was an overlay sitting on top of the reading column, which put
- * the description and the buy box under a photograph at exactly the moment
- * someone was reading them. It has its own space now and the dialog is wider to
- * hold it. The third column is reserved permanently rather than added on hover:
- * adding it would change the column count under the pointer and shove the
- * reading column sideways the instant anyone moved onto the cover.
+ * The magnifier owns a column, so it never covers the description, and it sits
+ * immediately beside the cover, so the eye goes from the lens to the
+ * enlargement without crossing the page. Every other arrangement tried here
+ * failed one of those two: floating it over the text hid what someone was
+ * reading, and parking it at the far right made them look across the dialog to
+ * find it.
+ *
+ * The column is permanent. Idle it holds the cover whole rather than standing
+ * empty — the same picture larger, which earns its space on a page whose whole
+ * subject is one book, and which means the frame is already there when the
+ * pointer arrives rather than appearing from nowhere.
  */
 .item {
   display: grid;
-  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 20rem;
-  gap: var(--space-xl, 2rem);
+  grid-template-columns: minmax(0, 13rem) minmax(0, 18rem) minmax(0, 1fr);
+  gap: var(--space-lg, 1.25rem);
   align-items: start;
 }
 
-/* Below the width that holds three columns, the magnifier is dropped rather
-   than squeezed — a 9rem magnified view shows less than the cover it magnifies. */
+/* Too narrow for three: the magnifier goes rather than squeezing the
+   description into a gutter. */
 @media (max-width: 64rem) {
   .item {
     grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
   }
 
-  .item__zoompanel {
+  .item__zoompanel,
+  .item__lens {
     display: none;
   }
 }
 
-@media (max-width: 44rem) {
+@media (max-width: 40rem) {
   .item {
     grid-template-columns: 1fr;
-    gap: var(--space-lg, 1.5rem);
   }
 }
 
-/* The cover on its own ground, so a photograph shot against a pale desk still
-   has an edge. */
+/*
+ * The gallery spans the first column only; the magnified view it renders is
+ * lifted into the second by `display: contents`, so the two are siblings in the
+ * dialog's grid rather than one nested inside the other. Without this the panel
+ * would be trapped in the cover's column at the cover's width.
+ */
 .item__media {
+  display: contents;
+}
+
+.item__gallery {
+  position: relative;
   display: grid;
   gap: var(--space-sm, 0.5rem);
   justify-items: center;
+  min-width: 0;
 }
 
 /*
- * The cover on the *page* ground inside a raised dialog — the inverse of a
- * card on a card, and the reason it reads as a mounted plate rather than a
- * picture floating on a panel.
+ * The frame the cover magnifies inside. `overflow: hidden` is what makes that
+ * work — the image scales past these bounds and is clipped by them, so the
+ * frame stays the same size while the picture grows within it.
+ *
+ * No padding, deliberately. Padding was what broke the old lens: it made the
+ * frame and the image two different rectangles, so a percentage meant one thing
+ * to the lens and another to the magnified view. With the image filling the
+ * frame there is one rectangle and the pointer lands where it looks like it
+ * lands.
  */
 .item__plate {
   position: relative;
-  display: grid;
-  place-items: center;
   width: 100%;
-  padding: var(--space-lg, 1.5rem);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
   background: var(--color-paper, #f6e8e3);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-sm, 4px);
   cursor: crosshair;
 }
 
-/* The region the panel is showing. Pale rather than dark, because it sits over
-   a photograph and a dark scrim would hide the very thing being magnified. */
-/* Arrows on the image, shown only above one photograph. Ghosted onto the plate
-   rather than given their own bar, which would be chrome for a control that is
-   absent from every book in the catalog today. */
+/*
+ * The region the panel is showing.
+ *
+ * Pale rather than dark: it sits over a photograph, and a dark scrim would hide
+ * the very thing being magnified. It agrees with the panel because the plate
+ * carries no padding — frame and picture are one rectangle.
+ */
+.item__lens {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 35%, transparent);
+  border: 1px solid var(--color-gold, #b08d43);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 30%, transparent);
+}
+
+/*
+ * The magnified view. A grid child in the middle column, so it displaces the
+ * description instead of covering it.
+ */
+.item__zoompanel {
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  background-repeat: no-repeat;
+  background-color: var(--color-paper, #f6e8e3);
+  border: 1px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 14px 34px -10px color-mix(in srgb, var(--color-deep, #481010) 40%, transparent);
+}
+
+/* No pointer, no magnifier: on a touch screen the cover is already most of the
+   viewport, and a panel beside it would have nowhere to go. */
+@media (hover: none), (pointer: coarse) {
+  .item__plate {
+    cursor: default;
+  }
+
+  .item__zoompanel,
+  .item__lens {
+    display: none;
+  }
+}
+
+.item__cover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The stand-in for a book with no photograph: same frame, its own title. */
+.item__cover.cover--none {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  box-shadow: none;
+}
+
+.item__cover.cover--none .cover--none__title {
+  display: block;
+  font-size: var(--type-subheading, 1.125rem);
+}
+
+/* Arrows, shown only above one photograph. */
 .item__step {
   position: absolute;
   top: 50%;
@@ -2252,10 +2329,9 @@ main {
   right: var(--space-xs, 0.4rem);
 }
 
-/* The strip under the main image. */
 .thumbs {
   display: flex;
-  gap: var(--space-xs, 0.45rem);
+  gap: var(--space-xs, 0.4rem);
   flex-wrap: wrap;
   justify-content: center;
   list-style: none;
@@ -2265,7 +2341,7 @@ main {
 
 .thumbs__pick {
   display: block;
-  padding: 0.2rem;
+  padding: 0.15rem;
   background: var(--color-paper, #f6e8e3);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-sm, 4px);
@@ -2275,8 +2351,8 @@ main {
 
 .thumbs__pick img {
   display: block;
-  width: 3rem;
-  height: 3rem;
+  width: 2.75rem;
+  height: 2.75rem;
   object-fit: contain;
 }
 
@@ -2284,61 +2360,9 @@ main {
   border-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
 }
 
-/* The one being shown, marked with the parish's gold rather than a heavier
-   border, so the strip does not jump as the selection moves. */
 .thumbs__pick.is-current {
   border-color: var(--color-gold, #b08d43);
   box-shadow: 0 0 0 1px var(--color-gold, #b08d43);
-}
-
-.item__lens {
-  position: absolute;
-  pointer-events: none;
-  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 45%, transparent);
-  border: 1px solid var(--color-gold, #b08d43);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 25%, transparent);
-}
-
-/*
- * The magnified view, in its own column.
- *
- * Empty and borderless when idle, so the reserved space reads as margin rather
- * than as a hole waiting to be filled. It gains its frame only once there is
- * something in it.
- */
-.item__zoompanel {
-  height: 22rem;
-  border-radius: var(--radius-sm, 4px);
-  background-repeat: no-repeat;
-}
-
-.item--zooming .item__zoompanel {
-  background-color: var(--color-paper, #f6e8e3);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
-  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--color-deep, #481010) 35%, transparent);
-}
-
-.item__cover {
-  width: 100%;
-  height: auto;
-  max-height: 20rem;
-  object-fit: contain;
-  box-shadow:
-    0 2px 3px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
-    0 14px 30px -8px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
-}
-
-/* The no-cover stand-in gets its title back here: it is large and alone, and
-   nothing else in this column has yet said which book it is. */
-.item__cover.cover--none {
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  max-height: 20rem;
-}
-
-.item__cover.cover--none .cover--none__title {
-  display: block;
-  font-size: var(--type-subheading, 1.125rem);
 }
 
 .item__main {
@@ -2352,10 +2376,10 @@ main {
    cheapest thing that stops a stack of text reading as a form. */
 .item__title {
   margin: 0;
-  padding-bottom: var(--space-sm, 0.6rem);
+  padding-bottom: var(--space-xs, 0.45rem);
   border-bottom: 1px solid var(--color-rule, #e0cac3);
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-title, 1.9rem);
+  font-size: var(--type-heading, 1.55rem);
   line-height: var(--leading-tight, 1.15);
   letter-spacing: var(--tracking-tight, -0.015em);
 }
@@ -2369,7 +2393,7 @@ main {
 .item__price {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-title, 1.75rem);
+  font-size: var(--type-heading, 1.5rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-accent, #992a21);
 }
@@ -2400,8 +2424,8 @@ main {
   gap: var(--space-sm, 0.75rem);
   justify-items: start;
   width: 100%;
-  margin-top: var(--space-md, 1.1rem);
-  padding: var(--space-lg, 1.35rem);
+  margin-top: var(--space-sm, 0.75rem);
+  padding: var(--space-md, 1rem);
   background: var(--color-paper-sunken, #eeddd7);
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
   border-radius: var(--radius-md, 8px);
