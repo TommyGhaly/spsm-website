@@ -93,11 +93,6 @@ export function Shop({
     });
   }, []);
 
-  const add = useCallback(
-    (product: ShopProduct) => setQuantity(product.slug, (cart[product.slug] ?? 0) + 1),
-    [cart, setQuantity],
-  );
-
   const lines = useMemo(
     () =>
       Object.entries(cart)
@@ -129,52 +124,28 @@ export function Shop({
         </button>
       </div>
 
-      <ul className="shop">
+      <ul className="shelf">
         {products.map((product) => (
-          <Card
+          <Row
             key={product.id}
             product={product}
             inCart={cart[product.slug] ?? 0}
             onOpen={() => setOpen(product)}
-            onAdd={() => add(product)}
           />
         ))}
       </ul>
 
       {open && (
-        <Dialog title={open.name} onClose={() => setOpen(null)}>
-          <div className="sheet__body">
-            <Cover product={open} className="sheet__cover" />
-            <div className="sheet__detail">
-              <h2 id="dialog-title" className="sheet__name">
-                {open.name}
-              </h2>
-              <p className="sheet__price">{money(open.amount, open.currency)}</p>
-              {open.description ? (
-                <p className="sheet__blurb">{open.description}</p>
-              ) : (
-                <p className="sheet__blurb sheet__blurb--none">
-                  No description has been added for this title.
-                </p>
-              )}
-              {open.stockCount === 0 ? (
-                <p className="note">Out of stock.</p>
-              ) : (
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => {
-                    add(open);
-                    setOpen(null);
-                    setBasketOpen(true);
-                  }}
-                >
-                  Add to basket
-                </button>
-              )}
-            </div>
-          </div>
-        </Dialog>
+        <Detail
+          product={open}
+          inCart={cart[open.slug] ?? 0}
+          onClose={() => setOpen(null)}
+          onAdd={(quantity) => {
+            setQuantity(open.slug, (cart[open.slug] ?? 0) + quantity);
+            setOpen(null);
+            setBasketOpen(true);
+          }}
+        />
       )}
 
       {basketOpen && (
@@ -278,42 +249,140 @@ function Cover({ product, className }: { product: ShopProduct; className: string
   );
 }
 
-function Card({
+/**
+ * One book, as a row.
+ *
+ * ---------------------------------------------------------------------------
+ * A list rather than a grid of covers, and the photographs are the reason.
+ *
+ * The parish's covers are phone snaps of books on a table — angled, lit
+ * differently, with the desk visible behind several of them. Any layout that
+ * makes them large makes those flaws the subject of the page, and a grid makes
+ * them large by definition. At 40px they read as "which book is this", which is
+ * all a reader needs from them and all these photographs can honestly carry.
+ *
+ * Eleven titles is also simply not a grid's worth of anything. A shop this size
+ * is a list, the way a printed parish catalogue is a list.
+ * ---------------------------------------------------------------------------
+ *
+ * The whole row is the button. `View` is a label on that affordance rather than
+ * a control of its own — a second focusable thing inside the row would be a
+ * second tab stop that goes exactly where the first one does.
+ */
+function Row({
   product,
   inCart,
   onOpen,
-  onAdd,
 }: {
   product: ShopProduct;
   inCart: number;
   onOpen: () => void;
-  onAdd: () => void;
 }) {
   const soldOut = product.stockCount === 0;
 
   return (
-    <li className={soldOut ? 'shop-item shop-item--sold' : 'shop-item'}>
-      {/*
-        The frame is the button, so the whole picture is the hit target rather
-        than a few words of title. The name below repeats inside it for the
-        accessible name, which is why the visible copy is `aria-hidden`.
-      */}
-      <button type="button" className="shop-item__frame" onClick={onOpen}>
-        <span className="visually-hidden">{product.name} — see details</span>
-        <Cover product={product} className="shop-item__cover" />
-        {soldOut && <span className="shop-item__flag">Sold out</span>}
-      </button>
+    <li className="shelf__item">
+      <button type="button" className="shelf__row" onClick={onOpen}>
+        <Cover product={product} className="shelf__thumb" />
 
-      <div className="shop-item__body">
-        <h3 className="shop-item__name">{product.name}</h3>
-        <p className="shop-item__price">{money(product.amount, product.currency)}</p>
-        {!soldOut && (
-          <button type="button" className="button button--quiet shop-item__add" onClick={onAdd}>
-            {inCart > 0 ? `In basket (${inCart})` : 'Add to basket'}
-          </button>
-        )}
-      </div>
+        <span className="shelf__text">
+          <span className="shelf__title">{product.name}</span>
+          {/* The description where Square carries one — several titles have
+              none, and an empty line reads better than an invented one. */}
+          {product.description && <span className="shelf__sub">{product.description}</span>}
+          {inCart > 0 && <span className="shelf__in">{inCart} in basket</span>}
+        </span>
+
+        <span className="shelf__price">
+          {soldOut ? 'Sold out' : money(product.amount, product.currency)}
+        </span>
+
+        <span className="shelf__view" aria-hidden="true">
+          View
+        </span>
+      </button>
     </li>
+  );
+}
+
+/**
+ * The item, on its own.
+ *
+ * These books have no page of their own and should not: there is a cover, a
+ * price, and at most one paragraph behind each, which is not a page's worth of
+ * content, and a route per product would be eleven more HTML files saying four
+ * lines each. A dialog shows exactly the same thing without a navigation.
+ */
+function Detail({
+  product,
+  inCart,
+  onClose,
+  onAdd,
+}: {
+  product: ShopProduct;
+  inCart: number;
+  onClose: () => void;
+  onAdd: (quantity: number) => void;
+}) {
+  const [quantity, setQuantity] = useState(1);
+  const soldOut = product.stockCount === 0;
+
+  return (
+    <Dialog title={product.name} onClose={onClose}>
+      <div className="sheet__body">
+        <Cover product={product} className="sheet__cover" />
+
+        <div className="sheet__detail">
+          <h2 id="dialog-title" className="sheet__name">
+            {product.name}
+          </h2>
+          <p className="sheet__price">{money(product.amount, product.currency)}</p>
+
+          {product.description ? (
+            <p className="sheet__blurb">{product.description}</p>
+          ) : (
+            <p className="sheet__blurb sheet__blurb--none">
+              No description has been added for this title.
+            </p>
+          )}
+
+          {inCart > 0 && <p className="meta">{inCart} already in your basket</p>}
+
+          {soldOut ? (
+            <p className="note">Out of stock.</p>
+          ) : (
+            <div className="sheet__buy">
+              <div className="stepper">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  aria-label="One fewer"
+                  disabled={quantity <= 1}
+                >
+                  −
+                </button>
+                {/* Text, not an input: the only values reachable are the ones
+                    the two buttons produce, so there is nothing to validate and
+                    no way to type 9,999. */}
+                <span aria-live="polite">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.min(20, q + 1))}
+                  aria-label="One more"
+                  disabled={quantity >= 20}
+                >
+                  +
+                </button>
+              </div>
+
+              <button type="button" className="button" onClick={() => onAdd(quantity)}>
+                Add {quantity > 1 ? `${quantity} ` : ''}to basket
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
