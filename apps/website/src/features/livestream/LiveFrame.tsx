@@ -1,6 +1,5 @@
 'use client';
 
-import { CopticCross } from '@/components/Ornament';
 import { useLiveStatus } from './useLiveStatus';
 
 /**
@@ -63,8 +62,6 @@ export function LiveFrame({
         the page silently change under them.
       */}
       <div className="standby" aria-live="polite">
-        <CopticCross size={22} className="standby__mark" />
-
         {status === 'checking' ? (
           <p className="standby__title">Checking for a live service…</p>
         ) : (

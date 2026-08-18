@@ -12,11 +12,9 @@ export const metadata: Metadata = {
 export default function ParkingPage() {
   return (
     <>
-      <PageHeader
-        title="Register a Vehicle"
-        lede="So the parking team can reach you if your car needs moving. No account needed — visitors and guests are welcome to register too."
-      />
+      <PageHeader title="Register a Vehicle" />
       <PageBody>
+        <p className="note">So the parking team can reach you if your car needs moving. No account needed — visitors and guests are welcome to register too.</p>
         <VehicleForm />
       </PageBody>
     </>

@@ -29,12 +29,10 @@ export const metadata: Metadata = {
 export default function PrayerPage() {
   return (
     <>
-      <PageHeader
-        title="Prayer Requests"
-        lede="The fathers of the parish pray for those who ask. You need no account, and you may write without giving your name."
-      />
+      <PageHeader title="Prayer Requests" />
 
       <PageBody>
+        <p className="note">The fathers of the parish pray for those who ask. You need no account, and you may write without giving your name.</p>
         <PrivacyDisclosure />
         <PrayerForm />
       </PageBody>

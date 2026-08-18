@@ -37,12 +37,10 @@ export default async function CalendarPage() {
 
   return (
     <>
-      <PageHeader
-        title="Parish Calendar"
-        lede="Liturgies, feasts, classes, and gatherings, month by month. Times are shown in Eastern Time."
-      />
+      <PageHeader title="Parish Calendar" />
 
       <PageBody>
+        <p className="note">Liturgies, feasts, classes, and gatherings, month by month. Times are shown in Eastern Time.</p>
         {months.length === 0 ? (
           <EmptyState what="events" collection="events" />
         ) : (

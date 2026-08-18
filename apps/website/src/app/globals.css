@@ -1627,27 +1627,28 @@ main {
   text-decoration: underline;
 }
 
-/* ---- page header ------------------------------------------------------- */
-
-.page-head {
-  background: var(--color-paper-raised, #fdf7f4);
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
-  padding-block: var(--space-section, 4rem);
-  margin-bottom: var(--space-section, 4rem);
-}
-
-.page-head__inner {
+/*
+ * The page header band is gone — `PageHeader` renders a hidden h1 only.
+ *
+ * One page still shows a title: an event, whose name needs its date and place
+ * beside it. That is a title block, not a banner: no ground, no border, no
+ * ornament, and the ordinary spacing a heading has from its content.
+ */
+.event-head {
   display: grid;
-  gap: var(--space-md, 1rem);
+  gap: var(--space-xs, 0.35rem);
   max-width: var(--measure, 68ch);
+  padding-block: var(--space-xl, 2.5rem) var(--space-lg, 1.5rem);
 }
 
-.page-head h1 {
+.event-head h1 {
   margin: 0;
 }
 
-.page-head .lede {
+.event-head__when {
   margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-accent, #992a21);
 }
 
 /* ---- cards / lists ----------------------------------------------------- */
@@ -1853,12 +1854,55 @@ main {
 /* ---- bookstore --------------------------------------------------------- */
 
 /*
- * The shop grid.
+ * The shop's own heading row, carrying the basket.
  *
- * Narrower columns than `.grid`'s 19rem, because these cells are led by a book
- * cover rather than by a paragraph: at 19rem eleven books filled three sparse
- * rows of very large images. 13.5rem gives four across on a desktop and two on
- * a phone, which is the density a shop is read at.
+ * The page has no header band any more, so this is what names the page on
+ * screen — and it earns the space by doing a second job, which the old banner
+ * did not: the basket has to live somewhere permanent, and beside the title is
+ * where a shop puts it.
+ */
+.shop-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg, 1.5rem);
+}
+
+.shop-bar__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+  letter-spacing: var(--tracking-tight, -0.02em);
+  margin: 0;
+}
+
+.shop-bar__basket {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+}
+
+/* The count rides the button rather than sitting beside it, so the pair reads
+   as one control. Only rendered when non-zero — see the component. */
+.shop-bar__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding-inline: 0.35rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fdf7f4);
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The grid. Narrower columns than `.grid`'s 19rem because these cells are led
+ * by a cover rather than a paragraph: at 19rem, eleven books filled three
+ * sparse rows of very large pictures.
  */
 .shop {
   display: grid;
@@ -1872,37 +1916,33 @@ main {
 .shop-item {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm, 0.6rem);
+  gap: var(--space-sm, 0.5rem);
 }
 
 /*
- * The picture area, and the reason this layout survives a real catalog.
+ * The picture area, which is also the button that opens the detail dialog.
  *
- * A fixed **square** box with the cover *contained* inside it, never cropped.
- *
- * Square because that is what the parish's photographs are: all nine covers in
- * the live catalog are 1:1 (3105×3105, and one 160×160). This started as a 3:4
- * portrait on the assumption that book covers are portrait, which letterboxed
- * every single one and left a quarter of each cell empty.
- *
- * Contained rather than cropped, even so. The catalog will not stay all-square
- * the first time someone photographs a tall icon, and `cover` would slice the
- * title off it. A letterbox is a worse-looking cell; a crop is a wrong one.
+ * Square, because every cover the parish has photographed is 1:1. Contained
+ * rather than cropped even so — the catalog will not stay all-square the first
+ * time someone shoots a tall icon, and `cover` would take the title off it.
  */
 .shop-item__frame {
   position: relative;
   display: grid;
   place-items: center;
   aspect-ratio: 1 / 1;
+  width: 100%;
   padding: var(--space-sm, 0.75rem);
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-md, 8px);
   overflow: hidden;
-  transition: box-shadow 180ms ease, border-color 180ms ease;
+  cursor: pointer;
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
-.shop-item:hover .shop-item__frame {
+.shop-item__frame:hover {
+  transform: translateY(-2px);
   box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
   border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e0cac3));
 }
@@ -1910,29 +1950,36 @@ main {
 .shop-item__cover {
   max-width: 100%;
   max-height: 100%;
-  width: auto;
-  height: auto;
   object-fit: contain;
-  /* Square's cutouts are on white; a hairline keeps them from bleeding into
-     the paper ground and looking like a floating label. */
   box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
 }
 
 /*
- * Shown where a book has no cover in Square — three of the eleven today.
+ * A book with no cover in Square. Its own title, set on the sunken ground —
+ * a plain binding, which is an honest thing for a book to look like.
  *
- * The parish's own cross on the sunken ground, not a grey "no image" box: this
- * is a shelf with a plain binding on it, which is an honest thing for a book to
- * look like, rather than a rendering failure.
+ * This was the parish's cross, used as a generic "no image" mark. A cross is
+ * not a decoration to scatter over missing data, and it told the reader nothing
+ * about which book they were looking at.
  */
-.shop-item__placeholder {
+.cover--none {
   display: grid;
   place-items: center;
   width: 100%;
   height: 100%;
+  padding: var(--space-sm, 0.75rem);
   border-radius: var(--radius-sm, 5px);
   background: var(--color-paper-sunken, #eeddd7);
-  color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+.cover--none__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.3);
+  text-align: center;
+  color: var(--color-ink-soft, #4b413e);
+  overflow: hidden;
 }
 
 .shop-item__flag {
@@ -1949,7 +1996,7 @@ main {
   border-radius: var(--radius-sm, 4px);
 }
 
-/* Dimmed, not hidden: a reader looking for a title should find it and learn it
+/* Dimmed, not hidden: someone looking for a title should find it and learn it
    is out of stock, rather than conclude the shop never had it. */
 .shop-item--sold .shop-item__frame {
   opacity: 0.55;
@@ -1959,6 +2006,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs, 0.25rem);
+  align-items: flex-start;
 }
 
 .shop-item__name {
@@ -1966,30 +2014,221 @@ main {
   font-size: var(--type-body, 1rem);
   line-height: var(--leading-snug, 1.3);
   font-weight: 600;
-  color: var(--color-ink, #1c1614);
   margin: 0;
 }
 
-.shop-item__blurb {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
-  line-height: var(--leading-normal, 1.5);
-  color: var(--color-ink-soft, #4b413e);
-  margin: 0;
-}
-
-/*
- * The price in the display face, at the size a shop states a price.
- *
- * `margin-top: auto` pins it to the bottom of the cell, so a row of books with
- * titles of different lengths still has its prices on one line — the thing the
- * eye scans a shop grid for.
- */
 .shop-item__price {
-  margin: var(--space-xs, 0.3rem) 0 0;
+  margin: 0;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   color: var(--color-accent, #992a21);
+}
+
+.shop-item__add {
+  margin-top: var(--space-xs, 0.3rem);
+  font-size: var(--type-small, 0.875rem);
+}
+
+/* ---- the dialog -------------------------------------------------------- */
+
+/*
+ * Built on `<dialog>` opened with `showModal()`, so the top layer, the
+ * backdrop, focus trapping and Escape all come from the browser rather than
+ * from a pile of JavaScript that gets one of them wrong.
+ */
+.sheet {
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: min(44rem, calc(100dvh - 3rem));
+  overflow: auto;
+  padding: var(--space-lg, 1.75rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-ink, #1c1614);
+  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
+}
+
+.sheet::backdrop {
+  background: color-mix(in srgb, var(--color-deep, #481010) 55%, transparent);
+}
+
+.sheet__close {
+  position: absolute;
+  top: var(--space-sm, 0.6rem);
+  right: var(--space-sm, 0.6rem);
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+.sheet__close:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.sheet__body {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) 1fr;
+  gap: var(--space-lg, 1.5rem);
+  align-items: start;
+}
+
+@media (max-width: 34rem) {
+  .sheet__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sheet__cover {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-sm, 0.5rem);
+}
+
+.sheet__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 0.6rem);
+  align-items: flex-start;
+}
+
+.sheet__name {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-tight, 1.2);
+  margin: 0;
+}
+
+.sheet__price {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.25rem);
+  color: var(--color-accent, #992a21);
+}
+
+.sheet__blurb {
+  margin: 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.55);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* Absent description, said quietly. Square carries one for some titles and not
+   others, and an empty gap reads as a layout fault rather than as missing copy. */
+.sheet__blurb--none {
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the basket -------------------------------------------------------- */
+
+.basket {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-md, 1rem) 0 0;
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.basket__line {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto auto;
+  gap: var(--space-sm, 0.75rem);
+  align-items: center;
+  padding-top: var(--space-sm, 0.75rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 60%, transparent);
+}
+
+.basket__line:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.basket__cover {
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.basket__cover.cover--none {
+  padding: 0.2rem;
+}
+
+.basket__cover.cover--none .cover--none__title {
+  font-size: 0.5rem;
+  line-height: 1.1;
+}
+
+.basket__text {
+  min-width: 0;
+}
+
+.basket__name {
+  margin: 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.3);
+}
+
+.basket__each {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.basket__qty input {
+  width: 3.5rem;
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.basket__sum {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-display, Georgia, serif);
+}
+
+.basket__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: var(--space-md, 1rem) 0 0;
+  padding-top: var(--space-sm, 0.75rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+}
+
+.checkout {
+  margin-top: var(--space-md, 1rem);
+}
+
+.checkout__note {
+  margin-top: var(--space-sm, 0.6rem);
+}
+
+.button--full {
+  width: 100%;
+  justify-content: center;
 }
 
 /* ---- people (clergy biographies) --------------------------------------- */
@@ -2964,6 +3203,31 @@ main {
 .week__day ul li:first-child {
   padding-top: 0;
   border-top: 0;
+}
+
+/*
+ * The same week list without the thumbnail column — the parish's regular
+ * service times on /contact.
+ *
+ * This is a bug fix, not a refinement. `.week__day ul li` reserves three
+ * columns (thumbnail, time, name) because the homepage bulletin attaches a
+ * picture to each service. `config/parish` service times have no pictures and
+ * never will, so those rows carry two children, which landed the *time* in the
+ * 3rem thumbnail column. At `white-space: nowrap` it could not fit, so
+ * "8:00 – 11:30 AM" overflowed straight across "Matins & Divine Liturgy".
+ *
+ * `minmax` rather than the fixed 10.5rem the bulletin uses: that width was
+ * measured for a system font stack rendering the bulletin's own time strings,
+ * and this list is free to size to its content instead — there is no adjacent
+ * column of pictures whose alignment has to be held.
+ */
+.week--plain .week__day ul li {
+  grid-template-columns: minmax(6.5rem, auto) 1fr;
+}
+
+/* No thumbnail column to clear, so a note starts at the first column. */
+.week--plain .week__day em {
+  grid-column: 1 / -1;
 }
 
 /*

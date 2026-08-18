@@ -68,8 +68,9 @@ export default async function SectionPage({ params }: { params: Promise<Params> 
 
   return (
     <>
-      <PageHeader title={meta.title} lede={meta.lede} />
+      <PageHeader title={meta.title} />
       <PageBody>
+        {meta.lede && <p className="note">{meta.lede}</p>}
         {pages.length === 0 ? (
           <EmptyState what={`${section} pages`} collection="content" />
         ) : (

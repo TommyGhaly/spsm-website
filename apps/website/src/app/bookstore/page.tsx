@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getProducts, ProductGrid } from '@/features/bookstore';
+import { getProducts, toShopProducts, Shop } from '@/features/bookstore';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
@@ -10,30 +10,31 @@ export const metadata: Metadata = {
 };
 
 /**
- * Catalog only. Checkout is not wired up: both open questions in
- * docs/decisions.md #5 are still open — Checkout Links vs. the Web Payments
- * SDK, and whether the catalog mirrors Square or Firestore is authoritative.
+ * The shop.
  *
- * Listing the catalog does not depend on either, so it ships now and checkout
- * slots in behind `PaymentProvider` when those are settled.
+ * The catalog is mirrored from Square by `npm run catalog` — see
+ * scripts/sync-catalog.mjs — and read here at build time, which is all a static
+ * export can do. Everything interactive (the detail dialog, the basket) is in
+ * `Shop`, a client component, because there is no server at request time to
+ * hold a session.
+ *
+ * Checkout is not finished: taking a payment needs the Square access token,
+ * which authorizes charges and therefore lives only in the Cloud Functions
+ * runtime. `Shop` hands off to that Function and says so honestly when it is
+ * not there.
  */
 export default async function BookstorePage() {
   const products = await getProducts();
 
   return (
-    <>
-      <PageHeader
-        title="Bookstore"
-        lede="Books, icons, and church goods. Purchases are made in person at the bookstore."
-      />
+    <PageBody flush>
+      <PageHeader title="Bookstore" />
 
-      <PageBody>
-        {products.length === 0 ? (
-          <EmptyState what="products" collection="products" />
-        ) : (
-          <ProductGrid products={products} />
-        )}
-      </PageBody>
-    </>
+      {products.length === 0 ? (
+        <EmptyState what="products" collection="products" />
+      ) : (
+        <Shop products={toShopProducts(products)} />
+      )}
+    </PageBody>
   );
 }

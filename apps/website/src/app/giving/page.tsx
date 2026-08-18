@@ -11,10 +11,7 @@ export const metadata: Metadata = {
 export default function GivingPage() {
   return (
     <>
-      <PageHeader
-        title="Giving"
-        lede="What is offered here sustains the church, its services, and the poor."
-      />
+      <PageHeader title="Giving" />
       <PageBody>
         <GivingPanel givingUrl={givingUrl()} />
       </PageBody>
