@@ -115,9 +115,14 @@ for (const [email, role, groups] of accounts) {
 await put('config/integrations', DEFAULT_INTEGRATIONS_CONFIG);
 await put('config/parish', {
   ...DEFAULT_PARISH_CONFIG,
-  // From the current Wix contact page. The phone differs between two Wix pages
-  // (…3750 on /contact-us, …3570 on /team-3) and the parish has not said which
-  // is right, so this is local test data rather than a fact to publish.
+  // The address and service times were confirmed by the parish on 2026-08-18
+  // and are now published in `config/parish`, so these match production rather
+  // than standing in for it.
+  //
+  // The phone still does not. It differs between two old Wix pages (…3750 on
+  // /contact-us, …3570 on /team-3), the parish has not said which is right, and
+  // `config/parish.phone` is deliberately still empty — so the number below is
+  // local test data and must not be copied into production.
   address: { line1: '169 Rice Rd', line2: '', city: 'Wayland', state: 'MA', postalCode: '01778' },
   phone: '(508) 739-3750',
   email: 'info@spsmwayland.org',
@@ -127,12 +132,10 @@ await put('config/parish', {
     { name: 'Vespers', day: 'Saturday', time: '6:00 PM' },
     { name: 'Midweek Liturgy', day: 'Wednesday', time: '8:00 – 10:00 AM' },
   ],
-  // `social` is deliberately not overridden here. Unlike the address and phone
-  // above — which are unverified scrapes from the old Wix pages and so must not
-  // masquerade as real — the accounts in DEFAULT_PARISH_CONFIG came from the
-  // parish and are correct, so the emulator should exercise exactly what
-  // production renders.
-  notes: 'Local emulator data — not the parish’s published details.',
+  // `social` is deliberately not overridden here: the accounts in
+  // DEFAULT_PARISH_CONFIG came from the parish and are correct, so the emulator
+  // should exercise exactly what production renders.
+  notes: 'Local emulator data. The phone here is unverified; the address and service times match production.',
 });
 
 // The design tokens the site reads at build time. Seeded with the committed
