@@ -1972,20 +1972,30 @@ main {
  * shelf in the narthex, small enough that a crooked snapshot is not the subject
  * of the row.
  */
+/*
+ * Bigger than a list normally warrants, because a book is recognised by its
+ * cover before its title. Held to a fixed box so a row's height does not depend
+ * on how the photograph happens to be cropped.
+ */
 .shelf__thumb {
-  width: 2.5rem;
-  height: 3.25rem;
+  width: 4.25rem;
+  height: 5.5rem;
   object-fit: contain;
   object-position: center;
   align-self: center;
+  /* Bottom-weighted, like an object standing on a surface rather than a sticker
+     lying on one. The even glow this replaced is what read as cheap. */
+  box-shadow:
+    0 1px 1px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 4px 10px -3px color-mix(in srgb, var(--color-ink, #1c1614) 28%, transparent);
 }
 
 /* The no-cover stand-in, at row scale: the sunken ground with no lettering —
    the title is already the next thing in the row, so repeating it here would
    print the same words twice on one line. */
 .shelf__thumb.cover--none {
-  width: 2.5rem;
-  height: 3.25rem;
+  width: 4.25rem;
+  height: 5.5rem;
   aspect-ratio: auto;
   background: var(--color-paper-sunken, #eeddd7);
   box-shadow: none;
@@ -2070,35 +2080,39 @@ main {
 /* ---- the dialog -------------------------------------------------------- */
 
 /*
- * Built on `<dialog>` opened with `showModal()`, so the top layer, the
- * backdrop, focus trapping and Escape all come from the browser rather than
- * from a pile of JavaScript that gets one of them wrong.
+ * Built on `<dialog>` opened with `showModal()`, so the top layer, the backdrop,
+ * focus trapping and Escape all come from the browser rather than from a pile
+ * of JavaScript that gets one of them wrong.
+ *
+ * Wide, because what it holds is a product page rather than a card: a cover
+ * large enough to look at, beside a column that answers what it costs, whether
+ * it is available, and how to get it.
  */
 .sheet {
-  width: min(38rem, calc(100vw - 2rem));
-  max-height: min(44rem, calc(100dvh - 3rem));
+  width: min(54rem, calc(100vw - 2rem));
+  max-height: min(46rem, calc(100dvh - 3rem));
   overflow: auto;
-  padding: var(--space-lg, 1.75rem);
+  padding: var(--space-xl, 2rem);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-lg, 16px);
   background: var(--color-paper, #f6e8e3);
   color: var(--color-ink, #1c1614);
-  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
+  box-shadow: 0 24px 60px -12px color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
 }
 
 .sheet::backdrop {
-  background: color-mix(in srgb, var(--color-deep, #481010) 55%, transparent);
+  background: color-mix(in srgb, var(--color-deep, #481010) 62%, transparent);
 }
 
 .sheet__close {
   position: absolute;
-  top: var(--space-sm, 0.6rem);
-  right: var(--space-sm, 0.6rem);
-  width: 2rem;
-  height: 2rem;
+  top: var(--space-sm, 0.7rem);
+  right: var(--space-sm, 0.7rem);
+  width: 2.25rem;
+  height: 2.25rem;
   display: grid;
   place-items: center;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   line-height: 1;
   color: var(--color-ink-soft, #4b413e);
   background: none;
@@ -2111,92 +2125,349 @@ main {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
-.sheet__body {
-  display: grid;
-  grid-template-columns: minmax(0, 12rem) 1fr;
-  gap: var(--space-lg, 1.5rem);
-  align-items: start;
-}
-
-@media (max-width: 34rem) {
-  .sheet__body {
-    grid-template-columns: 1fr;
-  }
-}
-
-.sheet__cover {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
-  padding: var(--space-sm, 0.5rem);
-}
-
-.sheet__detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm, 0.6rem);
-  align-items: flex-start;
-}
-
 .sheet__name {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: var(--leading-tight, 1.2);
-  margin: 0;
+  margin: 0 0 var(--space-md, 1rem);
 }
 
-.sheet__price {
+/* ---- one book, in full ------------------------------------------------- */
+
+/*
+ * Cover, then the reading column, then the buy box — the order the four
+ * questions arrive in: what is it, what does it cost, can I have it, how do I
+ * get it. The buy box is boxed off from the prose precisely so those last two
+ * do not have to be hunted for in a paragraph.
+ */
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: var(--space-xl, 2rem);
+  align-items: start;
+}
+
+@media (max-width: 44rem) {
+  .item {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg, 1.5rem);
+  }
+}
+
+/* The cover on its own ground, so a photograph shot against a pale desk still
+   has an edge. */
+.item__media {
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg, 1.5rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+}
+
+.item__cover {
+  width: 100%;
+  height: auto;
+  max-height: 20rem;
+  object-fit: contain;
+  box-shadow:
+    0 2px 3px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 14px 30px -8px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
+}
+
+/* The no-cover stand-in gets the title back here: it is large and alone, and
+   nothing else in this column has said which book it is yet. */
+.item__cover.cover--none {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 20rem;
+}
+
+.item__cover.cover--none .cover--none__title {
+  display: block;
+  font-size: var(--type-subheading, 1.125rem);
+}
+
+.item__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 0.6rem);
+  min-width: 0;
+}
+
+.item__title {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.25rem);
+  font-size: var(--type-heading, 1.625rem);
+  line-height: var(--leading-tight, 1.2);
+}
+
+/*
+ * The price appears twice — once under the title, once in the buy box — and
+ * that repetition is deliberate rather than an oversight. The first answers
+ * "what is this" while reading; the second sits with the button, where the
+ * decision is actually made, so nobody has to look back up to confirm it.
+ */
+.item__price {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 1.75rem);
   color: var(--color-accent, #992a21);
 }
 
-.sheet__blurb {
-  margin: 0;
-  font-size: var(--type-small, 0.9375rem);
-  line-height: var(--leading-normal, 1.55);
+.item__blurb {
+  margin: var(--space-xs, 0.3rem) 0 0;
+  font-size: var(--type-body, 1rem);
+  line-height: var(--leading-relaxed, 1.65);
   color: var(--color-ink-soft, #4b413e);
+  max-width: var(--measure, 60ch);
 }
 
-/* Absent description, said quietly. Square carries one for some titles and not
-   others, and an empty gap reads as a layout fault rather than as missing copy. */
-.sheet__blurb--none {
+.item__blurb--none {
   font-style: italic;
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.sheet__buy {
+/* ---- the buy box ------------------------------------------------------- */
+
+.buybox {
+  display: grid;
+  gap: var(--space-sm, 0.7rem);
+  justify-items: start;
+  margin-top: var(--space-md, 1rem);
+  padding: var(--space-md, 1.15rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+}
+
+.buybox__price {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  color: var(--color-ink, #1c1614);
+}
+
+/* Green for available, in a palette that has no green: availability is the one
+   thing here a reader scans for rather than reads, and it has to separate from
+   the accent the price and the button already use. */
+.buybox__stock {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: #1d6f4a;
+}
+
+.buybox__stock--out {
+  color: var(--color-accent, #992a21);
+}
+
+.buybox__qty {
   display: flex;
   align-items: center;
-  gap: var(--space-sm, 0.75rem);
-  flex-wrap: wrap;
-  margin-top: var(--space-xs, 0.4rem);
+  gap: var(--space-sm, 0.6rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
 }
 
 /*
- * A stepper rather than a number input.
- *
- * The only values reachable are the ones the two buttons produce, so there is
- * nothing to validate, no keyboard route to 9,999, and no chance of the empty
- * string a cleared number field leaves behind.
+ * The one filled, full-width control in the shop. Everything else — the rows,
+ * the remove links, the stepper — is quiet, which is what lets this read as the
+ * action of the page without shouting.
+ */
+.buybox__add {
+  width: 100%;
+  padding: 0.7rem 1.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.buybox__add:hover {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.buybox__note,
+.buybox__in {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.buybox__in {
+  color: var(--color-accent, #992a21);
+}
+
+/* ---- the basket -------------------------------------------------------- */
+
+.cart {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 19rem);
+  gap: var(--space-xl, 2rem);
+  align-items: start;
+}
+
+@media (max-width: 44rem) {
+  .cart {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg, 1.5rem);
+  }
+}
+
+.cart__lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cart__line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-md, 1rem);
+  align-items: start;
+  padding: var(--space-md, 1rem) 0;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.cart__line:first-child {
+  padding-top: 0;
+}
+
+.cart__cover {
+  width: 4.5rem;
+  height: 5.75rem;
+  object-fit: contain;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 5px 12px -4px color-mix(in srgb, var(--color-ink, #1c1614) 26%, transparent);
+}
+
+.cart__cover.cover--none {
+  width: 4.5rem;
+  height: 5.75rem;
+  aspect-ratio: auto;
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.cart__cover.cover--none .cover--none__title {
+  display: none;
+}
+
+.cart__text {
+  display: grid;
+  gap: var(--space-xs, 0.3rem);
+  min-width: 0;
+}
+
+.cart__name {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.0625rem);
+  line-height: var(--leading-snug, 1.3);
+}
+
+.cart__stock {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.8125rem);
+  color: #1d6f4a;
+}
+
+.cart__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  margin-top: var(--space-xs, 0.2rem);
+}
+
+/* Removing is setting the quantity to zero, so there is one code path for "how
+   many of this" rather than a second one that deletes. */
+.cart__remove {
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+}
+
+.cart__remove:hover {
+  color: var(--color-accent, #992a21);
+  border-bottom-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+}
+
+.cart__sum {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The summary sits beside the lines rather than under them, so the total and
+   the card form stay in view while quantities are being changed. */
+.summary {
+  position: sticky;
+  top: 0;
+  padding: var(--space-md, 1.15rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+}
+
+.summary__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.summary__line strong {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  font-weight: 400;
+  color: var(--color-ink, #1c1614);
+}
+
+.summary__note {
+  margin: var(--space-xs, 0.35rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the stepper ------------------------------------------------------- */
+
+/*
+ * A stepper rather than a number input: the only reachable values are the ones
+ * the two buttons produce, so there is nothing to validate, no keyboard route
+ * to 9,999, and no empty string left behind by a cleared field.
  */
 .stepper {
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-full, 999px);
-  background: var(--color-paper-raised, #fdf7f4);
+  background: var(--color-paper, #f6e8e3);
   overflow: hidden;
 }
 
 .stepper button {
   width: 2.25rem;
   height: 2.25rem;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   line-height: 1;
   color: var(--color-ink, #1c1614);
   background: none;
@@ -2219,104 +2490,27 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- the basket -------------------------------------------------------- */
+.stepper--sm button {
+  width: 1.85rem;
+  height: 1.85rem;
+  font-size: 1rem;
+}
 
-.basket {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-md, 1rem) 0 0;
+.stepper--sm span {
+  min-width: 1.6rem;
+  font-size: var(--type-small, 0.875rem);
+}
+
+.paid {
   display: grid;
-  gap: var(--space-sm, 0.75rem);
+  gap: var(--space-xs, 0.4rem);
 }
 
-.basket__line {
-  display: grid;
-  grid-template-columns: 3rem 1fr auto auto;
-  gap: var(--space-sm, 0.75rem);
-  align-items: center;
-  padding-top: var(--space-sm, 0.75rem);
-  border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 60%, transparent);
-}
-
-.basket__line:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.basket__cover {
-  width: 3rem;
-  height: 3rem;
-  object-fit: contain;
-  border-radius: var(--radius-sm, 4px);
-  background: var(--color-paper-raised, #fdf7f4);
-}
-
-.basket__cover.cover--none {
-  padding: 0.2rem;
-}
-
-.basket__cover.cover--none .cover--none__title {
-  font-size: 0.5rem;
-  line-height: 1.1;
-}
-
-.basket__text {
-  min-width: 0;
-}
-
-.basket__name {
+.paid__title {
   margin: 0;
-  font-size: var(--type-small, 0.9375rem);
-  line-height: var(--leading-snug, 1.3);
-}
-
-.basket__each {
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.basket__qty input {
-  width: 3.5rem;
-  padding: 0.3rem 0.4rem;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  color: var(--color-ink, #1c1614);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-sm, 4px);
-}
-
-.basket__sum {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
   font-family: var(--font-display, Georgia, serif);
-}
-
-.basket__total {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin: var(--space-md, 1rem) 0 0;
-  padding-top: var(--space-sm, 0.75rem);
-  border-top: 1px solid var(--color-rule, #e0cac3);
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
-}
-
-.checkout {
-  margin-top: var(--space-md, 1rem);
-}
-
-.checkout__note {
-  margin-top: var(--space-sm, 0.6rem);
-}
-
-.button--full {
-  width: 100%;
-  justify-content: center;
+  font-size: var(--type-heading, 1.4rem);
+  color: var(--color-accent, #992a21);
 }
 
 /* ---- checkout ---------------------------------------------------------- */
