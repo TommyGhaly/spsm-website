@@ -220,6 +220,14 @@ export function Shop({
       */}
       {!needle && (
         <div className="browse">
+          {/*
+            A viewport wrapping a track, rather than one element being both the
+            scroller and the flex row. As a single element the row's content was
+            escaping to the page — the whole document could be dragged 194px
+            sideways — and clipping it at the row, at its wrapper and at the root
+            all failed to stop it. Two elements, each with one job, does.
+          */}
+          <div className="browse__viewport scroller">
           <ul className="browse__strip">
             {products.map((product) => (
               <li key={product.id}>
@@ -235,6 +243,7 @@ export function Shop({
               </li>
             ))}
           </ul>
+          </div>
         </div>
       )}
 

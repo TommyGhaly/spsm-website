@@ -395,6 +395,12 @@ main {
  * So: no `backdrop-filter`, and re-check gold against the *light* end before
  * touching either stop.
  */
+/* The sticky header's height, named so sticky things below can clear it —
+   see `.shop-head`. Kept beside the rule that sets it. */
+:root {
+  --masthead-h: 5rem;
+}
+
 .masthead {
   position: sticky;
   top: 0;
@@ -1851,6 +1857,49 @@ main {
   vertical-align: -0.15em;
 }
 
+/*
+ * A scrollbar in the parish's own colours, as a class rather than a one-off.
+ *
+ * Put `.scroller` on anything that scrolls and it gets this. Two mechanisms,
+ * because no single one is supported everywhere: `scrollbar-color` is the
+ * standard property, honoured by Firefox and recent Chromium; the
+ * `::-webkit-scrollbar` rules cover Safari and older Chromium, which ignore it.
+ * Both describe the same thing, so a browser that reads either looks right.
+ *
+ * Deliberately thin and gold rather than a chunky grey system bar: on a page of
+ * cream and maroon the default control is the one thing that looks borrowed
+ * from the operating system.
+ */
+.scroller {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-gold, #b08d43) 65%, transparent) transparent;
+}
+
+.scroller::-webkit-scrollbar {
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.scroller::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--color-ink, #1c1614) 6%, transparent);
+  border-radius: var(--radius-full, 999px);
+}
+
+.scroller::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-full, 999px);
+}
+
+.scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold, #b08d43);
+}
+
+/* On a dark ground the same bar needs to be lighter than its track, not
+   darker — used by the dialog, which sits on paper, and by any deep band. */
+.scroller--dark {
+  scrollbar-color: color-mix(in srgb, var(--color-gold, #b08d43) 80%, transparent) transparent;
+}
+
 /* ---- bookstore --------------------------------------------------------- */
 
 /*
@@ -1889,6 +1938,12 @@ main {
  * as a storefront dropped into it, and the books below now sit on paper *after*
  * something rather than continuing a single field of cream.
  * ---------------------------------------------------------------------------
+ */
+/*
+ * Not sticky. It was, briefly: a dark band following the page down turned out
+ * to be a lot of weight to carry past every row, and the site header is already
+ * pinned above it — two stacked bars leave little of the shop actually visible.
+ * It sits at the top and stays there.
  */
 .shop-head {
   margin-bottom: var(--space-xl, 2.25rem);
@@ -2045,22 +2100,46 @@ main {
  * wrapped, it becomes a grid again and the list underneath becomes a
  * duplicate of it.
  */
+/*
+ * `overflow: hidden` on the wrapper, and it is load-bearing rather than tidy.
+ *
+ * The strip scrolls sideways, and its clipped content was still counting
+ * towards the document's scrollable width — the whole page could be dragged
+ * 194px to the right, while /events, which has no strip, could not be dragged
+ * at all. Clipping at the wrapper stops the overflow escaping to the viewport
+ * while leaving the strip itself free to scroll.
+ */
 .browse {
+  overflow: hidden;
   margin-bottom: var(--space-lg, 1.75rem);
   padding-bottom: var(--space-md, 1rem);
   border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
 }
 
+/*
+ * The scroller. Definite width, and it owns the overflow.
+ *
+ * The row inside is `max-content`, so it is honestly as wide as its covers and
+ * this element clips it. Previously the row was both the scroller and the flex
+ * container, and its content escaped all the way to the viewport.
+ */
+.browse__viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+}
+
 .browse__strip {
+  width: max-content;
   display: flex;
   gap: var(--space-md, 1rem);
   list-style: none;
-  padding: 0 0 var(--space-xs, 0.4rem);
+  /* Vertical padding, not decoration: the covers lift 6px on hover and the
+     clipping above would shear the top off them without room to move into. */
+  padding: 0.5rem 0 var(--space-xs, 0.4rem);
   margin: 0;
-  overflow-x: auto;
-  /* Each cover comes to rest under the left edge rather than halfway off it. */
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
 }
 
 .browse__strip > li {
@@ -2068,7 +2147,24 @@ main {
   scroll-snap-align: start;
 }
 
+/*
+ * `position: relative` here is the fix for a page that could be dragged 194px
+ * sideways, and it took a long time to find because it looks like nothing.
+ *
+ * Each button holds a `.visually-hidden` span carrying the book's name for
+ * screen readers. That class is `position: absolute`, and with no positioned
+ * ancestor an absolutely positioned box resolves against the *initial
+ * containing block* — the viewport — not against the scroller it appears to sit
+ * in. So the spans sat at x=1357 and beyond, outside every clip, extending the
+ * document.
+ *
+ * That is why clipping never worked: `overflow: hidden` on the strip, on its
+ * wrapper, and on the root all failed, because the offending boxes had escaped
+ * to the viewport before any of them applied. Giving the button a position
+ * makes it the containing block, and the spans are contained and clipped.
+ */
 .browse__book {
+  position: relative;
   display: block;
   padding: 0;
   background: none;
@@ -2355,6 +2451,8 @@ main {
  * sunken bands use.
  */
 .sheet {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-gold, #b08d43) 65%, transparent) transparent;
   width: min(66rem, calc(100vw - 2rem));
   max-height: min(48rem, calc(100dvh - 3rem));
   overflow: auto;
@@ -2394,7 +2492,19 @@ main {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
+/*
+ * Sticky inside the dialog, which scrolls. On the checkout the form is taller
+ * than the sheet, and the heading that says which screen you are on was the
+ * first thing to disappear. The paper ground behind it is not decoration —
+ * without it the rows scroll visibly under the text.
+ */
 .sheet__name {
+  position: sticky;
+  top: calc(var(--space-xl, 2.25rem) * -1);
+  z-index: 2;
+  padding-top: var(--space-sm, 0.5rem);
+  margin-top: calc(var(--space-sm, 0.5rem) * -1);
+  background: var(--color-paper-raised, #fdf7f4);
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-title, 1.9rem);
   line-height: var(--leading-tight, 1.15);
@@ -2787,7 +2897,14 @@ main {
 
 /* ---- the recap, beside the payment form -------------------------------- */
 
+/*
+ * Sticky beside the form, so the total and the Back link stay in view while a
+ * long address is filled in. Same reasoning as the basket's summary.
+ */
 .recap {
+  position: sticky;
+  /* Clears the dialog's own sticky heading above it. */
+  top: var(--space-md, 1rem);
   display: grid;
   gap: var(--space-sm, 0.7rem);
   padding: var(--space-md, 1.1rem);
