@@ -160,29 +160,19 @@ export function Shop({
         something, and is where the two controls belong — search and the basket
         — rather than floating them over the list.
       */}
+      {/*
+        One row: the name of the shop, the search, and the basket.
+        
+        It was a block — a heading, a sentence beneath it, and a full-width
+        search bar under that — which is three stacked things where a shop needs
+        a bar. Everything here is a control or a label for one, so they belong on
+        a line together, and the whole band comes down to about half the height.
+      */}
       <div className="shop-head">
-        <div className="shop-head__row">
-          <h2 className="shop-head__title">Bookstore</h2>
-
-          <button
-            type="button"
-            className="shop-head__basket"
-            onClick={() => setBasketOpen(true)}
-            aria-haspopup="dialog"
-          >
-            Basket
-            {/* Rendered only when there is something in it: an empty shop
-                showing a zero reads like a broken counter. */}
-            {count > 0 && <span className="shop-head__count">{count}</span>}
-          </button>
-        </div>
-
-        <p className="shop-head__lede">
-          Books, icons, and church goods. Collect at the church, or have them posted.
-        </p>
+        <h2 className="shop-head__title">Bookstore</h2>
 
         <div className="search">
-          <Icon name="search" size={17} />
+          <Icon name="search" size={16} />
           <input
             type="search"
             value={query}
@@ -196,6 +186,19 @@ export function Shop({
             </button>
           )}
         </div>
+
+        <button
+          type="button"
+          className="shop-head__basket"
+          onClick={() => setBasketOpen(true)}
+          aria-haspopup="dialog"
+        >
+          <Icon name="gift" size={16} />
+          <span className="shop-head__basketword">Basket</span>
+          {/* Only when there is something in it: an empty shop showing a zero
+              reads like a broken counter. */}
+          {count > 0 && <span className="shop-head__count">{count}</span>}
+        </button>
       </div>
 
       {needle && (
