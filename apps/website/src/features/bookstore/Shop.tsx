@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ShopProduct } from './shopData';
+import { CardPayment } from './CardPayment';
 
 /** Integer minor units to "$8" / "$8.50". Whole dollars lose the ".00". */
 export function money(amount: number, currency = 'USD'): string {
@@ -31,10 +32,18 @@ const CART_KEY = 'spsm.bookstore.cart';
  * eleven more HTML files that each say four lines. A dialog shows the same
  * thing without the navigation.
  */
-export function Shop({ products }: { products: ShopProduct[] }) {
+export function Shop({
+  products,
+  square,
+}: {
+  products: ShopProduct[];
+  /** Public Web Payments values. Empty when checkout is not configured. */
+  square: { applicationId: string; locationId: string; sandbox: boolean };
+}) {
   const [cart, setCart] = useState<Cart>({});
   const [open, setOpen] = useState<ShopProduct | null>(null);
   const [basketOpen, setBasketOpen] = useState(false);
+  const [paidOrderId, setPaidOrderId] = useState<string | null>(null);
   // Until this flips, the cart shown is empty even if storage has one. See the
   // note in the effect below.
   const [ready, setReady] = useState(false);
@@ -174,7 +183,16 @@ export function Shop({ products }: { products: ShopProduct[] }) {
             Your basket
           </h2>
 
-          {lines.length === 0 ? (
+          {paidOrderId ? (
+            <div className="paid">
+              <p className="paid__title">Thank you — your order is placed.</p>
+              <p className="note">
+                A receipt is on its way from Square. The parish will be in touch about
+                collection or postage.
+              </p>
+              <p className="meta">Order {paidOrderId}</p>
+            </div>
+          ) : lines.length === 0 ? (
             <p className="note">Nothing in the basket yet.</p>
           ) : (
             <>
@@ -208,7 +226,20 @@ export function Shop({ products }: { products: ShopProduct[] }) {
                 <strong>{money(total)}</strong>
               </p>
 
-              <Checkout total={total} />
+              <CardPayment
+                cart={lines.map((line) => ({ slug: line.product.slug, quantity: line.quantity }))}
+                total={total}
+                applicationId={square.applicationId}
+                locationId={square.locationId}
+                sandbox={square.sandbox}
+                onPaid={(orderId) => {
+                  // Clearing here rather than on the server's word alone: the
+                  // order exists in Firestore by this point, so a basket that
+                  // survived would let someone pay for the same books twice.
+                  setCart({});
+                  setPaidOrderId(orderId);
+                }}
+              />
             </>
           )}
         </Dialog>
@@ -332,55 +363,5 @@ function Dialog({
       </button>
       {children}
     </dialog>
-  );
-}
-
-/**
- * Checkout.
- *
- * Card details are never handled here, and cannot be: taking a payment needs
- * the Square access token, which authorizes charges and so exists only in the
- * Cloud Functions runtime. This button hands off to that Function.
- *
- * Until it is deployed the request fails, and this says so plainly rather than
- * spinning — a shop that appears to take an order and silently drops it is
- * worse than one that admits it is not finished.
- */
-function Checkout({ total }: { total: number }) {
-  const [state, setState] = useState<'idle' | 'working' | 'unavailable'>('idle');
-
-  return (
-    <div className="checkout">
-      <button
-        type="button"
-        className="button button--full"
-        disabled={state === 'working'}
-        onClick={async () => {
-          setState('working');
-          try {
-            const response = await fetch('/api/square/checkout', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ total }),
-            });
-            if (!response.ok) throw new Error(String(response.status));
-            const body: { url?: string } = await response.json();
-            if (body.url) window.location.assign(body.url);
-            else setState('unavailable');
-          } catch {
-            setState('unavailable');
-          }
-        }}
-      >
-        {state === 'working' ? 'Starting checkout…' : `Check out — ${money(total)}`}
-      </button>
-
-      {state === 'unavailable' && (
-        <p className="note checkout__note">
-          Online payment isn&apos;t switched on yet. The books are all available in the
-          bookstore after Liturgy, and the office can hold any of them for you.
-        </p>
-      )}
-    </div>
   );
 }

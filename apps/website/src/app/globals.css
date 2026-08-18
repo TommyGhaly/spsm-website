@@ -2231,6 +2231,100 @@ main {
   justify-content: center;
 }
 
+/* ---- checkout ---------------------------------------------------------- */
+
+.pay {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.pay__field {
+  display: grid;
+  gap: var(--space-xs, 0.3rem);
+}
+
+.pay__field > span,
+.pay__how legend {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.pay__field input {
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 5px);
+}
+
+.pay__how {
+  display: grid;
+  gap: var(--space-xs, 0.3rem);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.pay__how label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.pay__address {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-sm, 0.75rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-radius: var(--radius-md, 8px);
+}
+
+/*
+ * Where Square's iframe mounts.
+ *
+ * A minimum height, because the iframe arrives a beat after the rest of the
+ * form: without it the button jumps down the moment the card field appears,
+ * which is exactly when someone is reaching for it.
+ */
+.pay__card {
+  min-height: 3.25rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 5px);
+}
+
+.pay__error {
+  color: var(--color-accent, #992a21);
+}
+
+.pay__sandbox {
+  padding: var(--space-sm, 0.6rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-radius: var(--radius-sm, 5px);
+}
+
+.pay__sandbox code {
+  font-variant-numeric: tabular-nums;
+}
+
+.paid {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.paid__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.25rem);
+  color: var(--color-accent, #992a21);
+}
+
 /* ---- people (clergy biographies) --------------------------------------- */
 
 /*

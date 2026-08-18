@@ -1,48 +1,137 @@
 {
   "hosting": {
     "public": "apps/website/out",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "cleanUrls": true,
     "trailingSlash": false,
-    "//rewrites": "No catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status — which is what src/app/not-found.tsx emits it for.",
+    "//rewrites": "No catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status \u2014 which is what src/app/not-found.tsx emits it for.",
     "rewrites": [
+      {
+        "source": "/api/square/checkout",
+        "function": "squareCheckout"
+      },
       {
         "source": "/api/square/webhook",
         "function": "squareWebhook"
       }
     ],
-    "//redirects": "Every URL the Wix site published, taken from its sitemap while it was still up — after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Titles lie, so each destination was checked by loading the page: /team-3 is titled 'Calendar & Events' and is the activities page, NOT the clergy page it sounds like — the clergy bios are on /who-we-are. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) but all three are empty Wix templates with no content; they land on /welcome because that is where a newcomer following an old link should end up, not because there is anything to preserve. Wix filed ministries and past events alike under `projects` — /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line. The last entry is not a Wix URL: /clergy was a page on this site until the biographies moved into the homepage as disclosures, and anyone who typed it, bookmarked it, or linked it during development should land on the section rather than on a 404.",
+    "//redirects": "Every URL the Wix site published, taken from its sitemap while it was still up \u2014 after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Titles lie, so each destination was checked by loading the page: /team-3 is titled 'Calendar & Events' and is the activities page, NOT the clergy page it sounds like \u2014 the clergy bios are on /who-we-are. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) but all three are empty Wix templates with no content; they land on /welcome because that is where a newcomer following an old link should end up, not because there is anything to preserve. Wix filed ministries and past events alike under `projects` \u2014 /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line. The last entry is not a Wix URL: /clergy was a page on this site until the biographies moved into the homepage as disclosures, and anyone who typed it, bookmarked it, or linked it during development should land on the section rather than on a 404.",
     "redirects": [
-      { "source": "/who-we-are", "destination": "/about", "type": 301 },
-      { "source": "/our-beliefs", "destination": "/beliefs", "type": 301 },
-      { "source": "/team-3", "destination": "/events", "type": 301 },
-      { "source": "/calendar", "destination": "/events", "type": 301 },
-      { "source": "/live-streaming", "destination": "/livestream", "type": 301 },
-      { "source": "/donations", "destination": "/giving", "type": 301 },
-      { "source": "/contact-us", "destination": "/contact", "type": 301 },
-      { "source": "/services", "destination": "/contact", "type": 301 },
-      { "source": "/servants-calendar", "destination": "/servants", "type": 301 },
-      { "source": "/lesson-1", "destination": "/welcome", "type": 301 },
-      { "source": "/lesson-2", "destination": "/welcome", "type": 301 },
-      { "source": "/lesson-3-saint-mina", "destination": "/welcome", "type": 301 },
+      {
+        "source": "/who-we-are",
+        "destination": "/about",
+        "type": 301
+      },
+      {
+        "source": "/our-beliefs",
+        "destination": "/beliefs",
+        "type": 301
+      },
+      {
+        "source": "/team-3",
+        "destination": "/events",
+        "type": 301
+      },
+      {
+        "source": "/calendar",
+        "destination": "/events",
+        "type": 301
+      },
+      {
+        "source": "/live-streaming",
+        "destination": "/livestream",
+        "type": 301
+      },
+      {
+        "source": "/donations",
+        "destination": "/giving",
+        "type": 301
+      },
+      {
+        "source": "/contact-us",
+        "destination": "/contact",
+        "type": 301
+      },
+      {
+        "source": "/services",
+        "destination": "/contact",
+        "type": 301
+      },
+      {
+        "source": "/servants-calendar",
+        "destination": "/servants",
+        "type": 301
+      },
+      {
+        "source": "/lesson-1",
+        "destination": "/welcome",
+        "type": 301
+      },
+      {
+        "source": "/lesson-2",
+        "destination": "/welcome",
+        "type": 301
+      },
+      {
+        "source": "/lesson-3-saint-mina",
+        "destination": "/welcome",
+        "type": 301
+      },
       {
         "source": "/projects-7-1",
         "destination": "/ministries#college-and-young-professionals",
         "type": 301
       },
-      { "source": "/projects-7-2", "destination": "/ministries#mother-of-mercy", "type": 301 },
-      { "source": "/projects-7-3", "destination": "/ministries#st-simon-for-seniors", "type": 301 },
-      { "source": "/projects-7", "destination": "/events", "type": 301 },
-      { "source": "/projects-7-4", "destination": "/events", "type": 301 },
-      { "source": "/projects-8", "destination": "/events", "type": 301 },
-      { "source": "/portfolio", "destination": "/", "type": 301 },
-      { "source": "/clergy", "destination": "/#clergy", "type": 301 }
+      {
+        "source": "/projects-7-2",
+        "destination": "/ministries#mother-of-mercy",
+        "type": 301
+      },
+      {
+        "source": "/projects-7-3",
+        "destination": "/ministries#st-simon-for-seniors",
+        "type": 301
+      },
+      {
+        "source": "/projects-7",
+        "destination": "/events",
+        "type": 301
+      },
+      {
+        "source": "/projects-7-4",
+        "destination": "/events",
+        "type": 301
+      },
+      {
+        "source": "/projects-8",
+        "destination": "/events",
+        "type": 301
+      },
+      {
+        "source": "/portfolio",
+        "destination": "/",
+        "type": 301
+      },
+      {
+        "source": "/clergy",
+        "destination": "/#clergy",
+        "type": 301
+      }
     ],
     "//headers": "Cache headers for /service-worker.js and /manifest.webmanifest were removed: neither file exists yet, and there is no apps/website/public/ at all. Restore them in the same commit that adds the real PWA files.",
     "headers": [
       {
         "source": "/_next/static/**",
-        "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
       }
     ]
   },
@@ -62,15 +151,34 @@
       "npm --prefix \"$PROJECT_DIR\" run build --workspace @spsm/functions"
     ],
     "//ignore": ".secret.local holds dummy values for the emulator and has no business in a deployed artifact. dist/ is the intermediate tsc output; only the bundled lib/ is needed.",
-    "ignore": ["node_modules", ".git", "firebase-debug.log", ".secret.local", "dist"]
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      ".secret.local",
+      "dist"
+    ]
   },
   "emulators": {
-    "auth": { "port": 9099 },
-    "functions": { "port": 5001 },
-    "firestore": { "port": 8080 },
-    "hosting": { "port": 5002 },
-    "storage": { "port": 9199 },
-    "ui": { "enabled": true, "port": 4000 },
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "hosting": {
+      "port": 5002
+    },
+    "storage": {
+      "port": 9199
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
     "singleProjectMode": true
   }
 }

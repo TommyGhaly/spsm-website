@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getProducts, toShopProducts, Shop } from '@/features/bookstore';
+import { getProducts, toShopProducts, Shop, squarePublicConfig } from '@/features/bookstore';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
@@ -33,7 +33,7 @@ export default async function BookstorePage() {
       {products.length === 0 ? (
         <EmptyState what="products" collection="products" />
       ) : (
-        <Shop products={toShopProducts(products)} />
+        <Shop products={toShopProducts(products)} square={squarePublicConfig()} />
       )}
     </PageBody>
   );

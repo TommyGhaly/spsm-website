@@ -15,6 +15,9 @@ initializeApp();
 // the parish Entra tenant, and tenant membership is what grants `servant`.
 export { enforceTenantOnCreate, setMemberRole } from './auth.js';
 
+// Bookstore checkout. Prices from Square's own catalog, never from the request.
+export { squareCheckout } from './checkout.js';
+
 // Declared as secrets, not env vars: these are read from Secret Manager at
 // runtime and never appear in source, in git, or in a deployed bundle.
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
