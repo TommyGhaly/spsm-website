@@ -15,7 +15,27 @@
  * The constraint this file adds: **this is a static export**, so the list is
  * frozen at build time. It goes stale between deploys and will not show a
  * liturgy streamed after the last one.
+ *
+ * ---------------------------------------------------------------------------
+ * Why there is a committed snapshot to fall back on.
+ *
+ * YouTube rate-limits. Reading the feed plus one watch page per stream is
+ * thirteen requests, and a run of deploys is enough to earn a spell of 404s
+ * from a channel that exists — observed on 2026-08-18, where the same URL that
+ * had served fifteen entries began refusing plain `curl` from the same machine
+ * for minutes at a time.
+ *
+ * Without a fallback that is silent and bad: the build succeeds, the page
+ * renders, and the archive is simply empty, so a deploy that happens to land in
+ * a rate-limited window ships a livestream page with no past services and
+ * nothing says so. `archive.json` is the last good read, committed, and it is
+ * used whenever the live fetch comes back with nothing. The page is then stale
+ * rather than blank, which for a list of past liturgies is barely a difference.
+ *
+ * Refresh it with `npm run archive`.
+ * ---------------------------------------------------------------------------
  */
+import snapshot from './archive.json';
 import {
   channelFeedUrl,
   isYouTubeChannelId,
@@ -68,7 +88,16 @@ export async function getPastStreams(
   }
 
   const videos = await readChannelFeed(channel);
-  if (videos.length === 0) return [];
+  if (videos.length === 0) {
+    // Rate-limited, unreachable, or an empty channel. Ship the last good read
+    // rather than a blank section — see the note at the top of this file.
+    const fallback = snapshot as PastStream[];
+    console.warn(
+      `[livestream] falling back to the committed archive of ${fallback.length} ` +
+        `stream(s); run \`npm run archive\` to refresh it.`,
+    );
+    return fallback.slice(0, max);
+  }
 
   const streams = await withRealStartTimes(videos.slice(0, max));
 
