@@ -257,6 +257,7 @@ export function Shop({
             product={product}
             inCart={cart[product.slug] ?? 0}
             onOpen={() => setOpen(product)}
+            onAdd={() => setQuantity(product.slug, (cart[product.slug] ?? 0) + 1)}
           />
         ))}
       </ul>
@@ -265,6 +266,8 @@ export function Shop({
         <Detail
           product={open}
           inCart={cart[open.slug] ?? 0}
+          others={products.filter((p) => p.slug !== open.slug)}
+          onPick={setOpen}
           onClose={() => setOpen(null)}
           onAdd={(quantity) => {
             setQuantity(open.slug, (cart[open.slug] ?? 0) + quantity);
@@ -479,44 +482,59 @@ function Cover({
  * is a list, the way a printed parish catalogue is a list.
  * ---------------------------------------------------------------------------
  *
- * The whole row is the button. `View` is a label on that affordance rather than
- * a control of its own — a second focusable thing inside the row would be a
- * second tab stop that goes exactly where the first one does.
+ * **Add is back on the row, deliberately reversing an earlier decision.** It
+ * was removed when eleven filled buttons down the page made buying something
+ * you did by accident on the way past. The correction went too far the other
+ * way: every purchase then cost a dialog first, which is a lot of friction on a
+ * page whose job is to sell books. It is here as a quiet secondary control —
+ * present, not shouting — and opening a book is still one tap on the row.
+ *
+ * The row is a `div` rather than a button now, because a button cannot contain
+ * another one. The cover and title carry the click for details; `Add` is its
+ * own control beside them.
  */
 function Row({
   product,
   inCart,
   onOpen,
+  onAdd,
 }: {
   product: ShopProduct;
   inCart: number;
   onOpen: () => void;
+  onAdd: () => void;
 }) {
   const soldOut = product.stockCount === 0;
 
   return (
     <li className="shelf__item">
-      <button type="button" className="shelf__row" onClick={onOpen}>
-        <Cover product={product} className="shelf__thumb" />
+      <div className="shelf__row">
+        <button type="button" className="shelf__open" onClick={onOpen}>
+          <Cover product={product} className="shelf__thumb" />
 
-        <span className="shelf__text">
-          <span className="shelf__title">{product.name}</span>
-          {/* The description where Square carries one — several titles have
-              none, and an empty line reads better than an invented one. */}
-          {product.description && (
-            <span className="shelf__sub">{product.description}</span>
-          )}
-          {inCart > 0 && <span className="shelf__in">{inCart} in basket</span>}
-        </span>
+          <span className="shelf__text">
+            <span className="shelf__title">{product.name}</span>
+            {/* The description where Square carries one — several titles have
+                none, and an empty line reads better than an invented one. */}
+            {product.description && (
+              <span className="shelf__sub">{product.description}</span>
+            )}
+            {inCart > 0 && <span className="shelf__in">{inCart} in basket</span>}
+          </span>
+        </button>
 
-        <span className="shelf__price">
+        <p className="shelf__price">
           {soldOut ? "Sold out" : money(product.amount, product.currency)}
-        </span>
+        </p>
 
-        <span className="shelf__view" aria-hidden="true">
-          View
-        </span>
-      </button>
+        {soldOut ? (
+          <span className="shelf__gone">Unavailable</span>
+        ) : (
+          <button type="button" className="shelf__add" onClick={onAdd}>
+            {inCart > 0 ? "Add another" : "Add to basket"}
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -699,11 +717,16 @@ function Gallery({ product }: { product: ShopProduct }) {
 function Detail({
   product,
   inCart,
+  others,
+  onPick,
   onClose,
   onAdd,
 }: {
   product: ShopProduct;
   inCart: number;
+  /** The rest of the shelf, for the cross-sell below. */
+  others: ShopProduct[];
+  onPick: (product: ShopProduct) => void;
   onClose: () => void;
   onAdd: (quantity: number) => void;
 }) {
@@ -793,6 +816,35 @@ function Detail({
           </div>
         </div>
       </div>
+
+      {/*
+        Somewhere to go next.
+
+        Opening a book used to be a dead end: read it, add it or close. On a
+        shelf of eleven, the reader who came for one title is the reader most
+        likely to take a second, and nothing was offering them one. There is no
+        recommendation data here and none is invented — this is simply the rest
+        of the shelf, which on a catalog this size is the honest version of
+        "you might also like".
+      */}
+      {others.length > 0 && (
+        <div className="alsoin">
+          <h3 className="alsoin__title">More from the bookstore</h3>
+          <div className="alsoin__viewport scroller">
+            <ul className="alsoin__strip">
+              {others.map((other) => (
+                <li key={other.slug}>
+                  <button type="button" className="alsoin__book" onClick={() => onPick(other)}>
+                    <Cover product={other} className="alsoin__cover" />
+                    <span className="alsoin__name">{other.name}</span>
+                    <span className="alsoin__price">{money(other.amount, other.currency)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }
