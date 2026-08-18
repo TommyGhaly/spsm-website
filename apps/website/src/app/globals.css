@@ -1867,7 +1867,12 @@ main {
   justify-content: space-between;
   gap: var(--space-md, 1rem);
   flex-wrap: wrap;
-  margin-bottom: var(--space-lg, 1.5rem);
+  margin-bottom: var(--space-xl, 2.25rem);
+  padding-bottom: var(--space-sm, 0.75rem);
+  /* Closed with the parish's gold hairline, the same mark the ornament and the
+     sunken bands use, so the shop opens like a section of this site rather than
+     like a storefront dropped into it. */
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
 }
 
 .shop-bar__title {
@@ -1881,7 +1886,13 @@ main {
 .shop-bar__basket {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-xs, 0.4rem);
+  gap: var(--space-xs, 0.45rem);
+  padding: 0.4rem 0.9rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
 /* The count rides the button rather than sitting beside it, so the pair reads
@@ -1900,133 +1911,160 @@ main {
 }
 
 /*
- * The grid. Narrower columns than `.grid`'s 19rem because these cells are led
- * by a cover rather than a paragraph: at 19rem, eleven books filled three
- * sparse rows of very large pictures.
+ * The shop: a list, not a grid of covers.
+ *
+ * ---------------------------------------------------------------------------
+ * The photographs decided this.
+ *
+ * The parish's covers are phone snaps of books on a table — angled, lit
+ * differently, the desk visible behind several. Any layout that shows them
+ * large makes those flaws the subject of the page. At 40px they answer "which
+ * book is this" and stop, which is all they can honestly carry.
+ *
+ * Eleven titles is not a grid's worth of anything either. A shop this size is a
+ * list, the way a printed parish catalogue is a list — and a list is what lets
+ * the titles, set in the display face, be the thing you actually read.
+ * ---------------------------------------------------------------------------
  */
-.shop {
-  display: grid;
-  gap: var(--space-lg, 1.75rem) var(--space-md, 1.25rem);
-  grid-template-columns: repeat(auto-fill, minmax(min(46%, 13.5rem), 1fr));
+.shelf {
+  list-style: none;
   padding: 0;
   margin: 0;
-  list-style: none;
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
 }
 
-.shop-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm, 0.5rem);
+.shelf__item + .shelf__item {
+  border-top: 1px solid var(--color-rule, #e0cac3);
 }
 
 /*
- * The picture area, which is also the button that opens the detail dialog.
- *
- * Square, because every cover the parish has photographed is 1:1. Contained
- * rather than cropped even so — the catalog will not stay all-square the first
- * time someone shoots a tall icon, and `cover` would take the title off it.
+ * The whole row is the button — one hit target, one tab stop. `View` is a label
+ * on that affordance, not a control of its own; a second focusable element
+ * inside the row would be a second stop going exactly where the first goes.
  */
-.shop-item__frame {
-  position: relative;
+.shelf__row {
   display: grid;
-  place-items: center;
-  aspect-ratio: 1 / 1;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-md, 1rem);
   width: 100%;
-  padding: var(--space-sm, 0.75rem);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
-  overflow: hidden;
+  padding: var(--space-md, 0.9rem) var(--space-sm, 0.5rem);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
   cursor: pointer;
-  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+  transition: background-color 150ms ease;
 }
 
-.shop-item__frame:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e0cac3));
+.shelf__row:hover {
+  background: var(--color-paper-raised, #fdf7f4);
 }
 
-.shop-item__cover {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
+.shelf__row:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: -2px;
 }
 
 /*
- * A book with no cover in Square. Its own title, set on the sunken ground —
- * a plain binding, which is an honest thing for a book to look like.
- *
- * This was the parish's cross, used as a generic "no image" mark. A cross is
- * not a decoration to scatter over missing data, and it told the reader nothing
- * about which book they were looking at.
+ * Deliberately small. Large enough to recognise a book you have seen on the
+ * shelf in the narthex, small enough that a crooked snapshot is not the subject
+ * of the row.
  */
-.cover--none {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  padding: var(--space-sm, 0.75rem);
-  border-radius: var(--radius-sm, 5px);
+.shelf__thumb {
+  width: 2.5rem;
+  height: 3.25rem;
+  object-fit: contain;
+  object-position: center;
+  align-self: center;
+}
+
+/* The no-cover stand-in, at row scale: the sunken ground with no lettering —
+   the title is already the next thing in the row, so repeating it here would
+   print the same words twice on one line. */
+.shelf__thumb.cover--none {
+  width: 2.5rem;
+  height: 3.25rem;
+  aspect-ratio: auto;
   background: var(--color-paper-sunken, #eeddd7);
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  box-shadow: none;
+  border: 1px solid var(--color-rule, #e0cac3);
 }
 
-.cover--none__title {
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-small, 0.9375rem);
-  line-height: var(--leading-snug, 1.3);
-  text-align: center;
-  color: var(--color-ink-soft, #4b413e);
-  overflow: hidden;
+.shelf__thumb.cover--none .cover--none__title {
+  display: none;
 }
 
-.shop-item__flag {
-  position: absolute;
-  top: var(--space-sm, 0.5rem);
-  left: var(--space-sm, 0.5rem);
-  padding: 0.2rem 0.5rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.75rem);
-  letter-spacing: var(--tracking-wide, 0.03em);
-  text-transform: uppercase;
-  color: var(--color-ink-inverse, #fdf7f4);
-  background: var(--color-accent, #992a21);
-  border-radius: var(--radius-sm, 4px);
-}
-
-/* Dimmed, not hidden: someone looking for a title should find it and learn it
-   is out of stock, rather than conclude the shop never had it. */
-.shop-item--sold .shop-item__frame {
-  opacity: 0.55;
-}
-
-.shop-item__body {
+.shelf__text {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs, 0.25rem);
-  align-items: flex-start;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
-.shop-item__name {
-  font-family: var(--font-body, Georgia, serif);
-  font-size: var(--type-body, 1rem);
-  line-height: var(--leading-snug, 1.3);
-  font-weight: 600;
-  margin: 0;
-}
-
-.shop-item__price {
-  margin: 0;
+/* The display face, at reading size. On a page of eleven books the titles are
+   the content; everything else on the row is annotation. */
+.shelf__title {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.3);
+  color: var(--color-ink, #1c1614);
+}
+
+.shelf__sub {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  line-height: var(--leading-normal, 1.45);
+  color: var(--color-ink-faint, #6f5f5a);
+  /* One line: Square's descriptions run from a phrase to a paragraph, and a
+     three-line row next to a one-line row is what made the old grid ragged. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+
+.shelf__in {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
   color: var(--color-accent, #992a21);
 }
 
-.shop-item__add {
-  margin-top: var(--space-xs, 0.3rem);
+.shelf__price {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.shelf__view {
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
+  color: var(--color-accent, #992a21);
+  border-bottom: 1px solid transparent;
+  transition: border-color 150ms ease;
+}
+
+.shelf__row:hover .shelf__view {
+  border-bottom-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+}
+
+/* On a phone the row keeps its thumbnail and title and drops the affordance
+   label — the whole row is still the target, and "View" beside a price in a
+   320px column is two things fighting for the last inch. */
+@media (max-width: 34rem) {
+  .shelf__row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-sm, 0.75rem);
+  }
+
+  .shelf__view {
+    display: none;
+  }
 }
 
 /* ---- the dialog -------------------------------------------------------- */
@@ -2129,6 +2167,56 @@ main {
 .sheet__blurb--none {
   font-style: italic;
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sheet__buy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  flex-wrap: wrap;
+  margin-top: var(--space-xs, 0.4rem);
+}
+
+/*
+ * A stepper rather than a number input.
+ *
+ * The only values reachable are the ones the two buttons produce, so there is
+ * nothing to validate, no keyboard route to 9,999, and no chance of the empty
+ * string a cleared number field leaves behind.
+ */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  overflow: hidden;
+}
+
+.stepper button {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--color-ink, #1c1614);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.stepper span {
+  min-width: 2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- the basket -------------------------------------------------------- */
