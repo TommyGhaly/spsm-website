@@ -2073,33 +2073,60 @@ main {
  * of the row.
  */
 /*
- * Bigger than a list normally warrants, because a book is recognised by its
- * cover before its title. Held to a fixed box so a row's height does not depend
- * on how the photograph happens to be cropped.
+ * The covers, filled rather than fitted.
+ *
+ * ---------------------------------------------------------------------------
+ * These are phone photographs of books on a table — different angles, different
+ * light, a desk or a dark room visible behind most of them. Contained inside a
+ * box, each one floated at its own size with its own background showing, and
+ * eleven of those down a page read as a pile of snapshots rather than a shelf.
+ *
+ * `cover` on a 3:4 portrait crops every one of them to the same shape, filling
+ * the tile edge to edge. The framing is lost at the margins, which is where the
+ * desk is; what remains is the middle of the jacket, which is the part that
+ * says which book it is. Uniform beats complete here.
+ *
+ * Trimming the backgrounds automatically was tried first and does not work:
+ * measured against the real files, `sharp.trim` removes 0% from seven of the
+ * nine because the edges are busy rather than flat.
+ * ---------------------------------------------------------------------------
  */
 .shelf__thumb {
-  width: 4.25rem;
-  height: 5.5rem;
-  object-fit: contain;
+  width: 4.5rem;
+  height: 6rem;
+  object-fit: cover;
   object-position: center;
   align-self: center;
-  /* Bottom-weighted, like an object standing on a surface rather than a sticker
-     lying on one. The even glow this replaced is what read as cheap. */
+  border-radius: 2px;
+  /* A hairline and a bottom-weighted shadow: an object standing on a shelf
+     rather than a picture lying on the page. */
   box-shadow:
-    0 1px 1px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
-    0 4px 10px -3px color-mix(in srgb, var(--color-ink, #1c1614) 28%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent),
+    0 1px 1px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
+    0 6px 14px -4px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
 }
 
-/* The no-cover stand-in, at row scale: the sunken ground with no lettering —
-   the title is already the next thing in the row, so repeating it here would
-   print the same words twice on one line. */
+/* Pulled off the shelf a little, the way you tilt a book out to look at it. */
+.shelf__row:hover .shelf__thumb {
+  transform: translateY(-3px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent),
+    0 2px 2px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
+    0 12px 22px -6px color-mix(in srgb, var(--color-ink, #1c1614) 38%, transparent);
+}
+
+/*
+ * A book with no photograph at all. Not a blank tile: the same 3:4 object with
+ * a gold rule down its left edge, which is what a spine looks like on a shelf,
+ * so it stands in the row as a book rather than as a gap.
+ */
 .shelf__thumb.cover--none {
-  width: 4.25rem;
-  height: 5.5rem;
+  width: 4.5rem;
+  height: 6rem;
   aspect-ratio: auto;
   background: var(--color-paper-sunken, #eeddd7);
-  box-shadow: none;
-  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
 }
 
 .shelf__thumb.cover--none .cover--none__title {
