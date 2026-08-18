@@ -85,7 +85,23 @@ creating a *developer application* that talks to it — not a new account.
 5. **Webhooks → Subscriptions → Add subscription.** You can't finish this until
    the Functions endpoint is deployed, so it's fine to defer. When you do:
    - URL: `https://<your-domain>/api/square/webhook`
-   - Events: `payment.updated`, `order.updated`, `refund.updated`
+   - Events: `payment.created`, `payment.updated`, `refund.created`,
+     `refund.updated` — the four `interpretSquareWebhook` acts on.
+
+     Both `.created` and `.updated`, deliberately. A card payment that
+     completes in one step can carry its terminal `COMPLETED` state on
+     `payment.created`, so subscribing only to `.updated` can miss a payment
+     and leave the order stuck at `pending` while the money has moved. The two
+     events have distinct ids, so the `appliedEventIds` guard does not suppress
+     the second — but both write the same status, so the duplicate is a no-op.
+
+     **Not** `order.updated`, which earlier revisions of this list included.
+     Order status tracks the order's lifecycle rather than whether money moved,
+     the handler ignores it, and every delivery would be a 200 that does
+     nothing.
+
+     Not handled at all: `dispute.*`. A chargeback currently changes nothing on
+     the order and is only visible in the Square dashboard.
    - Copy the **signature key** → `SQUARE_WEBHOOK_SIGNATURE_KEY`.
      Without verifying this signature, anyone who finds the URL can mark orders
      paid. It is not optional.
