@@ -1,6 +1,6 @@
 ---
 title: H.G. Bishop David
-published: false
+published: true
 person.name: H.G. Bishop David
 person.rank: Bishop of the Coptic Orthodox Diocese of New York and New England
 seo.description: His Grace Bishop David, first Diocesan Bishop of the Coptic Orthodox Diocese of New York and New England.

@@ -1,6 +1,6 @@
 ---
 title: Fr. Armia Tawfik
-published: false
+published: true
 person.name: Fr. Armia Tawfik
 person.rank: Priest
 seo.description: Fr. Armia Tawfik, priest of St. Philopater Mercurius & St. Mina Coptic Orthodox Church since 2024.
