@@ -24,6 +24,7 @@
  *   npm run catalog                  # show what Square has and what would change
  *   npm run catalog -- --write       # create/update the product documents
  *   npm run catalog -- --write --prune   # also unpublish rows Square no longer has
+ *   npm run catalog -- --write --emulator  # target the local emulator instead
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -38,6 +39,35 @@ const write = process.argv.includes('--write');
 const prune = process.argv.includes('--prune');
 const skipImages = process.argv.includes('--skip-images');
 const project = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+/**
+ * Write to the local Firestore emulator instead of the parish's project.
+ *
+ * `npm run dev:local` runs the site against the emulators, which is the only
+ * way to work on anything role-gated. A catalog synced only to production is
+ * therefore invisible in exactly the setup most local development uses — the
+ * page renders its empty state and looks broken while production is fine.
+ */
+const emulator = process.argv.includes('--emulator');
+const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
+
+if (emulator && !/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(EMULATOR_HOST)) {
+  console.error(`Refusing to run: --emulator but FIRESTORE_EMULATOR_HOST ${EMULATOR_HOST} is not localhost.`);
+  process.exit(1);
+}
+
+/** Document URL for whichever store is being targeted. */
+const docUrl = (path) =>
+  emulator
+    ? `http://${EMULATOR_HOST}/v1/projects/${project}/databases/(default)/documents/${path}`
+    : documentUrl(project, path);
+
+/**
+ * The emulator takes a literal `owner` bearer token and bypasses rules with it;
+ * production needs a real gcloud credential. Resolved lazily so a dry run needs
+ * no `gcloud auth login` at all.
+ */
+const authorization = () => (emulator ? 'Bearer owner' : `Bearer ${accessToken()}`);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -133,9 +163,9 @@ async function readSquareCatalog() {
 }
 
 /** The slugs currently in Firestore, so we can report adds vs updates. */
-async function existingSlugs(token) {
-  const url = `${documentUrl(project, 'products')}?pageSize=300`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+async function existingSlugs(auth) {
+  const url = `${docUrl('products')}?pageSize=300`;
+  const response = await fetch(url, { headers: { Authorization: auth } });
   if (response.status === 404) return new Set();
   if (!response.ok) {
     console.error(`Could not list products: HTTP ${response.status}`);
@@ -149,6 +179,7 @@ const objects = await readSquareCatalog();
 const { products, skipped } = mapSquareCatalog(objects, CATEGORY);
 
 console.log(`Square (${squareEnv}): ${objects.length} catalog objects`);
+console.log(`Target: ${emulator ? `emulator ${EMULATOR_HOST}` : `project ${project}`}`);
 console.log(`Category "${CATEGORY}": ${products.length} product(s), ${skipped.length} skipped\n`);
 
 if (products.length === 0) {
@@ -165,8 +196,8 @@ for (const item of skipped) {
 }
 if (skipped.length > 0) console.log('');
 
-const token = accessToken();
-const present = await existingSlugs(token);
+const auth = authorization();
+const present = await existingSlugs(auth);
 
 for (const product of products) {
   const verb = present.has(product.slug) ? 'update' : 'create';
@@ -262,9 +293,9 @@ for (const product of products) {
     body.createdAt = now;
   }
 
-  const response = await fetch(documentUrl(project, `products/${product.slug}`), {
+  const response = await fetch(docUrl(`products/${product.slug}`), {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: auth, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: toFieldMap(body) }),
   });
 
@@ -283,10 +314,10 @@ if (prune) {
     // Unpublished rather than deleted. An order may reference this product, and
     // a deleted document turns a past order's line item into a dangling id.
     const response = await fetch(
-      `${documentUrl(project, `products/${slug}`)}?updateMask.fieldPaths=published`,
+      `${docUrl(`products/${slug}`)}?updateMask.fieldPaths=published`,
       {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: auth, 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: toFieldMap({ published: false }) }),
       },
     );
@@ -295,4 +326,8 @@ if (prune) {
 }
 
 console.log(`\nWrote ${created} new, ${updated} updated${prune ? `, ${pruned} unpublished` : ''}.`);
-console.log('The site reads this at build time — redeploy for it to appear.');
+console.log(
+  emulator
+    ? 'Written to the emulator. Reload the dev server page to see them.'
+    : 'The site reads this at build time — redeploy for it to appear.',
+);
