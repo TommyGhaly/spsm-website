@@ -364,13 +364,22 @@ const ZOOM = 2.6;
  * have to cover to show.
  * ---------------------------------------------------------------------------
  *
- * **The strip and the arrows appear only above one image.** Every book in the
- * parish's catalog currently has exactly one photograph, so a permanent strip
- * would be a single thumbnail beside two dead arrows — furniture that advertises
- * a gallery which does not exist. Add a second photo in Square, re-run the
- * catalog sync, and it appears on its own.
+ * The thumbnail strip is always there, even for a book with a single
+ * photograph — that is what a product page does, and it is the thing that says
+ * "this is the gallery" so a second image, when one is added, appears somewhere
+ * the reader already understands. The arrows are the part held back until there
+ * is more than one image, because an arrow that cannot move is a broken
+ * control where a lone thumbnail is merely a short list.
  */
-function ZoomableCover({ product }: { product: ShopProduct }) {
+function ZoomableCover({
+  product,
+  onZoom,
+}: {
+  product: ShopProduct;
+  /** Reports the magnified state upward, so the panel can live in its own
+      column rather than on top of the reading one. */
+  onZoom: (state: { image: string; x: number; y: number } | null) => void;
+}) {
   const [index, setIndex] = useState(0);
   const [hovering, setHovering] = useState(false);
   const [point, setPoint] = useState({ x: 50, y: 50 });
@@ -393,7 +402,10 @@ function ZoomableCover({ product }: { product: ShopProduct }) {
       <div
         className="item__plate"
         onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => setHovering(false)}
+        onMouseLeave={() => {
+          setHovering(false);
+          onZoom(null);
+        }}
         onMouseMove={(event) => {
           const box = event.currentTarget.getBoundingClientRect();
           // Clamped, so a pointer at the very border cannot drive the lens off
@@ -401,6 +413,7 @@ function ZoomableCover({ product }: { product: ShopProduct }) {
           const x = Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100));
           const y = Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100));
           setPoint({ x, y });
+          onZoom({ image: current.large, x, y });
         }}
       >
         <img className="item__cover" src={current.src} alt={product.name} decoding="async" />
@@ -432,23 +445,10 @@ function ZoomableCover({ product }: { product: ShopProduct }) {
         )}
       </div>
 
-      {hovering && (
-        <div
-          className="item__zoompanel"
-          aria-hidden="true"
-          style={{
-            backgroundImage: `url(${current.large})`,
-            backgroundSize: `${ZOOM * 100}%`,
-            backgroundPosition: `${point.x}% ${point.y}%`,
-          }}
-        />
-      )}
-
-      {many && (
-        <ul className="thumbs">
+      <ul className="thumbs">
           {images.map((image, at) => (
             <li key={image.src}>
-              <button
+            <button
                 type="button"
                 className={at === index ? 'thumbs__pick is-current' : 'thumbs__pick'}
                 onClick={() => setIndex(at)}
@@ -459,8 +459,7 @@ function ZoomableCover({ product }: { product: ShopProduct }) {
               </button>
             </li>
           ))}
-        </ul>
-      )}
+      </ul>
     </div>
   );
 }
@@ -491,12 +490,20 @@ function Detail({
   onAdd: (quantity: number) => void;
 }) {
   const [quantity, setQuantity] = useState(1);
+  const [zoom, setZoom] = useState<{ image: string; x: number; y: number } | null>(null);
   const soldOut = product.stockCount === 0;
 
   return (
     <Dialog title={product.name} onClose={onClose}>
-      <div className="item">
-        <ZoomableCover product={product} />
+      {/*
+        Three columns while a pointer is on the cover: the gallery, what the
+        book is, and the magnified view. The magnifier had been an overlay
+        sitting on top of the reading column, which put the description and the
+        buy box under a photograph exactly when someone was reading them. It has
+        its own space now, and the dialog is wide enough to hold all three.
+      */}
+      <div className={zoom ? 'item item--zooming' : 'item'}>
+        <ZoomableCover product={product} onZoom={setZoom} />
 
         <div className="item__main">
           <h2 id="dialog-title" className="item__title">
@@ -559,6 +566,26 @@ function Detail({
             {inCart > 0 && <p className="buybox__in">{inCart} already in your basket</p>}
           </div>
         </div>
+
+        {/*
+          Rendered always and merely emptied when idle, rather than mounted on
+          hover: mounting it would change the grid's column count under the
+          pointer, and the reading column would jump sideways the instant
+          someone moved onto the cover.
+        */}
+        <div
+          className="item__zoompanel"
+          aria-hidden="true"
+          style={
+            zoom
+              ? {
+                  backgroundImage: `url(${zoom.image})`,
+                  backgroundSize: `${ZOOM * 100}%`,
+                  backgroundPosition: `${zoom.x}% ${zoom.y}%`,
+                }
+              : undefined
+          }
+        />
       </div>
     </Dialog>
   );
