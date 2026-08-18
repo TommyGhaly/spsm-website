@@ -1925,141 +1925,85 @@ main {
 }
 
 /*
- * The shop's opening band.
+ * The shop's bar: name, search, basket — on one line.
  *
  * ---------------------------------------------------------------------------
- * The page was one pale column from the masthead to the footer, and that is
- * what made it read as flat however the rows themselves were arranged. Nothing
- * on it had a top, nothing set the books against anything, and the two controls
- * — search and the basket — had no home except floating over the list.
+ * This was a block: a heading, a sentence under it, and a full-width search
+ * below that, inside a deep slab of maroon. Three stacked things, most of a
+ * screen tall, before a single book appeared. Everything in it is either a
+ * control or the label for one, which is a toolbar rather than a banner.
  *
- * One band of the parish's deep red fixes all three. It is the same ground the
- * homepage's offering uses, so the shop reads as part of this site rather than
- * as a storefront dropped into it, and the books below now sit on paper *after*
- * something rather than continuing a single field of cream.
+ * On one line it comes down to about half the height, and the search — the only
+ * part anyone uses twice — sits where the eye already is rather than below the
+ * fold of the header itself.
+ *
+ * The ground is lighter than the old slab: a wash of the parish red over paper
+ * instead of the full deep, with a gold hairline under it. Enough to give the
+ * page a top without the shop opening on a wall.
  * ---------------------------------------------------------------------------
- */
-/*
- * Not sticky. It was, briefly: a dark band following the page down turned out
- * to be a lot of weight to carry past every row, and the site header is already
- * pinned above it — two stacked bars leave little of the shop actually visible.
- * It sits at the top and stays there.
  */
 .shop-head {
-  margin-bottom: var(--space-xl, 2.25rem);
-  padding: var(--space-lg, 1.75rem);
-  border-radius: var(--radius-lg, 14px);
-  color: var(--color-ink-inverse, #fdf7f4);
-  background: linear-gradient(
-    150deg,
-    color-mix(in srgb, var(--color-accent-strong, #731d16) 22%, var(--color-deep, #481010)) 0%,
-    var(--color-deep, #481010) 60%
-  );
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
-}
-
-.shop-head__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-md, 1rem);
   flex-wrap: wrap;
+  margin-bottom: var(--space-lg, 1.75rem);
+  padding: var(--space-sm, 0.75rem) 0 var(--space-md, 1rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
 }
 
 .shop-head__title {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-title, 2.1rem);
-  line-height: var(--leading-tight, 1.1);
+  font-size: var(--type-title, 2rem);
+  line-height: 1;
   letter-spacing: var(--tracking-tight, -0.02em);
-  color: var(--color-ink-inverse, #fdf7f4);
-}
-
-.shop-head__lede {
-  margin: var(--space-xs, 0.35rem) 0 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 76%, transparent);
-}
-
-.shop-head__basket {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs, 0.45rem);
-  padding: 0.5rem 1rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  letter-spacing: var(--tracking-wide, 0.06em);
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--color-ink-inverse, #fdf7f4);
-  background: none;
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 65%, transparent);
-  border-radius: var(--radius-full, 999px);
-  cursor: pointer;
-  transition: background-color 160ms ease;
-}
-
-.shop-head__basket:hover {
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 18%, transparent);
-}
-
-.shop-head__count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.4rem;
-  height: 1.4rem;
-  padding-inline: 0.35rem;
-  border-radius: var(--radius-full, 999px);
-  background: var(--color-gold, #b08d43);
-  color: var(--color-deep, #481010);
-  font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #1c1614);
 }
 
 /*
- * Search. Filtering happens on every keystroke against a catalog already in
- * memory — eleven books need no index, no debounce, and no request, and a
- * search that waits before filtering a list this size only feels broken.
+ * Takes the middle and grows into it, so the bar reads as one control strip
+ * rather than a title with two ornaments pinned to the ends.
  */
 .search {
   display: flex;
   align-items: center;
-  gap: var(--space-sm, 0.6rem);
-  margin-top: var(--space-md, 1.1rem);
+  gap: var(--space-sm, 0.55rem);
+  flex: 1 1 14rem;
+  min-width: 0;
   padding: 0 var(--space-md, 0.9rem);
-  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  color: var(--color-ink-faint, #6f5f5a);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-full, 999px);
-  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 70%, transparent);
-  transition: border-color 160ms ease, background-color 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .search:focus-within {
-  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 18%, transparent);
   border-color: var(--color-gold, #b08d43);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-gold, #b08d43) 18%, transparent);
 }
 
 .search input {
   flex: 1;
   min-width: 0;
-  padding: 0.6rem 0;
+  padding: 0.5rem 0;
   font: inherit;
-  font-size: var(--type-body, 1rem);
-  color: var(--color-ink-inverse, #fdf7f4);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
   background: none;
   border: 0;
 }
 
 .search input::placeholder {
-  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 55%, transparent);
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 .search input:focus {
   outline: none;
 }
 
-/* The browser's own clear affordance is a grey cross that belongs to another
-   design. This one is ours and matches everything around it. */
+/* The browser's own clear cross belongs to another design. */
 .search input::-webkit-search-cancel-button {
   display: none;
 }
@@ -2067,15 +2011,62 @@ main {
 .search__clear {
   padding: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
-  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 80%, transparent);
+  font-size: var(--type-small, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
   background: none;
   border: 0;
   cursor: pointer;
 }
 
 .search__clear:hover {
-  color: var(--color-gold, #b08d43);
+  color: var(--color-accent, #992a21);
+}
+
+/* Filled, because it is the one place the shop keeps state and the only thing
+   here worth finding in a hurry. */
+.shop-head__basket {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.45rem);
+  padding: 0.5rem 1rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-deep, #481010);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.shop-head__basket:hover {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.shop-head__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding-inline: 0.3rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-gold, #b08d43);
+  color: var(--color-deep, #481010);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* On a narrow screen the word goes and the icon carries it, so the bar stays
+   one line instead of wrapping the basket onto its own row. */
+@media (max-width: 30rem) {
+  .shop-head__basketword {
+    display: none;
+  }
+
+  .shop-head__title {
+    font-size: var(--type-heading, 1.6rem);
+  }
 }
 
 /* Only rendered while a search is running, so an unfiltered shop is not
