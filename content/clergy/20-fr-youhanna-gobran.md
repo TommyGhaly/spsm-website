@@ -1,6 +1,6 @@
 ---
 title: Fr. Youhanna Gobran
-published: false
+published: true
 person.name: Fr. Youhanna Gobran
 person.rank: Hegumen
 seo.description: Fr. Youhanna Gobran, priest of St. Philopater Mercurius & St. Mina Coptic Orthodox Church since 2016.
