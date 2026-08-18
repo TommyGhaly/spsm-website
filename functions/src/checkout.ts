@@ -3,6 +3,7 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
+  buildOrderEmail,
   buildSquareOrder,
   isUsableAddress,
   looksLikeEmail,
@@ -40,6 +41,13 @@ const SQUARE_ENVIRONMENT = defineString('SQUARE_ENVIRONMENT');
  * better than a calculation resting on invented data.
  */
 const SHIPPING_FLAT_CENTS = defineString('SHIPPING_FLAT_CENTS', { default: '700' });
+
+/**
+ * Where a buyer should write if their order is wrong. Empty is fine — the email
+ * then says "contact the parish office" rather than naming an address that does
+ * not exist.
+ */
+const PARISH_EMAIL = defineString('PARISH_EMAIL', { default: '' });
 
 const SQUARE_VERSION = '2025-01-23';
 
@@ -190,7 +198,19 @@ export const squareCheckout = onRequest(
         body: JSON.stringify(orderBody),
       });
       const orderJson = (await orderRes.json()) as {
-        order?: { id?: string; total_money?: { amount?: number; currency?: string }; net_amounts?: unknown };
+        order?: {
+          id?: string;
+          total_money?: { amount?: number; currency?: string };
+          /*
+           * Read for the confirmation email, and read from *here* rather than
+           * from the Firestore mirror on purpose. Square prices the order from
+           * its own catalog — that is the whole reason the browser never sends
+           * a price — so the mirror can be stale by exactly the amount that
+           * would make the email disagree with the card statement.
+           */
+          line_items?: { name?: string; quantity?: string; total_money?: { amount?: number } }[];
+          net_amounts?: unknown;
+        };
         errors?: { detail?: string }[];
       };
 
@@ -291,6 +311,61 @@ export const squareCheckout = onRequest(
           // would erase the status that event just applied.
           { merge: true },
         );
+
+      /*
+       * The parish's own confirmation, queued for the Trigger Email extension.
+       *
+       * **After the response is decided, and inside a catch that swallows
+       * everything.** The money has moved and the order is recorded by this
+       * point; if the queue write fails, the correct outcome is still a paid
+       * order and a 200. Letting a mail problem turn a successful payment into
+       * an error would tell the buyer their card failed when it did not, and
+       * invite them to pay twice.
+       *
+       * Square's own receipt goes out regardless — see `buyer_email_address`
+       * above. This one carries the half Square cannot: whether the books are
+       * to be collected or posted.
+       */
+      try {
+        /*
+         * `create`, not `set`, and the doc id is the order — so the queue is
+         * idempotent the same way the payment is.
+         *
+         * Square returns the *original* order for a repeated idempotency key,
+         * which is exactly right for a double-tap. But that means this line can
+         * run twice for one purchase, and `set` would overwrite a message the
+         * extension had already delivered — wiping the `delivery` field it
+         * writes back, and sending the buyer a second copy. `create` fails
+         * instead, which is the outcome we want.
+         */
+        await db
+          .collection(COLLECTIONS.mail)
+          .doc(`order-${orderId}`)
+          .create(
+            buildOrderEmail({
+              orderId,
+              email,
+              shipping,
+              lines: (orderJson.order?.line_items ?? []).map((item) => ({
+                name: item.name ?? 'Book',
+                quantity: Number(item.quantity ?? '1'),
+                amount: item.total_money?.amount ?? 0,
+              })),
+              total,
+              ...(PARISH_EMAIL.value() ? { parishEmail: PARISH_EMAIL.value() } : {}),
+            }),
+          );
+      } catch (cause) {
+        // ALREADY_EXISTS is the idempotent retry above doing its job, not a
+        // fault — logging it as an error would cry wolf on a normal double-tap.
+        if ((cause as { code?: number })?.code === 6) {
+          console.log(`[checkout] confirmation email for ${orderId} was already queued`);
+        } else {
+          // Deliberately not surfaced to the buyer. The order is good; somebody
+          // reading logs needs to know the email did not go.
+          console.error('[checkout] confirmation email not queued', cause);
+        }
+      }
 
       res.status(200).json({ ok: true, orderId, status, total });
     } catch (error) {

@@ -315,6 +315,26 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- outbound email ---------------------------------------------------
+
+    match /mail/{messageId} {
+      /*
+       * Closed to clients in both directions, and both halves matter.
+       *
+       * Read would expose a buyer's address and what they bought to anyone who
+       * guessed a document id. Write would turn the parish's mail server into
+       * an open relay: the Trigger Email extension sends whatever it finds
+       * here, so a client that could create a document could send mail from the
+       * church's own domain to anyone.
+       *
+       * The catch-all below already denies this. It is written out because this
+       * file's rule is that adding a collection means adding a rule on purpose,
+       * and because a future edit to the catch-all should not quietly open a
+       * send queue.
+       */
+      allow read, write: if false;
+    }
+
     // Anything not matched above is denied. Adding a collection means adding a
     // rule here on purpose, rather than inheriting an accidental allow.
     match /{document=**} {

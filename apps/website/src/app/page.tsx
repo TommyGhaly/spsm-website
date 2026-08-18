@@ -67,7 +67,10 @@ export default async function HomePage() {
           `alternatingBands`. It removes itself when the catalog is empty, and a
           section that does not render must not consume a turn. */}
       {products.length > 0 && (
-        <section className={band()} aria-labelledby="bookstore-heading">
+        <section
+          className={`${band()} band--tight-end`}
+          aria-labelledby="bookstore-heading"
+        >
           <div className="wrap reveal">
             <SectionHeading
               id="bookstore-heading"

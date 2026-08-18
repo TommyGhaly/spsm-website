@@ -43,6 +43,14 @@ export const COLLECTIONS = {
   formSubmissions: 'formSubmissions',
   /** Append-only audit trail for staff reads of sensitive collections. */
   auditLog: 'auditLog',
+  /**
+   * Outbound email queue, drained by the Trigger Email extension.
+   *
+   * Written by Cloud Functions only, and readable by nobody: a queued message
+   * holds a buyer's address and the contents of their order, and it sits here
+   * until the extension has delivered it. See firestore.rules.
+   */
+  mail: 'mail',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
