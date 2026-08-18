@@ -2088,20 +2088,31 @@ main {
  * large enough to look at, beside a column that answers what it costs, whether
  * it is available, and how to get it.
  */
+/*
+ * The surfaces are layered rather than flat, and that is most of what "cheap"
+ * was. One pale ground with hairlines drawn on it reads as a wireframe; a
+ * dialog that sits on raised paper, holds its content on the page ground, and
+ * closes the whole thing with a gold edge reads as a made object. The parish's
+ * own gold hairline runs along the top, the same mark the ornament and the
+ * sunken bands use.
+ */
 .sheet {
-  width: min(54rem, calc(100vw - 2rem));
-  max-height: min(46rem, calc(100dvh - 3rem));
+  width: min(56rem, calc(100vw - 2rem));
+  max-height: min(48rem, calc(100dvh - 3rem));
   overflow: auto;
-  padding: var(--space-xl, 2rem);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-lg, 16px);
-  background: var(--color-paper, #f6e8e3);
+  padding: var(--space-xl, 2.25rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-rule, #e0cac3));
+  border-top: 3px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-paper-raised, #fdf7f4);
   color: var(--color-ink, #1c1614);
-  box-shadow: 0 24px 60px -12px color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
+  box-shadow:
+    0 2px 4px color-mix(in srgb, var(--color-deep, #481010) 18%, transparent),
+    0 32px 70px -16px color-mix(in srgb, var(--color-deep, #481010) 55%, transparent);
 }
 
 .sheet::backdrop {
-  background: color-mix(in srgb, var(--color-deep, #481010) 62%, transparent);
+  background: color-mix(in srgb, var(--color-deep, #481010) 72%, transparent);
 }
 
 .sheet__close {
@@ -2127,9 +2138,12 @@ main {
 
 .sheet__name {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.5rem);
-  line-height: var(--leading-tight, 1.2);
-  margin: 0 0 var(--space-md, 1rem);
+  font-size: var(--type-title, 1.9rem);
+  line-height: var(--leading-tight, 1.15);
+  letter-spacing: var(--tracking-tight, -0.015em);
+  margin: 0 0 var(--space-lg, 1.35rem);
+  padding-bottom: var(--space-sm, 0.6rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
 }
 
 /* ---- one book, in full ------------------------------------------------- */
@@ -2141,6 +2155,9 @@ main {
  * do not have to be hunted for in a paragraph.
  */
 .item {
+  /* The positioning context for the zoom panel — see `.item__zoompanel`, which
+     spans the detail column exactly and therefore needs the grid's own box. */
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
   gap: var(--space-xl, 2rem);
@@ -2158,11 +2175,155 @@ main {
    has an edge. */
 .item__media {
   display: grid;
+  gap: var(--space-sm, 0.5rem);
+  justify-items: center;
+}
+
+/*
+ * The cover on the *page* ground inside a raised dialog — the inverse of a
+ * card on a card, and the reason it reads as a mounted plate rather than a
+ * picture floating on a panel.
+ */
+.item__plate {
+  position: relative;
+  display: grid;
   place-items: center;
+  width: 100%;
   padding: var(--space-lg, 1.5rem);
-  background: var(--color-paper-raised, #fdf7f4);
+  background: var(--color-paper, #f6e8e3);
   border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-sm, 4px);
+  cursor: crosshair;
+}
+
+/* The region the panel is showing. Pale rather than dark, because it sits over
+   a photograph and a dark scrim would hide the very thing being magnified. */
+/* Arrows on the image, shown only above one photograph. Ghosted onto the plate
+   rather than given their own bar, which would be chrome for a control that is
+   absent from every book in the catalog today. */
+.item__step {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--color-ink, #1c1614);
+  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 88%, transparent);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.item__step:hover {
+  background: var(--color-paper-raised, #fdf7f4);
+  border-color: var(--color-gold, #b08d43);
+}
+
+.item__step--prev {
+  left: var(--space-xs, 0.4rem);
+}
+
+.item__step--next {
+  right: var(--space-xs, 0.4rem);
+}
+
+/* The strip under the main image. */
+.thumbs {
+  display: flex;
+  gap: var(--space-xs, 0.45rem);
+  flex-wrap: wrap;
+  justify-content: center;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.thumbs__pick {
+  display: block;
+  padding: 0.2rem;
+  background: var(--color-paper, #f6e8e3);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.thumbs__pick img {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+}
+
+.thumbs__pick:hover {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+/* The one being shown, marked with the parish's gold rather than a heavier
+   border, so the strip does not jump as the selection moves. */
+.thumbs__pick.is-current {
+  border-color: var(--color-gold, #b08d43);
+  box-shadow: 0 0 0 1px var(--color-gold, #b08d43);
+}
+
+.item__lens {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 45%, transparent);
+  border: 1px solid var(--color-gold, #b08d43);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 25%, transparent);
+}
+
+/*
+ * The magnified view, beside the cover and over the reading column.
+ *
+ * Absolutely placed out of the first grid column into the second, which is why
+ * `.item` is the positioning context. Over the prose deliberately: while the
+ * pointer is on the cover the reader is looking at the picture, and the panel
+ * has to be large enough to be worth showing.
+ */
+.item__zoompanel {
+  position: absolute;
+  /*
+   * Spans the detail column exactly: from the far edge of the 15rem media
+   * column plus the grid gap, to the right edge of the dialog's content.
+   *
+   * Pinned with `left` *and* `right` rather than given a width, and that is the
+   * fix rather than a preference. A fixed 24rem panel ended mid-title, leaving
+   * the last two letters of "Be Prepared Book Fr Daoud Lamei" poking out beside
+   * it — which reads as a clipping bug rather than as a magnifier.
+   */
+  left: calc(15rem + var(--space-xl, 2rem));
+  right: 0;
+  top: 0;
+  height: min(26rem, 100%);
+  z-index: 2;
+  background-repeat: no-repeat;
+  background-color: var(--color-paper, #f6e8e3);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
+}
+
+
+
+/*
+ * No pointer, no magnifier. On a touch screen the cover is already most of the
+ * viewport, and a side panel would have to cover the very thing it magnifies.
+ */
+@media (hover: none), (pointer: coarse) {
+  .item__plate {
+    cursor: default;
+  }
+
+  .item__zoompanel {
+    display: none;
+  }
 }
 
 .item__cover {
@@ -2175,8 +2336,8 @@ main {
     0 14px 30px -8px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
 }
 
-/* The no-cover stand-in gets the title back here: it is large and alone, and
-   nothing else in this column has said which book it is yet. */
+/* The no-cover stand-in gets its title back here: it is large and alone, and
+   nothing else in this column has yet said which book it is. */
 .item__cover.cover--none {
   width: 100%;
   aspect-ratio: 3 / 4;
@@ -2195,11 +2356,16 @@ main {
   min-width: 0;
 }
 
+/* Closed with a hairline, the way a heading is set in print. It is the single
+   cheapest thing that stops a stack of text reading as a form. */
 .item__title {
   margin: 0;
+  padding-bottom: var(--space-sm, 0.6rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.625rem);
-  line-height: var(--leading-tight, 1.2);
+  font-size: var(--type-title, 1.9rem);
+  line-height: var(--leading-tight, 1.15);
+  letter-spacing: var(--tracking-tight, -0.015em);
 }
 
 /*
@@ -2212,6 +2378,7 @@ main {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-title, 1.75rem);
+  font-variant-numeric: tabular-nums;
   color: var(--color-accent, #992a21);
 }
 
@@ -2230,21 +2397,30 @@ main {
 
 /* ---- the buy box ------------------------------------------------------- */
 
+/*
+ * Sunken rather than raised. The dialog is already the raised surface, so a
+ * second pale card inside it was two identical planes with a line between them
+ * — the flatness that read as generated. Recessing this one puts the action in
+ * a well, which is where a control belongs.
+ */
 .buybox {
   display: grid;
-  gap: var(--space-sm, 0.7rem);
+  gap: var(--space-sm, 0.75rem);
   justify-items: start;
-  margin-top: var(--space-md, 1rem);
-  padding: var(--space-md, 1.15rem);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
+  width: 100%;
+  margin-top: var(--space-md, 1.1rem);
+  padding: var(--space-lg, 1.35rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
   border-radius: var(--radius-md, 8px);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent);
 }
 
 .buybox__price {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
+  font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
 
@@ -2417,10 +2593,11 @@ main {
 .summary {
   position: sticky;
   top: 0;
-  padding: var(--space-md, 1.15rem);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
+  padding: var(--space-lg, 1.35rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
   border-radius: var(--radius-md, 8px);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent);
 }
 
 .summary__line {
@@ -2438,6 +2615,7 @@ main {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-weight: 400;
+  font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
 

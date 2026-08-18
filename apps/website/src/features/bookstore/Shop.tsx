@@ -4,12 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ShopProduct } from './shopData';
 import { CardPayment } from './CardPayment';
 
-/** Integer minor units to "$8" / "$8.50". Whole dollars lose the ".00". */
+/**
+ * Integer minor units to "$8.00".
+ *
+ * Cents always, including on whole dollars. This dropped them — "$15" rather
+ * than "$15.00" — on the reasoning that a shop price reads cleaner short. It
+ * does not: a column of prices where some carry cents and some do not stops
+ * being a column, and "$15" reads as a label where "$15.00" reads as a price.
+ * Every shop that takes money prints the cents.
+ */
 export function money(amount: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount / 100);
 }
 
@@ -331,6 +340,131 @@ function Row({
   );
 }
 
+/** How far the side panel magnifies. */
+const ZOOM = 2.6;
+
+/**
+ * The cover, with a magnifier beside it and a gallery beneath.
+ *
+ * Hovering the main image puts a lens under the pointer and shows that region
+ * enlarged in a panel spanning the detail column — the magnified view never
+ * covers the thing being pointed at, which is the whole reason it goes to the
+ * side rather than over the top.
+ *
+ * ---------------------------------------------------------------------------
+ * Two limits worth stating.
+ *
+ * The panel shows the 2x file, 800px. Square's originals are 3105px, but they
+ * are re-encoded locally because the nine covers come to 37.75 MB otherwise, so
+ * 2.6x is about where enlarging stops revealing anything.
+ *
+ * And magnifying is hover-only, so it does not exist on a phone. Rather than
+ * fake it with a tap, touch keeps the plain full-size image — which on a narrow
+ * screen is already most of the viewport, and is the thing a side panel would
+ * have to cover to show.
+ * ---------------------------------------------------------------------------
+ *
+ * **The strip and the arrows appear only above one image.** Every book in the
+ * parish's catalog currently has exactly one photograph, so a permanent strip
+ * would be a single thumbnail beside two dead arrows — furniture that advertises
+ * a gallery which does not exist. Add a second photo in Square, re-run the
+ * catalog sync, and it appears on its own.
+ */
+function ZoomableCover({ product }: { product: ShopProduct }) {
+  const [index, setIndex] = useState(0);
+  const [hovering, setHovering] = useState(false);
+  const [point, setPoint] = useState({ x: 50, y: 50 });
+
+  const images = product.gallery;
+  if (images.length === 0) {
+    return (
+      <div className="item__media">
+        <Cover product={product} className="item__cover" />
+      </div>
+    );
+  }
+
+  const current = images[Math.min(index, images.length - 1)] as ShopProduct['gallery'][number];
+  const many = images.length > 1;
+  const step = (by: number) => setIndex((i) => (i + by + images.length) % images.length);
+
+  return (
+    <div className="item__media">
+      <div
+        className="item__plate"
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        onMouseMove={(event) => {
+          const box = event.currentTarget.getBoundingClientRect();
+          // Clamped, so a pointer at the very border cannot drive the lens off
+          // the edge of the image.
+          const x = Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100));
+          const y = Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100));
+          setPoint({ x, y });
+        }}
+      >
+        <img className="item__cover" src={current.src} alt={product.name} decoding="async" />
+
+        {hovering && (
+          <span
+            className="item__lens"
+            aria-hidden="true"
+            style={{
+              width: `${100 / ZOOM}%`,
+              height: `${100 / ZOOM}%`,
+              // Positioned by its centre, so it sits under the pointer rather
+              // than starting at it.
+              left: `calc(${point.x}% - ${50 / ZOOM}%)`,
+              top: `calc(${point.y}% - ${50 / ZOOM}%)`,
+            }}
+          />
+        )}
+
+        {many && (
+          <>
+            <button type="button" className="item__step item__step--prev" onClick={() => step(-1)} aria-label="Previous image">
+              ‹
+            </button>
+            <button type="button" className="item__step item__step--next" onClick={() => step(1)} aria-label="Next image">
+              ›
+            </button>
+          </>
+        )}
+      </div>
+
+      {hovering && (
+        <div
+          className="item__zoompanel"
+          aria-hidden="true"
+          style={{
+            backgroundImage: `url(${current.large})`,
+            backgroundSize: `${ZOOM * 100}%`,
+            backgroundPosition: `${point.x}% ${point.y}%`,
+          }}
+        />
+      )}
+
+      {many && (
+        <ul className="thumbs">
+          {images.map((image, at) => (
+            <li key={image.src}>
+              <button
+                type="button"
+                className={at === index ? 'thumbs__pick is-current' : 'thumbs__pick'}
+                onClick={() => setIndex(at)}
+                aria-label={`Image ${at + 1} of ${images.length}`}
+                aria-current={at === index}
+              >
+                <img src={image.src} alt="" decoding="async" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * One book, in full.
  *
@@ -362,9 +496,7 @@ function Detail({
   return (
     <Dialog title={product.name} onClose={onClose}>
       <div className="item">
-        <div className="item__media">
-          <Cover product={product} className="item__cover" />
-        </div>
+        <ZoomableCover product={product} />
 
         <div className="item__main">
           <h2 id="dialog-title" className="item__title">

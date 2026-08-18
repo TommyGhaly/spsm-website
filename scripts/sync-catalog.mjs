@@ -225,33 +225,46 @@ if (!skipImages) {
   let written = 0;
 
   for (const product of products) {
-    const source = product.imagePaths[0];
-    if (!source) continue;
+    /*
+     * Every image on the item, not just the first.
+     *
+     * The detail view has a gallery — a main image with a thumbnail strip — so
+     * a book with three photographs needs three files here. Today no book in
+     * the parish's catalog has more than one, so this loop runs once per book;
+     * it exists so that adding a second photograph in Square is the whole of
+     * the work, with no code change on this side.
+     *
+     * The first keeps the bare `<slug>.webp` name that `bundledCover` and every
+     * previously written document already point at. The rest are suffixed.
+     */
+    for (const [index, source] of product.imagePaths.entries()) {
+      const stem = index === 0 ? product.slug : `${product.slug}-${index + 1}`;
 
-    try {
-      const response = await fetch(source);
-      if (!response.ok) {
-        console.warn(`  cover  ${product.slug}: HTTP ${response.status}, skipped`);
-        continue;
-      }
-      const original = Buffer.from(await response.arrayBuffer());
-      bytesIn += original.length;
+      try {
+        const response = await fetch(source);
+        if (!response.ok) {
+          console.warn(`  cover  ${stem}: HTTP ${response.status}, skipped`);
+          continue;
+        }
+        const original = Buffer.from(await response.arrayBuffer());
+        bytesIn += original.length;
 
-      // `inside` with `withoutEnlargement`, not `cover`: every cover in this
-      // catalog is square today, but a book photographed in portrait must not
-      // be cropped to fit — losing the top of a title is worse than a letterbox.
-      // The 160×160 one in the catalog stays 160×160 rather than being blown up.
-      for (const [suffix, width] of [['', COVER_WIDTH], ['@2x', COVER_WIDTH * 2]]) {
-        const out = await sharp(original, { failOn: 'error' })
-          .resize({ width, height: width, fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: suffix ? 80 : 78, effort: 6 })
-          .toBuffer();
-        writeFileSync(join(COVER_DIR, `${product.slug}${suffix}.webp`), out);
-        bytesOut += out.length;
+        // `inside` with `withoutEnlargement`, not `cover`: every cover in this
+        // catalog is square today, but a book photographed in portrait must not
+        // be cropped to fit — losing the top of a title is worse than a
+        // letterbox. The 160x160 one stays 160x160 rather than being blown up.
+        for (const [suffix, width] of [['', COVER_WIDTH], ['@2x', COVER_WIDTH * 2]]) {
+          const out = await sharp(original, { failOn: 'error' })
+            .resize({ width, height: width, fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: suffix ? 80 : 78, effort: 6 })
+            .toBuffer();
+          writeFileSync(join(COVER_DIR, `${stem}${suffix}.webp`), out);
+          bytesOut += out.length;
+        }
+        written++;
+      } catch (error) {
+        console.warn(`  cover  ${stem}: ${error.message}, skipped`);
       }
-      written++;
-    } catch (error) {
-      console.warn(`  cover  ${product.slug}: ${error.message}, skipped`);
     }
   }
 

@@ -68,9 +68,35 @@ function available(): Set<string> {
 /** The bundled cover for a product slug, or null if none has been produced. */
 export function bundledCover(slug: string): BundledCover | null {
   if (!available().has(slug)) return null;
+  return describe(slug);
+}
 
+/**
+ * Every bundled image for a product, in order.
+ *
+ * `<slug>.webp` is the first; any others are `<slug>-2.webp`, `<slug>-3.webp`
+ * and so on, which is what `sync-catalog.mjs` writes. Scanned rather than
+ * counted from the document, so an image added in Square and synced appears
+ * without the product document needing to know how many there are.
+ *
+ * Today every book in the catalog has exactly one, so this returns a single
+ * entry per book and the gallery renders as a plain image. It is written this
+ * way so that adding a second photograph in Square is the whole of the work.
+ */
+export function bundledCovers(slug: string): BundledCover[] {
+  const found = available();
+  if (!found.has(slug)) return [];
+
+  const covers = [describe(slug)];
+  for (let index = 2; found.has(`${slug}-${index}`); index += 1) {
+    covers.push(describe(`${slug}-${index}`));
+  }
+  return covers;
+}
+
+function describe(stem: string): BundledCover {
   return {
-    src: `/img/products/${slug}.webp`,
-    srcSet: `/img/products/${slug}.webp 400w, /img/products/${slug}@2x.webp 800w`,
+    src: `/img/products/${stem}.webp`,
+    srcSet: `/img/products/${stem}.webp 400w, /img/products/${stem}@2x.webp 800w`,
   };
 }
