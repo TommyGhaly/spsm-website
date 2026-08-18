@@ -1854,6 +1854,23 @@ main {
 /* ---- bookstore --------------------------------------------------------- */
 
 /*
+ * The shop is capped well short of the page's 80rem.
+ *
+ * Left to the full width a row was 1100px across, which put a twenty-character
+ * title at one end and its price at the other with two-thirds of the row empty
+ * between them — and nine of the eleven books have no description to fill it.
+ * A list is scanned by running down the left edge and glancing right; the
+ * further that glance has to travel, the more it becomes work. 58rem keeps the
+ * two ends in one field of view.
+ */
+.shop-page {
+  max-width: 58rem;
+  /* Centred. Capping the width without this pinned the whole shop to the left
+     of an 80rem page and left a dead gutter down the right. */
+  margin-inline: auto;
+}
+
+/*
  * The shop's opening band.
  *
  * ---------------------------------------------------------------------------
@@ -2042,13 +2059,18 @@ main {
  * on that affordance, not a control of its own; a second focusable element
  * inside the row would be a second stop going exactly where the first goes.
  */
+/*
+ * Tighter than it was: rows ran 128px tall, which on eleven books meant a page
+ * of mostly gaps. The cover sets the floor now and the padding merely clears
+ * it.
+ */
 .shelf__row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-md, 1rem);
   width: 100%;
-  padding: var(--space-md, 0.9rem) var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.6rem) var(--space-sm, 0.5rem);
   text-align: left;
   font: inherit;
   color: inherit;
@@ -2058,8 +2080,11 @@ main {
   transition: background-color 150ms ease;
 }
 
+/* The row lights as one object, with a gold edge to say where it starts —
+   the same mark the bands and the ornament use. */
 .shelf__row:hover {
   background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: inset 3px 0 0 var(--color-gold, #b08d43);
 }
 
 .shelf__row:focus-visible {
@@ -2171,23 +2196,37 @@ main {
   color: var(--color-accent, #992a21);
 }
 
+/* The price in the display face, at the size the title is set in: on a row
+   carrying two facts, both should look like facts rather than one looking like
+   a footnote. */
 .shelf__price {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-body, 1rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.0625rem);
   font-variant-numeric: tabular-nums;
-  color: var(--color-ink-soft, #4b413e);
+  color: var(--color-ink, #1c1614);
 }
 
+/*
+ * A bordered pill rather than a word with a rule under it. On a row whose other
+ * elements are all type, the one thing you can press should not also be type —
+ * it read as a label rather than a control, which is why it needed hovering to
+ * discover.
+ */
 .shelf__view {
+  padding: 0.3rem 0.85rem;
   font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
+  font-size: var(--type-small, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.04em);
   color: var(--color-accent, #992a21);
-  border-bottom: 1px solid transparent;
-  transition: border-color 150ms ease;
+  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 35%, transparent);
+  border-radius: var(--radius-full, 999px);
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .shelf__row:hover .shelf__view {
-  border-bottom-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
 }
 
 /* On a phone the row keeps its thumbnail and title and drops the affordance
