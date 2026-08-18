@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { formatAddress, type ContentPage, type DocOf } from '@spsm/shared';
+import { BookshelfPreview, getProducts, toShopProducts } from '@/features/bookstore';
 import { getCurrentBulletin, BulletinWeek } from '@/features/bulletin';
 import { bundledPortrait, getContentPages } from '@/features/content';
 import { givingUrl } from '@/features/giving';
@@ -14,10 +15,11 @@ export default async function HomePage() {
   // Independent reads — no reason to make the build wait on them in sequence.
   // The bulletin is the exception: it needs the config document first, since
   // that says which project and collection to read.
-  const [config, parish, clergy] = await Promise.all([
+  const [config, parish, clergy, products] = await Promise.all([
     getIntegrationsConfig(),
     getParishConfig(),
     getContentPages('clergy'),
+    getProducts(),
   ]);
   const bulletin = await getCurrentBulletin(config.announcements);
 
@@ -53,9 +55,33 @@ export default async function HomePage() {
         <Livestream band="band band--deep" config={config.livestream} />
       )}
 
-      {/* The parish's own weekly sheet, and now the last practical section on
-          the page. Absent if the source is empty or the section is switched off
-          in config/integrations. */}
+      {/* The bookstore, between the stream and the week ahead.
+          
+          Here because of who is on this page: someone checking whether there is
+          a Liturgy this Saturday, who has no idea the parish sells books at
+          all. Below the stream so it never competes with a service in progress,
+          and above the week's sheet because the sheet is the errand most people
+          came for and the page should not interrupt it.
+
+          Takes a turn of `band()` like the other conditional sections — see
+          `alternatingBands`. It removes itself when the catalog is empty, and a
+          section that does not render must not consume a turn. */}
+      {products.length > 0 && (
+        <section className={band()} aria-labelledby="bookstore-heading">
+          <div className="wrap reveal">
+            <SectionHeading
+              id="bookstore-heading"
+              eyebrow="From the bookstore"
+              title="Books for the year"
+              note="Collect at the church, or have them posted."
+            />
+            <BookshelfPreview products={toShopProducts(products)} />
+          </div>
+        </section>
+      )}
+
+      {/* The parish's own weekly sheet. Absent if the source is empty or the
+          section is switched off in config/integrations. */}
       {bulletin && (
         <section className={band()} aria-labelledby="bulletin-heading">
           <div className="wrap reveal">

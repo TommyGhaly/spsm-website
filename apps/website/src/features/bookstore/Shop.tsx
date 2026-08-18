@@ -4,24 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShopProduct } from "./shopData";
 import { CardPayment } from "./CardPayment";
 import { Icon } from "@/components/Icon";
+import { Cover } from "./Cover";
+import { money } from "./money";
 
-/**
- * Integer minor units to "$8.00".
- *
- * Cents always, including on whole dollars. This dropped them — "$15" rather
- * than "$15.00" — on the reasoning that a shop price reads cleaner short. It
- * does not: a column of prices where some carry cents and some do not stops
- * being a column, and "$15" reads as a label where "$15.00" reads as a price.
- * Every shop that takes money prints the cents.
- */
-export function money(amount: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount / 100);
-}
+export { money };
 
 /** slug → quantity. Kept flat so it survives `JSON.stringify` unchanged. */
 type Cart = Record<string, number>;
@@ -54,7 +40,21 @@ export function Shop({
   const [open, setOpen] = useState<ShopProduct | null>(null);
   const [basketOpen, setBasketOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [paidOrderId, setPaidOrderId] = useState<string | null>(null);
+  /*
+   * What was bought, captured at the moment it was paid for.
+   *
+   * Not derivable afterwards: paying clears the basket, and the fulfilment
+   * choice and email live inside `CardPayment` and go with it. Holding only the
+   * order id is what made the confirmation screen a Square reference and two
+   * sentences of hedging.
+   */
+  const [receipt, setReceipt] = useState<{
+    orderId: string;
+    email: string;
+    shipping: boolean;
+    lines: { name: string; quantity: number; amount: number }[];
+    total: number;
+  } | null>(null);
   /*
    * The basket is two screens, not one.
    *
@@ -129,6 +129,27 @@ export function Shop({
   );
 
   /*
+   * What to offer next, in the basket.
+   *
+   * The basket was a dead end that only counted: it told you what you had
+   * chosen and pointed at Checkout. But the moment someone has decided to buy
+   * one book from a parish shop is the moment they are most likely to take a
+   * second, and nothing was putting one in front of them.
+   *
+   * No recommendation data exists here and none is invented. This is the rest
+   * of the shelf, minus what is already in the basket and minus anything sold
+   * out — which on a catalog of eleven is the honest version of "you might also
+   * like". Capped at six so it stays a shelf rather than a second catalogue.
+   */
+  const alsoBuy = useMemo(
+    () =>
+      products
+        .filter((product) => !cart[product.slug] && product.stockCount !== 0)
+        .slice(0, 6),
+    [cart, products],
+  );
+
+  /*
    * Matched on the title and the description, both lowercased, on every
    * keystroke. Eleven books need no index, no debounce and no request — the
    * whole catalog is already in memory, and a search that waits 300ms to filter
@@ -151,15 +172,6 @@ export function Shop({
 
   return (
     <div className="shop-page">
-      {/*
-        The shop opens on a dark band rather than more cream.
-        
-        The page was a single pale column from the masthead to the footer, which
-        is what made it read as flat however the rows were arranged. One band of
-        the parish's deep red gives the page a top, sets the books against
-        something, and is where the two controls belong — search and the basket
-        — rather than floating them over the list.
-      */}
       {/*
         One row: the name of the shop, the search, and the basket.
         
@@ -201,58 +213,28 @@ export function Shop({
         </button>
       </div>
 
+      {/*
+        How a book actually reaches someone, said once, above the books.
+
+        These are the two questions a parish bookshop is asked before any other
+        — can I pick it up on Sunday, and will you post it — and the answers
+        were buried three screens down inside a basket nobody had opened yet.
+      */}
+      <p className="shop-note">
+        Collect your order at the church, or have it posted to you.
+      </p>
+
       {needle && (
         <p className="shop-count" aria-live="polite">
           {shown.length === 0
-            ? `Nothing matches “${query.trim()}”.`
+            ? `Nothing matches \u201C${query.trim()}\u201D.`
             : `${shown.length} of ${products.length} titles`}
         </p>
       )}
 
-      {/*
-        A shelf of covers above the list.
-
-        The list is the useful thing — scannable, complete, with prices in a
-        column — but a page made only of rows gives the eye nothing to land on,
-        and the covers are the one part of a bookshop that invites you in. Shown
-        at a size worth looking at, they do the job the list cannot: you
-        recognise a book you have seen in the narthex before you read a word.
-
-        Hidden while a search is running: a strip of everything, above results
-        that are a subset of it, contradicts the filter.
-      */}
-      {!needle && (
-        <div className="browse">
-          {/*
-            A viewport wrapping a track, rather than one element being both the
-            scroller and the flex row. As a single element the row's content was
-            escaping to the page — the whole document could be dragged 194px
-            sideways — and clipping it at the row, at its wrapper and at the root
-            all failed to stop it. Two elements, each with one job, does.
-          */}
-          <div className="browse__viewport scroller">
-          <ul className="browse__strip">
-            {products.map((product) => (
-              <li key={product.id}>
-                <button
-                  type="button"
-                  className="browse__book"
-                  onClick={() => setOpen(product)}
-                  title={product.name}
-                >
-                  <Cover product={product} className="browse__cover" />
-                  <span className="visually-hidden">{product.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          </div>
-        </div>
-      )}
-
       <ul className="shelf">
         {shown.map((product) => (
-          <Row
+          <Book
             key={product.id}
             product={product}
             inCart={cart[product.slug] ?? 0}
@@ -280,174 +262,307 @@ export function Shop({
       {basketOpen && (
         <Dialog
           title={stage === 'pay' ? 'Checkout' : 'Your basket'}
+          /*
+           * Two different shapes, and the modifier is what says which.
+           *
+           * The basket is one narrow column — a ledger. The checkout is a
+           * recap beside a payment form, which needs the width. Sizing the
+           * sheet for the wider of the two and letting the basket rattle
+           * around inside it is what made the basket look broken: a title at
+           * one edge, its price at the other, and a void between them.
+           */
+          className={stage === 'pay' ? 'sheet--pay' : 'sheet--basket'}
+          heading={stage === 'pay' ? 'Checkout' : 'Your basket'}
+          screen={receipt ? 'paid' : stage}
+          {...(stage === 'pay'
+            ? { back: { label: 'Back to basket', onBack: () => setStage('cart') } }
+            : {})}
           onClose={() => {
             setBasketOpen(false);
             setStage('cart');
           }}
         >
-          <h2 id="dialog-title" className="sheet__name">
-            {stage === 'pay' ? 'Checkout' : 'Your basket'}
-          </h2>
-
-          {paidOrderId ? (
-            <div className="paid">
-              <p className="paid__title">Thank you — your order is placed.</p>
-              <p className="note">
-                A receipt is on its way from Square. The parish will be in touch
-                about collection or postage.
+          {receipt ? (
+            /*
+             * What happened, what was bought, and what to do now.
+             *
+             * This screen used to be a thank-you, a sentence saying the parish
+             * "will be in touch about collection or postage", and a raw
+             * 29-character Square order id under the word "Order". Every part
+             * of that was either hedged or machine-facing: the reader had
+             * already *chosen* collection or postage two screens earlier, so
+             * being told the parish would be in touch about which one read as
+             * though the choice had not registered.
+             *
+             * It answers the four things somebody actually wants at this point
+             * — did it go through, what did I buy, where does it come from, and
+             * what do I do next — and keeps the reference at the bottom in
+             * small type, because it matters only if something goes wrong.
+             */
+            <div className="done">
+              <p className="done__mark" aria-hidden="true">
+                ✓
               </p>
-              <p className="meta">Order {paidOrderId}</p>
+
+              <h3 className="done__title">Your order is placed</h3>
+
+              {/* The fulfilment they chose, stated back to them. */}
+              <p className="done__lede">
+                {receipt.shipping
+                  ? 'It will be posted to you. Allow a few days — the parish packs orders by hand.'
+                  : 'It will be waiting for you at the bookstore. Collect it after any Liturgy.'}
+              </p>
+
+              <ul className="done__lines">
+                {receipt.lines.map((line) => (
+                  <li key={line.name}>
+                    <span className="done__qty">{line.quantity}×</span>
+                    <span className="done__name">{line.name}</span>
+                    <span className="done__sum">{money(line.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="done__total">
+                <span>Paid</span>
+                <strong>{money(receipt.total)}</strong>
+              </p>
+
+              <p className="done__receipt">
+                A receipt is on its way to <strong>{receipt.email}</strong>.
+              </p>
+
+              <button
+                type="button"
+                className="basket__pay"
+                onClick={() => {
+                  setBasketOpen(false);
+                  setStage('cart');
+                  setReceipt(null);
+                }}
+              >
+                Back to the bookstore
+              </button>
+
+              {/* Last, and small. Nobody needs this unless something goes
+                  wrong, and then they need to be able to select it. */}
+              <p className="done__ref">
+                Reference <code>{receipt.orderId}</code>
+              </p>
             </div>
           ) : lines.length === 0 ? (
-            <div className="empty">
-              <p className="empty__title">Your basket is empty</p>
-              <p className="empty__note">
+            <div className="basket__empty">
+              <p className="basket__emptytitle">Your basket is empty</p>
+              <p className="basket__emptynote">
                 Books can be collected at the church or posted to you.
               </p>
               <button
                 type="button"
-                className="summary__go empty__go"
+                className="basket__pay"
                 onClick={() => setBasketOpen(false)}
               >
                 Browse the bookstore
               </button>
             </div>
-          ) : (
-            <div className={stage === 'pay' ? 'cart cart--paying' : 'cart'}>
-              {stage === 'cart' ? (
-                <>
-                  <ul className="cart__lines">
-                    {lines.map(({ product, quantity }) => (
-                      <li key={product.slug} className="cart__line">
-                        <Cover product={product} className="cart__cover" />
+          ) : stage === 'cart' ? (
+            /*
+             * One column, top to bottom: what you have, what it comes to, how
+             * to pay, and then — after the decision is made, not across it —
+             * the offer of one more book.
+             *
+             * This replaced a two-column basket with the lines on the left and
+             * a sticky summary on the right. That shape is for a cart of forty
+             * items where the total has to follow you down the page. A parish
+             * basket holds one to three books, so the second column bought
+             * nothing and cost everything: it squeezed the lines until every
+             * title sat a hand's width from its own price, and left a column of
+             * dead paper beside them.
+             */
+            <div className="basket">
+              <ul className="basket__lines">
+                {lines.map(({ product, quantity }) => (
+                  <li key={product.slug} className="basket__line">
+                    <Cover product={product} className="basket__cover" />
 
-                        <div className="cart__text">
-                          <p className="cart__name">{product.name}</p>
-                          {/* The unit price, not "In stock". Every line said in
-                              stock, which is true of everything in the shop and
-                              so tells the reader nothing; what they actually
-                              want to check against the line total is what one
-                              of them costs. */}
-                          <p className="cart__each">
-                            {money(product.amount, product.currency)} each
-                          </p>
+                    <p className="basket__name">{product.name}</p>
 
-                          <div className="cart__controls">
-                            <div className="stepper stepper--sm">
-                              <button
-                                type="button"
-                                onClick={() => setQuantity(product.slug, quantity - 1)}
-                                aria-label={`One fewer ${product.name}`}
-                              >
-                                −
-                              </button>
-                              <span aria-live="polite">{quantity}</span>
-                              <button
-                                type="button"
-                                onClick={() => setQuantity(product.slug, quantity + 1)}
-                                aria-label={`One more ${product.name}`}
-                                disabled={quantity >= 20}
-                              >
-                                +
-                              </button>
-                            </div>
-
-                            {/* Setting the quantity to zero removes it, so there
-                                is one code path for "how many of this" rather
-                                than a second one that deletes. */}
-                            <button
-                              type="button"
-                              className="cart__remove"
-                              onClick={() => setQuantity(product.slug, 0)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-
-                        <p className="cart__sum">
-                          {money(product.amount * quantity, product.currency)}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="summary">
-                    <p className="summary__line">
-                      <span>
-                        Subtotal ({count} {count === 1 ? 'item' : 'items'})
-                      </span>
-                      <strong>{money(total)}</strong>
+                    {/* The unit price, not "In stock". Every line said in
+                        stock, which is true of everything in the shop and so
+                        tells the reader nothing; what they want to check
+                        against the line total is what one of them costs. */}
+                    <p className="basket__each">
+                      {money(product.amount, product.currency)} each
                     </p>
-                    <p className="summary__note">
-                      Postage, if you choose it, is added at the next step.
-                    </p>
-                    <button
-                      type="button"
-                      className="summary__go"
-                      onClick={() => setStage('pay')}
-                    >
-                      Checkout
-                    </button>
-                    {/* The way back. Without it the only exit from a basket is
-                        the close cross, which reads as abandoning the order
-                        rather than going to find another book. */}
-                    <button
-                      type="button"
-                      className="summary__more"
-                      onClick={() => setBasketOpen(false)}
-                    >
-                      Keep browsing
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* A recap rather than the editable list: quantities are
-                      settled by this point, and a stepper beside a card form
-                      invites changing the total mid-payment. */}
-                  <div className="recap">
-                    <button type="button" className="recap__back" onClick={() => setStage('cart')}>
-                      ← Back to basket
-                    </button>
 
-                    <ul className="recap__lines">
-                      {lines.map(({ product, quantity }) => (
+                    {/* The controls and the line total share a row, so the
+                        money lands at the foot of the line rather than opposite
+                        the title with a gap between. Every line is the height
+                        of its cover, so the totals still form a column. */}
+                    <div className="basket__foot">
+                      <div className="stepper stepper--sm">
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(product.slug, quantity - 1)}
+                          aria-label={`One fewer ${product.name}`}
+                        >
+                          −
+                        </button>
+                        <span aria-live="polite">{quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(product.slug, quantity + 1)}
+                          aria-label={`One more ${product.name}`}
+                          disabled={quantity >= 20}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Setting the quantity to zero removes it, so there is
+                          one code path for "how many of this" rather than a
+                          second one that deletes. */}
+                      <button
+                        type="button"
+                        className="basket__remove"
+                        onClick={() => setQuantity(product.slug, 0)}
+                      >
+                        Remove
+                      </button>
+
+                      <p className="basket__sum">
+                        {money(product.amount * quantity, product.currency)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="basket__total">
+                <span className="basket__totallabel">Subtotal</span>
+                <strong className="basket__totalsum">{money(total)}</strong>
+                <span className="basket__totalnote">
+                  {count} {count === 1 ? 'book' : 'books'} · postage, if you
+                  choose it, is added at the next step
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="basket__pay"
+                onClick={() => setStage('pay')}
+              >
+                Checkout
+              </button>
+
+              {/* The way back. Without it the only exit from a basket is the
+                  close cross, which reads as abandoning the order rather than
+                  going to find another book. */}
+              <button
+                type="button"
+                className="basket__keep"
+                onClick={() => setBasketOpen(false)}
+              >
+                Keep browsing
+              </button>
+
+              {/*
+                Below the button, not above it.
+
+                The offer of a second book belongs after the decision to buy the
+                first, never across it — anything between the lines and the
+                total interrupts someone adding up. The dialog is short enough
+                that this is still on screen when they get there.
+              */}
+              {alsoBuy.length > 0 && (
+                <div className="addmore">
+                  <h3 className="addmore__title">Add another book</h3>
+                  <div className="addmore__viewport scroller">
+                    <ul className="addmore__strip">
+                      {alsoBuy.map((product) => (
                         <li key={product.slug}>
-                          <span className="recap__qty">{quantity}×</span>
-                          <span className="recap__name">{product.name}</span>
-                          <span className="recap__sum">
-                            {money(product.amount * quantity, product.currency)}
-                          </span>
+                          {/* One tap adds it and it leaves this strip, because
+                              `alsoBuy` excludes whatever is in the basket — so
+                              the offer never repeats a book already taken. */}
+                          <button
+                            type="button"
+                            className="addmore__book"
+                            onClick={() =>
+                              setQuantity(product.slug, (cart[product.slug] ?? 0) + 1)
+                            }
+                          >
+                            <Cover product={product} className="addmore__cover" />
+                            <span className="addmore__name">{product.name}</span>
+                            <span className="addmore__price">
+                              {money(product.amount, product.currency)}
+                            </span>
+                            <span className="addmore__add" aria-hidden="true">
+                              Add
+                            </span>
+                            <span className="visually-hidden">
+                              Add {product.name} to your basket
+                            </span>
+                          </button>
                         </li>
                       ))}
                     </ul>
-
-                    <p className="recap__total">
-                      <span>Total</span>
-                      <strong>{money(total)}</strong>
-                    </p>
                   </div>
-
-                  <CardPayment
-                    cart={lines.map((line) => ({
-                      slug: line.product.slug,
-                      quantity: line.quantity,
-                    }))}
-                    total={total}
-                    applicationId={square.applicationId}
-                    locationId={square.locationId}
-                    sandbox={square.sandbox}
-                    onPaid={(orderId) => {
-                      // Cleared here rather than on the server's word alone: the
-                      // order exists in Firestore by this point, so a basket that
-                      // survived would let someone pay for the same books twice.
-                      setCart({});
-                      setPaidOrderId(orderId);
-                    }}
-                  />
-                </>
+                </div>
               )}
+            </div>
+          ) : (
+            <div className="paying">
+              {/* A recap rather than the editable list: quantities are settled
+                  by this point, and a stepper beside a card form invites
+                  changing the total mid-payment. */}
+              <div className="recap">
+                <ul className="recap__lines">
+                  {lines.map(({ product, quantity }) => (
+                    <li key={product.slug}>
+                      <span className="recap__qty">{quantity}×</span>
+                      <span className="recap__name">{product.name}</span>
+                      <span className="recap__sum">
+                        {money(product.amount * quantity, product.currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="recap__total">
+                  <span>Total</span>
+                  <strong>{money(total)}</strong>
+                </p>
+              </div>
+
+              <CardPayment
+                cart={lines.map((line) => ({
+                  slug: line.product.slug,
+                  quantity: line.quantity,
+                }))}
+                total={total}
+                applicationId={square.applicationId}
+                locationId={square.locationId}
+                sandbox={square.sandbox}
+                onPaid={(orderId, detail) => {
+                  // Read `lines` and `total` before clearing: they are derived
+                  // from the cart, so after `setCart({})` there is nothing left
+                  // to tell anyone what they just bought.
+                  setReceipt({
+                    orderId,
+                    email: detail.email,
+                    shipping: detail.shipping,
+                    lines: lines.map(({ product, quantity }) => ({
+                      name: product.name,
+                      quantity,
+                      amount: product.amount * quantity,
+                    })),
+                    total,
+                  });
+                  // Cleared here rather than on the server's word alone: the
+                  // order exists in Firestore by this point, so a basket that
+                  // survived would let someone pay for the same books twice.
+                  setCart({});
+                }}
+              />
             </div>
           )}
         </Dialog>
@@ -456,73 +571,36 @@ export function Shop({
   );
 }
 
-function Cover({
-  product,
-  className,
-}: {
-  product: ShopProduct;
-  className: string;
-}) {
-  if (!product.cover) {
-    /*
-     * No cover in Square. The title itself stands in — a plain binding, which
-     * is an honest thing for a book to look like.
-     *
-     * This was the parish's cross, used as a generic "no image" mark. A cross
-     * is not a decoration to scatter over missing data, and it said nothing
-     * about which book was missing its picture.
-     */
-    return (
-      <span className={`${className} cover--none`} aria-hidden="true">
-        <span className="cover--none__title">{product.name}</span>
-      </span>
-    );
-  }
-  return (
-    <img
-      className={className}
-      src={product.cover}
-      {...(product.coverSrcSet
-        ? {
-            srcSet: product.coverSrcSet,
-            sizes: "(max-width: 48rem) 46vw, 14rem",
-          }
-        : {})}
-      alt={product.name}
-      loading="lazy"
-      decoding="async"
-    />
-  );
-}
-
 /**
- * One book, as a row.
+ * One book, as a card on the shelf.
  *
  * ---------------------------------------------------------------------------
- * A list rather than a grid of covers, and the photographs are the reason.
+ * **A card, reversing the row this replaced — and the reasoning it reverses
+ * was not wrong, it was answering a different question.**
  *
- * The parish's covers are phone snaps of books on a table — angled, lit
- * differently, with the desk visible behind several of them. Any layout that
- * makes them large makes those flaws the subject of the page, and a grid makes
- * them large by definition. At 40px they read as "which book is this", which is
- * all a reader needs from them and all these photographs can honestly carry.
+ * The row existed because the parish's covers are phone snaps of books on a
+ * table, and any layout that shows them large makes those flaws the subject of
+ * the page. True. What eleven rows then produced, though, was a 40px thumbnail,
+ * a title, and a price at the far end of an empty gutter — a stock report.
+ * Nothing on it made anyone want a book, and wanting a book is the whole job of
+ * a shop.
  *
- * Eleven titles is also simply not a grid's worth of anything. A shop this size
- * is a list, the way a printed parish catalogue is a list.
+ * The photographs survive being shown large, because the fix for a crooked
+ * snapshot is not to shrink it: it is to frame it. Every cover sits in a tile
+ * of the same shape, cropped to fill, with a spine down its left edge and a
+ * shadow under it. Framed identically eleven times, the differences in how they
+ * were taken stop reading as eleven mistakes and start reading as eleven books.
+ *
+ * The horizontal strip that used to sit above the rows is gone with them: it
+ * held the same eleven covers in the same order as the list beneath it, and one
+ * catalogue shown twice cannot justify the second showing.
  * ---------------------------------------------------------------------------
  *
- * **Add is back on the row, deliberately reversing an earlier decision.** It
- * was removed when eleven filled buttons down the page made buying something
- * you did by accident on the way past. The correction went too far the other
- * way: every purchase then cost a dialog first, which is a lot of friction on a
- * page whose job is to sell books. It is here as a quiet secondary control —
- * present, not shouting — and opening a book is still one tap on the row.
- *
- * The row is a `div` rather than a button now, because a button cannot contain
- * another one. The cover and title carry the click for details; `Add` is its
- * own control beside them.
+ * The cover and title open the book; `Add` is its own control in the footer,
+ * which is why the card is a `div` of two buttons rather than one big button —
+ * a button cannot contain another one.
  */
-function Row({
+function Book({
   product,
   inCart,
   onOpen,
@@ -536,30 +614,50 @@ function Row({
   const soldOut = product.stockCount === 0;
 
   return (
-    <li className="shelf__item">
-      <div className="shelf__row">
-        <button type="button" className="shelf__open" onClick={onOpen}>
-          <Cover product={product} className="shelf__thumb" />
+    <li className="book">
+      {/* `title` because the card's own heading is clamped to three lines —
+          Square's longest runs to five. The whole of it is in the dialog this
+          opens, and here on hover. */}
+      <button
+        type="button"
+        className="book__open"
+        onClick={onOpen}
+        title={product.name}
+      >
+        <span className="book__frame">
+          <Cover product={product} className="book__cover" />
+          {/* The shadow in the gutter of a book standing upright — the one
+              piece of pure ornament here, and what gives a flat rectangle of
+              photograph a thickness. */}
+          <span className="book__spine" aria-hidden="true" />
 
-          <span className="shelf__text">
-            <span className="shelf__title">{product.name}</span>
-            {/* The description where Square carries one — several titles have
-                none, and an empty line reads better than an invented one. */}
-            {product.description && (
-              <span className="shelf__sub">{product.description}</span>
-            )}
-            {inCart > 0 && <span className="shelf__in">{inCart} in basket</span>}
-          </span>
-        </button>
+          {/* Only ever rendered when there is something to say. A badge that is
+              usually blank is furniture. */}
+          {soldOut ? (
+            <span className="book__flag book__flag--out">Sold out</span>
+          ) : (
+            inCart > 0 && <span className="book__flag">{inCart} in basket</span>
+          )}
+        </span>
 
-        <p className="shelf__price">
-          {soldOut ? "Sold out" : money(product.amount, product.currency)}
-        </p>
+        <span className="book__title">{product.name}</span>
+        {/* Where Square carries one — nine of the eleven have none, and an
+            empty line reads better than an invented one. */}
+        {product.description && (
+          <span className="book__blurb">{product.description}</span>
+        )}
+      </button>
+
+      <div className="book__foot">
+        {/* The price stays even when the book does not: a sold-out title still
+            costs what it costs, and the flag on the cover is what says it is
+            gone. */}
+        <p className="book__price">{money(product.amount, product.currency)}</p>
 
         {soldOut ? (
-          <span className="shelf__gone">Unavailable</span>
+          <span className="book__gone">Unavailable</span>
         ) : (
-          <button type="button" className="shelf__add" onClick={onAdd}>
+          <button type="button" className="book__add" onClick={onAdd}>
             {inCart > 0 ? "Add another" : "Add to basket"}
           </button>
         )}
@@ -887,10 +985,45 @@ function Detail({
  */
 function Dialog({
   title,
+  heading,
+  back,
+  screen,
+  className,
   onClose,
   children,
 }: {
   title: string;
+  /**
+   * The visible title in the bar, where the screen has one to show.
+   *
+   * Separate from `title`, which is only the accessible name. The product
+   * dialog sets its own heading in the reading column, at display size, and
+   * repeating it in the bar two lines above would be the same words twice —
+   * so it passes nothing and gets a bar holding only the close.
+   */
+  heading?: string;
+  /**
+   * The way back to the previous screen, pinned in the bar beside the title.
+   *
+   * It used to sit at the top of the checkout's recap panel, which scrolls —
+   * and on a phone, where that panel stacks above the payment form rather than
+   * beside it, scrolls away completely. A way out of a payment screen should
+   * not be something you have to scroll back up to find.
+   */
+  back?: { label: string; onBack: () => void };
+  /**
+   * Changes when the dialog swaps one screen for another, so the scroll can go
+   * back to the top.
+   *
+   * The sheet scrolls, and the two screens it holds are different heights. Left
+   * alone, Checkout pressed at the foot of a long basket landed you part-way
+   * down the payment form, and Back landed you in the middle of the basket —
+   * both of which read as the dialog having lost its place.
+   */
+  screen?: string;
+  /** A width modifier, or empty. The basket and the product page want
+      different ones. */
+  className?: string;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -901,10 +1034,14 @@ function Dialog({
     if (node && !node.open) node.showModal();
   }, []);
 
+  useEffect(() => {
+    ref.current?.scrollTo({ top: 0 });
+  }, [screen]);
+
   return (
     <dialog
       ref={ref}
-      className="sheet"
+      className={className ? `sheet ${className}` : 'sheet'}
       aria-label={title}
       // Fires for Escape as well as `close()`, so both routes out land here.
       onClose={onClose}
@@ -914,15 +1051,39 @@ function Dialog({
         if (event.target === ref.current) ref.current?.close();
       }}
     >
-      <button
-        type="button"
-        className="sheet__close"
-        onClick={() => ref.current?.close()}
-        aria-label="Close"
-      >
-        ×
-      </button>
-      {children}
+      {/*
+        The bar is pinned and the close lives in it.
+
+        Both of those were bugs. The close was absolutely positioned against the
+        sheet, so it scrolled away with the content — and the heading, which was
+        sticky, then slid over the top of it and hid it on the way past. The
+        heading was not properly pinned either: its `top` was a negative offset,
+        so it moved a couple of centimetres before it stuck, which reads as the
+        header sliding around while you scroll.
+
+        One sticky bar at `top: 0` holding both fixes both. It only works
+        because the sheet's own padding moved to `.sheet__body`: a sticky child
+        of a padded scroller sticks to the *padding* box, which leaves a strip
+        above it for content to scroll through.
+      */}
+      <div className="sheet__bar">
+        {back && (
+          <button type="button" className="sheet__back" onClick={back.onBack}>
+            <span aria-hidden="true">←</span> {back.label}
+          </button>
+        )}
+        {heading && <h2 className="sheet__name">{heading}</h2>}
+        <button
+          type="button"
+          className="sheet__close"
+          onClick={() => ref.current?.close()}
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="sheet__body">{children}</div>
     </dialog>
   );
 }
