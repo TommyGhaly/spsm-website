@@ -185,74 +185,126 @@ export function CardPayment({
 
   return (
     <div className="pay">
-      <label className="pay__field">
-        <span>Email, for the receipt</span>
-        <input
-          type="email"
-          value={email}
-          autoComplete="email"
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@example.com"
-        />
-      </label>
+      {/*
+        Numbered steps rather than a stack of fields.
 
-      <fieldset className="pay__how">
-        <legend>How would you like these?</legend>
-        <label>
-          <input type="radio" checked={!shipping} onChange={() => setShipping(false)} />
-          Collect at the church
-        </label>
-        <label>
-          <input type="radio" checked={shipping} onChange={() => setShipping(true)} />
-          Post to me
-        </label>
-      </fieldset>
-
-      {shipping && (
-        <div className="pay__address">
-          {(
-            [
-              ['line1', 'Address', 'address-line1'],
-              ['line2', 'Address line 2 (optional)', 'address-line2'],
-              ['city', 'Town or city', 'address-level2'],
-              ['state', 'State', 'address-level1'],
-              ['postalCode', 'ZIP code', 'postal-code'],
-            ] as const
-          ).map(([key, label, auto]) => (
-            <label key={key} className="pay__field">
-              <span>{label}</span>
-              <input
-                value={address[key]}
-                autoComplete={auto}
-                onChange={(event) => setAddress((a) => ({ ...a, [key]: event.target.value }))}
-              />
+        This was an email box, two radio buttons, a card frame and a button in a
+        column, which reads as a form to be filled rather than a purchase being
+        made — and gave no sense of how much was left. Three numbered steps say
+        what is being asked and how far along you are, which is what every
+        checkout worth using does.
+      */}
+      <ol className="pay__steps">
+        <li className="pay__step">
+          <span className="pay__num" aria-hidden="true">
+            1
+          </span>
+          <div className="pay__body">
+            <label className="pay__label" htmlFor="pay-email">
+              Where should the receipt go?
             </label>
-          ))}
-          <p className="note">Postage is added at checkout.</p>
-        </div>
-      )}
+            <input
+              id="pay-email"
+              type="email"
+              value={email}
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
+        </li>
 
-      <div className="pay__field">
-        <span>Card</span>
-        {/* Square's iframe mounts here. Nothing inside is readable by this page. */}
-        <div ref={holder} className="pay__card" />
-        {status === 'loading' && <p className="note">Loading the secure card form…</p>}
-      </div>
+        <li className="pay__step">
+          <span className="pay__num" aria-hidden="true">
+            2
+          </span>
+          <div className="pay__body">
+            <span className="pay__label">How would you like these?</span>
+
+            {/*
+              Two pressable panels, not radios. The choice changes what the
+              order costs and where it goes, which is too consequential for a
+              5mm circle — and a panel can carry the consequence as a second
+              line, which a radio label cannot.
+            */}
+            <div className="choice">
+              <button
+                type="button"
+                className={!shipping ? 'choice__opt is-on' : 'choice__opt'}
+                onClick={() => setShipping(false)}
+                aria-pressed={!shipping}
+              >
+                <span className="choice__name">Collect at the church</span>
+                <span className="choice__note">Ready after Liturgy. No postage.</span>
+              </button>
+
+              <button
+                type="button"
+                className={shipping ? 'choice__opt is-on' : 'choice__opt'}
+                onClick={() => setShipping(true)}
+                aria-pressed={shipping}
+              >
+                <span className="choice__name">Post to me</span>
+                <span className="choice__note">Flat postage, added at checkout.</span>
+              </button>
+            </div>
+
+            {shipping && (
+              <div className="pay__address">
+                {(
+                  [
+                    ['line1', 'Address', 'address-line1', 'full'],
+                    ['line2', 'Address line 2 (optional)', 'address-line2', 'full'],
+                    ['city', 'Town or city', 'address-level2', 'full'],
+                    ['state', 'State', 'address-level1', 'half'],
+                    ['postalCode', 'ZIP code', 'postal-code', 'half'],
+                  ] as const
+                ).map(([key, label, auto, span]) => (
+                  <label key={key} className={`pay__field pay__field--${span}`}>
+                    <span>{label}</span>
+                    <input
+                      value={address[key]}
+                      autoComplete={auto}
+                      onChange={(event) => setAddress((a) => ({ ...a, [key]: event.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </li>
+
+        <li className="pay__step">
+          <span className="pay__num" aria-hidden="true">
+            3
+          </span>
+          <div className="pay__body">
+            <span className="pay__label">Card details</span>
+            {/* Square's iframe mounts here. Nothing inside is readable by this
+                page, which is what keeps card numbers out of this codebase. */}
+            <div ref={holder} className="pay__card" />
+            {status === 'loading' && <p className="pay__hint">Loading the secure card form…</p>}
+            <p className="pay__hint pay__hint--secure">
+              Card details go straight to Square. They never reach the parish.
+            </p>
+          </div>
+        </li>
+      </ol>
 
       {error && (
-        <p className="note pay__error" role="alert">
+        <p className="pay__error" role="alert">
           {error}
         </p>
       )}
 
-      <button type="button" className="button button--full" disabled={blocked} onClick={pay}>
+      <button type="button" className="pay__submit" disabled={blocked} onClick={pay}>
         {status === 'paying' ? 'Taking payment…' : `Pay ${money(total)}`}
       </button>
 
       {sandbox && (
-        <p className="note pay__sandbox">
-          Test mode — no real money moves. Use card <code>4111 1111 1111 1111</code>, any
-          future expiry, any CVV.
+        <p className="pay__sandbox">
+          <strong>Test mode</strong> — no real money moves. Card{' '}
+          <code>4111 1111 1111 1111</code>, any future expiry, any CVV.
         </p>
       )}
     </div>

@@ -55,6 +55,16 @@ export function Shop({
   const [basketOpen, setBasketOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [paidOrderId, setPaidOrderId] = useState<string | null>(null);
+  /*
+   * The basket is two screens, not one.
+   *
+   * Everything used to be on one: the lines on the left and the whole
+   * payment form squeezed into a 19rem summary column beside them. No form
+   * looks right in 19rem — the fields were narrower than the words above
+   * them — and no amount of restyling fixes a column that narrow. Paying
+   * now gets the whole dialog.
+   */
+  const [stage, setStage] = useState<'cart' | 'pay'>('cart');
   // Until this flips, the cart shown is empty even if storage has one. See the
   // note in the effect below.
   const [ready, setReady] = useState(false);
@@ -253,9 +263,15 @@ export function Shop({
       )}
 
       {basketOpen && (
-        <Dialog title="Your basket" onClose={() => setBasketOpen(false)}>
+        <Dialog
+          title={stage === 'pay' ? 'Checkout' : 'Your basket'}
+          onClose={() => {
+            setBasketOpen(false);
+            setStage('cart');
+          }}
+        >
           <h2 id="dialog-title" className="sheet__name">
-            Your basket
+            {stage === 'pay' ? 'Checkout' : 'Your basket'}
           </h2>
 
           {paidOrderId ? (
@@ -270,88 +286,124 @@ export function Shop({
           ) : lines.length === 0 ? (
             <p className="note">Nothing in the basket yet.</p>
           ) : (
-            <div className="cart">
-              <ul className="cart__lines">
-                {lines.map(({ product, quantity }) => (
-                  <li key={product.slug} className="cart__line">
-                    <Cover product={product} className="cart__cover" />
+            <div className={stage === 'pay' ? 'cart cart--paying' : 'cart'}>
+              {stage === 'cart' ? (
+                <>
+                  <ul className="cart__lines">
+                    {lines.map(({ product, quantity }) => (
+                      <li key={product.slug} className="cart__line">
+                        <Cover product={product} className="cart__cover" />
 
-                    <div className="cart__text">
-                      <p className="cart__name">{product.name}</p>
-                      <p className="cart__stock">In stock</p>
+                        <div className="cart__text">
+                          <p className="cart__name">{product.name}</p>
+                          <p className="cart__stock">In stock</p>
 
-                      <div className="cart__controls">
-                        <div className="stepper stepper--sm">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setQuantity(product.slug, quantity - 1)
-                            }
-                            aria-label={`One fewer ${product.name}`}
-                          >
-                            −
-                          </button>
-                          <span aria-live="polite">{quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setQuantity(product.slug, quantity + 1)
-                            }
-                            aria-label={`One more ${product.name}`}
-                            disabled={quantity >= 20}
-                          >
-                            +
-                          </button>
+                          <div className="cart__controls">
+                            <div className="stepper stepper--sm">
+                              <button
+                                type="button"
+                                onClick={() => setQuantity(product.slug, quantity - 1)}
+                                aria-label={`One fewer ${product.name}`}
+                              >
+                                −
+                              </button>
+                              <span aria-live="polite">{quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => setQuantity(product.slug, quantity + 1)}
+                                aria-label={`One more ${product.name}`}
+                                disabled={quantity >= 20}
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Setting the quantity to zero removes it, so there
+                                is one code path for "how many of this" rather
+                                than a second one that deletes. */}
+                            <button
+                              type="button"
+                              className="cart__remove"
+                              onClick={() => setQuantity(product.slug, 0)}
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Setting the quantity to zero is what removes it, so
-                            there is one code path for "how many of this" rather
-                            than a second one that deletes. */}
-                        <button
-                          type="button"
-                          className="cart__remove"
-                          onClick={() => setQuantity(product.slug, 0)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
+                        <p className="cart__sum">
+                          {money(product.amount * quantity, product.currency)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
 
-                    <p className="cart__sum">
-                      {money(product.amount * quantity, product.currency)}
+                  <div className="summary">
+                    <p className="summary__line">
+                      <span>
+                        Subtotal ({count} {count === 1 ? 'item' : 'items'})
+                      </span>
+                      <strong>{money(total)}</strong>
                     </p>
-                  </li>
-                ))}
-              </ul>
+                    <p className="summary__note">
+                      Postage, if you choose it, is added at the next step.
+                    </p>
+                    <button
+                      type="button"
+                      className="summary__go"
+                      onClick={() => setStage('pay')}
+                    >
+                      Checkout
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* A recap rather than the editable list: quantities are
+                      settled by this point, and a stepper beside a card form
+                      invites changing the total mid-payment. */}
+                  <div className="recap">
+                    <button type="button" className="recap__back" onClick={() => setStage('cart')}>
+                      ← Back to basket
+                    </button>
 
-              <div className="summary">
-                <p className="summary__line">
-                  <span>
-                    Subtotal ({count} {count === 1 ? "item" : "items"})
-                  </span>
-                  <strong>{money(total)}</strong>
-                </p>
-                <p className="summary__note">
-                  Postage, if you choose it, is added at checkout.
-                </p>
-                <CardPayment
-                  cart={lines.map((line) => ({
-                    slug: line.product.slug,
-                    quantity: line.quantity,
-                  }))}
-                  total={total}
-                  applicationId={square.applicationId}
-                  locationId={square.locationId}
-                  sandbox={square.sandbox}
-                  onPaid={(orderId) => {
-                    // Cleared here rather than on the server's word alone: the
-                    // order exists in Firestore by this point, so a basket that
-                    // survived would let someone pay for the same books twice.
-                    setCart({});
-                    setPaidOrderId(orderId);
-                  }}
-                />
-              </div>
+                    <ul className="recap__lines">
+                      {lines.map(({ product, quantity }) => (
+                        <li key={product.slug}>
+                          <span className="recap__qty">{quantity}×</span>
+                          <span className="recap__name">{product.name}</span>
+                          <span className="recap__sum">
+                            {money(product.amount * quantity, product.currency)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <p className="recap__total">
+                      <span>Total</span>
+                      <strong>{money(total)}</strong>
+                    </p>
+                  </div>
+
+                  <CardPayment
+                    cart={lines.map((line) => ({
+                      slug: line.product.slug,
+                      quantity: line.quantity,
+                    }))}
+                    total={total}
+                    applicationId={square.applicationId}
+                    locationId={square.locationId}
+                    sandbox={square.sandbox}
+                    onPaid={(orderId) => {
+                      // Cleared here rather than on the server's word alone: the
+                      // order exists in Firestore by this point, so a basket that
+                      // survived would let someone pay for the same books twice.
+                      setCart({});
+                      setPaidOrderId(orderId);
+                    }}
+                  />
+                </>
+              )}
             </div>
           )}
         </Dialog>

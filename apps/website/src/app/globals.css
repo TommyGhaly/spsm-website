@@ -1863,8 +1863,13 @@ main {
  * further that glance has to travel, the more it becomes work. 58rem keeps the
  * two ends in one field of view.
  */
+/*
+ * Wider than it was. 58rem was a correction for rows that felt empty, but the
+ * emptiness came from thin content rather than width — the fix belonged in the
+ * row, not in the page. The list gets room again and the rows carry more.
+ */
 .shop-page {
-  max-width: 58rem;
+  max-width: 72rem;
   /* Centred. Capping the width without this pinned the whole shop to the left
      of an 80rem page and left a dead gutter down the right. */
   margin-inline: auto;
@@ -2204,8 +2209,8 @@ main {
  * ---------------------------------------------------------------------------
  */
 .shelf__thumb {
-  width: 4.5rem;
-  height: 6rem;
+  width: 5.5rem;
+  height: 7.25rem;
   object-fit: cover;
   object-position: center;
   align-self: center;
@@ -2234,8 +2239,8 @@ main {
  * so it stands in the row as a book rather than as a gap.
  */
 .shelf__thumb.cover--none {
-  width: 4.5rem;
-  height: 6rem;
+  width: 5.5rem;
+  height: 7.25rem;
   aspect-ratio: auto;
   background: var(--color-paper-sunken, #eeddd7);
   border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
@@ -2256,7 +2261,7 @@ main {
    the content; everything else on the row is annotation. */
 .shelf__title {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
+  font-size: var(--type-heading, 1.35rem);
   line-height: var(--leading-snug, 1.3);
   color: var(--color-ink, #1c1614);
 }
@@ -2288,7 +2293,7 @@ main {
    a footnote. */
 .shelf__price {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.0625rem);
+  font-size: var(--type-subheading, 1.25rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
@@ -2752,11 +2757,127 @@ main {
 
 /* ---- the basket -------------------------------------------------------- */
 
+/*
+ * The basket, and then the checkout — two screens rather than one.
+ *
+ * Everything used to be on one: the lines on the left and the entire payment
+ * form squeezed into a 19rem summary column beside them, where the inputs were
+ * narrower than their own labels. No form survives 19rem, which is why
+ * restyling it never helped. Paying now gets the whole dialog: a compact recap
+ * on the left and the form given real width on the right.
+ */
 .cart {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 19rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
   gap: var(--space-xl, 2rem);
   align-items: start;
+}
+
+.cart--paying {
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+}
+
+@media (max-width: 44rem) {
+  .cart,
+  .cart--paying {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg, 1.5rem);
+  }
+}
+
+/* ---- the recap, beside the payment form -------------------------------- */
+
+.recap {
+  display: grid;
+  gap: var(--space-sm, 0.7rem);
+  padding: var(--space-md, 1.1rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
+  border-radius: var(--radius-md, 8px);
+}
+
+.recap__back {
+  justify-self: start;
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.recap__back:hover {
+  color: var(--color-accent, #992a21);
+}
+
+.recap__lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.recap__lines li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-sm, 0.5rem);
+  align-items: baseline;
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.recap__qty {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.recap__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recap__sum {
+  font-variant-numeric: tabular-nums;
+}
+
+.recap__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.recap__total strong {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The step out of the basket and into paying. */
+.summary__go {
+  width: 100%;
+  margin-top: var(--space-md, 0.9rem);
+  padding: 0.75rem 1.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.summary__go:hover {
+  background: var(--color-accent-strong, #731d16);
 }
 
 @media (max-width: 44rem) {
@@ -2946,6 +3067,243 @@ main {
 .stepper--sm span {
   min-width: 1.6rem;
   font-size: var(--type-small, 0.875rem);
+}
+
+.paid {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.paid__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+  color: var(--color-accent, #992a21);
+}
+
+/* ---- checkout ---------------------------------------------------------- */
+
+.pay {
+  margin-top: var(--space-md, 1rem);
+}
+
+/*
+ * Numbered steps rather than a stack of fields.
+ *
+ * This was an email box, two radios, a card frame and a button in a column,
+ * which reads as a form to be filled rather than a purchase being made, and
+ * gave no sense of how much was left. The numbers do two jobs: they say how
+ * many questions there are, and the rule down their left ties them into one
+ * sequence instead of four unrelated controls.
+ */
+.pay__steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-lg, 1.4rem);
+}
+
+.pay__step {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: var(--space-sm, 0.7rem);
+  align-items: start;
+}
+
+.pay__num {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-deep, #481010);
+  border-radius: var(--radius-full, 999px);
+}
+
+.pay__body {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  min-width: 0;
+}
+
+.pay__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.pay input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 5px);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.pay input:focus {
+  outline: none;
+  border-color: var(--color-accent, #992a21);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent, #992a21) 14%, transparent);
+}
+
+/*
+ * Two pressable panels instead of radio buttons. The choice changes what the
+ * order costs and where it goes, which is too consequential for a 5mm circle —
+ * and a panel can carry that consequence on a second line, which a radio label
+ * cannot.
+ */
+.choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-sm, 0.6rem);
+}
+
+.choice__opt {
+  display: grid;
+  gap: 0.15rem;
+  padding: var(--space-sm, 0.7rem) var(--space-md, 0.85rem);
+  text-align: left;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.choice__opt:hover {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+}
+
+/* The chosen one is marked with the accent and a ring, not just a tint: on a
+   pale ground a tint alone is close to invisible. */
+.choice__opt.is-on {
+  border-color: var(--color-accent, #992a21);
+  box-shadow: inset 0 0 0 1px var(--color-accent, #992a21);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 7%, var(--color-paper-raised, #fdf7f4));
+}
+
+.choice__name {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.choice__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.pay__address {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm, 0.6rem);
+  margin-top: var(--space-xs, 0.35rem);
+  padding: var(--space-md, 0.9rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-radius: var(--radius-md, 8px);
+}
+
+.pay__field {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.pay__field > span {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.pay__field--full {
+  grid-column: 1 / -1;
+}
+
+/*
+ * Where Square's iframe mounts. A minimum height because the frame arrives a
+ * beat after the rest of the form — without it the button jumps down at exactly
+ * the moment someone is reaching for it.
+ */
+.pay__card {
+  min-height: 3.4rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 5px);
+}
+
+.pay__hint {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* Worth saying plainly at the moment a card number is being typed. */
+.pay__hint--secure::before {
+  content: '·';
+  margin-right: 0.35rem;
+  color: var(--color-gold, #b08d43);
+}
+
+.pay__error {
+  margin: var(--space-sm, 0.7rem) 0 0;
+  padding: var(--space-sm, 0.6rem) var(--space-md, 0.8rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-accent-strong, #731d16);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 10%, transparent);
+  border-left: 3px solid var(--color-accent, #992a21);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+}
+
+/* The one filled control in the basket, and the last thing in the sequence. */
+.pay__submit {
+  width: 100%;
+  margin-top: var(--space-lg, 1.25rem);
+  padding: 0.8rem 1.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1.0625rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.pay__submit:hover:not(:disabled) {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.pay__submit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pay__sandbox {
+  margin: var(--space-sm, 0.7rem) 0 0;
+  padding: var(--space-sm, 0.6rem) var(--space-md, 0.8rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 16%, transparent);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.pay__sandbox code {
+  font-variant-numeric: tabular-nums;
 }
 
 .paid {
