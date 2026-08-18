@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ShopProduct } from './shopData';
-import { CardPayment } from './CardPayment';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ShopProduct } from "./shopData";
+import { CardPayment } from "./CardPayment";
 
 /**
  * Integer minor units to "$8.00".
@@ -13,9 +13,9 @@ import { CardPayment } from './CardPayment';
  * being a column, and "$15" reads as a label where "$15.00" reads as a price.
  * Every shop that takes money prints the cents.
  */
-export function money(amount: number, currency = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
+export function money(amount: number, currency = "USD"): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -25,7 +25,7 @@ export function money(amount: number, currency = 'USD'): string {
 /** slug → quantity. Kept flat so it survives `JSON.stringify` unchanged. */
 type Cart = Record<string, number>;
 
-const CART_KEY = 'spsm.bookstore.cart';
+const CART_KEY = "spsm.bookstore.cart";
 
 /**
  * The bookstore: a grid, a detail dialog, and a basket.
@@ -70,7 +70,7 @@ export function Shop({
       const stored = localStorage.getItem(CART_KEY);
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
           setCart(parsed as Cart);
         }
       }
@@ -109,12 +109,18 @@ export function Shop({
           const product = products.find((p) => p.slug === slug);
           return product ? { product, quantity } : null;
         })
-        .filter((line): line is { product: ShopProduct; quantity: number } => line !== null),
+        .filter(
+          (line): line is { product: ShopProduct; quantity: number } =>
+            line !== null,
+        ),
     [cart, products],
   );
 
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
-  const total = lines.reduce((sum, line) => sum + line.product.amount * line.quantity, 0);
+  const total = lines.reduce(
+    (sum, line) => sum + line.product.amount * line.quantity,
+    0,
+  );
 
   return (
     <>
@@ -167,8 +173,8 @@ export function Shop({
             <div className="paid">
               <p className="paid__title">Thank you — your order is placed.</p>
               <p className="note">
-                A receipt is on its way from Square. The parish will be in touch about
-                collection or postage.
+                A receipt is on its way from Square. The parish will be in touch
+                about collection or postage.
               </p>
               <p className="meta">Order {paidOrderId}</p>
             </div>
@@ -189,7 +195,9 @@ export function Shop({
                         <div className="stepper stepper--sm">
                           <button
                             type="button"
-                            onClick={() => setQuantity(product.slug, quantity - 1)}
+                            onClick={() =>
+                              setQuantity(product.slug, quantity - 1)
+                            }
                             aria-label={`One fewer ${product.name}`}
                           >
                             −
@@ -197,7 +205,9 @@ export function Shop({
                           <span aria-live="polite">{quantity}</span>
                           <button
                             type="button"
-                            onClick={() => setQuantity(product.slug, quantity + 1)}
+                            onClick={() =>
+                              setQuantity(product.slug, quantity + 1)
+                            }
                             aria-label={`One more ${product.name}`}
                             disabled={quantity >= 20}
                           >
@@ -218,7 +228,9 @@ export function Shop({
                       </div>
                     </div>
 
-                    <p className="cart__sum">{money(product.amount * quantity, product.currency)}</p>
+                    <p className="cart__sum">
+                      {money(product.amount * quantity, product.currency)}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -226,13 +238,18 @@ export function Shop({
               <div className="summary">
                 <p className="summary__line">
                   <span>
-                    Subtotal ({count} {count === 1 ? 'item' : 'items'})
+                    Subtotal ({count} {count === 1 ? "item" : "items"})
                   </span>
                   <strong>{money(total)}</strong>
                 </p>
-                <p className="summary__note">Postage, if you choose it, is added at checkout.</p>
+                <p className="summary__note">
+                  Postage, if you choose it, is added at checkout.
+                </p>
                 <CardPayment
-                  cart={lines.map((line) => ({ slug: line.product.slug, quantity: line.quantity }))}
+                  cart={lines.map((line) => ({
+                    slug: line.product.slug,
+                    quantity: line.quantity,
+                  }))}
                   total={total}
                   applicationId={square.applicationId}
                   locationId={square.locationId}
@@ -254,7 +271,13 @@ export function Shop({
   );
 }
 
-function Cover({ product, className }: { product: ShopProduct; className: string }) {
+function Cover({
+  product,
+  className,
+}: {
+  product: ShopProduct;
+  className: string;
+}) {
   if (!product.cover) {
     /*
      * No cover in Square. The title itself stands in — a plain binding, which
@@ -275,7 +298,10 @@ function Cover({ product, className }: { product: ShopProduct; className: string
       className={className}
       src={product.cover}
       {...(product.coverSrcSet
-        ? { srcSet: product.coverSrcSet, sizes: '(max-width: 48rem) 46vw, 14rem' }
+        ? {
+            srcSet: product.coverSrcSet,
+            sizes: "(max-width: 48rem) 46vw, 14rem",
+          }
         : {})}
       alt={product.name}
       loading="lazy"
@@ -324,12 +350,14 @@ function Row({
           <span className="shelf__title">{product.name}</span>
           {/* The description where Square carries one — several titles have
               none, and an empty line reads better than an invented one. */}
-          {product.description && <span className="shelf__sub">{product.description}</span>}
+          {product.description && (
+            <span className="shelf__sub">{product.description}</span>
+          )}
           {inCart > 0 && <span className="shelf__in">{inCart} in basket</span>}
         </span>
 
         <span className="shelf__price">
-          {soldOut ? 'Sold out' : money(product.amount, product.currency)}
+          {soldOut ? "Sold out" : money(product.amount, product.currency)}
         </span>
 
         <span className="shelf__view" aria-hidden="true">
@@ -340,49 +368,38 @@ function Row({
   );
 }
 
-/** How far the side panel magnifies. */
+/** How far the cover magnifies under the pointer. */
 const ZOOM = 2.6;
 
 /**
- * The cover, with a magnifier beside it and a gallery beneath.
- *
- * Hovering the main image puts a lens under the pointer and shows that region
- * enlarged in a panel spanning the detail column — the magnified view never
- * covers the thing being pointed at, which is the whole reason it goes to the
- * side rather than over the top.
+ * The gallery: one image, magnified in place.
  *
  * ---------------------------------------------------------------------------
- * Two limits worth stating.
+ * The lens used to be wrong, and the reason is worth keeping.
  *
- * The panel shows the 2x file, 800px. Square's originals are 3105px, but they
- * are re-encoded locally because the nine covers come to 37.75 MB otherwise, so
- * 2.6x is about where enlarging stops revealing anything.
+ * It was positioned as a percentage of the *plate*, while the panel read a
+ * percentage of the *image* — and the image sat inside the plate's padding,
+ * letterboxed by `contain`, so the two were never the same rectangle. The lens
+ * pointed at one part of the cover and the panel showed another.
  *
- * And magnifying is hover-only, so it does not exist on a phone. Rather than
- * fake it with a tap, touch keeps the plain full-size image — which on a narrow
- * screen is already most of the viewport, and is the thing a side panel would
- * have to cover to show.
+ * The plate now has no padding and the covers are square, so the frame and the
+ * picture are the same box and one percentage means one thing to both. That is
+ * the whole fix: not better arithmetic, but removing the second rectangle.
+ *
+ * Three columns, left to right: the cover, the magnified view, then the text.
+ * The magnifier has a column of its own, so it never covers the description —
+ * and it sits immediately beside the cover, so the eye travels from the lens to
+ * the enlargement without crossing the page.
+ *
+ * Idle, that column shows the cover at rest rather than standing empty. It is
+ * the same picture larger, which is worth the space on a page whose entire
+ * subject is one book, and it means the frame is already there when the pointer
+ * arrives instead of appearing from nowhere.
  * ---------------------------------------------------------------------------
- *
- * The thumbnail strip is always there, even for a book with a single
- * photograph — that is what a product page does, and it is the thing that says
- * "this is the gallery" so a second image, when one is added, appears somewhere
- * the reader already understands. The arrows are the part held back until there
- * is more than one image, because an arrow that cannot move is a broken
- * control where a lone thumbnail is merely a short list.
  */
-function ZoomableCover({
-  product,
-  onZoom,
-}: {
-  product: ShopProduct;
-  /** Reports the magnified state upward, so the panel can live in its own
-      column rather than on top of the reading one. */
-  onZoom: (state: { image: string; x: number; y: number } | null) => void;
-}) {
+function Gallery({ product }: { product: ShopProduct }) {
   const [index, setIndex] = useState(0);
-  const [hovering, setHovering] = useState(false);
-  const [point, setPoint] = useState({ x: 50, y: 50 });
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
 
   const images = product.gallery;
   if (images.length === 0) {
@@ -393,64 +410,95 @@ function ZoomableCover({
     );
   }
 
-  const current = images[Math.min(index, images.length - 1)] as ShopProduct['gallery'][number];
+  const current = images[
+    Math.min(index, images.length - 1)
+  ] as ShopProduct["gallery"][number];
   const many = images.length > 1;
-  const step = (by: number) => setIndex((i) => (i + by + images.length) % images.length);
+  const step = (by: number) =>
+    setIndex((i) => (i + by + images.length) % images.length);
 
   return (
     <div className="item__media">
-      <div
-        className="item__plate"
-        onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => {
-          setHovering(false);
-          onZoom(null);
-        }}
-        onMouseMove={(event) => {
-          const box = event.currentTarget.getBoundingClientRect();
-          // Clamped, so a pointer at the very border cannot drive the lens off
-          // the edge of the image.
-          const x = Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100));
-          const y = Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100));
-          setPoint({ x, y });
-          onZoom({ image: current.large, x, y });
-        }}
-      >
-        <img className="item__cover" src={current.src} alt={product.name} decoding="async" />
-
-        {hovering && (
-          <span
-            className="item__lens"
-            aria-hidden="true"
-            style={{
-              width: `${100 / ZOOM}%`,
-              height: `${100 / ZOOM}%`,
-              // Positioned by its centre, so it sits under the pointer rather
-              // than starting at it.
-              left: `calc(${point.x}% - ${50 / ZOOM}%)`,
-              top: `calc(${point.y}% - ${50 / ZOOM}%)`,
-            }}
+      <div className="item__gallery">
+        <div
+          className="item__plate"
+          onMouseLeave={() => setPoint(null)}
+          onMouseMove={(event) => {
+            // The plate has no padding and the covers are square, so this box and
+            // the picture inside it are the same rectangle — which is what makes
+            // the lens and the panel agree.
+            const box = event.currentTarget.getBoundingClientRect();
+            const x = Math.min(
+              100,
+              Math.max(0, ((event.clientX - box.left) / box.width) * 100),
+            );
+            const y = Math.min(
+              100,
+              Math.max(0, ((event.clientY - box.top) / box.height) * 100),
+            );
+            setPoint({ x, y });
+          }}
+        >
+          <img
+            className="item__cover"
+            src={current.src}
+            alt={product.name}
+            decoding="async"
           />
-        )}
 
-        {many && (
-          <>
-            <button type="button" className="item__step item__step--prev" onClick={() => step(-1)} aria-label="Previous image">
-              ‹
-            </button>
-            <button type="button" className="item__step item__step--next" onClick={() => step(1)} aria-label="Next image">
-              ›
-            </button>
-          </>
-        )}
-      </div>
+          {point && (
+            <span
+              className="item__lens"
+              aria-hidden="true"
+              style={{
+                width: `${100 / ZOOM}%`,
+                height: `${100 / ZOOM}%`,
+                // Placed by its centre so it sits under the pointer, and clamped
+                // to the frame so it cannot hang off the edge showing a region
+                // the panel is not able to display.
+                left: `clamp(0%, calc(${point.x}% - ${50 / ZOOM}%), ${100 - 100 / ZOOM}%)`,
+                top: `clamp(0%, calc(${point.y}% - ${50 / ZOOM}%), ${100 - 100 / ZOOM}%)`,
+              }}
+            />
+          )}
 
-      <ul className="thumbs">
+          {many && (
+            <>
+              <button
+                type="button"
+                className="item__step item__step--prev"
+                onClick={() => step(-1)}
+                aria-label="Previous image"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="item__step item__step--next"
+                onClick={() => step(1)}
+                aria-label="Next image"
+              >
+                ›
+              </button>
+            </>
+          )}
+        </div>
+
+        {/*
+        Always shown, including for a book with a single photograph: the strip
+        is what says "this is the gallery", and it should exist before a second
+        image is added rather than appear from nowhere afterwards. The arrows
+        above are the part held back, because an arrow that cannot move is a
+        broken control where a lone thumbnail is a short list.
+      */}
+        <ul className="thumbs">
           {images.map((image, at) => (
             <li key={image.src}>
-            <button
+              <button
                 type="button"
-                className={at === index ? 'thumbs__pick is-current' : 'thumbs__pick'}
+                className={
+                  at === index ? "thumbs__pick is-current" : "thumbs__pick"
+                }
                 onClick={() => setIndex(at)}
                 aria-label={`Image ${at + 1} of ${images.length}`}
                 aria-current={at === index}
@@ -459,7 +507,24 @@ function ZoomableCover({
               </button>
             </li>
           ))}
-      </ul>
+        </ul>
+      </div>
+
+      {/*
+        The magnified view, rendered here and lifted into the middle column by
+        the grid. Idle it shows the cover whole; under a pointer it shows the
+        region the lens is over, at the same percentages against the same
+        rectangle — which is what makes the two agree.
+      */}
+      <div
+        className="item__zoompanel"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url(${current.large})`,
+          backgroundSize: point ? `${ZOOM * 100}%` : "contain",
+          backgroundPosition: point ? `${point.x}% ${point.y}%` : "center",
+        }}
+      />
     </div>
   );
 }
@@ -490,27 +555,21 @@ function Detail({
   onAdd: (quantity: number) => void;
 }) {
   const [quantity, setQuantity] = useState(1);
-  const [zoom, setZoom] = useState<{ image: string; x: number; y: number } | null>(null);
   const soldOut = product.stockCount === 0;
 
   return (
     <Dialog title={product.name} onClose={onClose}>
-      {/*
-        Three columns while a pointer is on the cover: the gallery, what the
-        book is, and the magnified view. The magnifier had been an overlay
-        sitting on top of the reading column, which put the description and the
-        buy box under a photograph exactly when someone was reading them. It has
-        its own space now, and the dialog is wide enough to hold all three.
-      */}
-      <div className={zoom ? 'item item--zooming' : 'item'}>
-        <ZoomableCover product={product} onZoom={setZoom} />
+      <div className="item">
+        <Gallery product={product} />
 
         <div className="item__main">
           <h2 id="dialog-title" className="item__title">
             {product.name}
           </h2>
 
-          <p className="item__price">{money(product.amount, product.currency)}</p>
+          <p className="item__price">
+            {money(product.amount, product.currency)}
+          </p>
 
           {product.description ? (
             <p className="item__blurb">{product.description}</p>
@@ -521,10 +580,16 @@ function Detail({
           )}
 
           <div className="buybox">
-            <p className="buybox__price">{money(product.amount, product.currency)}</p>
+            <p className="buybox__price">
+              {money(product.amount, product.currency)}
+            </p>
 
-            <p className={soldOut ? 'buybox__stock buybox__stock--out' : 'buybox__stock'}>
-              {soldOut ? 'Out of stock' : 'In stock at the parish bookstore'}
+            <p
+              className={
+                soldOut ? "buybox__stock buybox__stock--out" : "buybox__stock"
+              }
+            >
+              {soldOut ? "Out of stock" : "In stock at the parish bookstore"}
             </p>
 
             {!soldOut && (
@@ -555,37 +620,25 @@ function Detail({
                   </div>
                 </div>
 
-                <button type="button" className="buybox__add" onClick={() => onAdd(quantity)}>
+                <button
+                  type="button"
+                  className="buybox__add"
+                  onClick={() => onAdd(quantity)}
+                >
                   Add to basket
                 </button>
 
-                <p className="buybox__note">Collect at the church, or have it posted.</p>
+                <p className="buybox__note">
+                  Collect at the church, or have it posted.
+                </p>
               </>
             )}
 
-            {inCart > 0 && <p className="buybox__in">{inCart} already in your basket</p>}
+            {inCart > 0 && (
+              <p className="buybox__in">{inCart} already in your basket</p>
+            )}
           </div>
         </div>
-
-        {/*
-          Rendered always and merely emptied when idle, rather than mounted on
-          hover: mounting it would change the grid's column count under the
-          pointer, and the reading column would jump sideways the instant
-          someone moved onto the cover.
-        */}
-        <div
-          className="item__zoompanel"
-          aria-hidden="true"
-          style={
-            zoom
-              ? {
-                  backgroundImage: `url(${zoom.image})`,
-                  backgroundSize: `${ZOOM * 100}%`,
-                  backgroundPosition: `${zoom.x}% ${zoom.y}%`,
-                }
-              : undefined
-          }
-        />
       </div>
     </Dialog>
   );
