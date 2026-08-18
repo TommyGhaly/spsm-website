@@ -10,6 +10,23 @@ import {
 } from '@spsm/shared';
 
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
+/*
+ * The sandbox counterpart, and the reason it has to exist separately.
+ *
+ * Square issues one token per environment and they are not interchangeable: the
+ * production token returns 401 against `connect.squareupsandbox.com`, and the
+ * sandbox token returns 401 against `connect.squareup.com`. Both were already
+ * in the repo's .env, but only `SQUARE_ACCESS_TOKEN` was ever read — so with
+ * `SQUARE_ENVIRONMENT=sandbox`, which is how the site runs locally, every
+ * payment sent the production token to the sandbox host and came back 401.
+ *
+ * Reading the pair together is what makes the environment switch mean one
+ * thing. Setting `SQUARE_ENVIRONMENT=production` to make that 401 go away would
+ * have been the dangerous fix: the browser stays in sandbox mode, still showing
+ * "Test mode — no real money moves", while the Function starts taking real
+ * money.
+ */
+const SQUARE_SANDBOX_ACCESS_TOKEN = defineSecret('SQUARE_SANDBOX_ACCESS_TOKEN');
 const SQUARE_LOCATION_ID = defineString('SQUARE_LOCATION_ID');
 const SQUARE_ENVIRONMENT = defineString('SQUARE_ENVIRONMENT');
 
@@ -46,7 +63,7 @@ const SQUARE_VERSION = '2025-01-23';
  */
 export const squareCheckout = onRequest(
   {
-    secrets: [SQUARE_ACCESS_TOKEN],
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
     // Same origin through the Hosting rewrite, so no cross-origin access is
     // needed or wanted: this endpoint moves money and should not be callable
     // from another site's page.
@@ -58,10 +75,24 @@ export const squareCheckout = onRequest(
       return;
     }
 
-    const token = SQUARE_ACCESS_TOKEN.value();
+    /*
+     * The token that matches the host we are about to call.
+     *
+     * Falls back to `SQUARE_ACCESS_TOKEN` when no sandbox token is set, so an
+     * environment that only ever had one secret keeps working exactly as it
+     * did.
+     */
+    const environment = SQUARE_ENVIRONMENT.value();
+    const production = environment === 'production';
+    const token = production
+      ? SQUARE_ACCESS_TOKEN.value()
+      : SQUARE_SANDBOX_ACCESS_TOKEN.value() || SQUARE_ACCESS_TOKEN.value();
     const locationId = SQUARE_LOCATION_ID.value();
     if (!token || !locationId) {
-      console.error('[checkout] SQUARE_ACCESS_TOKEN or SQUARE_LOCATION_ID is missing.');
+      console.error(
+        `[checkout] No access token for SQUARE_ENVIRONMENT=${environment || '(unset)'}, ` +
+          'or SQUARE_LOCATION_ID is missing.',
+      );
       res.status(503).json({ error: 'Checkout is not configured.' });
       return;
     }
@@ -119,7 +150,7 @@ export const squareCheckout = onRequest(
       return;
     }
 
-    const host = squareHost(SQUARE_ENVIRONMENT.value());
+    const host = squareHost(environment);
     const headers = {
       Authorization: `Bearer ${token}`,
       'Square-Version': SQUARE_VERSION,
