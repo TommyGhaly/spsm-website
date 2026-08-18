@@ -25,3 +25,4 @@ export * from './schema/vehicles.js';
 
 export * from './payments/provider.js';
 export * from './payments/squareCatalog.js';
+export * from './payments/squareWebhook.js';
