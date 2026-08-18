@@ -140,7 +140,7 @@ export function Shop({
   );
 
   return (
-    <>
+    <div className="shop-page">
       {/*
         The shop opens on a dark band rather than more cream.
         
@@ -324,7 +324,7 @@ export function Shop({
           )}
         </Dialog>
       )}
-    </>
+    </div>
   );
 }
 
