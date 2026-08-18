@@ -3118,6 +3118,60 @@ main {
   background: var(--color-accent-strong, #731d16);
 }
 
+/*
+ * The way back to the shop. Quiet, because it is the alternative to the thing
+ * this panel exists to encourage — but present, because without it the only
+ * exit from a basket is the close cross, which reads as abandoning the order
+ * rather than going to find another book.
+ */
+.summary__more {
+  width: 100%;
+  margin-top: var(--space-sm, 0.5rem);
+  padding: 0.5rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.summary__more:hover {
+  color: var(--color-accent, #992a21);
+  text-decoration: underline;
+}
+
+/*
+ * An empty basket is an invitation, not a report. "Nothing in the basket yet"
+ * stated the obvious and offered nothing; this says what the shop does and
+ * gives a way into it.
+ */
+.empty {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  justify-items: start;
+  padding: var(--space-lg, 1.5rem) 0;
+}
+
+.empty__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+}
+
+.empty__note {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.empty__go {
+  width: auto;
+  margin-top: var(--space-sm, 0.6rem);
+  padding-inline: 1.4rem;
+}
+
 @media (max-width: 44rem) {
   .cart {
     grid-template-columns: 1fr;
@@ -3177,11 +3231,14 @@ main {
   line-height: var(--leading-snug, 1.3);
 }
 
-.cart__stock {
+/* The unit price. Replaced a green "In stock" that appeared on every line —
+   true of the whole shop, and therefore information about nothing. */
+.cart__each {
   margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.8125rem);
-  color: #1d6f4a;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-variant-numeric: tabular-nums;
 }
 
 .cart__controls {
@@ -3211,9 +3268,11 @@ main {
 
 .cart__sum {
   margin: 0;
+  align-self: start;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
+  font-size: var(--type-subheading, 1.2rem);
   font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #1c1614);
 }
 
 /* The summary sits beside the lines rather than under them, so the total and

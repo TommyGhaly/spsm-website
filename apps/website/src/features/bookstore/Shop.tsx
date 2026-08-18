@@ -299,7 +299,19 @@ export function Shop({
               <p className="meta">Order {paidOrderId}</p>
             </div>
           ) : lines.length === 0 ? (
-            <p className="note">Nothing in the basket yet.</p>
+            <div className="empty">
+              <p className="empty__title">Your basket is empty</p>
+              <p className="empty__note">
+                Books can be collected at the church or posted to you.
+              </p>
+              <button
+                type="button"
+                className="summary__go empty__go"
+                onClick={() => setBasketOpen(false)}
+              >
+                Browse the bookstore
+              </button>
+            </div>
           ) : (
             <div className={stage === 'pay' ? 'cart cart--paying' : 'cart'}>
               {stage === 'cart' ? (
@@ -311,7 +323,14 @@ export function Shop({
 
                         <div className="cart__text">
                           <p className="cart__name">{product.name}</p>
-                          <p className="cart__stock">In stock</p>
+                          {/* The unit price, not "In stock". Every line said in
+                              stock, which is true of everything in the shop and
+                              so tells the reader nothing; what they actually
+                              want to check against the line total is what one
+                              of them costs. */}
+                          <p className="cart__each">
+                            {money(product.amount, product.currency)} each
+                          </p>
 
                           <div className="cart__controls">
                             <div className="stepper stepper--sm">
@@ -369,6 +388,16 @@ export function Shop({
                       onClick={() => setStage('pay')}
                     >
                       Checkout
+                    </button>
+                    {/* The way back. Without it the only exit from a basket is
+                        the close cross, which reads as abandoning the order
+                        rather than going to find another book. */}
+                    <button
+                      type="button"
+                      className="summary__more"
+                      onClick={() => setBasketOpen(false)}
+                    >
+                      Keep browsing
                     </button>
                   </div>
                 </>
