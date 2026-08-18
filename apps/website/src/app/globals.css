@@ -2243,20 +2243,40 @@ main {
  * of mostly gaps. The cover sets the floor now and the padding merely clears
  * it.
  */
+/*
+ * The row is a container now rather than one big button, because it holds two
+ * actions: opening the book, and adding it. A button cannot contain another
+ * one, so the cover and title are their own button and `Add` sits beside them.
+ */
 .shelf__row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-md, 1rem);
   width: 100%;
   padding: var(--space-sm, 0.6rem) var(--space-sm, 0.5rem);
+  transition: background-color 150ms ease;
+}
+
+/* The details half: cover and words, one target. */
+.shelf__open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  min-width: 0;
+  padding: 0;
   text-align: left;
   font: inherit;
   color: inherit;
   background: none;
   border: 0;
   cursor: pointer;
-  transition: background-color 150ms ease;
+}
+
+.shelf__open:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
 }
 
 /* The row lights as one object, with a gold edge to say where it starts —
@@ -2266,10 +2286,7 @@ main {
   box-shadow: inset 3px 0 0 var(--color-gold, #b08d43);
 }
 
-.shelf__row:focus-visible {
-  outline: 2px solid var(--color-accent, #992a21);
-  outline-offset: -2px;
-}
+
 
 /*
  * Deliberately small. Large enough to recognise a book you have seen on the
@@ -2312,7 +2329,7 @@ main {
 }
 
 /* Pulled off the shelf a little, the way you tilt a book out to look at it. */
-.shelf__row:hover .shelf__thumb {
+.shelf__open:hover .shelf__thumb {
   transform: translateY(-3px);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent),
@@ -2386,39 +2403,152 @@ main {
 }
 
 /*
- * A bordered pill rather than a word with a rule under it. On a row whose other
- * elements are all type, the one thing you can press should not also be type —
- * it read as a label rather than a control, which is why it needed hovering to
- * discover.
+ * The sell. Filled, because on a page whose job is to shift books the action
+ * that shifts one should not be the quietest thing in the row.
+ *
+ * It replaced a `View` pill that only opened a dialog — an affordance for
+ * reading about a book, offered where the shop should have been offering to
+ * sell it.
  */
-.shelf__view {
-  padding: 0.3rem 0.85rem;
+.shelf__add {
+  padding: 0.45rem 1rem;
   font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.8125rem);
-  letter-spacing: var(--tracking-wide, 0.04em);
-  color: var(--color-accent, #992a21);
-  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 35%, transparent);
-  border-radius: var(--radius-full, 999px);
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
-}
-
-.shelf__row:hover .shelf__view {
+  font-size: var(--type-small, 0.875rem);
+  white-space: nowrap;
   color: var(--color-ink-inverse, #fdf7f4);
   background: var(--color-accent, #992a21);
-  border-color: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 120ms ease;
+}
+
+.shelf__add:hover {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.shelf__add:active {
+  transform: scale(0.97);
+}
+
+.shelf__gone {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the cross-sell ------------------------------------------------------ */
+
+.alsoin {
+  margin-top: var(--space-lg, 1.6rem);
+  padding-top: var(--space-md, 1.1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+}
+
+.alsoin__title {
+  margin: 0 0 var(--space-sm, 0.7rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.alsoin__viewport {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.alsoin__strip {
+  width: max-content;
+  display: flex;
+  gap: var(--space-md, 0.9rem);
+  list-style: none;
+  padding: 0 0 var(--space-xs, 0.4rem);
+  margin: 0;
+}
+
+/* `position: relative` for the same reason the browse strip needs it: any
+   absolutely positioned descendant would otherwise resolve against the viewport
+   and drag the page sideways. */
+.alsoin__book {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  width: 6.5rem;
+  padding: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.alsoin__cover {
+  width: 6.5rem;
+  height: 8.5rem;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent),
+    0 4px 10px -3px color-mix(in srgb, var(--color-ink, #1c1614) 32%, transparent);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.alsoin__book:hover .alsoin__cover {
+  transform: translateY(-4px);
+}
+
+.alsoin__cover.cover--none {
+  width: 6.5rem;
+  height: 8.5rem;
+  aspect-ratio: auto;
+  padding: 0.4rem;
+  background: var(--color-paper-sunken, #eeddd7);
+  border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+.alsoin__cover.cover--none .cover--none__title {
+  display: block;
+  font-size: 0.6875rem;
+}
+
+.alsoin__name {
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-small, 0.8125rem);
+  line-height: 1.25;
+  color: var(--color-ink, #1c1614);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.alsoin__price {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-accent, #992a21);
 }
 
 /* On a phone the row keeps its thumbnail and title and drops the affordance
    label — the whole row is still the target, and "View" beside a price in a
    320px column is two things fighting for the last inch. */
+/* On a phone the price moves under the title and Add keeps the right edge, so
+   the row stays two columns rather than three squeezed ones. */
 @media (max-width: 34rem) {
   .shelf__row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: var(--space-sm, 0.75rem);
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-sm, 0.7rem);
   }
 
-  .shelf__view {
-    display: none;
+  .shelf__price {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .shelf__add {
+    grid-row: 1 / span 2;
   }
 }
 
