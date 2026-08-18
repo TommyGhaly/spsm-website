@@ -52,29 +52,28 @@ export default async function EventPage({ params }: { params: Promise<Params> })
 
   return (
     <article>
-      {/* Its own header band, like every other page, rather than PageHeader —
-          an event's title needs the date and location alongside it, which the
-          shared component has no slot for. */}
-      <header className="page-head">
-        <div className="wrap">
-          <div className="page-head__inner">
-            <p className="meta">
-              <Link href="/events">← Parish Calendar</Link>
-            </p>
-            <h1>{event.title}</h1>
-            <p className="lede">
-              <time dateTime={isoOf(event.startAt)}>
-                {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
-              </time>
-            </p>
-            {event.location && (
-              <p className="meta">
-                <Icon name="pin" size={14} /> {event.location.name}
-                {event.location.address && ` · ${event.location.address}`}
-              </p>
-            )}
-          </div>
-        </div>
+      {/*
+        The event's own title block. It stays here rather than using
+        `PageHeader` because an event's name needs its date and location beside
+        it, which that component has no slot for — and because `PageHeader` now
+        renders nothing on screen at all.
+      */}
+      <header className="wrap event-head">
+        <p className="meta">
+          <Link href="/events">← Parish Calendar</Link>
+        </p>
+        <h1>{event.title}</h1>
+        <p className="event-head__when">
+          <time dateTime={isoOf(event.startAt)}>
+            {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
+          </time>
+        </p>
+        {event.location && (
+          <p className="meta">
+            <Icon name="pin" size={14} /> {event.location.name}
+            {event.location.address && ` · ${event.location.address}`}
+          </p>
+        )}
       </header>
 
       <PageBody>

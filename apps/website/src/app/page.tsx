@@ -7,7 +7,6 @@ import { LivestreamPlayer, ShowWhenLive, livestreamProbeUrl } from '@/features/l
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
 import { Icon, type IconName } from '@/components/Icon';
-import { CopticCross } from '@/components/Ornament';
 import { Prose } from '@/components/Prose';
 import { SectionHeading } from '@/components/SectionHeading';
 
@@ -484,7 +483,9 @@ function Cleric({ page }: { page: DocOf<ContentPage> }) {
             />
           ) : (
             <span className="cleric__mark" aria-hidden="true">
-              <CopticCross size={22} />
+              {/* The father's initial, not an ornament. A mark that stands for
+                  "no photograph yet" should still say which person it is. */}
+              {page.title.trim().charAt(0).toUpperCase()}
             </span>
           )}
 

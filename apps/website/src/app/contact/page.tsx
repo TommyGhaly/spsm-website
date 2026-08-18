@@ -36,10 +36,7 @@ export default async function ContactPage() {
 
   return (
     <>
-      <PageHeader
-        title="Contact Us"
-        lede="Whether you need to reach one of the fathers, are coming to the church for the first time, or simply have a question, the office will help."
-      />
+      <PageHeader title="Contact Us" />
 
       <PageBody>
         <section aria-labelledby="details-heading">

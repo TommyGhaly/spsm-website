@@ -22,12 +22,10 @@ export default async function EventsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Events"
-        lede="Everything coming up, soonest first. Times are shown in Eastern Time."
-      />
+      <PageHeader title="Events" />
 
       <PageBody>
+        <p className="note">Everything coming up, soonest first. Times are shown in Eastern Time.</p>
         {events.length === 0 ? (
           <EmptyState what="events" collection="events" />
         ) : (

@@ -27,11 +27,9 @@ export const metadata: Metadata = {
 export default function ServantsPage() {
   return (
     <>
-      <PageHeader
-        title="Servants Schedule"
-        lede="Who is serving, and when. Signed in with your parish Microsoft account — no separate password."
-      />
+      <PageHeader title="Servants Schedule" />
       <PageBody>
+        <p className="note">Who is serving, and when. Signed in with your parish Microsoft account — no separate password.</p>
         <AdminGate requires="servant" area="servants schedule">
           <ScheduleEmbed />
         </AdminGate>

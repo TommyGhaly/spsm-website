@@ -1,37 +1,26 @@
-import { Ornament } from './Ornament';
-
 /**
- * The banner every top-level page opens with.
+ * The page's `h1`, and nothing on screen.
  *
- * Small, but it keeps heading structure consistent across features that
- * different people will write at different times — which is the thing that
- * quietly degrades into `h1` inside `h1` and unlabelled sections otherwise.
+ * ---------------------------------------------------------------------------
+ * This was a banner, then a compact title, and is now invisible.
  *
- * It is now a full-bleed band, so it carries its own `.wrap`. The root layout
- * no longer wraps page content for exactly this reason — see the note there.
+ * The banner put a raised, bordered band across the top of every page carrying
+ * a heading, a sentence, and an ornament, inside roughly 230px of padding. It
+ * pushed the actual page below the fold — on /bookstore the products started
+ * off-screen — and it was cut for that reason.
+ *
+ * What survives is the `h1` itself, hidden. A document still needs exactly one:
+ * it is the accessible name of the page, what a screen-reader user gets when
+ * navigating by heading, and what a search result shows. Deleting it outright
+ * would cost all of that and save nothing, because hidden text occupies no
+ * space.
+ *
+ * There is no `lede` any more. Where that sentence carried something a visitor
+ * needs — "Times are shown in Eastern Time", "purchases are made in person" —
+ * it now sits with the content it qualifies, as a `.note`, rather than in a
+ * banner above it. Where it was only scene-setting, it is gone.
+ * ---------------------------------------------------------------------------
  */
-export function PageHeader({
-  title,
-  lede,
-  eyebrow,
-}: {
-  title: string;
-  lede?: string;
-  eyebrow?: string;
-}) {
-  return (
-    <header className="page-head">
-      <div className="wrap">
-        <div className="page-head__inner">
-          {/* Decorative, and a `p`: the `h1` below is the page's real name, and
-              an eyebrow promoted to a heading would put two of them in the
-              outline. */}
-          {eyebrow && <p className="section-head__eyebrow">{eyebrow}</p>}
-          <h1>{title}</h1>
-          {lede && <p className="lede">{lede}</p>}
-          <Ornament start />
-        </div>
-      </div>
-    </header>
-  );
+export function PageHeader({ title }: { title: string }) {
+  return <h1 className="visually-hidden">{title}</h1>;
 }

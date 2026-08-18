@@ -36,7 +36,7 @@ export function ServiceTimes({ services }: { services: ServiceTime[] }) {
   }
 
   return (
-    <ul className="week">
+    <ul className="week week--plain">
       {[...byDay.entries()].map(([day, entries]) => (
         <li key={day} className="week__day">
           <h3>{day}</h3>
@@ -44,7 +44,7 @@ export function ServiceTimes({ services }: { services: ServiceTime[] }) {
             {entries.map((service) => (
               <li key={`${service.name}-${service.time}`}>
                 <span className="week__time">{service.time}</span>
-                <span>{service.name}</span>
+                <span className="week__name">{service.name}</span>
               </li>
             ))}
           </ul>
