@@ -166,52 +166,78 @@ export function Shop({
           ) : lines.length === 0 ? (
             <p className="note">Nothing in the basket yet.</p>
           ) : (
-            <>
-              <ul className="basket">
+            <div className="cart">
+              <ul className="cart__lines">
                 {lines.map(({ product, quantity }) => (
-                  <li key={product.slug} className="basket__line">
-                    <Cover product={product} className="basket__cover" />
-                    <div className="basket__text">
-                      <p className="basket__name">{product.name}</p>
-                      <p className="basket__each">{money(product.amount, product.currency)} each</p>
+                  <li key={product.slug} className="cart__line">
+                    <Cover product={product} className="cart__cover" />
+
+                    <div className="cart__text">
+                      <p className="cart__name">{product.name}</p>
+                      <p className="cart__stock">In stock</p>
+
+                      <div className="cart__controls">
+                        <div className="stepper stepper--sm">
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(product.slug, quantity - 1)}
+                            aria-label={`One fewer ${product.name}`}
+                          >
+                            −
+                          </button>
+                          <span aria-live="polite">{quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(product.slug, quantity + 1)}
+                            aria-label={`One more ${product.name}`}
+                            disabled={quantity >= 20}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        {/* Setting the quantity to zero is what removes it, so
+                            there is one code path for "how many of this" rather
+                            than a second one that deletes. */}
+                        <button
+                          type="button"
+                          className="cart__remove"
+                          onClick={() => setQuantity(product.slug, 0)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                    <label className="basket__qty">
-                      <span className="visually-hidden">Quantity of {product.name}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={20}
-                        value={quantity}
-                        onChange={(event) =>
-                          setQuantity(product.slug, Number(event.target.value))
-                        }
-                      />
-                    </label>
-                    <p className="basket__sum">{money(product.amount * quantity, product.currency)}</p>
+
+                    <p className="cart__sum">{money(product.amount * quantity, product.currency)}</p>
                   </li>
                 ))}
               </ul>
 
-              <p className="basket__total">
-                <span>Total</span>
-                <strong>{money(total)}</strong>
-              </p>
-
-              <CardPayment
-                cart={lines.map((line) => ({ slug: line.product.slug, quantity: line.quantity }))}
-                total={total}
-                applicationId={square.applicationId}
-                locationId={square.locationId}
-                sandbox={square.sandbox}
-                onPaid={(orderId) => {
-                  // Clearing here rather than on the server's word alone: the
-                  // order exists in Firestore by this point, so a basket that
-                  // survived would let someone pay for the same books twice.
-                  setCart({});
-                  setPaidOrderId(orderId);
-                }}
-              />
-            </>
+              <div className="summary">
+                <p className="summary__line">
+                  <span>
+                    Subtotal ({count} {count === 1 ? 'item' : 'items'})
+                  </span>
+                  <strong>{money(total)}</strong>
+                </p>
+                <p className="summary__note">Postage, if you choose it, is added at checkout.</p>
+                <CardPayment
+                  cart={lines.map((line) => ({ slug: line.product.slug, quantity: line.quantity }))}
+                  total={total}
+                  applicationId={square.applicationId}
+                  locationId={square.locationId}
+                  sandbox={square.sandbox}
+                  onPaid={(orderId) => {
+                    // Cleared here rather than on the server's word alone: the
+                    // order exists in Firestore by this point, so a basket that
+                    // survived would let someone pay for the same books twice.
+                    setCart({});
+                    setPaidOrderId(orderId);
+                  }}
+                />
+              </div>
+            </div>
           )}
         </Dialog>
       )}
@@ -306,12 +332,18 @@ function Row({
 }
 
 /**
- * The item, on its own.
+ * One book, in full.
  *
- * These books have no page of their own and should not: there is a cover, a
- * price, and at most one paragraph behind each, which is not a page's worth of
- * content, and a route per product would be eleven more HTML files saying four
- * lines each. A dialog shows exactly the same thing without a navigation.
+ * Laid out the way a product page is: the cover large on the left, and a buy
+ * box on the right carrying the price, the availability, the quantity and the
+ * action, boxed off from the description. That arrangement is worth copying
+ * because it answers, in one glance and in a fixed order, the four questions
+ * someone has at this point — what is it, what does it cost, can I have it,
+ * how do I get it.
+ *
+ * The cover earns its size here in a way it does not in the list. There is one
+ * of them, it is the thing being considered, and nothing else on screen is
+ * competing with it.
  */
 function Detail({
   product,
@@ -329,57 +361,71 @@ function Detail({
 
   return (
     <Dialog title={product.name} onClose={onClose}>
-      <div className="sheet__body">
-        <Cover product={product} className="sheet__cover" />
+      <div className="item">
+        <div className="item__media">
+          <Cover product={product} className="item__cover" />
+        </div>
 
-        <div className="sheet__detail">
-          <h2 id="dialog-title" className="sheet__name">
+        <div className="item__main">
+          <h2 id="dialog-title" className="item__title">
             {product.name}
           </h2>
-          <p className="sheet__price">{money(product.amount, product.currency)}</p>
+
+          <p className="item__price">{money(product.amount, product.currency)}</p>
 
           {product.description ? (
-            <p className="sheet__blurb">{product.description}</p>
+            <p className="item__blurb">{product.description}</p>
           ) : (
-            <p className="sheet__blurb sheet__blurb--none">
+            <p className="item__blurb item__blurb--none">
               No description has been added for this title.
             </p>
           )}
 
-          {inCart > 0 && <p className="meta">{inCart} already in your basket</p>}
+          <div className="buybox">
+            <p className="buybox__price">{money(product.amount, product.currency)}</p>
 
-          {soldOut ? (
-            <p className="note">Out of stock.</p>
-          ) : (
-            <div className="sheet__buy">
-              <div className="stepper">
-                <button
-                  type="button"
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  aria-label="One fewer"
-                  disabled={quantity <= 1}
-                >
-                  −
-                </button>
-                {/* Text, not an input: the only values reachable are the ones
-                    the two buttons produce, so there is nothing to validate and
-                    no way to type 9,999. */}
-                <span aria-live="polite">{quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => setQuantity((q) => Math.min(20, q + 1))}
-                  aria-label="One more"
-                  disabled={quantity >= 20}
-                >
-                  +
-                </button>
-              </div>
+            <p className={soldOut ? 'buybox__stock buybox__stock--out' : 'buybox__stock'}>
+              {soldOut ? 'Out of stock' : 'In stock at the parish bookstore'}
+            </p>
 
-              <button type="button" className="button" onClick={() => onAdd(quantity)}>
-                Add {quantity > 1 ? `${quantity} ` : ''}to basket
-              </button>
-            </div>
-          )}
+            {!soldOut && (
+              <>
+                <div className="buybox__qty">
+                  <span>Quantity</span>
+                  <div className="stepper">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      aria-label="One fewer"
+                      disabled={quantity <= 1}
+                    >
+                      −
+                    </button>
+                    {/* Text, not an input: the only reachable values are the ones
+                        these two buttons produce, so there is nothing to
+                        validate and no keyboard route to 9,999. */}
+                    <span aria-live="polite">{quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.min(20, q + 1))}
+                      aria-label="One more"
+                      disabled={quantity >= 20}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <button type="button" className="buybox__add" onClick={() => onAdd(quantity)}>
+                  Add to basket
+                </button>
+
+                <p className="buybox__note">Collect at the church, or have it posted.</p>
+              </>
+            )}
+
+            {inCart > 0 && <p className="buybox__in">{inCart} already in your basket</p>}
+          </div>
         </div>
       </div>
     </Dialog>
