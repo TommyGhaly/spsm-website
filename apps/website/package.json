@@ -4,8 +4,10 @@
   "private": true,
   "description": "Public parish website. Static export to Firebase Hosting.",
   "scripts": {
-    "//dev": "No --port flag on purpose. Next honours $PORT and otherwise takes 3000, stepping up if it is busy — so this coexists with whatever else is already running instead of failing to start.",
+    "//dev": "No --port flag on purpose. Next honours $PORT and otherwise takes 3000, stepping up if it is busy \u2014 so this coexists with whatever else is already running instead of failing to start.",
     "dev": "next dev",
+    "//dev:https": "HTTPS on :3000 with a self-signed certificate. Needed to fill a card: browsers only offer saved payment methods on a secure origin, and Square's own iframe wants one too. First run installs a local CA and will ask for your password.",
+    "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "npx serve out",
     "typecheck": "tsc --noEmit",

@@ -14,6 +14,8 @@
   "scripts": {
     "//dev": "The everyday one: the website at http://localhost:3000. Builds @spsm/shared first because the app imports its compiled dist/, not its TypeScript source.",
     "dev": "npm run build --workspace @spsm/shared && npm run dev --workspace @spsm/website",
+    "//dev:https": "The same as `dev`, over HTTPS. Use this to work on checkout: browsers only offer a saved card on a secure origin. Pair it with `dev:backend` in another terminal so the payment POST has a Function to reach.",
+    "dev:https": "npm run build --workspace @spsm/shared && npm run dev:https --workspace @spsm/website",
     "//dev:backend": "Emulator suite, for rules and Cloud Functions work. Unrelated to `dev` \u2014 the website talks to the real Firestore, not the emulator.",
     "dev:backend": "npm run build --workspace @spsm/shared && npm run build --workspace @spsm/functions && npm run emulators",
     "typecheck": "npm run typecheck --workspaces --if-present",

@@ -49,4 +49,50 @@ const nextConfig = {
   },
 };
 
+/*
+ * Dev only: a way for the checkout POST to reach the Cloud Function.
+ *
+ * `/api/square/checkout` is not a route in this app and cannot be — the site is
+ * a static export, so there are no route handlers at all. In production that
+ * path is a Firebase Hosting rewrite onto the `squareCheckout` Function (see
+ * firebase.json). The Next dev server knows nothing about that rewrite, so
+ * paying on the dev server landed on Next's own 404 HTML page.
+ *
+ * This proxies the same path to the Functions emulator, so the whole flow —
+ * fill the card, press Pay, get an order id — can be exercised locally. It
+ * needs `npm run dev:backend` in another terminal; without it the proxy has
+ * nothing to talk to and CardPayment says checkout is unreachable.
+ *
+ * **Attached here rather than set to `[]` in the config object, and that is not
+ * a style choice.** `output: 'export'` writes files to disk with no server to
+ * honour a rewrite at request time, and Next warns whenever the `rewrites` key
+ * is *present* alongside it — even when the function returns nothing. A
+ * standing warning on every production build is one people learn to scroll
+ * past. Defining the key only in development means the export build never sees
+ * it, and the warning is gone rather than tolerated.
+ */
+if (process.env.NODE_ENV === 'development') {
+  const origin = process.env.FUNCTIONS_EMULATOR_ORIGIN ?? 'http://127.0.0.1:5001';
+  const project = process.env.GCLOUD_PROJECT ?? 'spsm-database';
+  const region = process.env.FUNCTIONS_REGION ?? 'us-central1';
+
+  /*
+   * Listed one by one rather than as `/api/square/:fn`, because the path and
+   * the function name are not the same string. The path segment is `checkout`
+   * and the Function is `squareCheckout` — a captured param is lowercase, so
+   * the pattern built `squarecheckout` and the emulator rejected it. These are
+   * a mirror of the rewrites in firebase.json; add to both together.
+   */
+  nextConfig.rewrites = async () => [
+    {
+      source: '/api/square/checkout',
+      destination: `${origin}/${project}/${region}/squareCheckout`,
+    },
+    {
+      source: '/api/square/webhook',
+      destination: `${origin}/${project}/${region}/squareWebhook`,
+    },
+  ];
+}
+
 export default nextConfig;

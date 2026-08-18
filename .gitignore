@@ -70,3 +70,7 @@ yarn-error.log*
 .DS_Store
 ._*
 Thumbs.db
+
+# Where `next dev --experimental-https` writes its self-signed cert. The *.pem
+# rule above already catches the key itself; this covers the directory.
+apps/website/certificates/
