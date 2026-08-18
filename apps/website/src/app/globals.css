@@ -1854,60 +1854,160 @@ main {
 /* ---- bookstore --------------------------------------------------------- */
 
 /*
- * The shop's own heading row, carrying the basket.
+ * The shop's opening band.
  *
- * The page has no header band any more, so this is what names the page on
- * screen — and it earns the space by doing a second job, which the old banner
- * did not: the basket has to live somewhere permanent, and beside the title is
- * where a shop puts it.
+ * ---------------------------------------------------------------------------
+ * The page was one pale column from the masthead to the footer, and that is
+ * what made it read as flat however the rows themselves were arranged. Nothing
+ * on it had a top, nothing set the books against anything, and the two controls
+ * — search and the basket — had no home except floating over the list.
+ *
+ * One band of the parish's deep red fixes all three. It is the same ground the
+ * homepage's offering uses, so the shop reads as part of this site rather than
+ * as a storefront dropped into it, and the books below now sit on paper *after*
+ * something rather than continuing a single field of cream.
+ * ---------------------------------------------------------------------------
  */
-.shop-bar {
+.shop-head {
+  margin-bottom: var(--space-xl, 2.25rem);
+  padding: var(--space-lg, 1.75rem);
+  border-radius: var(--radius-lg, 14px);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 22%, var(--color-deep, #481010)) 0%,
+    var(--color-deep, #481010) 60%
+  );
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+}
+
+.shop-head__row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-md, 1rem);
   flex-wrap: wrap;
-  margin-bottom: var(--space-xl, 2.25rem);
-  padding-bottom: var(--space-sm, 0.75rem);
-  /* Closed with the parish's gold hairline, the same mark the ornament and the
-     sunken bands use, so the shop opens like a section of this site rather than
-     like a storefront dropped into it. */
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
 }
 
-.shop-bar__title {
+.shop-head__title {
+  margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-title, 2.25rem);
+  font-size: var(--type-title, 2.1rem);
   line-height: var(--leading-tight, 1.1);
   letter-spacing: var(--tracking-tight, -0.02em);
-  margin: 0;
+  color: var(--color-ink-inverse, #fdf7f4);
 }
 
-.shop-bar__basket {
+.shop-head__lede {
+  margin: var(--space-xs, 0.35rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 76%, transparent);
+}
+
+.shop-head__basket {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs, 0.45rem);
-  padding: 0.4rem 0.9rem;
+  padding: 0.5rem 1rem;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
   font-weight: 600;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 65%, transparent);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
 }
 
-/* The count rides the button rather than sitting beside it, so the pair reads
-   as one control. Only rendered when non-zero — see the component. */
-.shop-bar__count {
+.shop-head__basket:hover {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 18%, transparent);
+}
+
+.shop-head__count {
   display: inline-grid;
   place-items: center;
   min-width: 1.4rem;
   height: 1.4rem;
   padding-inline: 0.35rem;
   border-radius: var(--radius-full, 999px);
-  background: var(--color-accent, #992a21);
-  color: var(--color-ink-inverse, #fdf7f4);
-  font-size: var(--type-micro, 0.8125rem);
+  background: var(--color-gold, #b08d43);
+  color: var(--color-deep, #481010);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Search. Filtering happens on every keystroke against a catalog already in
+ * memory — eleven books need no index, no debounce, and no request, and a
+ * search that waits before filtering a list this size only feels broken.
+ */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+  margin-top: var(--space-md, 1.1rem);
+  padding: 0 var(--space-md, 0.9rem);
+  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-radius: var(--radius-full, 999px);
+  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 70%, transparent);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.search:focus-within {
+  background: color-mix(in srgb, var(--color-paper, #f6e8e3) 18%, transparent);
+  border-color: var(--color-gold, #b08d43);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0;
+  font: inherit;
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: none;
+  border: 0;
+}
+
+.search input::placeholder {
+  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 55%, transparent);
+}
+
+.search input:focus {
+  outline: none;
+}
+
+/* The browser's own clear affordance is a grey cross that belongs to another
+   design. This one is ours and matches everything around it. */
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search__clear {
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #fdf7f4) 80%, transparent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.search__clear:hover {
+  color: var(--color-gold, #b08d43);
+}
+
+/* Only rendered while a search is running, so an unfiltered shop is not
+   captioned with a count nobody asked for. */
+.shop-count {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 /*

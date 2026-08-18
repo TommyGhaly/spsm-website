@@ -1,7 +1,7 @@
 /**
  * The site's icons, as inline SVG.
  *
- * Inline rather than an icon font or a sprite sheet: there are nine of them,
+ * Inline rather than an icon font or a sprite sheet: there are ten of them,
  * they inherit `currentColor` and font size for free, and neither choice costs a
  * network request on a site that is otherwise one HTML file and a stylesheet.
  * An icon library would be more dependency than the whole `components/`
@@ -74,6 +74,13 @@ const ICONS = {
   arrow: (
     <>
       <path d="M4.5 12h15M13 5.5l6.5 6.5L13 18.5" />
+    </>
+  ),
+  /** Searching the bookstore. */
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M15.8 15.8L20.5 20.5" />
     </>
   ),
   /**

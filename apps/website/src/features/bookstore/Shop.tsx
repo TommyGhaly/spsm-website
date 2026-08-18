@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShopProduct } from "./shopData";
 import { CardPayment } from "./CardPayment";
+import { Icon } from "@/components/Icon";
 
 /**
  * Integer minor units to "$8.00".
@@ -52,6 +53,7 @@ export function Shop({
   const [cart, setCart] = useState<Cart>({});
   const [open, setOpen] = useState<ShopProduct | null>(null);
   const [basketOpen, setBasketOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [paidOrderId, setPaidOrderId] = useState<string | null>(null);
   // Until this flips, the cart shown is empty even if storage has one. See the
   // note in the effect below.
@@ -116,6 +118,21 @@ export function Shop({
     [cart, products],
   );
 
+  /*
+   * Matched on the title and the description, both lowercased, on every
+   * keystroke. Eleven books need no index, no debounce and no request — the
+   * whole catalog is already in memory, and a search that waits 300ms to filter
+   * a list this size only feels broken.
+   */
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? products.filter(
+        (product) =>
+          product.name.toLowerCase().includes(needle) ||
+          product.description.toLowerCase().includes(needle),
+      )
+    : products;
+
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
   const total = lines.reduce(
     (sum, line) => sum + line.product.amount * line.quantity,
@@ -124,23 +141,63 @@ export function Shop({
 
   return (
     <>
-      <div className="shop-bar">
-        <h2 className="shop-bar__title">Bookstore</h2>
-        <button
-          type="button"
-          className="button button--quiet shop-bar__basket"
-          onClick={() => setBasketOpen(true)}
-          aria-haspopup="dialog"
-        >
-          Basket
-          {/* Rendered only when there is something in it, so an empty shop does
-              not show a zero that reads like a broken counter. */}
-          {count > 0 && <span className="shop-bar__count">{count}</span>}
-        </button>
+      {/*
+        The shop opens on a dark band rather than more cream.
+        
+        The page was a single pale column from the masthead to the footer, which
+        is what made it read as flat however the rows were arranged. One band of
+        the parish's deep red gives the page a top, sets the books against
+        something, and is where the two controls belong — search and the basket
+        — rather than floating them over the list.
+      */}
+      <div className="shop-head">
+        <div className="shop-head__row">
+          <h2 className="shop-head__title">Bookstore</h2>
+
+          <button
+            type="button"
+            className="shop-head__basket"
+            onClick={() => setBasketOpen(true)}
+            aria-haspopup="dialog"
+          >
+            Basket
+            {/* Rendered only when there is something in it: an empty shop
+                showing a zero reads like a broken counter. */}
+            {count > 0 && <span className="shop-head__count">{count}</span>}
+          </button>
+        </div>
+
+        <p className="shop-head__lede">
+          Books, icons, and church goods. Collect at the church, or have them posted.
+        </p>
+
+        <div className="search">
+          <Icon name="search" size={17} />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Search ${products.length} titles`}
+            aria-label="Search the bookstore"
+          />
+          {query && (
+            <button type="button" className="search__clear" onClick={() => setQuery('')}>
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
+      {needle && (
+        <p className="shop-count" aria-live="polite">
+          {shown.length === 0
+            ? `Nothing matches “${query.trim()}”.`
+            : `${shown.length} of ${products.length} titles`}
+        </p>
+      )}
+
       <ul className="shelf">
-        {products.map((product) => (
+        {shown.map((product) => (
           <Row
             key={product.id}
             product={product}
