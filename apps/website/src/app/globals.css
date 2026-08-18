@@ -2097,7 +2097,7 @@ main {
  * sunken bands use.
  */
 .sheet {
-  width: min(56rem, calc(100vw - 2rem));
+  width: min(72rem, calc(100vw - 2rem));
   max-height: min(48rem, calc(100dvh - 3rem));
   overflow: auto;
   padding: var(--space-xl, 2.25rem);
@@ -2154,14 +2154,34 @@ main {
  * get it. The buy box is boxed off from the prose precisely so those last two
  * do not have to be hunted for in a paragraph.
  */
+/*
+ * Gallery, then what the book is, then the magnified view — three columns, all
+ * of them real.
+ *
+ * The magnifier was an overlay sitting on top of the reading column, which put
+ * the description and the buy box under a photograph at exactly the moment
+ * someone was reading them. It has its own space now and the dialog is wider to
+ * hold it. The third column is reserved permanently rather than added on hover:
+ * adding it would change the column count under the pointer and shove the
+ * reading column sideways the instant anyone moved onto the cover.
+ */
 .item {
-  /* The positioning context for the zoom panel — see `.item__zoompanel`, which
-     spans the detail column exactly and therefore needs the grid's own box. */
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 20rem;
   gap: var(--space-xl, 2rem);
   align-items: start;
+}
+
+/* Below the width that holds three columns, the magnifier is dropped rather
+   than squeezed — a 9rem magnified view shows less than the cover it magnifies. */
+@media (max-width: 64rem) {
+  .item {
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  }
+
+  .item__zoompanel {
+    display: none;
+  }
 }
 
 @media (max-width: 44rem) {
@@ -2280,50 +2300,22 @@ main {
 }
 
 /*
- * The magnified view, beside the cover and over the reading column.
+ * The magnified view, in its own column.
  *
- * Absolutely placed out of the first grid column into the second, which is why
- * `.item` is the positioning context. Over the prose deliberately: while the
- * pointer is on the cover the reader is looking at the picture, and the panel
- * has to be large enough to be worth showing.
+ * Empty and borderless when idle, so the reserved space reads as margin rather
+ * than as a hole waiting to be filled. It gains its frame only once there is
+ * something in it.
  */
 .item__zoompanel {
-  position: absolute;
-  /*
-   * Spans the detail column exactly: from the far edge of the 15rem media
-   * column plus the grid gap, to the right edge of the dialog's content.
-   *
-   * Pinned with `left` *and* `right` rather than given a width, and that is the
-   * fix rather than a preference. A fixed 24rem panel ended mid-title, leaving
-   * the last two letters of "Be Prepared Book Fr Daoud Lamei" poking out beside
-   * it — which reads as a clipping bug rather than as a magnifier.
-   */
-  left: calc(15rem + var(--space-xl, 2rem));
-  right: 0;
-  top: 0;
-  height: min(26rem, 100%);
-  z-index: 2;
-  background-repeat: no-repeat;
-  background-color: var(--color-paper, #f6e8e3);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  height: 22rem;
   border-radius: var(--radius-sm, 4px);
-  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
+  background-repeat: no-repeat;
 }
 
-
-
-/*
- * No pointer, no magnifier. On a touch screen the cover is already most of the
- * viewport, and a side panel would have to cover the very thing it magnifies.
- */
-@media (hover: none), (pointer: coarse) {
-  .item__plate {
-    cursor: default;
-  }
-
-  .item__zoompanel {
-    display: none;
-  }
+.item--zooming .item__zoompanel {
+  background-color: var(--color-paper, #f6e8e3);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--color-deep, #481010) 35%, transparent);
 }
 
 .item__cover {
