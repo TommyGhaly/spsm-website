@@ -32,7 +32,8 @@ export const metadata: Metadata = {
  */
 export default async function LivestreamPage() {
   const config = await getIntegrationsConfig();
-  const pastStreams = await getPastStreams(config.livestream);
+  // No await: the archive is a committed snapshot, not a network read.
+  const pastStreams = getPastStreams(config.livestream);
 
   return (
     <PageBody flush>
