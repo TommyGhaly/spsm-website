@@ -60,7 +60,12 @@ export function CardPayment({
   applicationId: string;
   locationId: string;
   sandbox: boolean;
-  onPaid: (orderId: string) => void;
+  /**
+   * The order id, plus the two answers the confirmation screen needs to tell
+   * someone what actually happens next. Both live in this component's state and
+   * are gone by the time the basket re-renders.
+   */
+  onPaid: (orderId: string, detail: { email: string; shipping: boolean }) => void;
 }) {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -152,16 +157,53 @@ export function CardPayment({
           idempotencyKey: idempotencyKey.current,
         }),
       });
-      const body: { orderId?: string; error?: string } = await response.json().catch(() => ({}));
+      /*
+       * Read the body as text first, then try it as JSON.
+       *
+       * `response.json().catch(() => ({}))` threw away the one fact worth
+       * having. The checkout endpoint is a Cloud Function reached through a
+       * Firebase Hosting rewrite, so on any origin without that rewrite — a
+       * bare `next dev`, a preview channel serving only the static export — the
+       * request lands on a 404 *HTML* page. That parsed to `{}`, and the reader
+       * was told "the payment could not be completed", which is what a refused
+       * card says. The two failures are nothing alike and one of them is not
+       * about their card at all.
+       */
+      const raw = await response.text();
+      let body: { orderId?: string; error?: string } = {};
+      let wasJson = false;
+      try {
+        body = JSON.parse(raw) as { orderId?: string; error?: string };
+        wasJson = true;
+      } catch {
+        // Left as `{}`; `wasJson` is what the message below turns on.
+      }
 
       if (!response.ok || !body.orderId) {
         setStatus('ready');
-        setError(body.error ?? 'The payment could not be completed.');
+
+        if (!wasJson) {
+          // Worth a line in the console: whoever sees this is a developer on an
+          // origin where the rewrite is missing, not a parishioner.
+          console.error(
+            `[checkout] ${response.status} from /api/square/checkout, and the body was not JSON. ` +
+              'That endpoint is a Cloud Function behind a Firebase Hosting rewrite — it does not ' +
+              'exist on the Next dev server. Serve the site through the hosting emulator to test paying.',
+          );
+        }
+
+        setError(
+          body.error ??
+            (wasJson
+              ? 'The payment could not be completed. Your card has not been charged.'
+              : 'Checkout is not reachable from this address, so no payment was taken. ' +
+                'The books can be bought at the bookstore after Liturgy.'),
+        );
         return;
       }
 
       setStatus('done');
-      onPaid(body.orderId);
+      onPaid(body.orderId, { email: email.trim(), shipping });
     } catch {
       setStatus('ready');
       // Deliberately says nothing about whether the charge went through,

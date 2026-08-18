@@ -1679,7 +1679,16 @@ main {
   gap: var(--space-xs, 0.35rem);
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
+  /*
+   * Square at the top, rounded at the foot — so the gold hover rule can run the
+   * full width of the card.
+   *
+   * With all four corners rounded there was nowhere for a 2px line to sit: it
+   * either stopped short of the curve, or ran to the edge and its ends poked
+   * out past it. A radius is not worth keeping at the cost of the one piece of
+   * colour these cards have.
+   */
+  border-radius: 0 0 var(--radius-md, 8px) var(--radius-md, 8px);
   padding: var(--space-md, 1.25rem);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
   transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
@@ -1752,6 +1761,21 @@ main {
  * Scales from the left in 240ms. This is the main piece of colour in what is
  * otherwise a grid of cream rectangles, and because it is a `transform` on a
  * pseudo-element it costs nothing to animate.
+ *
+ * ---------------------------------------------------------------------------
+ * **Full width, square ends — which is why the card is square at the top.**
+ *
+ * This used to carry `border-radius: 8px 8px 0 0` to match the card. It could
+ * not: the bar is 2px tall, and CSS scales a box's radii down together when
+ * they do not fit, so an 8px radius on a 2px box renders as 2px. The card kept
+ * its 8px curve, the bar curved at 2px, and the ends of the rule sat outside
+ * the card's corners as two little gold nubs.
+ *
+ * Squaring the card's top corners is the fix that keeps the line whole. The
+ * alternative — insetting the line by the radius so it stops before the curve —
+ * works too, but it shortens the one piece of colour on the card to buy a curve
+ * nobody was looking at.
+ * ---------------------------------------------------------------------------
  */
 .card::before {
   content: '';
@@ -1760,7 +1784,6 @@ main {
   right: 0;
   top: 0;
   height: 2px;
-  border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0;
   background: linear-gradient(
     to right,
     var(--color-gold, #b08d43),
@@ -2079,191 +2102,79 @@ main {
 }
 
 /*
- * The browse strip: covers, at a size worth looking at.
+ * One line under the bar, saying how a book actually reaches someone.
  *
- * The list below is the useful thing — scannable, complete, prices in a column
- * — but a page made only of rows gives the eye nothing to land on, and the
- * covers are the part of a bookshop that invites you in. A horizontal shelf
- * shows all eleven at once without turning the page back into the grid that
- * spread them over three sparse rows.
- *
- * It scrolls sideways rather than wrapping, which is what keeps it a *strip*:
- * wrapped, it becomes a grid again and the list underneath becomes a
- * duplicate of it.
+ * Not a strapline. The two questions a parish bookshop gets asked before any
+ * other are "can I just pick it up on Sunday" and "will you post it", and the
+ * answer to both belongs above the books rather than three screens down inside
+ * a basket nobody has opened yet.
  */
-/*
- * `overflow: hidden` on the wrapper, and it is load-bearing rather than tidy.
- *
- * The strip scrolls sideways, and its clipped content was still counting
- * towards the document's scrollable width — the whole page could be dragged
- * 194px to the right, while /events, which has no strip, could not be dragged
- * at all. Clipping at the wrapper stops the overflow escaping to the viewport
- * while leaving the strip itself free to scroll.
- */
-.browse {
-  overflow: hidden;
-  margin-bottom: var(--space-lg, 1.75rem);
-  padding-bottom: var(--space-md, 1rem);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+.shop-note {
+  margin: calc(var(--space-md, 1rem) * -1) 0 var(--space-lg, 1.6rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
 }
 
 /*
- * The scroller. Definite width, and it owns the overflow.
- *
- * The row inside is `max-content`, so it is honestly as wide as its covers and
- * this element clips it. Previously the row was both the scroller and the flex
- * container, and its content escaped all the way to the viewport.
- */
-.browse__viewport {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x proximity;
-}
-
-.browse__strip {
-  width: max-content;
-  display: flex;
-  gap: var(--space-md, 1rem);
-  list-style: none;
-  /* Vertical padding, not decoration: the covers lift 6px on hover and the
-     clipping above would shear the top off them without room to move into. */
-  padding: 0.5rem 0 var(--space-xs, 0.4rem);
-  margin: 0;
-}
-
-.browse__strip > li {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
-}
-
-/*
- * `position: relative` here is the fix for a page that could be dragged 194px
- * sideways, and it took a long time to find because it looks like nothing.
- *
- * Each button holds a `.visually-hidden` span carrying the book's name for
- * screen readers. That class is `position: absolute`, and with no positioned
- * ancestor an absolutely positioned box resolves against the *initial
- * containing block* — the viewport — not against the scroller it appears to sit
- * in. So the spans sat at x=1357 and beyond, outside every clip, extending the
- * document.
- *
- * That is why clipping never worked: `overflow: hidden` on the strip, on its
- * wrapper, and on the root all failed, because the offending boxes had escaped
- * to the viewport before any of them applied. Giving the button a position
- * makes it the containing block, and the spans are contained and clipped.
- */
-.browse__book {
-  position: relative;
-  display: block;
-  padding: 0;
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.browse__cover {
-  display: block;
-  width: 7.5rem;
-  height: 10rem;
-  object-fit: cover;
-  border-radius: 2px;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent),
-    0 2px 2px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
-    0 10px 20px -6px color-mix(in srgb, var(--color-ink, #1c1614) 36%, transparent);
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms ease;
-}
-
-/* Pulled off the shelf, the way you tilt a book out to look at it. */
-.browse__book:hover .browse__cover {
-  transform: translateY(-6px);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent),
-    0 3px 3px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
-    0 18px 30px -8px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
-}
-
-.browse__book:focus-visible .browse__cover {
-  outline: 2px solid var(--color-accent, #992a21);
-  outline-offset: 3px;
-}
-
-/* A book with no photograph: the same object, with a spine, so the strip is a
-   shelf with a plain binding in it rather than a shelf with a hole. */
-.browse__cover.cover--none {
-  width: 7.5rem;
-  height: 10rem;
-  aspect-ratio: auto;
-  padding: var(--space-sm, 0.6rem);
-  background: var(--color-paper-sunken, #eeddd7);
-  border-left: 4px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
-}
-
-.browse__cover.cover--none .cover--none__title {
-  display: block;
-  font-size: var(--type-small, 0.8125rem);
-}
-
-/*
- * The shop: a list, not a grid of covers.
+ * The shop: a grid of covers.
  *
  * ---------------------------------------------------------------------------
- * The photographs decided this.
+ * **This reverses the list, deliberately, and the reasoning it reverses is
+ * worth stating because it was not wrong — it was answering a different
+ * question.**
  *
- * The parish's covers are phone snaps of books on a table — angled, lit
- * differently, the desk visible behind several. Any layout that shows them
- * large makes those flaws the subject of the page. At 40px they answer "which
- * book is this" and stop, which is all they can honestly carry.
+ * The list existed because the parish's covers are phone snaps of books on a
+ * table, and the argument was that any layout showing them large makes those
+ * flaws the subject of the page. True. What the list then produced, though, was
+ * a page of eleven rows carrying a 40px thumbnail, a title, and a price at the
+ * far end of an empty gutter — a stock report. Nothing on it made anyone want a
+ * book, and wanting a book is the entire job of a shop.
  *
- * Eleven titles is not a grid's worth of anything either. A shop this size is a
- * list, the way a printed parish catalogue is a list — and a list is what lets
- * the titles, set in the display face, be the thing you actually read.
+ * The photographs turned out to survive being shown large, because the fix for
+ * a crooked snapshot is not to shrink it: it is to put a frame around it. Every
+ * cover sits in a tile of the same shape, on a sunken ground, cropped to fill,
+ * with a spine down its left edge and a shadow under it. Framed identically
+ * eleven times, the difference in how they were photographed stops reading as
+ * eleven mistakes and starts reading as eleven books on a shelf.
+ *
+ * The horizontal strip that used to sit above the list is gone with it. It held
+ * the same eleven covers in the same order as the rows beneath — one catalogue
+ * shown twice, where the second showing has to justify itself and could not.
  * ---------------------------------------------------------------------------
  */
 .shelf {
   list-style: none;
   padding: 0;
   margin: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
-}
-
-.shelf__item + .shelf__item {
-  border-top: 1px solid var(--color-rule, #e0cac3);
-}
-
-/*
- * The whole row is the button — one hit target, one tab stop. `View` is a label
- * on that affordance, not a control of its own; a second focusable element
- * inside the row would be a second stop going exactly where the first goes.
- */
-/*
- * Tighter than it was: rows ran 128px tall, which on eleven books meant a page
- * of mostly gaps. The cover sets the floor now and the padding merely clears
- * it.
- */
-/*
- * The row is a container now rather than one big button, because it holds two
- * actions: opening the book, and adding it. A button cannot contain another
- * one, so the cover and title are their own button and `Add` sits beside them.
- */
-.shelf__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-md, 1rem);
-  width: 100%;
-  padding: var(--space-sm, 0.6rem) var(--space-sm, 0.5rem);
-  transition: background-color 150ms ease;
+  /* Never fewer than ~13rem per card, so a cover is always big enough to read a
+     title off. `auto-fill` rather than `auto-fit`: with three books in the last
+     row, `auto-fit` collapses the empty tracks and stretches those three to
+     absurd widths. */
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: var(--space-lg, 1.75rem) var(--space-md, 1.25rem);
 }
 
-/* The details half: cover and words, one target. */
-.shelf__open {
+/*
+ * The card is not a box drawn around a book — it has no border and no ground of
+ * its own. What holds it together is the framed cover at the top and the
+ * baseline the footer sits on; a bordered tile eleven times over is a form,
+ * and it competes with the covers it is supposed to present.
+ */
+.book {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-md, 1rem);
+  /* The footer pinned to the bottom of every card regardless of how long the
+     title above it ran, so the row of prices reads as a row. */
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+.book__open {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  grid-row: 1 / span 2;
+  align-content: start;
   min-width: 0;
   padding: 0;
   text-align: left;
@@ -2274,144 +2185,173 @@ main {
   cursor: pointer;
 }
 
-.shelf__open:focus-visible {
+.book__open:focus-visible {
+  outline: none;
+}
+
+.book__open:focus-visible .book__frame {
   outline: 2px solid var(--color-accent, #992a21);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
-/* The row lights as one object, with a gold edge to say where it starts —
-   the same mark the bands and the ornament use. */
-.shelf__row:hover {
-  background: var(--color-paper-raised, #fdf7f4);
-  box-shadow: inset 3px 0 0 var(--color-gold, #b08d43);
+/*
+ * The frame is what makes eleven inconsistent photographs into a shelf.
+ *
+ * A fixed 3:4 tile on sunken paper, with the cover cropped to fill it. The
+ * framing is lost at the margins — which is where the desk and the room are —
+ * and what survives is the middle of the jacket, which is the part that says
+ * which book this is. `position: relative` also contains the spine and the flag
+ * below; without it they would resolve against the viewport.
+ */
+.book__frame {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent),
+    0 2px 3px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent),
+    0 14px 24px -10px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms ease;
 }
 
-
-
-/*
- * Deliberately small. Large enough to recognise a book you have seen on the
- * shelf in the narthex, small enough that a crooked snapshot is not the subject
- * of the row.
- */
-/*
- * The covers, filled rather than fitted.
- *
- * ---------------------------------------------------------------------------
- * These are phone photographs of books on a table — different angles, different
- * light, a desk or a dark room visible behind most of them. Contained inside a
- * box, each one floated at its own size with its own background showing, and
- * eleven of those down a page read as a pile of snapshots rather than a shelf.
- *
- * `cover` on a 3:4 portrait crops every one of them to the same shape, filling
- * the tile edge to edge. The framing is lost at the margins, which is where the
- * desk is; what remains is the middle of the jacket, which is the part that
- * says which book it is. Uniform beats complete here.
- *
- * Trimming the backgrounds automatically was tried first and does not work:
- * measured against the real files, `sharp.trim` removes 0% from seven of the
- * nine because the edges are busy rather than flat.
- * ---------------------------------------------------------------------------
- */
-.shelf__thumb {
-  width: 5.5rem;
-  height: 7.25rem;
+.book__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   object-position: center;
-  align-self: center;
-  border-radius: 2px;
-  /* A hairline and a bottom-weighted shadow: an object standing on a shelf
-     rather than a picture lying on the page. */
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent),
-    0 1px 1px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
-    0 6px 14px -4px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
-}
-
-/* Pulled off the shelf a little, the way you tilt a book out to look at it. */
-.shelf__open:hover .shelf__thumb {
-  transform: translateY(-3px);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent),
-    0 2px 2px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
-    0 12px 22px -6px color-mix(in srgb, var(--color-ink, #1c1614) 38%, transparent);
 }
 
 /*
- * A book with no photograph at all. Not a blank tile: the same 3:4 object with
- * a gold rule down its left edge, which is what a spine looks like on a shelf,
- * so it stands in the row as a book rather than as a gap.
+ * A darkening down the left edge, and it is the one piece of pure ornament
+ * here. It reads as the shadow in the gutter of a book standing upright, which
+ * is what turns a rectangle of photograph into an object with a thickness.
  */
-.shelf__thumb.cover--none {
-  width: 5.5rem;
-  height: 7.25rem;
-  aspect-ratio: auto;
-  background: var(--color-paper-sunken, #eeddd7);
-  border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+.book__spine {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 9%;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent),
+    color-mix(in srgb, var(--color-ink, #1c1614) 6%, transparent) 55%,
+    transparent
+  );
 }
 
-.shelf__thumb.cover--none .cover--none__title {
-  display: none;
+/* Pulled off the shelf, the way you tilt a book out to look at it. */
+.book__open:hover .book__frame {
+  transform: translateY(-6px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent),
+    0 3px 4px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 24px 34px -12px color-mix(in srgb, var(--color-ink, #1c1614) 45%, transparent);
 }
 
-.shelf__text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
+
+/* The rule stamped inside the boards. An inset shadow rather than a second
+   element, so the markup for a missing cover stays one span. */
+
+
+/*
+ * Sat on the cover rather than under the title, because it is a fact about the
+ * copy in front of you rather than about the edition. Only ever rendered when
+ * there is something to say — a badge that is usually blank is furniture.
+ */
+.book__flag {
+  position: absolute;
+  left: 0;
+  bottom: var(--space-sm, 0.6rem);
+  padding: 0.2rem 0.55rem 0.2rem 0.7rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  letter-spacing: var(--tracking-wide, 0.05em);
+  text-transform: uppercase;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-radius: 0 var(--radius-full, 999px) var(--radius-full, 999px) 0;
 }
 
-/* The display face, at reading size. On a page of eleven books the titles are
-   the content; everything else on the row is annotation. */
-.shelf__title {
+.book__flag--out {
+  background: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * Three lines at most, and the clamp is what keeps the grid a grid.
+ *
+ * Square's titles run from "Book" to "The Diary of a CEO: The 33 Laws of
+ * Business and Life (Ebury Edge)". Unclamped, that one title set the height of
+ * its whole row, and the five cards beside it carried 90px of nothing between
+ * their title and their price. The full title is in the dialog the card opens
+ * and on the element itself, so nothing is lost — only deferred.
+ */
+.book__title {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.35rem);
+  font-size: var(--type-subheading, 1.125rem);
   line-height: var(--leading-snug, 1.3);
   color: var(--color-ink, #1c1614);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
-.shelf__sub {
+.book__open:hover .book__title {
+  color: var(--color-accent, #992a21);
+}
+
+/* Two lines. Square's descriptions run from a phrase to a paragraph, and a
+   card with five lines of prose beside one with none is what makes a grid
+   ragged. Only two of the eleven carry one at all. */
+.book__blurb {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
   line-height: var(--leading-normal, 1.45);
   color: var(--color-ink-faint, #6f5f5a);
-  /* One line: Square's descriptions run from a phrase to a paragraph, and a
-     three-line row next to a one-line row is what made the old grid ragged. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
-.shelf__in {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  letter-spacing: var(--tracking-wide, 0.06em);
-  text-transform: uppercase;
-  color: var(--color-accent, #992a21);
+/*
+ * Price and action on one baseline, over a hairline. The rule is what gives
+ * the grid its horizontals — without it eleven cards float, and a shelf needs
+ * a shelf.
+ */
+.book__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.6rem);
+  margin-top: var(--space-sm, 0.7rem);
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
 }
 
-/* The price in the display face, at the size the title is set in: on a row
-   carrying two facts, both should look like facts rather than one looking like
-   a footnote. */
-.shelf__price {
+.book__price {
+  margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.25rem);
+  font-size: var(--type-subheading, 1.2rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
 
 /*
- * The sell. Filled, because on a page whose job is to shift books the action
- * that shifts one should not be the quietest thing in the row.
- *
- * It replaced a `View` pill that only opened a dialog — an affordance for
- * reading about a book, offered where the shop should have been offering to
- * sell it.
+ * The sell. Filled, because on a page whose job is to shift books the control
+ * that shifts one should not be the quietest thing on the card.
  */
-.shelf__add {
-  padding: 0.45rem 1rem;
+.book__add {
+  padding: 0.4rem 0.95rem;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
   white-space: nowrap;
@@ -2423,15 +2363,15 @@ main {
   transition: background-color 160ms ease, transform 120ms ease;
 }
 
-.shelf__add:hover {
+.book__add:hover {
   background: var(--color-accent-strong, #731d16);
 }
 
-.shelf__add:active {
-  transform: scale(0.97);
+.book__add:active {
+  transform: scale(0.96);
 }
 
-.shelf__gone {
+.book__gone {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
   color: var(--color-ink-faint, #6f5f5a);
@@ -2499,19 +2439,7 @@ main {
   transform: translateY(-4px);
 }
 
-.alsoin__cover.cover--none {
-  width: 6.5rem;
-  height: 8.5rem;
-  aspect-ratio: auto;
-  padding: 0.4rem;
-  background: var(--color-paper-sunken, #eeddd7);
-  border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
-}
 
-.alsoin__cover.cover--none .cover--none__title {
-  display: block;
-  font-size: 0.6875rem;
-}
 
 .alsoin__name {
   font-family: var(--font-body, Georgia, serif);
@@ -2531,24 +2459,157 @@ main {
   color: var(--color-accent, #992a21);
 }
 
-/* On a phone the row keeps its thumbnail and title and drops the affordance
-   label — the whole row is still the target, and "View" beside a price in a
-   320px column is two things fighting for the last inch. */
-/* On a phone the price moves under the title and Add keeps the right edge, so
-   the row stays two columns rather than three squeezed ones. */
+/* Two across on a phone rather than one. A single column of full-width covers
+   turns eleven books into a very long scroll, and the covers do not need
+   340px to be legible. */
 @media (max-width: 34rem) {
-  .shelf__row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-sm, 0.7rem);
+  .shelf {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-md, 1.25rem) var(--space-sm, 0.75rem);
   }
 
-  .shelf__price {
-    grid-column: 1;
-    grid-row: 2;
+  .book__title {
+    font-size: var(--type-small, 1rem);
   }
 
-  .shelf__add {
-    grid-row: 1 / span 2;
+  /* Price over button rather than beside it: at ~150px the two do not fit on
+     one line without the price wrapping mid-figure. */
+  .book__foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-xs, 0.4rem);
+  }
+
+  .book__add {
+    text-align: center;
+  }
+}
+
+/* ---- the bookstore, previewed on the homepage --------------------------- */
+
+/*
+ * A shelf of covers, scrolling sideways.
+ *
+ * The covers are the whole argument here — a homepage section about a parish
+ * bookshop that led with a heading and a paragraph would be asking someone to
+ * read their way into wanting a book. Sideways rather than wrapped: a wrapped
+ * grid is the shop, and the shop is one click away.
+ */
+.bookshelf {
+  overflow: hidden;
+}
+
+/* Definite width, and it owns the overflow. The strip inside is `max-content`,
+   so without this the row escapes and the whole document scrolls sideways —
+   the bug the shop's strips already carry a note about. */
+.bookshelf__viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+}
+
+.bookshelf__strip {
+  width: max-content;
+  display: flex;
+  gap: var(--space-lg, 1.5rem);
+  list-style: none;
+  /* Vertical room for the lift on hover; the clip above would shear the tops
+     off the covers without it. */
+  padding: 0.5rem 0 var(--space-sm, 0.6rem);
+  margin: 0;
+}
+
+.bookshelf__strip > li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+/* `position: relative` for the reason the shop's strips need it: any absolutely
+   positioned descendant would otherwise resolve against the viewport and drag
+   the page sideways. */
+.bookshelf__book {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  width: 9rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.bookshelf__cover {
+  width: 9rem;
+  height: 12rem;
+  object-fit: cover;
+  object-position: center;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent),
+    0 2px 3px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent),
+    0 14px 24px -10px color-mix(in srgb, var(--color-ink, #1c1614) 38%, transparent);
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms ease;
+}
+
+/* Pulled off the shelf, the way you tilt a book out to look at it. */
+.bookshelf__book:hover .bookshelf__cover {
+  transform: translateY(-6px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent),
+    0 3px 4px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 24px 34px -12px color-mix(in srgb, var(--color-ink, #1c1614) 45%, transparent);
+}
+
+.bookshelf__book:focus-visible {
+  outline: none;
+}
+
+.bookshelf__book:focus-visible .bookshelf__cover {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+.bookshelf__name {
+  margin-top: var(--space-xs, 0.35rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #1c1614);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.bookshelf__book:hover .bookshelf__name {
+  color: var(--color-accent, #992a21);
+}
+
+.bookshelf__price {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bookshelf__more {
+  margin: var(--space-md, 1rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+@media (max-width: 34rem) {
+  .bookshelf__book,
+  .bookshelf__cover {
+    width: 7rem;
+  }
+
+  .bookshelf__cover {
+    height: 9.3rem;
   }
 }
 
@@ -2577,62 +2638,168 @@ main {
   width: min(66rem, calc(100vw - 2rem));
   max-height: min(48rem, calc(100dvh - 3rem));
   overflow: auto;
-  padding: var(--space-lg, 1.6rem);
+  /*
+   * No rubber-band at the ends, and this is about the gold rule along the top.
+   *
+   * That rule is the sheet's own `border-top`, which belongs to the element and
+   * does not scroll. The bar below it is sticky, which does move under a
+   * momentum overscroll — so a hard flick pulled the header a few pixels away
+   * from the gold line and let paper show through the seam, then snapped it
+   * back. `none` also stops the scroll chaining to the page behind, which is
+   * what a modal wants anyway.
+   */
+  overscroll-behavior: none;
+  /*
+   * No padding here, and that is load-bearing rather than tidy. A sticky child
+   * of a padded scroller sticks to the *padding* box, so the bar below would
+   * pin 1.6rem down the sheet and leave a strip above it for the content to
+   * scroll through. `.sheet__body` carries the padding instead.
+   */
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-rule, #e0cac3));
   border-top: 3px solid var(--color-gold, #b08d43);
   border-radius: var(--radius-lg, 14px);
   background: var(--color-paper-raised, #fdf7f4);
   color: var(--color-ink, #1c1614);
+  /*
+   * The bar's height, declared rather than measured, so anything else that
+   * sticks inside the sheet can clear it. CSS cannot read one element's height
+   * into another's `top`, and a sticky panel that pins *under* an opaque bar is
+   * a panel you have scrolled away for good.
+   *
+   * The bar's own content comes to 3.65rem (2.25rem of control plus 0.7rem of
+   * padding either side), so this is the floor that sets it.
+   */
+  --sheet-bar: 3.75rem;
   box-shadow:
     0 2px 4px color-mix(in srgb, var(--color-deep, #481010) 18%, transparent),
     0 32px 70px -16px color-mix(in srgb, var(--color-deep, #481010) 55%, transparent);
+}
+
+/*
+ * Two widths, because the dialog holds two different things.
+ *
+ * The default 66rem is sized for the product page: a large cover, a magnifier
+ * column, and a column of prose. A basket in that width is a ledger three rows
+ * long stretched across a metre of paper, with every title a hand's width from
+ * its own price. It is one narrow column instead — wide enough for a cover, a
+ * title and a figure, and no wider.
+ *
+ * The checkout keeps the width, because a payment form needs it.
+ */
+.sheet--basket {
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+.sheet--pay {
+  width: min(60rem, calc(100vw - 2rem));
 }
 
 .sheet::backdrop {
   background: color-mix(in srgb, var(--color-deep, #481010) 72%, transparent);
 }
 
+/*
+ * The dialog's bar: the title on the left, the close on the right, pinned to
+ * the top of a sheet that scrolls.
+ *
+ * ---------------------------------------------------------------------------
+ * This is a fix for two bugs that fed each other.
+ *
+ * The close was `position: absolute` against the sheet, so it scrolled away
+ * with the content — on the checkout, which is taller than the sheet, it was
+ * gone before the card fields appeared. The heading *was* sticky, with an
+ * opaque paper ground and a z-index above it, so on the way past it slid over
+ * the close and hid what was left of it.
+ *
+ * And the heading was not properly pinned either: its `top` was a negative
+ * offset, so it travelled up a couple of centimetres before it stuck. A header
+ * that moves a bit and then stops is a header that looks broken.
+ *
+ * One bar, `top: 0`, holding both. Nothing overlaps because nothing is
+ * positioned over anything.
+ * ---------------------------------------------------------------------------
+ */
+.sheet__bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  min-height: var(--sheet-bar, 3.75rem);
+  padding: var(--space-sm, 0.7rem) var(--space-lg, 1.6rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+/*
+ * The way back, in the bar rather than in the panel below it.
+ *
+ * It was the first thing inside the checkout's recap, which scrolls — and on a
+ * phone, where that panel stacks above the payment form instead of sitting
+ * beside it, it scrolled off entirely. Someone half-way through a card form who
+ * wants to change a quantity should not have to scroll up to find the way back.
+ *
+ * Quiet, because it is the alternative to paying, and ordered before the title
+ * for the same reason a nav bar puts back on the left.
+ */
+.sheet__back {
+  flex: 0 0 auto;
+  padding: 0.3rem 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.sheet__back:hover {
+  color: var(--color-accent, #992a21);
+  border-bottom-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+}
+
+.sheet__name {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-tight, 1.2);
+  letter-spacing: var(--tracking-tight, -0.015em);
+  color: var(--color-ink, #1c1614);
+}
+
+/* `margin-left: auto` rather than `justify-content: space-between`, because on
+   the product dialog the close is the bar's only child and space-between would
+   park it on the left. */
 .sheet__close {
-  position: absolute;
-  top: var(--space-sm, 0.7rem);
-  right: var(--space-sm, 0.7rem);
+  flex: 0 0 auto;
+  margin-left: auto;
   width: 2.25rem;
   height: 2.25rem;
   display: grid;
   place-items: center;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--color-ink-soft, #4b413e);
-  background: none;
-  border: 0;
+  background: var(--color-paper-sunken, #eeddd7);
+  border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-full, 999px);
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .sheet__close:hover {
-  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
 }
 
-/*
- * Sticky inside the dialog, which scrolls. On the checkout the form is taller
- * than the sheet, and the heading that says which screen you are on was the
- * first thing to disappear. The paper ground behind it is not decoration —
- * without it the rows scroll visibly under the text.
- */
-.sheet__name {
-  position: sticky;
-  top: calc(var(--space-xl, 2.25rem) * -1);
-  z-index: 2;
-  padding-top: var(--space-sm, 0.5rem);
-  margin-top: calc(var(--space-sm, 0.5rem) * -1);
-  background: var(--color-paper-raised, #fdf7f4);
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-title, 1.9rem);
-  line-height: var(--leading-tight, 1.15);
-  letter-spacing: var(--tracking-tight, -0.015em);
-  margin: 0 0 var(--space-lg, 1.35rem);
-  padding-bottom: var(--space-sm, 0.6rem);
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
+.sheet__body {
+  padding: var(--space-lg, 1.6rem);
 }
 
 /* ---- one book, in full ------------------------------------------------- */
@@ -2773,18 +2940,6 @@ main {
   object-fit: contain;
 }
 
-/* The stand-in for a book with no photograph: same frame, its own title. */
-.item__cover.cover--none {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1 / 1;
-  box-shadow: none;
-}
-
-.item__cover.cover--none .cover--none__title {
-  display: block;
-  font-size: var(--type-subheading, 1.125rem);
-}
 
 /* Arrows, shown only above one photograph. */
 .item__step {
@@ -2986,46 +3141,44 @@ main {
   color: var(--color-accent, #992a21);
 }
 
-/* ---- the basket -------------------------------------------------------- */
+/* ---- the checkout ------------------------------------------------------ */
 
 /*
- * The basket, and then the checkout — two screens rather than one.
+ * A compact recap on the left, the payment form given real width on the right.
  *
- * Everything used to be on one: the lines on the left and the entire payment
- * form squeezed into a 19rem summary column beside them, where the inputs were
- * narrower than their own labels. No form survives 19rem, which is why
- * restyling it never helped. Paying now gets the whole dialog: a compact recap
- * on the left and the form given real width on the right.
+ * Everything used to be on one screen: the basket lines and the entire payment
+ * form squeezed into a 19rem column beside them, where the inputs were narrower
+ * than their own labels. No form survives 19rem, which is why restyling it
+ * never helped. Paying gets its own screen and its own shape.
  */
-.cart {
+.paying {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
   gap: var(--space-xl, 2rem);
   align-items: start;
 }
 
-.cart--paying {
-  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
-}
-
 @media (max-width: 44rem) {
-  .cart,
-  .cart--paying {
+  .paying {
     grid-template-columns: 1fr;
     gap: var(--space-lg, 1.5rem);
   }
+
 }
 
 /* ---- the recap, beside the payment form -------------------------------- */
 
 /*
- * Sticky beside the form, so the total and the Back link stay in view while a
- * long address is filled in. Same reasoning as the basket's summary.
+ * Sticky beside the form, so the total stays in view while a long address is
+ * filled in. The Back link that used to head this panel is in the dialog's bar
+ * now — pinned there rather than sticky here, because on a phone this panel
+ * stacks above the form and scrolls away with it.
  */
 .recap {
   position: sticky;
-  /* Clears the dialog's own sticky heading above it. */
-  top: var(--space-md, 1rem);
+  /* Clears the bar, which is opaque and sits above this in the stack. Sticking
+     at `1rem` pinned the panel underneath it. */
+  top: calc(var(--sheet-bar, 3.75rem) + var(--space-md, 1rem));
   display: grid;
   gap: var(--space-sm, 0.7rem);
   padding: var(--space-md, 1.1rem);
@@ -3034,19 +3187,19 @@ main {
   border-radius: var(--radius-md, 8px);
 }
 
-.recap__back {
-  justify-self: start;
-  padding: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
-  color: var(--color-ink-soft, #4b413e);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.recap__back:hover {
-  color: var(--color-accent, #992a21);
+/*
+ * One column on a phone, where the recap stacks above the form rather than
+ * sitting beside it. Sticky there pins the panel over the very fields the
+ * reader is trying to fill in.
+ *
+ * This has to come *after* the rule above rather than beside the `.paying`
+ * breakpoint it belongs with: same specificity, so the later declaration wins,
+ * and declared earlier it lost to `position: sticky` and did nothing.
+ */
+@media (max-width: 44rem) {
+  .recap {
+    position: static;
+  }
 }
 
 .recap__lines {
@@ -3099,158 +3252,110 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* The step out of the basket and into paying. */
-.summary__go {
-  width: 100%;
-  margin-top: var(--space-md, 0.9rem);
-  padding: 0.75rem 1.2rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-body, 1rem);
-  color: var(--color-ink-inverse, #fdf7f4);
-  background: var(--color-accent, #992a21);
-  border: 0;
-  border-radius: var(--radius-full, 999px);
-  cursor: pointer;
-  transition: background-color 160ms ease;
-}
-
-.summary__go:hover {
-  background: var(--color-accent-strong, #731d16);
-}
+/* ---- the basket -------------------------------------------------------- */
 
 /*
- * The way back to the shop. Quiet, because it is the alternative to the thing
- * this panel exists to encourage — but present, because without it the only
- * exit from a basket is the close cross, which reads as abandoning the order
- * rather than going to find another book.
+ * One column, and that is the whole of the rebuild.
+ *
+ * ---------------------------------------------------------------------------
+ * The basket was two columns: the lines on the left and a sticky summary panel
+ * on the right. That shape exists for a cart of forty items, where the total
+ * has to follow the reader down a long page. A parish basket holds one to three
+ * books, so the second column bought nothing and cost two things at once — it
+ * squeezed the lines until every title sat a hand's width from its own price,
+ * and it left a tall column of dead paper beside a list three rows long.
+ *
+ * Down one narrow column there is no gutter to fall into. The line is as wide
+ * as the sheet, the total is under the lines where a total goes, and the sheet
+ * is narrow enough that the whole thing is one field of view.
+ * ---------------------------------------------------------------------------
  */
-.summary__more {
-  width: 100%;
-  margin-top: var(--space-sm, 0.5rem);
-  padding: 0.5rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
-  color: var(--color-ink-soft, #4b413e);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.summary__more:hover {
-  color: var(--color-accent, #992a21);
-  text-decoration: underline;
-}
-
-/*
- * An empty basket is an invitation, not a report. "Nothing in the basket yet"
- * stated the obvious and offered nothing; this says what the shop does and
- * gives a way into it.
- */
-.empty {
+.basket {
   display: grid;
-  gap: var(--space-xs, 0.4rem);
-  justify-items: start;
-  padding: var(--space-lg, 1.5rem) 0;
+  /*
+   * `minmax(0, 1fr)`, not the implicit `auto`. The cross-sell strip at the
+   * bottom is `width: max-content` — honestly as wide as its covers, because it
+   * is a scroller — and an `auto` track sizes to its widest item. So the column
+   * grew to the width of the whole strip, dragged the line totals off the right
+   * edge of the sheet and sliced the subtotal in half. This is the floor that
+   * lets the strip overflow inside its own viewport instead of pushing on the
+   * grid.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
-.empty__title {
-  margin: 0;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.4rem);
-}
-
-.empty__note {
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: var(--color-ink-soft, #4b413e);
-}
-
-.empty__go {
-  width: auto;
-  margin-top: var(--space-sm, 0.6rem);
-  padding-inline: 1.4rem;
-}
-
-@media (max-width: 44rem) {
-  .cart {
-    grid-template-columns: 1fr;
-    gap: var(--space-lg, 1.5rem);
-  }
-}
-
-.cart__lines {
+.basket__lines {
   list-style: none;
   padding: 0;
   margin: 0;
-}
-
-.cart__line {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--space-md, 1rem);
-  align-items: start;
-  padding: var(--space-md, 1rem) 0;
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
-}
-
-.cart__line:first-child {
-  padding-top: 0;
-}
-
-.cart__cover {
-  width: 4.5rem;
-  height: 5.75rem;
-  object-fit: contain;
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
-    0 5px 12px -4px color-mix(in srgb, var(--color-ink, #1c1614) 26%, transparent);
-}
-
-.cart__cover.cover--none {
-  width: 4.5rem;
-  height: 5.75rem;
-  aspect-ratio: auto;
-  background: var(--color-paper-sunken, #eeddd7);
-}
-
-.cart__cover.cover--none .cover--none__title {
-  display: none;
-}
-
-.cart__text {
-  display: grid;
-  gap: var(--space-xs, 0.3rem);
   min-width: 0;
 }
 
-.cart__name {
+/*
+ * Cover on the left spanning the whole line; title, unit price and the controls
+ * stacked in one column beside it. Two columns, not three — the third is what
+ * put the money at the far end of an empty row.
+ */
+.basket__line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--space-md, 1rem);
+  align-items: start;
+  padding: var(--space-md, 1.1rem) 0;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.basket__line:first-child {
+  padding-top: 0;
+}
+
+.basket__cover {
+  grid-row: 1 / span 3;
+  width: 3.5rem;
+  height: 4.6rem;
+  object-fit: cover;
+  object-position: center;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent),
+    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent),
+    0 7px 14px -6px color-mix(in srgb, var(--color-ink, #1c1614) 30%, transparent);
+}
+
+.basket__name {
   margin: 0;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
-  line-height: var(--leading-snug, 1.3);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #1c1614);
 }
 
 /* The unit price. Replaced a green "In stock" that appeared on every line —
    true of the whole shop, and therefore information about nothing. */
-.cart__each {
-  margin: 0;
+.basket__each {
+  margin: 0.1rem 0 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
   font-variant-numeric: tabular-nums;
 }
 
-.cart__controls {
+/*
+ * Stepper, Remove, and the line total on one row, with the money pushed to the
+ * end. Putting the total here rather than opposite the title is what closes the
+ * gap: it lands at the foot of the line, and because every line is the height
+ * of its cover the totals still form a column down the right.
+ */
+.basket__foot {
   display: flex;
   align-items: center;
   gap: var(--space-sm, 0.75rem);
-  margin-top: var(--space-xs, 0.2rem);
+  margin-top: var(--space-sm, 0.55rem);
 }
 
-/* Removing is setting the quantity to zero, so there is one code path for "how
-   many of this" rather than a second one that deletes. */
-.cart__remove {
+.basket__remove {
   padding: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
@@ -3261,56 +3366,501 @@ main {
   cursor: pointer;
 }
 
-.cart__remove:hover {
+.basket__remove:hover {
   color: var(--color-accent, #992a21);
   border-bottom-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
 }
 
-.cart__sum {
-  margin: 0;
-  align-self: start;
+.basket__sum {
+  margin: 0 0 0 auto;
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.2rem);
+  font-size: var(--type-subheading, 1.15rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
 
-/* The summary sits beside the lines rather than under them, so the total and
-   the card form stay in view while quantities are being changed. */
-.summary {
-  position: sticky;
-  top: 0;
-  padding: var(--space-lg, 1.35rem);
-  background: var(--color-paper-sunken, #eeddd7);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent);
+/*
+ * The total: label and figure on one line, the qualification under both.
+ *
+ * A two-row grid rather than a panel. The old summary was a bordered box with
+ * its own ground, floated in a column of its own — which made the one number
+ * everybody opens a basket to see look like a sidebar. Here it is simply the
+ * last and largest thing in the ledger, which is what a total is.
+ */
+.basket__total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-md, 1rem);
+  padding-top: var(--space-md, 1rem);
 }
 
-.summary__line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-sm, 0.5rem);
+.basket__totallabel {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.basket__totalsum {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2rem);
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #1c1614);
+}
+
+.basket__totalnote {
+  grid-column: 1 / -1;
+  margin-top: var(--space-xs, 0.35rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.45);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* The step out of the basket and into paying — and the widest, heaviest thing
+   in the dialog, because it is the one control this screen exists to offer. */
+.basket__pay {
+  width: 100%;
+  margin-top: var(--space-md, 1.1rem);
+  padding: 0.8rem 1.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.basket__pay:hover {
+  background: var(--color-accent-strong, #731d16);
+}
+
+/*
+ * The way back to the shop. Quiet, because it is the alternative to the thing
+ * this screen exists to encourage — but present, because without it the only
+ * exit from a basket is the close cross, which reads as abandoning the order
+ * rather than going to find another book.
+ */
+.basket__keep {
+  justify-self: center;
+  margin-top: var(--space-sm, 0.5rem);
+  padding: 0.4rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.basket__keep:hover {
+  color: var(--color-accent, #992a21);
+  text-decoration: underline;
+}
+
+/*
+ * An empty basket is an invitation, not a report. "Nothing in the basket yet"
+ * stated the obvious and offered nothing; this says what the shop does and
+ * gives a way into it.
+ */
+.basket__empty {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  justify-items: start;
+  padding: var(--space-md, 1rem) 0 var(--space-lg, 1.5rem);
+}
+
+.basket__emptytitle {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+}
+
+.basket__emptynote {
   margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-soft, #4b413e);
 }
 
-.summary__line strong {
+/* The same control as Checkout, sized to its words rather than to the sheet:
+   nothing has been decided yet, so it should not look like the last step. */
+.basket__empty .basket__pay {
+  width: auto;
+  padding-inline: 1.4rem;
+}
+
+/* ---- another book, from inside the basket ------------------------------- */
+
+/*
+ * The offer of a second book, where the decision to buy a first has just been
+ * made. The basket was a dead end that only counted what was in it; on a shelf
+ * of eleven, the reader who has taken one title is the reader most likely to
+ * take another, and nothing was putting one in front of them.
+ */
+.addmore {
+  margin-top: var(--space-lg, 1.4rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+}
+
+.addmore__title {
+  margin: 0 0 var(--space-sm, 0.7rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * A fade off the right edge, because the strip holds more than fits and a
+ * cover sliced clean by the column edge reads as a clipping bug rather than as
+ * "there is more this way". `mask-image` rather than an overlay so it fades to
+ * whatever is behind it — the sheet's paper here, but the dialog is the only
+ * place this strip appears.
+ */
+.addmore__viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* `currentColor` rather than a literal black: a mask reads only the alpha
+     channel, so any opaque colour does, and the sheet's own ink keeps this
+     file's no-hardcoded-colours rule intact. */
+  mask-image: linear-gradient(to right, currentColor calc(100% - 2.5rem), transparent);
+}
+
+.addmore__strip {
+  width: max-content;
+  display: flex;
+  gap: var(--space-md, 0.9rem);
+  list-style: none;
+  /* Room for the lift on hover; without it the clip shears the top off. */
+  padding: 0.25rem 0 var(--space-xs, 0.4rem);
+  margin: 0;
+}
+
+.addmore__strip > li {
+  flex: 0 0 auto;
+}
+
+/*
+ * `position: relative` for the reason the cross-sell strip needs it: the
+ * `.visually-hidden` label inside is absolutely positioned, and with no
+ * positioned ancestor it resolves against the viewport rather than this button.
+ */
+.addmore__book {
+  position: relative;
+  display: grid;
+  /* Cover, name, price, button — with the name's track fixed at two lines so
+     the six Add pills share one baseline. Left to `auto` they sat wherever
+     each title happened to end, which is six baselines in one strip. */
+  grid-template-rows: auto 2.5em auto auto;
+  gap: 0.2rem;
+  justify-items: start;
+  width: 5.5rem;
+  padding: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.addmore__cover {
+  width: 5.5rem;
+  height: 7.25rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent),
+    0 5px 12px -5px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
+}
+
+.addmore__book:hover .addmore__cover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent),
+    0 12px 20px -8px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
+}
+
+
+
+.addmore__name {
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-small, 0.8125rem);
+  line-height: 1.25;
+  color: var(--color-ink, #1c1614);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.addmore__price {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* Outlined rather than filled: it is an offer, and six filled red pills beside
+   the one button that actually completes the order would be six things
+   competing with Checkout. */
+.addmore__add {
+  margin-top: 0.15rem;
+  padding: 0.15rem 0.6rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-accent, #992a21);
+  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  border-radius: var(--radius-full, 999px);
+}
+
+.addmore__book:hover .addmore__add {
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+.addmore__book:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* ---- a book with no photograph ----------------------------------------- */
+
+/*
+ * Four of the eleven titles have no image in Square, and every place a cover is
+ * shown — the shelf, the basket, the cross-sells, the product page — has to put
+ * something in the gap.
+ *
+ * Not a blank tile with the title in it. That is what these were, and pale
+ * rectangles among photographs read as holes rather than as books. This is a
+ * plain cloth binding in the parish's deep red, with a gold rule stamped inside
+ * the boards and the title set on it in gold: an honest thing for a book with
+ * no cover photograph to look like, and interleaved with the photographs it
+ * gives a shelf a rhythm instead of a gap.
+ *
+ * One rule for all five contexts, which each override only their size and their
+ * type scale. Written after them so that `display: grid` here beats the
+ * `display: block` those rules set at equal specificity.
+ *
+ * It fixes itself the day someone uploads the photograph: the element becomes
+ * an `<img>` and none of this applies.
+ */
+.cover--none {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: var(--space-md, 1rem) var(--space-sm, 0.7rem);
+  text-align: center;
+  overflow: hidden;
+  background: var(--color-deep, #481010);
+  border-left: 5px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, var(--color-deep, #481010));
+}
+
+/* The rule stamped inside the boards. A pseudo-element rather than a second
+   span, so the markup for a missing cover stays one element. */
+.cover--none::before {
+  content: "";
+  position: absolute;
+  inset: var(--space-xs, 0.4rem) var(--space-xs, 0.4rem) var(--space-xs, 0.4rem) 0;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  pointer-events: none;
+}
+
+.cover--none__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-micro, 0.75rem);
+  line-height: var(--leading-snug, 1.3);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 80%, var(--color-ink-inverse, #fdf7f4));
+}
+
+/* Only the sizes differ. Each of these is the same box as the photograph it
+   stands in for. */
+.book__cover.cover--none {
+  padding: var(--space-lg, 1.5rem) var(--space-md, 1rem);
+}
+
+.book__cover.cover--none .cover--none__title {
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.item__cover.cover--none {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  padding: var(--space-xl, 2.25rem);
+  box-shadow: none;
+}
+
+.item__cover.cover--none .cover--none__title {
+  font-size: var(--type-heading, 1.5rem);
+}
+
+.alsoin__cover.cover--none,
+.addmore__cover.cover--none,
+.basket__cover.cover--none {
+  padding: var(--space-sm, 0.6rem) var(--space-xs, 0.4rem);
+  border-left-width: 3px;
+}
+
+/* ---- the order, once it is paid for ------------------------------------ */
+
+/*
+ * The confirmation screen.
+ *
+ * It was a thank-you line, a sentence saying the parish would "be in touch
+ * about collection or postage", and a raw 29-character Square order id under
+ * the word "Order" — hedged where it should have been definite, and
+ * machine-facing where it should have been human. Somebody who has just handed
+ * over money wants four things: confirmation it worked, what they bought, where
+ * it comes from, and what to do now. In that order, with the reference last and
+ * small because it only matters if something has gone wrong.
+ */
+.done {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-sm, 0.6rem);
+  padding-bottom: var(--space-sm, 0.5rem);
+}
+
+/* A tick in the parish's gold, on the accent ground. Large enough to be the
+   first thing seen, which is the one job it has. */
+.done__mark {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0 0 var(--space-xs, 0.3rem);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: 1;
+  color: var(--color-gold, #b08d43);
+  background: var(--color-deep, #481010);
+  border-radius: var(--radius-full, 999px);
+}
+
+.done__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 1.75rem);
+  line-height: var(--leading-tight, 1.15);
+  letter-spacing: var(--tracking-tight, -0.015em);
+  color: var(--color-ink, #1c1614);
+}
+
+.done__lede {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* What they bought, on the sunken ground so it reads as a slip rather than as
+   more of the page. */
+.done__lines {
+  width: 100%;
+  list-style: none;
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  margin: var(--space-sm, 0.6rem) 0 0;
+  padding: var(--space-md, 1rem) var(--space-md, 1rem) var(--space-sm, 0.7rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0;
+}
+
+.done__lines li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-sm, 0.6rem);
+  align-items: baseline;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.done__qty {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.done__name {
+  min-width: 0;
+}
+
+.done__sum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Joined to the slip above it — same ground, squared where they meet — so the
+   total reads as the last line of the list rather than a separate figure. */
+.done__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-sm, 0.7rem) var(--space-md, 1rem) var(--space-md, 0.9rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  border-radius: 0 0 var(--radius-md, 8px) var(--radius-md, 8px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.done__total strong {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-weight: 400;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
 }
 
-.summary__note {
-  margin: var(--space-xs, 0.35rem) 0 0;
+.done__receipt {
+  margin: var(--space-sm, 0.6rem) 0 0;
   font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.done__receipt strong {
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * The Square reference. Last and quiet, but selectable — the one time it is
+ * wanted is when someone is pasting it into an email to the office.
+ */
+.done__ref {
+  margin: var(--space-xs, 0.4rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+.done__ref code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: inherit;
+  user-select: all;
+}
+
+/* Sized to its words here: the order is already paid for, so this is a way out
+   rather than the last step of anything. */
+.done .basket__pay {
+  width: auto;
+  padding-inline: 1.4rem;
 }
 
 /* ---- the stepper ------------------------------------------------------- */
@@ -3364,18 +3914,6 @@ main {
 .stepper--sm span {
   min-width: 1.6rem;
   font-size: var(--type-small, 0.875rem);
-}
-
-.paid {
-  display: grid;
-  gap: var(--space-xs, 0.4rem);
-}
-
-.paid__title {
-  margin: 0;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.4rem);
-  color: var(--color-accent, #992a21);
 }
 
 /* ---- checkout ---------------------------------------------------------- */
@@ -3603,18 +4141,6 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.paid {
-  display: grid;
-  gap: var(--space-xs, 0.4rem);
-}
-
-.paid__title {
-  margin: 0;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-heading, 1.4rem);
-  color: var(--color-accent, #992a21);
-}
-
 /* ---- checkout ---------------------------------------------------------- */
 
 .pay {
@@ -3694,19 +4220,6 @@ main {
 
 .pay__sandbox code {
   font-variant-numeric: tabular-nums;
-}
-
-.paid {
-  display: grid;
-  gap: var(--space-xs, 0.4rem);
-  margin-top: var(--space-md, 1rem);
-}
-
-.paid__title {
-  margin: 0;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.25rem);
-  color: var(--color-accent, #992a21);
 }
 
 /* ---- people (clergy biographies) --------------------------------------- */
