@@ -272,6 +272,19 @@ svg {
 }
 
 /*
+ * A band that stops close under its own content.
+ *
+ * The full `--space-section` below *and* above a seam puts two section's worth
+ * of air between them — on the homepage that was 178px between the bookstore's
+ * last line and the schedule's heading, which reads as the page having ended.
+ * Used where the section beneath is a continuation of the same errand rather
+ * than a change of subject.
+ */
+.band--tight-end {
+  padding-bottom: var(--space-lg, 1.75rem);
+}
+
+/*
  * The sunken band, with a warm cast rather than a flat fill.
  *
  * `--color-paper-sunken` on its own alternated with `--color-paper` as two
