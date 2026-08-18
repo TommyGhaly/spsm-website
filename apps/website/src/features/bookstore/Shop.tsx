@@ -196,6 +196,38 @@ export function Shop({
         </p>
       )}
 
+      {/*
+        A shelf of covers above the list.
+
+        The list is the useful thing — scannable, complete, with prices in a
+        column — but a page made only of rows gives the eye nothing to land on,
+        and the covers are the one part of a bookshop that invites you in. Shown
+        at a size worth looking at, they do the job the list cannot: you
+        recognise a book you have seen in the narthex before you read a word.
+
+        Hidden while a search is running: a strip of everything, above results
+        that are a subset of it, contradicts the filter.
+      */}
+      {!needle && (
+        <div className="browse">
+          <ul className="browse__strip">
+            {products.map((product) => (
+              <li key={product.id}>
+                <button
+                  type="button"
+                  className="browse__book"
+                  onClick={() => setOpen(product)}
+                  title={product.name}
+                >
+                  <Cover product={product} className="browse__cover" />
+                  <span className="visually-hidden">{product.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <ul className="shelf">
         {shown.map((product) => (
           <Row

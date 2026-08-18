@@ -2028,6 +2028,93 @@ main {
 }
 
 /*
+ * The browse strip: covers, at a size worth looking at.
+ *
+ * The list below is the useful thing — scannable, complete, prices in a column
+ * — but a page made only of rows gives the eye nothing to land on, and the
+ * covers are the part of a bookshop that invites you in. A horizontal shelf
+ * shows all eleven at once without turning the page back into the grid that
+ * spread them over three sparse rows.
+ *
+ * It scrolls sideways rather than wrapping, which is what keeps it a *strip*:
+ * wrapped, it becomes a grid again and the list underneath becomes a
+ * duplicate of it.
+ */
+.browse {
+  margin-bottom: var(--space-lg, 1.75rem);
+  padding-bottom: var(--space-md, 1rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+.browse__strip {
+  display: flex;
+  gap: var(--space-md, 1rem);
+  list-style: none;
+  padding: 0 0 var(--space-xs, 0.4rem);
+  margin: 0;
+  overflow-x: auto;
+  /* Each cover comes to rest under the left edge rather than halfway off it. */
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.browse__strip > li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.browse__book {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.browse__cover {
+  display: block;
+  width: 7.5rem;
+  height: 10rem;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent),
+    0 2px 2px color-mix(in srgb, var(--color-ink, #1c1614) 20%, transparent),
+    0 10px 20px -6px color-mix(in srgb, var(--color-ink, #1c1614) 36%, transparent);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms ease;
+}
+
+/* Pulled off the shelf, the way you tilt a book out to look at it. */
+.browse__book:hover .browse__cover {
+  transform: translateY(-6px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent),
+    0 3px 3px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
+    0 18px 30px -8px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
+}
+
+.browse__book:focus-visible .browse__cover {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+/* A book with no photograph: the same object, with a spine, so the strip is a
+   shelf with a plain binding in it rather than a shelf with a hole. */
+.browse__cover.cover--none {
+  width: 7.5rem;
+  height: 10rem;
+  aspect-ratio: auto;
+  padding: var(--space-sm, 0.6rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-left: 4px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+.browse__cover.cover--none .cover--none__title {
+  display: block;
+  font-size: var(--type-small, 0.8125rem);
+}
+
+/*
  * The shop: a list, not a grid of covers.
  *
  * ---------------------------------------------------------------------------
