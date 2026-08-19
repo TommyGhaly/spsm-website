@@ -19,18 +19,21 @@ describe('buildOrderEmail', () => {
 
   /*
    * The whole reason this email exists alongside Square's receipt. If the
-   * collection/postage sentence ever stops differing, the parish is sending two
+   * collection/delivery sentence ever stops differing, the parish is sending two
    * payment receipts and one of them is redundant.
    */
   it('says where the books come from, differently for each choice', () => {
     const collect = buildOrderEmail({ ...base, shipping: false });
-    const post = buildOrderEmail({ ...base, shipping: true });
+    const delivered = buildOrderEmail({ ...base, shipping: true });
 
     expect(collect.message.text).toContain('collect it after any Liturgy');
     expect(collect.message.subject).toContain('collect');
 
-    expect(post.message.text).toContain('posted to you');
-    expect(post.message.subject).not.toContain('collect');
+    // "posted" until 2026-08-19: the parish's word for this is "delivered", and
+    // "posted" was reading as "put up on a noticeboard" to enough people to be
+    // worth changing everywhere. See `orderEmail.ts`.
+    expect(delivered.message.text).toContain('delivered to you');
+    expect(delivered.message.subject).not.toContain('collect');
   });
 
   it('prints money with cents, in both parts', () => {

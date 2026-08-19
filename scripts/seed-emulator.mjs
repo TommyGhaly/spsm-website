@@ -89,13 +89,24 @@ const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), u
 
 // --- accounts ---------------------------------------------------------------
 
+/*
+ * The last two exist to make the program-gallery permission model testable at
+ * all. It is the one axis on this site that cannot be exercised by changing a
+ * role: a grant is a list of ids on a member document, and "the youth servant
+ * can reach Summercamp but not St. Simon" is invisible until you sign in as
+ * somebody holding exactly that.
+ */
 const accounts = [
-  ['admin@spsmwayland.org', 'admin', []],
-  ['staff@spsmwayland.org', 'staff', []],
-  ['servant@spsmwayland.org', 'servant', []],
-  ['father@spsmwayland.org', 'staff', ['clergy']],
+  ['admin@spsmwayland.org', 'admin', [], null],
+  ['staff@spsmwayland.org', 'staff', [], null],
+  ['servant@spsmwayland.org', 'servant', [], null],
+  ['father@spsmwayland.org', 'staff', ['clergy'], null],
+  // Holds a whole program: every camp, this year and every year.
+  ['lead@spsmwayland.org', 'servant', [], { programs: ['summercamp'], events: [] }],
+  // Helps with one week. Must not inherit week 2 — see the rules tests.
+  ['volunteer@spsmwayland.org', 'servant', [], { programs: [], events: ['week-1-2027'] }],
 ];
-for (const [email, role, groups] of accounts) {
+for (const [email, role, groups, programAdmin] of accounts) {
   const uid = await user(email, role, groups);
   await put(`members/${uid}`, {
     displayName: email.split('@')[0],
@@ -106,6 +117,7 @@ for (const [email, role, groups] of accounts) {
     groupsMirror: groups,
     authProvider: 'microsoft',
     notificationPrefs: { announcements: true, prayerTeam: false, orderUpdates: false },
+    programAdmin: programAdmin ?? { programs: [], events: [] },
     ...audit(),
   });
 }
@@ -235,11 +247,120 @@ await put('announcements/welcome-back', {
   ...audit(),
 });
 
+// --- program galleries ------------------------------------------------------
+//
+// Enough of a tree to exercise all three presentation levels (group, event,
+// program) and both grant shapes, without pretending to be a real camp.
+//
+// The photographs are references, not files: `renditionPath` points into the
+// emulator's Storage bucket and nothing puts an image there. The gallery
+// therefore renders its layout with broken images, which is the right trade —
+// seeding real binaries would make this script slow and large, and the thing
+// worth testing locally is the packing, the ordering and the permissions.
+
+const programs = [
+  ['summercamp', 'Summercamp', 10],
+  ['st-simon-for-seniors', 'St. Simon for Seniors', 20],
+];
+for (const [slug, name, order] of programs) {
+  await put(`programs/${slug}`, {
+    slug,
+    name,
+    description: `${name} — local test copy, not the parish's words.`,
+    coverMediaId: null,
+    order,
+    published: true,
+    publishAt: null,
+    ...audit(),
+  });
+}
+
+const GROUPS = [
+  { id: 'day-1', name: 'Day 1', order: 10 },
+  { id: 'day-2', name: 'Day 2', order: 20 },
+  { id: 'talent-show', name: 'Talent Show', order: 30 },
+];
+
+// Week 1 takes submissions; week 2 does not, so the closed-form path is
+// reachable without editing anything.
+const programEvents = [
+  ['week-1-2027', 'summercamp', 'Summercamp Week 1 2027', GROUPS, true],
+  ['week-2-2027', 'summercamp', 'Summercamp Week 2 2027', [], false],
+];
+for (const [id, programId, title, groups, submissionsOpen] of programEvents) {
+  await put(`programEvents/${id}`, {
+    programId,
+    slug: id,
+    title,
+    description: `${title} — local test copy.`,
+    startAt: day(-30, 9),
+    endAt: day(-26, 16),
+    timeZone: 'America/New_York',
+    groups,
+    coverMediaId: null,
+    calendarEventId: null,
+    submissionsOpen,
+    published: true,
+    publishAt: null,
+    ...audit(),
+  });
+}
+
+/*
+ * Aspect ratios are spread on purpose: a panorama, a portrait and a run of
+ * ordinary snapshots are what make auto-layout produce something other than a
+ * uniform grid, so a uniform grid on screen means the packer is not running.
+ *
+ * `m-05` is pinned by hand — it is the fixture that proves a dragged
+ * photograph survives a reload rather than being re-packed.
+ */
+const shots = [
+  ['m-01', 'day-1', 3.0, 'approved', { onPage: true, slideshow: true, homepage: true }, null],
+  ['m-02', 'day-1', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
+  ['m-03', 'day-1', 0.7, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
+  ['m-04', 'day-2', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
+  ['m-05', 'day-2', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false },
+    { col: 1, row: 1, colSpan: 6, rowSpan: 4 }],
+  ['m-06', 'day-2', 1.33, 'approved', { onPage: false, slideshow: true, homepage: false }, null],
+  ['m-07', 'talent-show', 1.5, 'approved', { onPage: true, slideshow: true, homepage: true }, null],
+  // The approval queue. Three waiting, so bulk selection has something to act on.
+  ['m-08', null, 1.5, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
+  ['m-09', null, 1.5, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
+  ['m-10', null, 0.75, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
+];
+
+for (const [id, groupId, aspect, status, placement, layout] of shots) {
+  const approved = status === 'approved';
+  await put(`galleryMedia/${id}`, {
+    programId: 'summercamp',
+    programEventId: 'week-1-2027',
+    groupId,
+    kind: 'photo',
+    status,
+    sourcePath: `submissions/week-1-2027/${id}.heic`,
+    renditionPath: approved ? `galleries/summercamp/week-1-2027/${id}.webp` : null,
+    posterPath: null,
+    width: Math.round(1200 * (aspect >= 1 ? 1 : aspect)),
+    height: Math.round(1200 * (aspect >= 1 ? 1 / aspect : 1)),
+    durationSeconds: null,
+    caption: approved ? `Local test photograph ${id}` : '',
+    focal: { x: 0.5, y: 0.5 },
+    placement,
+    layout,
+    order: Number(id.slice(2)) * 10,
+    submittedAt: day(-20, 12),
+    reviewedAt: approved ? day(-19, 9) : null,
+    reviewedBy: approved ? 'seed' : null,
+    ...audit(),
+  });
+}
+
 // --- done -------------------------------------------------------------------
 
 console.log(`Seeded the emulators at ${FIRESTORE}:
 
   ${pages.length} content pages, ${events.length} events, 1 announcement
+  ${programs.length} programs, ${programEvents.length} program events, ${shots.length} photographs (3 awaiting approval)
   config/parish, config/integrations, and config/theme
   ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}
 
@@ -249,5 +370,7 @@ Sign in at /admin or /servants with password  emulator-only
   staff@spsmwayland.org      staff    — the events admin
   servant@spsmwayland.org    servant  — the schedule only
   father@spsmwayland.org     staff + clergy
+  lead@spsmwayland.org       servant  — all of Summercamp, via a program grant
+  volunteer@spsmwayland.org  servant  — Summercamp Week 1 only
 
 Now run:  NEXT_PUBLIC_USE_EMULATORS=1 npm run dev`);

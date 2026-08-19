@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { formatAddress } from '@spsm/shared';
 import { getParishConfig } from '@/lib/config';
+import { Masthead } from '@/components/Masthead';
 import { SiteNav } from '@/components/SiteNav';
 import { HeaderAuth } from '@/components/HeaderAuth';
 import { ThemeBootScript, ThemeRuntime } from '@/components/ThemeRuntime';
@@ -56,6 +57,11 @@ const NAV = [
   // app/calendar/page.tsx.
   { href: '/calendar', label: 'Calendar' },
   { href: '/events', label: 'Events' },
+  // Directly after Events, which is where it belongs: both are things the
+  // parish is asking you to do something about. `/forms` is a hub rather than a
+  // form — see app/forms/page.tsx — so this one item covers every form the
+  // parish adds without the nav growing again each time.
+  { href: '/forms', label: 'Forms' },
   // The catalog page has existed since the bookstore feature shipped and was
   // reachable only by typing the URL — nothing on the site linked to it. It is
   // in the sitemap now for the same reason.
@@ -174,7 +180,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
 
         <div className="shell">
-          <header className="masthead">
+          {/*
+            A client component, and only for its scroll behaviour — everything
+            inside it is still rendered on the server and passed through as
+            children. See Masthead.tsx: the bar slides away as you read and
+            comes back on a scroll up, a pointer at the top of the window, or
+            focus landing inside it.
+          */}
+          <Masthead>
             <div className="wrap masthead__inner">
               <Link href="/" className="wordmark">
                 {/*
@@ -213,7 +226,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               */}
               <HeaderAuth />
             </div>
-          </header>
+          </Masthead>
 
           <main id="main">{children}</main>
 

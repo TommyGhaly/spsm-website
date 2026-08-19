@@ -430,6 +430,55 @@ main {
 }
 
 /*
+ * ---- the bar that gets out of the way ----------------------------------
+ *
+ * `components/Masthead.tsx` adds and removes `--hidden` as you scroll; this is
+ * the whole of what the class does. Everything about *when* is over there.
+ *
+ * `transform`, not `top`: this element repaints on every scroll frame already,
+ * and a transform is the one property that moves it without asking the browser
+ * to lay the page out again. -101% rather than -100% so the gold bottom hairline
+ * clears the top of the window too — at exactly 100% it stays as a one-pixel
+ * gold line across the top of the screen, which looks like a rendering fault.
+ *
+ * The two durations are not the same on purpose. Leaving is quicker than
+ * arriving: going away should feel like getting out of the way, and coming back
+ * should feel like the bar settling into place rather than snapping at you.
+ *
+ * `.nav-panel--open` is positioned against this element and so travels with it.
+ * That is why the component refuses to hide while a menu is open — see its note.
+ */
+.masthead {
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.6, 1);
+  /* Promotes the bar to its own layer, so sliding it does not repaint the hero
+     photograph or the page text underneath. */
+  will-change: transform;
+}
+
+.masthead--hidden {
+  transform: translateY(-101%);
+}
+
+.masthead:not(.masthead--hidden) {
+  transform: translateY(0);
+  transition-duration: 340ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * The component bails out entirely under `prefers-reduced-motion`, so the class
+ * is never applied and this rule should never have anything to do. It is here
+ * for the gap between the stylesheet arriving and the effect running: a bar
+ * that has no business moving should not be able to animate even for one frame.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .masthead {
+    transition: none;
+    transform: none;
+  }
+}
+
+/*
  * The global focus ring is `accent`, a dark red — which on the dark red bar is
  * very nearly invisible. Gold is the only colour in the palette that separates
  * from this ground, so keyboard focus in the header switches to it.
@@ -623,7 +672,18 @@ main {
    */
   gap: var(--space-xs, 0.25rem);
   margin-left: auto;
-  font-size: var(--type-small, 0.9375rem);
+  /*
+   * 96% of `--type-small`, not the token itself — about 15px becoming 14.4.
+   *
+   * Written as a multiple rather than as a literal `0.9rem` so a parish that
+   * scales the type scale in `config/theme` still scales this with it; a raw
+   * rem here would be the one thing in the header that ignored the theme.
+   *
+   * The 4% is what buys the ninth nav item its place on the row without pushing
+   * the changeover up into laptop territory — see the budget note below
+   * `.nav-panel`. It is worth about 25px across nine labels.
+   */
+  font-size: calc(var(--type-small, 0.9375rem) * 0.96);
 }
 
 /*
@@ -637,7 +697,21 @@ main {
   position: relative;
   color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
   text-decoration: none;
-  padding: 0.5rem 0.85rem;
+  /*
+   * 0.65rem, down from 0.85. The ninth item — Forms — cost the row about 76px
+   * that the header did not have, and the wordmark began setting on three
+   * lines: the silent failure the budget note below warns about.
+   *
+   * This and the 4% off the font size are what pay for that item. Together they
+   * are worth about 70px, which is enough to keep all nine on one row at the
+   * *original* 78rem changeover rather than pushing it up to 84 — see the note
+   * below `.nav-panel` for why that mattered more than it looked.
+   *
+   * Do not take this any lower. At 0.5rem the labels read as one long string —
+   * "AboutCalendarEvents" at a glance — which is the state this padding was
+   * raised from in the first place.
+   */
+  padding: 0.5rem 0.65rem;
   border-radius: var(--radius-full, 999px);
   white-space: nowrap;
   transition:
@@ -751,13 +825,48 @@ main {
  *
  * With seven items in a 1280 shell the header had roughly 400px of empty middle
  * and no statement of where the parish is, on the one page width where there was
- * room for both. Measured just above 78rem, the narrowest viewport at which the
- * inline nav shows at all: wordmark 406px and nav 596px, plus the 40px between
- * them, inside a content box of 1171.
+ * room for both.
  *
- * That ~128px of slack is the budget. A nav item added or a label lengthened
- * spends it, and the failure is silent — the wordmark wraps rather than the nav
- * collapsing — so re-measure here before adding to NAV in layout.tsx.
+ * ---------------------------------------------------------------------------
+ * Re-measured at nine items, when Forms joined the row.
+ *
+ * Eight items came to 630px and left about 128px of slack. Forms took 76px of
+ * that and the wordmark immediately began setting on three lines at 1280 —
+ * exactly the silent failure this note existed to warn about, arriving the
+ * first time anybody spent the budget.
+ *
+ * **The first fix was wrong, and wrong in a way worth recording.** It shaved a
+ * little padding and then moved the changeover from 78rem to 84rem to cover the
+ * rest — which "worked" in the sense that nothing wrapped, and quietly took the
+ * inline navigation away from every laptop between 1248 and 1344 CSS pixels.
+ * That is most of them. A 1280-wide screen, and a 1366 with a scrollbar, both
+ * landed on the phone's hamburger on a desktop browser, and the first report
+ * back was that the header had stopped working on the other pages.
+ *
+ * **Raising this breakpoint is almost never the fix.** It is invisible in
+ * whatever window you happen to be testing at and it silently downgrades
+ * everyone narrower. Make the row fit instead.
+ *
+ * What actually fits it, measured rather than estimated: `.nav a` at 0.65rem of
+ * side padding and `.nav` at 96% of `--type-small`, together worth about 44px
+ * against the 0.85rem/full-size row. Nine items then measure 633px, and with
+ * the wordmark at 408, the sign-in circle at 40 and the two gaps at 56 the row
+ * comes to 1137px inside the content box.
+ *
+ * Measured slack, at the widths that actually exist:
+ *
+ *     1249px  (one px above the changeover)   35px
+ *     1265px  (a maximised 1280 screen)       50px
+ *     1280px                                  63px
+ *     1366px                                 149px
+ *
+ * That 35px at the bottom of the range is the whole remaining budget, and it is
+ * not a tenth nav item — the shortest label in the row costs about 60. The next
+ * one goes in the footer, or something comes out. The failure is still silent
+ * — the wordmark wraps rather than the nav collapsing — so re-measure here
+ * before adding to NAV in layout.tsx, and fix it in this rule rather than in
+ * the media query.
+ * ---------------------------------------------------------------------------
  */
 
 @media (max-width: 78rem) {
@@ -989,20 +1098,67 @@ main {
  */
 .header-auth__menu {
   position: absolute;
-  top: calc(100% + 0.6rem);
+  top: calc(100% + 0.5rem);
   right: 0;
   z-index: 60;
   /* Wide enough for a parish address at the micro size before it ellipsizes,
      and capped so a long display name cannot stretch it off the bar. */
-  min-width: 16.5rem;
-  max-width: 20rem;
-  padding: var(--space-sm, 0.5rem);
+  min-width: 17.5rem;
+  max-width: 21rem;
+  padding: var(--space-xs, 0.35rem);
   background: var(--color-deep, #481010);
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
-  border-radius: var(--radius-md, 0.5rem);
-  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
+  /* `lg`, not `md`. A 16px radius against a 40px circular trigger reads as the
+     same family of shape; 8px read as a dialog that happened to appear under a
+     button. */
+  border-radius: var(--radius-lg, 0.75rem);
+  /*
+   * Two shadows, not one. The wide soft one lifts the card off the page; the
+   * hairline inside the top edge is what gives it a lit edge against the dark
+   * bar it hangs from — without it the card and the masthead are the same flat
+   * colour and the boundary between them is only the border.
+   */
+  box-shadow:
+    var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15)),
+    inset 0 1px 0 color-mix(in srgb, var(--color-ink-inverse, #f9efec) 10%, transparent);
   color: var(--color-ink-inverse, #f9efec);
+
+  /*
+   * ---- the font, which is the actual bug this block fixes ----
+   *
+   * `body` sets `--font-body`, a serif, and nothing between it and here
+   * overrode it — so an account menu, the most conventionally *interface* thing
+   * on the site, was setting a person's name and email in Georgia. The rows
+   * below say `font-family: inherit`, which faithfully inherited the wrong one.
+   *
+   * The serif is right for the parish's prose and wrong for chrome. `--font-ui`
+   * is the token that exists for exactly this, and it is already what the nav,
+   * the nav panel and every `.note` on the site use.
+   */
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.3);
+  /* Digits and capitals in a UI sans want a fraction less tracking than the
+     face's default at this size. */
+  letter-spacing: -0.005em;
+
+  /* Comes down from the trigger rather than appearing. 120ms is short enough
+     that it never delays a click and long enough to say where it came from. */
+  transform-origin: top right;
+  animation: header-auth-open 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes header-auth-open {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-auth__menu {
+    animation: none;
+  }
 }
 
 /*
@@ -1016,8 +1172,8 @@ main {
 .header-auth__who {
   display: flex;
   align-items: center;
-  gap: var(--space-sm, 0.5rem);
-  padding: var(--space-sm, 0.5rem);
+  gap: 0.65rem;
+  padding: var(--space-sm, 0.6rem) var(--space-sm, 0.6rem) 0.7rem;
 }
 
 .header-auth__whoAvatar {
@@ -1028,9 +1184,14 @@ main {
   height: 2.25rem;
   border-radius: var(--radius-full, 999px);
   background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+  /* A gold ring, matching the one on the trigger the menu came out of. Without
+     it the avatar here is a flat disc and the trigger is an outlined one, which
+     is the opposite of the resemblance this block exists to create. */
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
   color: var(--color-gold, #b08d43);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* `min-width: 0` so the email below can actually ellipsize — without it the
@@ -1041,6 +1202,7 @@ main {
 }
 
 .header-auth__whoName {
+  font-size: var(--type-small, 0.9375rem);
   font-weight: 600;
   line-height: var(--leading-snug, 1.25);
   overflow: hidden;
@@ -1056,7 +1218,11 @@ main {
  */
 .header-auth__whoMail {
   font-size: var(--type-micro, 0.8125rem);
-  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
+  line-height: var(--leading-snug, 1.3);
+  /* 62%, down from 72%. The name and the address were close enough in weight
+     that the block read as two equal lines; the address is the quiet one. Still
+     over 5:1 on this ground. */
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 62%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1070,32 +1236,56 @@ main {
  * not a heading: when somebody is refused the admin, "you are signed in as
  * servant" is the whole answer, and it only has to be legible, not prominent.
  */
+/*
+ * The role, as a chip on its own line under the identity block.
+ *
+ * It was a full-width row with a bottom rule, which made "SERVANT" look like a
+ * section heading for the links beneath it. It is a label *about the person
+ * above it*, so it is now a bounded pill that ends where the word does — and
+ * the rule that separated it from the links has moved to the links, where the
+ * division actually is.
+ *
+ * 0.68rem with open tracking rather than the micro token: this is set in
+ * capitals, and uppercase at 13px in a UI sans is both larger than it needs to
+ * be and tighter than capitals want.
+ */
 .header-auth__role {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  margin: 0;
-  padding: 0 var(--space-sm, 0.5rem) var(--space-sm, 0.5rem);
-  font-size: var(--type-micro, 0.8125rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  width: fit-content;
+  margin: 0 var(--space-sm, 0.6rem) var(--space-xs, 0.35rem);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 14%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--color-gold, #b08d43) 88%, var(--color-ink-inverse, #f9efec));
-  border-bottom: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
 }
 
 .header-auth__roleDot {
-  width: 0.4rem;
-  height: 0.4rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  flex-shrink: 0;
   border-radius: var(--radius-full, 999px);
   background: var(--color-gold, #b08d43);
 }
 
+/*
+ * The links, above the rule the role chip used to carry.
+ *
+ * The division in this card is between "who you are" and "where you can go",
+ * and the rule now sits on that line rather than under the role.
+ */
 .header-auth__links {
   list-style: none;
   margin: 0;
-  padding: var(--space-xs, 0.25rem) 0;
+  padding: var(--space-xs, 0.35rem) 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
   display: grid;
+  gap: 1px;
 }
 
 /*
@@ -1107,20 +1297,24 @@ main {
 .header-auth__signout {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
   width: 100%;
   /* 40px floor for a pointer target somebody hits while the menu is already
      closing. `min-height` rather than padding alone: the button and the anchors
      resolve different line-heights from their own font metrics, which left the
      sign-out row 6px shorter than the links above it. */
   min-height: 2.5rem;
-  padding: 0.4rem var(--space-sm, 0.5rem);
+  padding: 0.4rem var(--space-sm, 0.6rem);
   border: 0;
-  border-radius: var(--radius-sm, 0.25rem);
+  /* Matched to the card's own 0.75rem less its 0.35rem of padding, so a hovered
+     row's corners sit concentric with the card's rather than inside them. */
+  border-radius: 0.4rem;
   background: transparent;
-  color: var(--color-ink-inverse, #f9efec);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 92%, transparent);
   font-family: inherit;
   font-size: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -1155,10 +1349,13 @@ main {
  * stop a thumb aiming for "Admin" landing on it.
  */
 .header-auth__signout {
-  margin-top: var(--space-xs, 0.25rem);
+  margin-top: var(--space-xs, 0.35rem);
+  padding-top: calc(0.4rem + var(--space-xs, 0.35rem));
   border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
-  border-radius: 0 0 var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem);
-  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+  /* Square across the top, so the hairline above it runs the row's full width
+     rather than stopping short of two curves. */
+  border-radius: 0 0 0.4rem 0.4rem;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 74%, transparent);
 }
 
 /* Sign-in failed for a reason worth reading. Same box, alarm-tinted edge. */
@@ -1166,6 +1363,8 @@ main {
   border-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
   max-width: 20rem;
   padding: var(--space-md, 1rem);
+  /* A sentence rather than a row of labels, so it wants reading leading. */
+  line-height: var(--leading-normal, 1.5);
 }
 
 .header-auth__menu--error p {
@@ -1180,12 +1379,16 @@ main {
  * a media query cannot read a custom property, so the comment is the only thing
  * holding them together: change one, change all three.
  *
- * Measured with the circle in the row, because the note above `.nav-panel` asks
- * for exactly that before anything is added to the header. The tightest case is
- * a 1249px viewport — one pixel above the changeover, gutters not yet opened to
- * their clamp, content box 1170px — where the wordmark, the eight nav items and
- * this come to 1134px. About 37px spare, and the wordmark still sets on two
- * lines. Re-measure here, not only at the `.nav-panel` note, if a label grows.
+ * This briefly went to 84rem to make room for the Forms nav item, which took
+ * the inline navigation away from most laptops. See the re-measurement above
+ * `.nav-panel` — the row was made to fit instead, and this came back.
+ *
+ * Measured with the circle in the row, because that note asks for exactly that
+ * before anything is added to the header. The tightest case is a 1249px
+ * viewport — one pixel above the changeover, content box 1169px — where the
+ * wordmark, the nine nav items and this come to 1137px. About 35px spare, and
+ * the wordmark sets on two lines. Re-measure here, not only at the
+ * `.nav-panel` note, if a label grows.
  */
 @media (max-width: 78rem) {
   .header-auth {
@@ -1203,6 +1406,9 @@ main {
   border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 15%, transparent);
 }
 
+/* The UI face, for the same reason `.header-auth__menu` sets it: this is the
+   phone's copy of that card, and a person's name set in Georgia inside an
+   account panel is the bug that block documents. */
 .nav-panel__who {
   display: flex;
   align-items: center;
@@ -1210,6 +1416,8 @@ main {
   flex-wrap: wrap;
   margin: 0 0 var(--space-sm, 0.5rem);
   color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1.0625rem);
   font-weight: 600;
 }
 
@@ -1345,16 +1553,25 @@ main {
 }
 
 /*
- * The two decorative frames, held back from the sanctuary but no longer drained.
+ * The two decorative frames, held back from the sanctuary but no longer
+ * drained.
  *
  * They were at `saturate(.55) … brightness(.82)`, which did stop them jumping
- * forward — by throwing away the only strong colour either one has. The domes
- * frame is deep blue stained glass and gold; the towers frame is a hard blue
- * sky. Desaturated to a warm grey they were three near-identical sepia
- * photographs taking turns, which is a duller hero than one photograph.
+ * forward — by throwing away the only strong colour either one has. The glass
+ * frame is deep blue and gold; the towers frame is a hard blue sky.
+ * Desaturated to a warm grey they were near-identical sepia photographs taking
+ * turns, which is a duller hero than one photograph.
  *
  * So: most of the colour back, and the separation carried by brightness alone.
  * They still sit behind the sanctuary, they just do it without going grey.
+ *
+ * **There is no `.hero__frame--4` rule any more, and its absence is the point.**
+ * The fourth frame was a 381px source stretched across the hero, and this
+ * section carried `blur(2.5px)` plus an `object-position` nudge to make that
+ * read as soft focus rather than as a broken image. All of it was compensation
+ * for a file, not a composition, and it went out with the frame — see the note
+ * on `Hero` in app/page.tsx. Do not reintroduce a blur here for a picture that
+ * simply is not big enough; replace the picture.
  */
 .hero__frame--2,
 .hero__frame--3 {
@@ -1602,6 +1819,12 @@ main {
 
   /*
    * The cross-fade: 27s round, nine seconds a frame.
+
+   * Was 36s over four, and is back to three because the cross-on-the-dome
+   * frame came out — see the note on `Hero` in app/page.tsx. The three numbers
+   * that have to move together are called out at the bottom of this note, and
+   * all three moved: 36s → 27s here, the 27s delay deleted below, and the
+   * percentages in `hero-cross` recomputed for n = 3.
    *
    * Nine seconds is chosen to be *slow enough not to be a carousel*. The eye
    * should notice the room has changed, not watch it change — a hero that
@@ -1631,9 +1854,11 @@ main {
    * `@supports` guard below there is no "end state" to land on — the loop never
    * finishes. That is what lets a fade-to-zero live safely outside the guard.
    *
-   * Adding a fourth photograph means changing the duration, the delays, *and*
-   * the percentages in `hero-cross`, which are a function of how many frames
-   * share the round.
+   * Adding or removing a photograph means changing the duration, the delays,
+   * *and* the percentages in `hero-cross`, which are a function of how many
+   * frames share the round. At n frames of 9s: duration `9n`s, delays
+   * `9, 18, … 9(n-1)`, and in `hero-cross` the plateau ends at `100/n` per cent
+   * with a one-second ramp either side — one second being `100/(9n)` per cent.
    */
   /*
    * Two animations per frame: the fade, and a slow push of its own.
@@ -1663,6 +1888,7 @@ main {
   /* The base layer: drifts, but never fades. See above. */
   .hero__frame--1 { animation-name: hero-push-in; }
   .hero__frame--2 { animation-name: hero-cross, hero-push-out; animation-delay: 9s; }
+  /* Directions alternate in, out, in — see the note above. */
   .hero__frame--3 { animation-name: hero-cross, hero-push-in; animation-delay: 18s; }
 
   /* The hero's own text, on load rather than on scroll — it is already in view. */
@@ -1815,22 +2041,26 @@ main {
  * One overlay frame's turn. Used by frames 2 and 3 only — frame 1 is the base
  * layer and does not fade at all.
  *
+ * Nine seconds visible out of a 27s round, with a one-second ramp at each end.
  * A third of the round is 33.33%, and the whole of that third is spent visible:
- * up over the first 4%, held to 29.33%, down by 33.33%. Both the rise and the
+ * up over the first 3.7%, held to 29.63%, down by 33.33%. Both the rise and the
  * fall happen over an opaque frame 1, so neither can expose the band's
  * background — which is the entire reason the base layer is pinned.
  *
- * These percentages are a function of there being three frames. Adding a fourth
- * means recomputing all of them, not just adding a delay.
+ * One second is 100/27 = 3.7% of the round. These four numbers are a function of
+ * the frame count and the round — see the note beside `.hero__frame` before
+ * changing either. They were 2.78 / 22.22 / 25 while the hero had four frames,
+ * and going back to three meant recomputing all of them rather than just
+ * deleting a delay.
  */
 @keyframes hero-cross {
   0% {
     opacity: 0;
   }
-  4% {
+  3.7% {
     opacity: 1;
   }
-  29.33% {
+  29.63% {
     opacity: 1;
   }
   33.33% {
@@ -2940,23 +3170,75 @@ main {
  * bookshop that led with a heading and a paragraph would be asking someone to
  * read their way into wanting a book. Sideways rather than wrapped: a wrapped
  * grid is the shop, and the shop is one click away.
+ *
+ * ---------------------------------------------------------------------------
+ * **This is a shelf now, and it was eight identical tiles before.**
+ *
+ * Every cover was a 9×12rem box with the photograph cropped to fill it, so the
+ * row was eight rectangles of exactly the same size in a line — which is the
+ * shape of a product grid, and the shop is already a better product grid than
+ * this could be. The section read as a duller copy of the page it exists to
+ * invite people to.
+ *
+ * What makes it a shelf instead, in the order the eye picks it up:
+ *
+ *   1. **A plank.** `.bookshelf__strip::after` draws one gold hairline the full
+ *      length of the strip, with a soft shadow under it. Drawn on the strip
+ *      rather than on the viewport deliberately: the strip is `max-content`, so
+ *      the shelf runs under every book and off the edge of the screen with
+ *      them, which is the whole "there is more of this" claim.
+ *   2. **Uneven tops, level bases.** The covers are three different heights by
+ *      position, and each one stands on the plank. Books on a real shelf are
+ *      not the same height and that is most of why a real shelf reads as one.
+ *   3. **Thickness.** Each cover gets the shop's gutter shading — see
+ *      `.bookshelf__spine`.
+ *
+ * The captions stay in step because the height variation happens *inside* a
+ * fixed-height slot (`--shelf-slot`), so the plank, the names and the prices
+ * are all at the same y no matter which book is beside them.
+ * ---------------------------------------------------------------------------
  */
 .bookshelf {
+  /*
+   * The height of the slot each book stands in. The plank sits at the bottom of
+   * it, so this and `.bookshelf__strip`'s top padding are the only two numbers
+   * that position the shelf line — see `::after`.
+   *
+   * The books widened from 9rem to 11 and this is the slot that holds them. The
+   * section's whole argument is the covers, and at 9rem they were thumbnails —
+   * eight small pictures with two lines of grey type each, which is a lot of
+   * furniture around not much image. At 11rem about five fit a laptop and the
+   * shelf has weight on the page. The rest are still there, one drag or one
+   * flick away, which is what the strip is for.
+   */
+  --shelf-slot: 12.6rem;
   overflow: hidden;
 }
 
-/* Definite width, and it owns the overflow. The strip inside is `max-content`,
-   so without this the row escapes and the whole document scrolls sideways —
-   the bug the shop's strips already carry a note about. */
+/*
+ * Definite width, and it owns the overflow. The strip inside is `max-content`,
+ * so without this the row escapes and the whole document scrolls sideways —
+ * the bug the shop's strips already carry a note about.
+ *
+ * The mask fades the last 2.5rem to transparent. Without it the strip ends in a
+ * guillotined sliver of a book, which reads as a rendering fault rather than as
+ * a shelf that continues; the plank running into the fade reads as depth. Only
+ * the right edge, because the left is the wrap's own margin and there is nothing
+ * there to soften.
+ */
 .bookshelf__viewport {
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
+  mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
 }
 
+/* `position: relative` so `::after` — the plank — resolves against the strip
+   rather than against the viewport. */
 .bookshelf__strip {
+  position: relative;
   width: max-content;
   display: flex;
   gap: var(--space-lg, 1.5rem);
@@ -2967,41 +3249,182 @@ main {
   margin: 0;
 }
 
+/*
+ * The plank.
+ *
+ * `top` is the strip's own top padding plus the slot height, which puts the line
+ * exactly where the books' bases are.
+ *
+ * Three tones, not one, and this is the difference between a shelf and a rule
+ * drawn under some pictures: a lit top face, a darker front face under it, then
+ * the wash of shadow the row casts down that face.
+ *
+ * ---------------------------------------------------------------------
+ * **A hairline here needs clear paper under it or it reads as the covers'
+ * shadow.** The first two passes at this were invisible on the page while
+ * measuring as perfectly positioned, and the reason was not the colour — it was
+ * that `.bookshelf__name` used to start 9px below the covers' bases, so the
+ * plank was drawn into a sliver between a dark cover edge above it and text
+ * below it. Nothing that thin reads as a surface. `.bookshelf__name` now carries
+ * a much larger `margin-top` for exactly this: the shelf needs the gap more than
+ * the caption needs to be close.
+ *
+ * If this ever stops reading again, check that gap before touching these
+ * colours.
+ * ---------------------------------------------------------------------
+ *
+ * `left: 0; right: 0` — the plank is exactly as long as the strip, which is as
+ * long as the row of books. It is tempting to overhang it (`right: -100vw`) so
+ * the shelf visibly continues past the screen, and that is a bug: an absolutely
+ * positioned descendant still contributes to its scroll container's scrollable
+ * overflow, so the viewport would gain a screen's width of empty scroll to the
+ * right of the last book. The mask on the viewport is what sells the
+ * continuation instead, and it costs nothing.
+ */
+.bookshelf__strip::after {
+  content: "";
+  position: absolute;
+  top: calc(0.5rem + var(--shelf-slot));
+  left: 0;
+  right: 0;
+  height: 0.75rem;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      var(--color-gold, #b08d43) 0 1px,
+      color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent) 1px 3px,
+      transparent 3px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-ink, #1c1614) 16%, transparent),
+      transparent
+    );
+}
+
 .bookshelf__strip > li {
   flex: 0 0 auto;
   scroll-snap-align: start;
 }
 
-/* `position: relative` for the reason the shop's strips need it: any absolutely
-   positioned descendant would otherwise resolve against the viewport and drag
-   the page sideways. */
+/*
+ * Three rows: the slot the book stands in, then its name, then its price.
+ *
+ * A fixed first row rather than `auto` is what lets the covers differ in height
+ * without the captions stepping up and down with them. `align-items: end` puts
+ * the book at the bottom of its slot — on the plank.
+ */
 .bookshelf__book {
   position: relative;
   display: grid;
+  grid-template-rows: var(--shelf-slot) auto auto;
+  align-items: end;
   gap: 0.2rem;
-  width: 9rem;
+  width: 11rem;
   text-decoration: none;
   color: inherit;
 }
 
-.bookshelf__cover {
-  width: 9rem;
-  height: 12rem;
-  object-fit: cover;
-  object-position: center;
+/*
+ * The book itself: the frame that used to be the cover's own box.
+ *
+ * The shadow and the radius live here rather than on the cover because the
+ * cover may be an `<img>` or the `.cover--none` binding, and both should sit in
+ * the same object. `overflow: hidden` clips whichever it is to the radius.
+ *
+ * **The shadow is tighter than the shop's, and that is because of the plank.**
+ * The shop's card carries `0 14px 24px -10px`, which is a book floating a
+ * centimetre above the page — right there, where there is no surface. Here
+ * there is one, so the same shadow read as the book hovering over its own
+ * shelf, and it washed the plank out. A short contact shadow is what an object
+ * resting on something casts. The long one comes back on hover, where it means
+ * the book has been lifted.
+ */
+.bookshelf__frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--book-height, 12rem);
+  overflow: hidden;
   border-radius: var(--radius-sm, 4px);
   background: var(--color-paper-sunken, #eeddd7);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent),
-    0 2px 3px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent),
-    0 14px 24px -10px color-mix(in srgb, var(--color-ink, #1c1614) 38%, transparent);
+    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent),
+    0 5px 9px -6px color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent);
   transition:
     transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 220ms ease;
 }
 
+/*
+ * Three heights, dealt out by position.
+ *
+ * Deliberate ornament, and deterministic rather than random: the same book is
+ * the same height on every build and on every render, so nothing shifts between
+ * the server's HTML and the client's. The spread is small — under a rem between
+ * the tallest and the shortest — because the point is that the tops are not a
+ * straight line, not that the books look mismatched.
+ *
+ * Driven off `nth-child(3n)` rather than off the data, because it is a fact
+ * about the row's rhythm and not about any book. A cycle of three against a gap
+ * of eight also means the pattern never lands the same way twice on screen.
+ *
+ * ---------------------------------------------------------------------
+ * **These are around 0.88 against the shop's 3:4, and that is deliberate.**
+ *
+ * Every cover in `public/img/products/` is square — 400×400, because Square
+ * crops the parish's photographs that way — so any portrait frame crops the
+ * *sides*. The shop's card is 3:4, which throws away a quarter of the width,
+ * and it says in `.book__frame` that this is fine because what is lost at the
+ * margins is the desk and the room.
+ *
+ * That holds at the shop's size. It stopped holding here the moment these went
+ * from 9rem to 11: at a quarter off, "Come and See" lost the ends of its
+ * author line and "Be Prepared…" lost its ellipsis, and a title with its edges
+ * shaved off does not read as a considered crop — it reads as a broken image.
+ * At 0.88 about a tenth of the width goes, which is the desk and not the type.
+ *
+ * The books still read as portrait. If a cover ever arrives that is genuinely
+ * 3:4 rather than square, this is the number to revisit — not `object-fit`.
+ * ---------------------------------------------------------------------
+ */
+.bookshelf__strip > li:nth-child(3n + 1) .bookshelf__frame { --book-height: 12.6rem; }
+.bookshelf__strip > li:nth-child(3n + 2) .bookshelf__frame { --book-height: 11.9rem; }
+.bookshelf__strip > li:nth-child(3n) .bookshelf__frame { --book-height: 12.3rem; }
+
+.bookshelf__cover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/*
+ * The gutter, and the one piece of pure ornament in this strip.
+ *
+ * The same device as the shop's `.book__spine`, for the same reason written
+ * down there: it reads as the shadow in the gutter of a book standing upright,
+ * which is what turns a rectangle of photograph into an object with a
+ * thickness. Slightly narrower here because these covers are smaller.
+ */
+.bookshelf__spine {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.5rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--color-ink, #1c1614) 34%, transparent),
+    color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent) 55%,
+    transparent
+  );
+}
+
 /* Pulled off the shelf, the way you tilt a book out to look at it. */
-.bookshelf__book:hover .bookshelf__cover {
+.bookshelf__book:hover .bookshelf__frame {
   transform: translateY(-6px);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent),
@@ -3013,13 +3436,16 @@ main {
   outline: none;
 }
 
-.bookshelf__book:focus-visible .bookshelf__cover {
+.bookshelf__book:focus-visible .bookshelf__frame {
   outline: 2px solid var(--color-accent, #992a21);
   outline-offset: 3px;
 }
 
+/* The margin is the shelf's clearance, not typographic taste — see the note on
+   `.bookshelf__strip::after`. Do not tighten it without checking the plank still
+   reads. */
 .bookshelf__name {
-  margin-top: var(--space-xs, 0.35rem);
+  margin-top: 0.95rem;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-small, 0.9375rem);
   line-height: var(--leading-snug, 1.25);
@@ -3048,14 +3474,32 @@ main {
   font-size: var(--type-small, 0.9375rem);
 }
 
+/*
+ * The phone. Narrower books, a shallower slot, and the three heights scaled
+ * with it — the ratio between them is what reads, not the absolute spread, so
+ * they shrink by roughly the same fraction as the width.
+ *
+ * `--shelf-slot` is overridden on `.bookshelf` rather than on the strip because
+ * the plank's `top` and the book's grid row both read it from there; setting it
+ * in one place is the reason it is a variable.
+ */
 @media (max-width: 34rem) {
-  .bookshelf__book,
-  .bookshelf__cover {
-    width: 7rem;
+  .bookshelf {
+    --shelf-slot: 9.1rem;
   }
 
-  .bookshelf__cover {
-    height: 9.3rem;
+  .bookshelf__book {
+    width: 8rem;
+  }
+
+  .bookshelf__strip > li:nth-child(3n + 1) .bookshelf__frame { --book-height: 9.1rem; }
+  .bookshelf__strip > li:nth-child(3n + 2) .bookshelf__frame { --book-height: 8.6rem; }
+  .bookshelf__strip > li:nth-child(3n) .bookshelf__frame { --book-height: 8.85rem; }
+
+  /* An 11rem cover carries a 0.5rem gutter; an 8rem one needs it proportionally
+     narrower or the shading eats the cover's left margin. */
+  .bookshelf__spine {
+    width: 0.4rem;
   }
 }
 
@@ -4160,6 +4604,22 @@ main {
   border-left-width: 3px;
 }
 
+/*
+ * The homepage shelf. Fills its frame, because on that strip the frame is the
+ * book — it carries the radius, the shadow and the height — and a binding that
+ * did not fill it would sit inside a paler rectangle of sunken paper.
+ *
+ * `border-left: 0` and no padding on the left: the frame has its own
+ * `.bookshelf__spine` gutter overlay drawn on top, and the binding's gold spine
+ * underneath it would be two different marks claiming to be the same edge.
+ */
+.bookshelf__cover.cover--none {
+  width: 100%;
+  height: 100%;
+  padding: var(--space-sm, 0.7rem) var(--space-xs, 0.45rem) var(--space-sm, 0.7rem) var(--space-sm, 0.7rem);
+  border-left: 0;
+}
+
 /* ---- the order, once it is paid for ------------------------------------ */
 
 /*
@@ -4724,22 +5184,151 @@ main {
   margin-bottom: var(--space-md, 1rem);
 }
 
+/* ---- the word of welcome ----------------------------------------------- */
+
+/*
+ * Two paragraphs beside a drawing of Christ, under the quick facts. See the
+ * `Welcome` note in app/page.tsx — the wording is the section, and the
+ * provenance note on the drawing is there too.
+ *
+ * ---------------------------------------------------------------------------
+ * The measure is doing real work, and it is why this is a grid rather than a
+ * paragraph in the band.
+ *
+ * `.wrap` runs to 80rem. Two paragraphs of body serif set across 1200px is
+ * around 130 characters a line — roughly twice a comfortable measure, and the
+ * eye loses the start of the next line on every return. The prose column is
+ * capped at 38rem, about 65 characters, and the drawing takes some of the width
+ * that would otherwise have to be left empty.
+ *
+ * Nothing is centred. The words are not, because centred prose reads as an
+ * inscription rather than as somebody talking to you — and there is a real
+ * inscription two sections down, the verse on the offering, that this must not
+ * compete with. The block is not either: it starts at the band's gutter, in
+ * line with the section heading above it and with every other section on the
+ * page.
+ * ---------------------------------------------------------------------------
+ */
+.welcome {
+  display: grid;
+  gap: var(--space-md, 1.25rem);
+  /* The cross is square and the text is two paragraphs; matching their optical
+     centres is what stops the pair reading as two things that happen to be next
+     to each other. */
+  align-items: center;
+}
+
+/*
+ * Side by side from 48rem. Below that the drawing goes above the words, because
+ * a 13rem image beside a 20rem column of text leaves neither enough room.
+ *
+ * `max-content` on the second track rather than `1fr`: `1fr` would stretch the
+ * prose column to whatever is left of an 80rem band, which is the 130-character
+ * line this layout exists to avoid. The cap on `.welcome__words` does the real
+ * limiting; this keeps the grid from fighting it.
+ */
+@media (min-width: 48rem) {
+  .welcome {
+    grid-template-columns: 13rem minmax(0, max-content);
+    gap: var(--space-xl, 2.5rem);
+  }
+}
+
+/*
+ * ---- the cross ----
+ *
+ * The Coptic cross, and the class name is now the only thing here that says
+ * "photo". It is kept because it is in the markup and in the mobile app's
+ * eventual read of this section; the picture underneath it has been a pencil
+ * study, then a photograph of a cross on a dome, and is now the mark itself.
+ *
+ * **No radius and no shadow, and that is the change.** Both were there because
+ * the photograph was a real rectangle and wanted framing like one. This is not
+ * a rectangle — the pipeline keys its white ground out to alpha, so what lands
+ * on the band is a cross-shaped mark with the paper showing through the gaps in
+ * its interlace. A rounded corner and a drop shadow on a transparent PNG draw a
+ * box around nothing: the shadow traces the file's bounds, which are invisible,
+ * so it reads as a smudge in the paper rather than as a picture on it.
+ *
+ * `mix-blend-mode` is deliberately absent for a second time, and now for a
+ * better reason than before. The pencil study needed `multiply` to drop its
+ * white paper against the band; a blend mode is a property of what happens to
+ * be painted underneath, so it would have to be re-decided for every surface
+ * this ever sits on. A real alpha channel travels with the file.
+ *
+ * The file is its native 360×360 — see the note in app/page.tsx — so in the
+ * 13rem (208px) column this is a downscale. Do not raise `max-width` past
+ * about 14rem without a larger source.
+ */
+.welcome__photo {
+  width: 100%;
+  /* Capped so the phone case, where this is a single stacked column, does not
+     open with a 20rem cross before the first sentence. */
+  max-width: 9rem;
+  height: auto;
+}
+
+@media (min-width: 48rem) {
+  .welcome__photo {
+    max-width: none;
+  }
+}
+
+.welcome__words {
+  max-width: 38rem;
+}
+
+.welcome__words p {
+  /* Slightly more open than body default. This is the one passage on the
+     homepage meant to be *read* rather than scanned, and the extra leading is
+     what says so. */
+  line-height: var(--leading-relaxed, 1.7);
+}
+
+.welcome__words p + p {
+  margin-top: var(--space-md, 1rem);
+}
+
 /* ---- clergy on the homepage -------------------------------------------- */
 
 /*
- * The fathers, as disclosures side by side. This is the whole of the clergy
- * content — there is no `/clergy` page behind it any more — so each card has to
- * be able to carry a full biography as well as a name, and it does that by
- * keeping the biography shut until it is asked for.
+ * The fathers, side by side: a portrait, a name, a rank.
  *
- * `align-items: start` is what makes the disclosures work in a row: without it
- * every card stretches to the height of the tallest, so opening one father's
- * biography would pull two empty cards down beside it.
+ * ---------------------------------------------------------------------------
+ * This was a row of `<details>` carrying the full biographies, and it is not
+ * any more — see the `Clergy` note in app/page.tsx for why the text came off
+ * the homepage. Everything that block of CSS existed for went with it: the
+ * `[open]` states, the chevron's rotation, the `::details-content` height
+ * animation and the `interpolate-size` opt-in it needed. There is no other
+ * `<details>` on the site, so none of it is missed elsewhere.
+ *
+ * What is left is a caption beside a photograph, and it is styled as one. No
+ * card, no border, no shadow, no hover lift — three faces on the tinted band
+ * with their names next to them. The chrome was there to make each card read as
+ * something you could open; nothing opens, so the chrome was describing an
+ * interaction that no longer exists.
+ * ---------------------------------------------------------------------------
+ *
+ * `auto-fit` down to 22rem tracks rather than a fixed count: each father is now
+ * a face with his name beside it rather than under it, so a track has to hold
+ * the 11rem circle, the gap, and a column of text wide enough to set a name in.
+ * Three fit across the full content column; the row drops to two below about
+ * 73rem and to one below about 50rem, with no breakpoint written for either,
+ * and a fourth father still needs no code change.
+ *
+ * 22rem and not 20: at 20 the third track survives down to 67rem, where the
+ * text column is 139px and every name breaks. Dropping to two wider cards a
+ * little earlier is the better trade — the names are the point.
+ *
+ * `1fr` tracks rather than `max-content`, and no `justify-content`. Equal tracks
+ * are what keeps the three portraits on a common left edge — sized to their
+ * contents, the bishop's long title would make his card wider than the two
+ * beside it and the row would step.
  */
 .clergy {
   display: grid;
-  gap: var(--space-md, 1.25rem);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-lg, 2rem) var(--space-md, 1.25rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   align-items: start;
   list-style: none;
   margin: 0;
@@ -4747,253 +5336,174 @@ main {
 }
 
 /*
- * Three tracks at desk width, rather than as many as fit. A fourth father would
- * otherwise squeeze the row to four narrow columns and make the other three
- * worse; on a fourth, this wraps to a second line instead.
+ * One father. A row: the portrait, then his name and rank beside it.
+ *
+ * ---------------------------------------------------------------------------
+ * The caption used to sit *under* the face, and it moved beside it at Tommy's
+ * direction when the portraits went up to 11rem. Stacked, a bigger picture
+ * costs the section height twice — once for the circle and again for the two
+ * lines below it — and this row was already the tallest thing between the
+ * bulletin and the bookshelf. Beside the face the caption is free: two lines of
+ * text are shorter than a 176px circle, so a card is exactly as tall as its
+ * portrait however far the bishop's title runs.
+ *
+ * That also retires the rule the old `max-width: 14rem` enforced — that a name
+ * must never break in half. It existed because "Fr. Youhanna / Gobran" centred
+ * under a face reads as a mistake. Set left, beside the portrait, a name on two
+ * lines reads as a name on two lines, and the height it takes was already paid
+ * for by the circle.
+ * ---------------------------------------------------------------------------
+ *
+ * `minmax(0, 1fr)` on the text column, not a bare `1fr`: a grid item's automatic
+ * minimum is its own content, so `1fr` would refuse to go narrower than the
+ * bishop's unbroken title and push the card past its track.
+ *
+ * `align-items: center` — the caption is one line for a priest and three for the
+ * bishop, and centring it against the circle is the only alignment that looks
+ * deliberate for both.
  */
-@media (min-width: 62rem) {
-  .clergy {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
 .cleric {
-  background: var(--color-paper-raised, #fff);
-  border: 1px solid var(--color-rule, #e4ded2);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
-  /* Keeps the portrait's corners inside the row's own radius, and stops the
-     closing animation painting outside the box on the way down. */
-  overflow: hidden;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.cleric:hover,
-.cleric[open] {
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e4ded2));
-}
-
-.cleric[open] {
-  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
-}
-
-/*
- * The closed row, which is also the control that opens it.
- *
- * `list-style: none` *and* the WebKit pseudo-element: Safari draws its triangle
- * from `::-webkit-details-marker` and ignores the first, so removing only one of
- * them leaves the marker in exactly one browser. The chevron that replaces them
- * is ours, so it is the same shape everywhere.
- */
-.cleric__summary {
   display: grid;
-  gap: var(--space-sm, 0.75rem);
-  cursor: pointer;
-  list-style: none;
-  /* The card is a button. Dragging a selection out of it is never the intent. */
-  user-select: none;
-}
-
-.cleric__summary::-webkit-details-marker {
-  display: none;
-}
-
-.cleric__summary:hover h3 {
-  color: var(--color-accent, #992a21);
-}
-
-/* The rank, the name, and the chevron: one row under the portrait, with the
-   chevron pinned to the right edge of the card. */
-.cleric__line {
-  display: flex;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-sm, 0.75rem);
-  padding: 0 var(--space-md, 1rem) var(--space-md, 1rem);
+  gap: var(--space-sm, 0.9rem);
+  text-align: left;
 }
 
 /*
- * The portrait runs the full width of the card, above the name, and bleeds to
- * its edges — the card's own `overflow: hidden` rounds the top corners for it.
+ * A circle, at 11rem — down from a full-width 4:5 portrait that ran the whole
+ * width of a 22rem card, and up through 7.5 and 9 to here. The small sizes
+ * turned three faces into three thumbnails: small enough that you could not
+ * tell the fathers apart without reading the names, which is the one job a
+ * portrait in a row like this has. 11rem is 176px, so the bundled 400w file
+ * still covers a 2× panel and nothing has to be re-cut.
  *
- * 4:5, which is exactly the ratio `optimize-assets.mjs` crops these files to, so
- * the whole photograph is shown and `object-fit` has nothing to cut. It makes
- * for tall cards — the portrait is the section — and that is the intent.
+ * Round rather than the rounded rectangle the cards used. At this size a small
+ * rectangle with a radius reads as a cropped thumbnail of something; a circle
+ * reads as a portrait of somebody, which is the convention every directory of
+ * people already uses.
  *
- * The `cover` and `object-position` below are therefore not doing anything to
- * the three files that ship. They are there for a portrait uploaded later to
- * `person.portraitPath` at some other ratio: that one gets cropped rather than
- * squashed, and cropped from the top, because centre-cropping a portrait is how
- * you cut off a forehead.
+ * `object-position: top` is what makes a 4:5 photograph survive being squared
+ * off: these are framed head-and-shoulders, and centre-cropping one to a square
+ * takes the top of the head with it.
  */
 .cleric__portrait {
-  width: 100%;
-  /*
-   * `height: auto` is load-bearing, not tidying. The `width`/`height`
-   * attributes on the `<img>` — which are there so the card does not reflow
-   * when the file lands — are presentational hints for the CSS `height`
-   * property, so without this the aspect ratio below is ignored the moment both
-   * dimensions are specified and the face is stretched down the card.
-   */
-  height: auto;
-  aspect-ratio: 4 / 5;
+  width: 11rem;
+  /* `height` explicitly, not `aspect-ratio` with `height: auto` — the `<img>`
+     carries `width`/`height` attributes so the card does not reflow when the
+     file lands, and those are presentational hints for the CSS `height`
+     property. Left at `auto` they win and the circle comes out an oval. */
+  height: 11rem;
   object-fit: cover;
   object-position: top;
+  border-radius: var(--radius-full, 999px);
   background: var(--color-paper-sunken, #eeddd7);
-}
-
-/* The medallion is not a photograph and must not pretend to be one: it keeps
-   the card's padding rather than bleeding to the edges. */
-.cleric__mark {
-  margin: var(--space-md, 1rem) 0 0 var(--space-md, 1rem);
-}
-
-/*
- * On a phone the cards are a single column, and a full-width portrait makes each
- * one taller than the screen — three of them is well over a thousand pixels of
- * scrolling to get past three names. So below 34rem the same markup lays out as
- * a compact row: a small portrait at the left, the name beside it. Still the
- * whole photograph, just at thumbnail size.
- *
- * No change to the DOM. The summary is already a grid of [portrait, line], so
- * giving it two tracks is the whole of it.
- */
-@media (max-width: 34rem) {
-  .cleric__summary {
-    grid-template-columns: 5.5rem 1fr;
-    align-items: center;
-    gap: var(--space-md, 1rem);
-    padding: var(--space-sm, 0.75rem);
-  }
-
-  /* Inset here rather than bleeding to the card's edge, so it reads as a
-     thumbnail beside the name rather than as a cropped banner. */
-  .cleric__portrait {
-    border-radius: var(--radius-sm, 4px);
-  }
-
-  .cleric__line {
-    padding: 0;
-  }
-
-  /* Reserving two lines is what keeps a row of cards even; stacked, it only
-     leaves a gap under "Priest". */
-  .cleric__id .meta {
-    min-height: 0;
-  }
+  /* A hairline in the band's own gold, so a light vestment or a pale wall
+     behind a father's head still has an edge to sit against. */
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
 }
 
 /*
  * What stands where a portrait would go for a father who has none.
  *
- * A medallion with the parish's cross, at the same scale as the icon plates in
- * the quick-facts row so the two sections read as one design. It is ornament
- * rather than a placeholder: it does not reserve a portrait-shaped hole, so a
- * row without a photograph looks composed rather than unfinished.
+ * The same circle at the same size, carrying his initial. Not a smaller mark
+ * inset in a card any more — at this scale the photograph *is* the card, so the
+ * placeholder has to hold exactly the same footprint or the row goes ragged.
  */
 .cleric__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 11rem;
+  height: 11rem;
   border-radius: var(--radius-full, 999px);
-  color: var(--color-gold, #b08d43);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
   background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+  color: var(--color-gold, #b08d43);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: 1;
 }
 
 .cleric__id {
-  flex: 1;
-  min-width: 0;
-}
-
-/*
- * Two lines reserved for the rank, whether or not it needs them.
- *
- * "Bishop of the Coptic Orthodox Diocese of New York and New England" wraps to
- * two lines in a card this wide; "Priest" does not. The cards cannot stretch to
- * a common height — `align-items: start` on the grid is what lets one open
- * without dragging its neighbours down — so without a floor here the three
- * names sit at three different heights and the row of cards ends ragged, which
- * looks like a mistake rather than like a bishop having a longer title.
- *
- * `em`, not the token, so the reserved height is two lines of whatever font
- * size actually won rather than of the size this rule hoped for.
- */
-.cleric__id .meta {
-  display: block;
-  font-size: var(--type-micro, 0.8125rem);
-  line-height: var(--leading-snug, 1.25);
-  min-height: calc(2em * var(--leading-snug, 1.25));
-  margin-bottom: var(--space-xs, 0.25rem);
+  display: grid;
+  gap: 0.15rem;
 }
 
 .cleric__id h3 {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.25);
   margin: 0;
-  transition: color 150ms ease;
 }
 
-/* Points down when closed and up when open — the one piece of state this
-   control has, so it is worth turning rather than swapping. */
-.cleric__chevron {
-  flex-shrink: 0;
+/*
+ * The rank, quiet under the name.
+ *
+ * ---------------------------------------------------------------------------
+ * 0.625rem, below the micro token, and that is about one entry in particular.
+ *
+ * Two of the three ranks are a single word. The third is "Bishop of the Coptic
+ * Orthodox Diocese of New York and New England", which at the micro size set as
+ * four lines of uppercase — taller than the portrait above it, and by some way
+ * the largest block of text in the section. A caption was outweighing the
+ * photograph it captions.
+ *
+ * Smaller type, slightly tighter tracking than `.meta`'s default, and a softer
+ * ink: three changes all saying the same thing, which is that this line is
+ * secondary to the name. It came down another step when the portraits went up
+ * to 11rem: the face is what the row is for, and the diocesan title should be
+ * the smallest line in the section rather than the longest. It still measures
+ * over 4.5:1 on the tinted band.
+ * ---------------------------------------------------------------------------
+ *
+ * No `min-height` reserving two lines any more. That existed because the cards
+ * could not stretch to a common height — `align-items: start` was load-bearing
+ * for the disclosures — so a one-word rank next to a bishop's full title left
+ * the row ragged. Nothing opens now, the names are centred under fixed-size
+ * circles, and a shorter rank simply sits under a shorter caption.
+ */
+.cleric__id .meta {
+  margin: 0;
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  line-height: var(--leading-snug, 1.3);
   color: var(--color-ink-faint, #7c746a);
-  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms ease;
-}
-
-.cleric[open] .cleric__chevron {
-  transform: rotate(180deg);
-  color: var(--color-accent, #992a21);
-}
-
-/*
- * The biography, opening inside the card it belongs to.
- *
- * A rule above it rather than more space: the card is already bounded, and the
- * line is what separates "who this is" from "his life" without another 1.5rem
- * of gap in a column that is only 22rem wide to begin with.
- */
-.cleric__bio {
-  padding: var(--space-md, 1rem);
-  border-top: 1px solid var(--color-rule, #e4ded2);
-}
-
-/* A card column is narrow, so the biography needs to be a size that survives
-   it. `.prose` is set for a full-width page. */
-.cleric__bio .prose {
-  font-size: var(--type-small, 0.9375rem);
+  /* Evens out the bishop's lines. Without it the last is a single orphaned word
+     under two full ones — more obvious now the block is set left against the
+     portrait than it was centred under it. */
+  text-wrap: balance;
 }
 
 /*
- * The open and the close, animated.
+ * On a phone: one father per row, with the portrait at 7.5rem.
  *
- * `::details-content` is the only way to do this without JavaScript, and it
- * needs `interpolate-size` to have something to animate *to* — `auto` is not an
- * interpolable height on its own. Both are recent, hence the `@supports`: where
- * either is missing the disclosure opens instantly, which is what it did before
- * and is not a failure.
+ * Two columns was the right answer while the name sat under the face — a single
+ * column of stacked cards was most of a screen for each father. With the name
+ * beside the face that inverts: a horizontal card is short, so all three stack
+ * into roughly one screen, and the full width means the names set on one line
+ * at a size worth reading.
  *
- * `content-visibility` has to be in the transition list with `allow-discrete`,
- * or the content is hidden outright for the whole of the closing animation and
- * the row collapses on an empty box.
+ * 7.5rem rather than the 6.5 two columns allowed. There is a column of width
+ * free now, and the face is what the row exists for.
  */
-@supports (interpolate-size: allow-keywords) and (selector(::details-content)) {
-  :root {
-    interpolate-size: allow-keywords;
+@media (max-width: 34rem) {
+  .clergy {
+    grid-template-columns: 1fr;
+    gap: var(--space-md, 1.25rem);
   }
 
-  .cleric::details-content {
-    block-size: 0;
-    overflow: hidden;
-    transition:
-      block-size 320ms cubic-bezier(0.16, 1, 0.3, 1),
-      content-visibility 320ms allow-discrete;
+  .cleric__portrait,
+  .cleric__mark {
+    width: 7.5rem;
+    height: 7.5rem;
   }
 
-  .cleric[open]::details-content {
-    block-size: auto;
+  .cleric__mark {
+    font-size: var(--type-subheading, 1.125rem);
+  }
+
+  .cleric__id h3 {
+    font-size: var(--type-small, 0.9375rem);
   }
 }
 
@@ -6485,4 +6995,131 @@ main {
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+}
+
+/* ---- the forms hub ------------------------------------------------------
+ *
+ * `/forms` is a list of one-line answers to "where do I fill that in?", so the
+ * cards are rows rather than tiles: a single column reads top to bottom in the
+ * order the parish thinks matters, and a grid of two would ask the reader to
+ * scan in two directions to find one link.
+ *
+ * They widen to two tracks only when there is genuinely room for two full
+ * sentences side by side. Below that a second column just makes both notes
+ * wrap to four lines each.
+ */
+.forms {
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+  margin: var(--space-md, 1.25rem) 0 var(--space-lg, 2rem);
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 60rem) {
+  .forms {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/*
+ * The whole row is the link.
+ *
+ * `display: flex` on an anchor rather than a card containing one, so the target
+ * is the full rectangle — a card that looks clickable but only is where its
+ * title happens to sit is the commonest way a list like this frustrates a
+ * thumb. `height: 100%` so two cards in a row match even when one note is
+ * longer than the other.
+ */
+.form-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md, 1rem);
+  height: 100%;
+  padding: var(--space-md, 1.25rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.form-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, var(--color-rule, #e0cac3));
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
+  /* One pixel. Enough to register as the card responding, small enough that a
+     column of them does not appear to wobble as the pointer crosses it. */
+  transform: translateY(-1px);
+}
+
+/* The same gold medallion the homepage quick-facts row uses, so a visitor who
+   has seen one recognises the other as the same kind of thing. */
+.form-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-full, 999px);
+  color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+}
+
+/* `min-width: 0` or the note refuses to wrap and stretches the grid track. */
+.form-card__body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.form-card__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #2c2320);
+  transition: color 150ms ease;
+}
+
+.form-card:hover .form-card__title {
+  color: var(--color-accent, #992a21);
+}
+
+.form-card__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * The arrow is the affordance, and it moves rather than appearing: a glyph that
+ * fades in on hover is invisible to anyone reading with a finger, and this row
+ * needs to look like a link before it is touched.
+ *
+ * `margin-top` rather than `align-self: center` — centred against a two-line
+ * note it floats away from the title it belongs to.
+ */
+.form-card__arrow {
+  flex-shrink: 0;
+  margin-top: 0.55rem;
+  margin-left: auto;
+  color: var(--color-ink-faint, #7c746a);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms ease;
+}
+
+.form-card:hover .form-card__arrow {
+  transform: translateX(3px);
+  color: var(--color-accent, #992a21);
+}
+
+/* The last line on the page, and the one that stops a short list reading as
+   "this is everything the parish has". */
+.forms__ask {
+  margin-bottom: 0;
 }

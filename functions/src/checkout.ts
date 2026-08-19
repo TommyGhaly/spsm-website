@@ -324,7 +324,7 @@ export const squareCheckout = onRequest(
        *
        * Square's own receipt goes out regardless — see `buyer_email_address`
        * above. This one carries the half Square cannot: whether the books are
-       * to be collected or posted.
+       * to be collected or delivered.
        */
       try {
         /*

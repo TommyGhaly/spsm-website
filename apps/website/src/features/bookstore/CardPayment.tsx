@@ -277,7 +277,7 @@ export function CardPayment({
                 aria-pressed={!shipping}
               >
                 <span className="choice__name">Collect at the church</span>
-                <span className="choice__note">Ready after Liturgy. No postage.</span>
+                <span className="choice__note">Ready after Liturgy. No delivery charge.</span>
               </button>
 
               <button
@@ -286,8 +286,8 @@ export function CardPayment({
                 onClick={() => setShipping(true)}
                 aria-pressed={shipping}
               >
-                <span className="choice__name">Post to me</span>
-                <span className="choice__note">Flat postage, added at checkout.</span>
+                <span className="choice__name">Deliver to me</span>
+                <span className="choice__note">Flat delivery charge, added at checkout.</span>
               </button>
             </div>
 

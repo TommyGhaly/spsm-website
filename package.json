@@ -28,6 +28,8 @@
     "config": "npm run build --workspace @spsm/shared && node scripts/seed-config.mjs",
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
+    "//programs": "Creates the five standing programs (Summercamp, St. Simon, College & YP, Mother of Mercy, Iconography) if they are missing. Never overwrites \u2014 admins edit these in the console. Dry run by default; -- --write applies.",
+    "programs": "npm run build --workspace @spsm/shared && node scripts/seed-programs.mjs",
     "//catalog": "Mirror the Square bookstore catalog into Firestore products.",
     "catalog": "npm run build --workspace @spsm/shared && node scripts/sync-catalog.mjs",
     "//archive": "Refresh the committed snapshot of past livestreams.",
@@ -45,7 +47,7 @@
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials \u2014 runs in about a second, so there is no excuse not to.",
     "test": "npm run build --workspace @spsm/shared && vitest run --project unit",
     "//test:rules": "firestore.rules evaluated against a real emulator. This is the one that would have caught decision #10 on day one; `rules:check` only compiles. Needs a JDK.",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-spsm \"vitest run --project rules\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-spsm \"vitest run --project rules\"",
     "rules:check": "firebase emulators:exec --only firestore,storage --project demo-spsm \"node scripts/check-rules.mjs\"",
     "emulators": "firebase emulators:start"
   },

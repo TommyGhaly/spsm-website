@@ -8,7 +8,6 @@ import { LivestreamPlayer, ShowWhenLive, livestreamProbeUrl } from '@/features/l
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
 import { Icon, type IconName } from '@/components/Icon';
-import { Prose } from '@/components/Prose';
 import { SectionHeading } from '@/components/SectionHeading';
 
 export default async function HomePage() {
@@ -35,6 +34,11 @@ export default async function HomePage() {
         parish={parish}
         livestreamEnabled={config.livestream.enabled}
       />
+
+      {/* A short word of welcome, directly under the three facts. Takes a turn
+          of `band()` like every other unconditional section — see
+          `alternatingBands`. */}
+      <Welcome band={band()} />
 
 
       {/* The player itself, not a link to it — someone at home on a Sunday
@@ -72,11 +76,31 @@ export default async function HomePage() {
           aria-labelledby="bookstore-heading"
         >
           <div className="wrap reveal">
+            {/*
+              "Books for the year" was the title here, and it was wrong twice
+              over: it promised an annual selection, which this is not — it is
+              simply what the bookstore stocks — and "for the year" is a
+              publisher's phrase rather than the Church's.
+
+              **The replacement names the shop rather than its contents, at
+              Tommy's direction, because the contents are going to widen.** The
+              catalog is eleven books today; icons and church goods are coming,
+              and a heading that says "books" or "reading" would have to be
+              edited again the day the first icon is listed. "From our
+              bookstore" is true of anything the shop ever carries.
+
+              **No eyebrow, and that is the trade.** Every other section here
+              opens with a gold eyebrow over its `h2`, but the only honest
+              eyebrow for this one was "From the bookstore" — which is now the
+              title. A label repeating the heading beneath it is worse than an
+              absent label, and the shelf's own gold plank keeps the section
+              from reading thin without it. If a real second line ever exists
+              (a category, a season), it goes back in.
+            */}
             <SectionHeading
               id="bookstore-heading"
-              eyebrow="From the bookstore"
-              title="Books for the year"
-              note="Collect at the church, or have them posted."
+              title="From our bookstore"
+              note="Collect at the church, or have them delivered."
             />
             <BookshelfPreview products={toShopProducts(products)} />
           </div>
@@ -162,6 +186,29 @@ function alternatingBands(): () => string {
  * Three photographs, cross-fading behind the parish's name.
  *
  * ---------------------------------------------------------------------------
+ * **This was four frames, and going back to three is the fix, not a trim.**
+ *
+ * The two that came out were the two that made it look like a broken carousel
+ * rather than a slideshow:
+ *
+ *   - **The cross on the dome** was a 381×524 source stretched across a hero
+ *     1458px wide on a laptop, cropped to a 147px strip that held the crossbar
+ *     and nothing else, with `blur(2.5px)` over it so the upscale read as soft
+ *     focus instead of as a broken image. It is now only in the welcome
+ *     section — and not even as that photograph. See `Welcome`.
+ *   - **The domes** were cream masonry against pale sky shot from below, which
+ *     is also a fair description of the towers frame that followed it. Two
+ *     different buildings that at hero size, under the veil, read as the same
+ *     picture coming round again. That frame is now cut from the *same file* but
+ *     from the one part of it that looks like nothing else here: the arched
+ *     stained glass, deep blue, with a gold cross across it. See the note in
+ *     `scripts/optimize-assets.mjs`.
+ *
+ * What is left is three pictures that are plainly three pictures: a sanctuary
+ * interior, blue glass, a sandstone façade against sky.
+ * ---------------------------------------------------------------------------
+ *
+ * ---------------------------------------------------------------------------
  * The provenance rule this markup enforces.
  *
  * Only the first frame is this parish. `HomeScreen.png` — the iconostasis at
@@ -169,11 +216,11 @@ function alternatingBands(): () => string {
  * one photograph in `assets/` that is verifiably ours, and it is the one frame
  * here that carries `alt` text naming the church.
  *
- * The other two are the Egyptian/Gulf backdrops. `assets/README.md` is explicit
- * that they are **not this building** and must not be captioned or described as
- * it, so they are `alt=""` and `aria-hidden`: decorative texture in a moving
- * collage, asserting nothing. To a screen reader this hero is one photograph of
- * one sanctuary, which is the only claim this repo can stand behind.
+ * The other two are the Egyptian/Gulf backdrops, and `assets/README.md` is
+ * explicit that they are **not this building** and must not be captioned or
+ * described as it. Both are therefore `alt=""` and `aria-hidden`: to a screen
+ * reader this hero remains one photograph of one sanctuary, which is the only
+ * claim this repo can stand behind.
  *
  * Their licence is also still unverified. If they came off the old Wix site,
  * that licence does not travel here. The fix is real photography of the Wayland
@@ -247,17 +294,23 @@ function Hero() {
         {/* Frames two and three: decorative, per the provenance note above.
             Neither is this building, so neither says anything about itself.
             Both get the same portrait art direction as frame one — a phone is
-            the case where a wrong crop is most obvious, not least. */}
+            the case where a wrong crop is most obvious, not least.
+
+            Frame two is the stained glass. Its portrait pair tops out at 800
+            rather than the 900 the other two carry, and that is a real ceiling
+            rather than a rounding: 865×1154 is the largest 3:4 box that fits
+            below the verse text in the source, so 900 would be a file named
+            for a width it does not have. */}
         <picture>
           <source
             media="(max-width: 40rem)"
-            srcSet="/img/hero-domes-portrait-600.webp 600w, /img/hero-domes-portrait-900.webp 900w"
+            srcSet="/img/hero-glass-portrait-600.webp 600w, /img/hero-glass-portrait-800.webp 800w"
             sizes="100vw"
           />
           <img
             className="hero__frame hero__frame--2"
-            src="/img/hero-domes-1600.webp"
-            srcSet="/img/hero-domes-1000.webp 1000w, /img/hero-domes-1600.webp 1600w"
+            src="/img/hero-glass-1600.webp"
+            srcSet="/img/hero-glass-1000.webp 1000w, /img/hero-glass-1600.webp 1600w"
             sizes="100vw"
             alt=""
             aria-hidden="true"
@@ -282,6 +335,7 @@ function Hero() {
             decoding="async"
           />
         </picture>
+
       </div>
 
       <div className="hero__veil" />
@@ -415,17 +469,131 @@ function QuickFacts({
 }
 
 /**
- * The fathers who serve the parish, under the week's schedule.
+ * A word of welcome, directly under the three facts.
  *
- * **This is the only place the biographies live.** `/clergy` used to be a page
- * of its own through the `[section]` route and no longer is: three biographies
- * is not a page, it is a section, and a visitor who wants to know who the priest
- * is should not have to leave the page they landed on to find out. The route is
- * excluded in `[section]/page.tsx`; the footer and the sitemap point here.
+ * The hero already says one sentence of this and cannot say more — it is a
+ * heading over a photograph, and anything longer than a line and a half stops
+ * being a lede and starts being a paragraph nobody reads over an image. This is
+ * where the rest of it goes: two short paragraphs beside the Coptic cross.
  *
- * Because there is nowhere else to read them, each father is a disclosure rather
- * than an excerpt — closed, the section is three faces and three names side by
- * side; opened, the whole biography, in the card it came out of.
+ * ---------------------------------------------------------------------------
+ * On the wording, which is most of this section.
+ *
+ * The first draft was rejected for reading Protestant, and it is worth being
+ * precise about what that meant, because the failing is easy to write again.
+ * It was built out of the evangelical invitation formula — "whether you have
+ * been Orthodox all your life, or have never been inside a Coptic church" — a
+ * construction whose whole job is to close the distance between the reader and
+ * a decision they are being asked to make. It was selling a visit.
+ *
+ * What is here instead says what the parish *is* and then what is not required
+ * of anybody. Two rules for editing it:
+ *
+ *   - **State, do not invite.** "The Divine Liturgy is the centre of its life"
+ *     is a fact about the Church. "Come and experience the Liturgy" is an
+ *     advertisement, and the Church is not one.
+ *   - **Take things off the reader, do not put things on them.** "Nothing is
+ *     asked of you" is the kindest sentence available here, and it is kind
+ *     precisely because it promises nothing and requests nothing.
+ *
+ * The test to apply to any edit: would a father read this aloud without
+ * wincing? Nothing here should sound like it came from a brochure.
+ * ---------------------------------------------------------------------------
+ *
+ * Hardcoded rather than read from the `content` collection. It is three
+ * sentences of chrome that should be on the page whether or not a Firestore
+ * read succeeds, and the section it would live in — `welcome` — is the NFC
+ * landing page's, which is a different audience answering different questions.
+ */
+function Welcome({ band }: { band: string }) {
+  return (
+    <section className={band} aria-labelledby="welcome-heading">
+      <div className="wrap reveal">
+        <SectionHeading id="welcome-heading" eyebrow="Our parish" title="A word of welcome" />
+
+        <div className="welcome">
+          {/*
+            The Coptic cross, beside the words.
+
+            **This was a photograph of a cross on a dome, and it is now the
+            cross itself** — `assets/coptic_cross_image.png`, at Tommy's
+            direction. Both were the right *subject* for this section, for a
+            reason worth keeping: a cross asserts nothing about which building
+            it stands on, so the provenance rule the hero enforces — only
+            `HomeScreen.png` may be presented as this parish — has nothing to
+            bite on here.
+
+            The mark is the better version of that. It is inscribed
+            Ⲓⲏⲥ Ⲡⲭⲥ / Ⲡ̀ϣⲏⲣⲓ ⲙ̀Ⲫϯ — "Jesus Christ, the Son of God" — which is the
+            Church saying something rather than a stock detail shot standing in
+            for one. And it is the size it is drawn at: 360×360 in a 13rem
+            (208px) column, where the photograph it replaced was a 381px file
+            that the hero was also stretching four-fold.
+
+            Its white ground is keyed to alpha in the pipeline, so it sits *on*
+            the band's paper rather than on a white card. That is why the CSS
+            carries no border radius and no shadow — see `.welcome__photo`.
+
+            Real `alt` text rather than `aria-hidden`. The hero's decorative
+            frames are hidden because describing them would either make a false
+            claim or add nothing; here the picture is the section's one image
+            and a reader who cannot see it should still know what is beside the
+            words — including what it says, which is the part that matters.
+          */}
+          <img
+            className="welcome__photo"
+            src="/img/cross-coptic-360.webp"
+            alt='A Coptic cross, its four arms filled with gold and blue interlace and inscribed in Coptic: "Jesus Christ, the Son of God".'
+            /* The source is 360×360 and the pipeline does not upscale, so these
+               are the file's real dimensions. Stating them reserves the box
+               before it lands, so the paragraphs beside it do not jump. */
+            width={360}
+            height={360}
+            /* Never above the fold — the hero is — so this is the lazy case,
+               unlike `hero__frame--1`. */
+            loading="lazy"
+            decoding="async"
+          />
+
+          <div className="welcome__words">
+            <p>
+              This is a Coptic Orthodox parish, and the Divine Liturgy is the centre of
+              its life. Everything else here — the feasts and the fasts, the teaching of
+              the children, the prayers said for the sick — grows out of it.
+            </p>
+            <p>
+              If you are here for the first time, nothing is asked of you. Stand or sit
+              as you are able, stay for as long as you can, and one of the fathers will
+              be glad to speak with you afterwards.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The fathers who serve the parish: a face, a name, and a rank. Nothing else.
+ *
+ * ---------------------------------------------------------------------------
+ * This was a row of disclosures carrying the full biographies, and the
+ * biographies have come off the homepage at Tommy's direction — the section
+ * answers "who serves here", which is a question with a three-word answer, and
+ * the paragraph behind each name was the homepage doing a second page's job.
+ *
+ * **The biographies are not deleted.** They are still `body` on each published
+ * `content/clergy` page, still edited the same way, still fetched by the
+ * `getContentPages('clergy')` call this section is handed — this component
+ * simply does not render them. Whatever gets built to show them next reads the
+ * same field and needs no migration.
+ *
+ * What that means for now: nothing on the site displays a father's biography.
+ * That is the intended state, not an oversight. `/clergy` is still excluded in
+ * `[section]/page.tsx`, and the footer's "Our clergy" still points at
+ * `/#clergy`, which is this — a name and a rank is a complete answer to what
+ * that link promises.
+ * ---------------------------------------------------------------------------
  *
  * Every father is shown rather than a fixed first three. The list is small and
  * finite — a bishop and the parish priests — and truncating it would mean the
@@ -442,8 +610,13 @@ function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
           id="clergy-heading"
           eyebrow="Our fathers"
           title="The clergy of the parish"
-          note="Who serves the Liturgy, and who to ask for when you need a priest."
+          note="Who to look for on a Sunday morning."
         />
+        {/* A face with the name beside it, not under it. The portraits are up
+            to 11rem — large enough that a visitor can recognise a father from
+            the row afterwards, which is the only thing this section is for —
+            and setting the caption alongside is what pays for that without the
+            section taking another 3rem of the page for each of them. */}
         <ul className="clergy reveal-stagger">
           {clergy.map((page) => (
             <Cleric key={page.id} page={page} />
@@ -470,71 +643,61 @@ function Cleric({ page }: { page: DocOf<ContentPage> }) {
   const name = page.person?.name ?? page.title;
 
   return (
-    <li>
-      {/*
-        Deliberately no `name` attribute, which would make the three of them an
-        exclusive accordion. Side by side they read as three separate cards
-        rather than as one list, and closing a neighbour the visitor did not
-        touch — in a different column, possibly off to the side of where they
-        are looking — reads as a glitch rather than as tidying up.
+    /*
+     * `id` on the list item, where it used to be on the `<details>`.
+     *
+     * The card no longer opens, so the fragment no longer has to open it — but
+     * an old `/clergy#fr-armia-tawfik`-shaped link should still scroll to the
+     * right father rather than to the top of the section, and keeping the slug
+     * as the anchor is all that takes. The stylesheet's `scroll-padding-top`
+     * keeps it clear of the sticky masthead.
+     */
+    <li className="cleric" id={page.slug}>
+      {uploaded || bundled ? (
+        <img
+          className="cleric__portrait"
+          // Empty, not "portrait of…": this sits directly above the name, and a
+          // screen reader announcing the image would say it twice.
+          alt=""
+          src={uploaded ?? bundled!.src}
+          {...(bundled
+            ? {
+                srcSet: bundled.srcSet,
+                /*
+                 * These have to track the layout in globals.css, in the same
+                 * order the media queries resolve: 7.5rem on a phone, and a
+                 * fixed 11rem circle at every width above that. Both are still
+                 * small enough that the 400px source covers them on a 2x screen
+                 * — 11rem is 176px — which is the point of stating them at all:
+                 * overstating the case is what makes a 176px portrait download
+                 * the 800px file.
+                 */
+                sizes: '(max-width: 34rem) 7.5rem, 11rem',
+              }
+            : {})}
+          width={bundled?.width ?? 800}
+          height={bundled?.height ?? 1000}
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <span className="cleric__mark" aria-hidden="true">
+          {/* The father's initial, not an ornament. A mark that stands for "no
+              photograph yet" should still say which person it is. */}
+          {page.title.trim().charAt(0).toUpperCase()}
+        </span>
+      )}
 
-        `id` on the details, not the heading: a fragment link that lands on a
-        closed `<details>` is opened by the browser, which is what makes an old
-        `/clergy#fr-armia-tawfik`-shaped link still arrive somewhere useful.
-      */}
-      <details className="cleric" id={page.slug}>
-        <summary className="cleric__summary">
-          {uploaded || bundled ? (
-            <img
-              className="cleric__portrait"
-              // Empty, not "portrait of…": this sits directly above the name,
-              // and a screen reader announcing the image would say it twice.
-              alt=""
-              src={uploaded ?? bundled!.src}
-              {...(bundled
-                ? {
-                    srcSet: bundled.srcSet,
-                    /*
-                     * These have to track the layout in globals.css, in the
-                     * same order the media queries resolve: a thumbnail beside
-                     * the name on a phone, one card of a three-track grid at
-                     * desk width, and roughly half the viewport in between.
-                     * Overstating the phone case is what makes a 5.5rem
-                     * thumbnail download the 800px file.
-                     */
-                    sizes: '(max-width: 34rem) 5.5rem, (min-width: 62rem) 22rem, 45vw',
-                  }
-                : {})}
-              width={bundled?.width ?? 800}
-              height={bundled?.height ?? 1000}
-              loading="lazy"
-              decoding="async"
-            />
-          ) : (
-            <span className="cleric__mark" aria-hidden="true">
-              {/* The father's initial, not an ornament. A mark that stands for
-                  "no photograph yet" should still say which person it is. */}
-              {page.title.trim().charAt(0).toUpperCase()}
-            </span>
-          )}
-
-          <span className="cleric__line">
-            <span className="cleric__id">
-              {page.person?.rank && <span className="meta">{page.person.rank}</span>}
-              {/* An `h3` inside the summary, so the section still has an outline
-                  a screen-reader user can navigate by heading — the disclosure
-                  widget is how it opens, not what it is. */}
-              <h3>{name}</h3>
-            </span>
-
-            <Icon name="chevron" size={20} className="cleric__chevron" />
-          </span>
-        </summary>
-
-        <div className="cleric__bio">
-          <Prose>{page.body}</Prose>
-        </div>
-      </details>
+      <div className="cleric__id">
+        {/*
+          An `h3`, so the section still has an outline a screen-reader user can
+          navigate by heading. It was inside a `<summary>` before, which made it
+          both the heading and the control; with nothing to open, it is only the
+          heading, which is the simpler and more honest thing for it to be.
+        */}
+        <h3>{name}</h3>
+        {page.person?.rank && <p className="meta">{page.person.rank}</p>}
+      </div>
     </li>
   );
 }

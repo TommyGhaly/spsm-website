@@ -13,6 +13,13 @@ import { SITE_ORIGIN } from './layout';
  * `/parking`, `/prayer`, and `/welcome` are excluded for a different reason —
  * each is reached by tapping an NFC tag, and a search result for one is only
  * ever a wrong turn into a page that assumes you are already standing there.
+ *
+ * `/parking` and `/prayer` are now also linked from `/forms`, which is in the
+ * nav, and they stay disallowed anyway. Browsing to a form from a page that
+ * explains what it is for is not the same as landing on it cold from a search
+ * result — the hub is what is indexed, and it is the better first impression of
+ * either. Worth revisiting for `/prayer` if the parish would rather someone
+ * searching "prayer request" found the form directly.
  */
 export const dynamic = 'force-static';
 
