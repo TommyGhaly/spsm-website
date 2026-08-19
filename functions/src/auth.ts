@@ -27,6 +27,7 @@ import {
   DEFAULT_SIGNIN_ROLE,
   GROUPS,
   ROLES,
+  defaultScreenAdmin,
   isKnownRole,
   type Group,
   type Role,
@@ -55,8 +56,57 @@ const MICROSOFT_PROVIDER = 'microsoft.com';
  * whole parish out of the servants schedule, too loose hands `servant` to any
  * Microsoft account that reaches us.
  */
+/**
+ * The claims inside a raw provider ID token.
+ *
+ * Decoded, not verified — and that is deliberate rather than lazy. Firebase has
+ * already validated this token against Microsoft's signing keys as part of
+ * completing the sign-in; a blocking function runs *after* that, on a
+ * credential Firebase has accepted. Re-verifying here would mean fetching and
+ * caching JWKS inside a function that must answer in milliseconds, to re-derive
+ * a decision the platform already made. If Firebase's verification is wrong,
+ * re-checking the signature does not save us — the whole flow is already lost.
+ *
+ * Never log the return value. It is a live credential.
+ */
+function claimsFromIdToken(idToken: unknown): Record<string, unknown> | null {
+  if (typeof idToken !== 'string') return null;
+
+  const payload = idToken.split('.')[1];
+  if (!payload) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    // A malformed token is somebody else's problem: the caller reads this as
+    // "no tenant", and the check below fails closed.
+    return null;
+  }
+}
+
+/**
+ * The Entra directory the sign-in actually came from, or null.
+ *
+ * Three sources, and the order is the order of how much they can be trusted to
+ * exist — every one of them was necessary at some point:
+ *
+ *   1. `credential.claims` — where the decoded OIDC claims are *documented* to
+ *      live. Against production this key is present and its value is `null`.
+ *   2. `additionalUserInfo.profile` — populated, but it is the Microsoft Graph
+ *      `/me` response (`@odata.context`, `mail`, `userPrincipalName`), not the
+ *      ID token. There is no `tid` in it. It carries one under the Auth
+ *      emulator, which is why it stays.
+ *   3. `credential.idToken` — the raw JWT, decoded here. This is the one that
+ *      works against the real project, and `tid` is always in it.
+ *
+ * Getting this wrong is not subtle: too strict locks the whole parish out of
+ * the servants schedule — which is exactly what reading only (1) and (2) did,
+ * rejecting every legitimate sign-in with `presentedTenant: null` — and too
+ * loose hands `servant` to any Microsoft account that reaches us.
+ */
 function presentedTenant(event: {
-  credential?: { claims?: Record<string, unknown> } | undefined;
+  credential?: { claims?: Record<string, unknown> | null; idToken?: unknown } | undefined;
   additionalUserInfo?: { profile?: Record<string, unknown> | null } | undefined;
 }): string | null {
   const asTenant = (value: unknown): string | null =>
@@ -64,7 +114,8 @@ function presentedTenant(event: {
 
   return (
     asTenant(event.credential?.claims?.['tid']) ??
-    asTenant(event.additionalUserInfo?.profile?.['tid'])
+    asTenant(event.additionalUserInfo?.profile?.['tid']) ??
+    asTenant(claimsFromIdToken(event.credential?.idToken)?.['tid'])
   );
 }
 
@@ -119,6 +170,30 @@ export const enforceTenantOnCreate = beforeUserCreated(
         // Logged so a legitimate second tenant is diagnosable in one look rather
         // than by guesswork. A tenant id is not a secret.
         presentedTenant: tenant,
+        /*
+         * The shape of what we were handed, when there was no tenant in it.
+         *
+         * `presentedTenant: null` means the claim was absent, not that it
+         * disagreed — a completely different fault with a completely different
+         * fix, and the two are indistinguishable in the log without this. It
+         * cost a debugging session to learn that once.
+         *
+         * **Key names only, never values.** This event carries the provider's
+         * ID token and the user's profile; logging the values would put a live
+         * credential and personal data into Cloud Logging, where it would be
+         * readable by anyone with project access and retained for 30 days.
+         */
+        ...(tenant === null
+          ? {
+              sawCredential: event.credential != null,
+              credentialKeys: event.credential ? Object.keys(event.credential) : null,
+              claimKeys: event.credential?.claims ? Object.keys(event.credential.claims) : null,
+              profileKeys: event.additionalUserInfo?.profile
+                ? Object.keys(event.additionalUserInfo.profile)
+                : null,
+              signInProvider: event.additionalUserInfo?.providerId ?? null,
+            }
+          : {}),
       });
       throw new AuthHttpsError(
         'permission-denied',
@@ -166,6 +241,23 @@ async function createMemberProfile(
           // token and never this document.
           roleMirror: DEFAULT_SIGNIN_ROLE,
           groupsMirror: [],
+
+          /*
+           * Per-screen admin, every screen closed. See @spsm/shared/screens.
+           *
+           * Unlike the mirrors above this one *is* authoritative — it is the
+           * only record of which areas a non-admin may manage, and there is no
+           * claim behind it. Which makes the `screenAdmin` clause in
+           * firestore.rules load-bearing: without it the `allow update: if
+           * isSelf(uid)` rule for profile edits would let anyone flip their own
+           * flags to true and walk into every admin screen on the site.
+           *
+           * Written on creation rather than lazily, so the document always has
+           * a complete map and a missing key means "older document" rather than
+           * "not decided yet". `parseScreenAdmin` still defaults absent keys to
+           * false, because that guarantee is worth having twice.
+           */
+          screenAdmin: defaultScreenAdmin(),
 
           authProvider: 'microsoft',
 

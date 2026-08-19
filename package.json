@@ -38,6 +38,8 @@
     "dev:local": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs && NEXT_PUBLIC_USE_EMULATORS=1 npm run dev --workspace @spsm/website",
     "//seed:emulator": "Re-fills the emulators without restarting the dev server.",
     "seed:emulator": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs",
+    "//backfill:screens": "Adds the screenAdmin map to member documents written before per-screen permissions existed. Dry run by default; -- --write applies. Grants nothing \u2014 every screen is written false.",
+    "backfill:screens": "npm run build --workspace @spsm/shared && node scripts/backfill-screen-admin.mjs",
     "//grant-admin": "Bootstraps the first admin by email. setMemberRole needs an admin to call it, and at the start nobody is one.",
     "grant-admin": "npm run build --workspace @spsm/shared && node scripts/grant-admin.mjs",
     "//test": "Pure functions from @spsm/shared. No emulator, no network, no credentials \u2014 runs in about a second, so there is no excuse not to.",

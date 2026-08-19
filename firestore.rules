@@ -149,14 +149,29 @@ service cloud.firestore {
       allow read: if isSelf(uid) || hasRole('staff');
 
       // A member may edit their own profile but may NOT touch the claim
-      // mirrors — those are set by a Function after claims change.
+      // mirrors — those are set by a Function after claims change — nor
+      // `screenAdmin`, which is a permission and not a preference.
+      //
+      // `screenAdmin` matters more than the mirrors it sits beside. The mirrors
+      // are cosmetic: rules read the token, so a forged `roleMirror` grants
+      // nothing. `screenAdmin` has no claim behind it — it is the only record
+      // of which areas a non-admin may manage — so a member who could write it
+      // could open every admin screen on the site to themselves. Hence it is
+      // pinned on create as well as update.
       allow create: if isSelf(uid)
         && request.resource.data.roleMirror == 'member'
-        && request.resource.data.groupsMirror.size() == 0;
+        && request.resource.data.groupsMirror.size() == 0
+        && (!('screenAdmin' in request.resource.data)
+            || !request.resource.data.screenAdmin.values().hasAny([true]));
 
       allow update: if isSelf(uid)
         && request.resource.data.roleMirror == resource.data.roleMirror
-        && request.resource.data.groupsMirror == resource.data.groupsMirror;
+        && request.resource.data.groupsMirror == resource.data.groupsMirror
+        // Byte-for-byte identical, rather than "no true values". A member must
+        // not be able to revoke their own grants either — a support call about
+        // access that silently disappeared is worse than one about access that
+        // was never given.
+        && request.resource.data.get('screenAdmin', {}) == resource.data.get('screenAdmin', {});
 
       allow update: if hasRole('admin');
       allow delete: if hasRole('admin');
