@@ -247,6 +247,70 @@ await put('announcements/welcome-back', {
   ...audit(),
 });
 
+// --- bookstore --------------------------------------------------------------
+//
+// Absent from this script until the galleries moved local development onto the
+// emulators. Before that `npm run dev` read the real Firestore, so the shop was
+// always full and nobody noticed it was never seeded; the moment local dev
+// stopped talking to production, the bookstore went empty and looked broken.
+//
+// Titles and prices mirror the parish's real Square catalog so the shelf reads
+// like the real one. `imagePaths` is empty, exactly as in production — the
+// covers are hotlinked from Square rather than stored, so there is nothing to
+// seed and the shelf falls back to its placeholder here just as it does live.
+//
+// `squareCatalogObjectId` is null throughout: these are local fixtures, and
+// giving them plausible Square ids would invite `npm run catalog` to believe it
+// had already mirrored them.
+const usd = (cents) => ({ amount: cents, currency: 'USD' });
+
+const products = [
+  ['holy-bible', 'Holy Bible', 1500, 12, 'Bibles'],
+  ['come-and-see', 'Come and See', 800, 4, 'Books'],
+  ['the-angelic-life', 'The Angelic Life', 900, 6, 'Books'],
+  ['be-prepared-book-fr-daoud-lamei', 'Be Prepared — Fr. Daoud Lamei', 500, 0, 'Books'],
+  ['the-hidden-treasure', 'The Hidden Treasure', 1200, null, 'Books'],
+  ['icon-st-mina', 'Icon of St. Mina', 2500, 3, 'Icons'],
+];
+
+for (const [slug, name, cents, stockCount, category] of products) {
+  await put(`products/${slug}`, {
+    slug,
+    name,
+    description: `${name} — local test copy, not the parish's words.`,
+    price: usd(cents),
+    imagePaths: [],
+    squareCatalogObjectId: null,
+    squareVariationId: null,
+    syncedAt: null,
+    // 0 is sold out; null is "not tracked". Both are seeded because the shelf
+    // renders them differently and only one of them is the interesting case.
+    stockCount,
+    category,
+    published: true,
+    publishAt: null,
+    ...audit(),
+  });
+}
+
+// One draft, so "published is the switch" is visible locally: this must never
+// appear on the shelf.
+await put('products/unreleased-title', {
+  slug: 'unreleased-title',
+  name: 'Not For Sale Yet',
+  description: 'Unpublished. If this shows on the shelf, the published filter is broken.',
+  price: usd(999),
+  imagePaths: [],
+  squareCatalogObjectId: null,
+  squareVariationId: null,
+  syncedAt: null,
+  stockCount: null,
+  category: 'Books',
+  published: false,
+  publishAt: null,
+  ...audit(),
+});
+
 // --- program galleries ------------------------------------------------------
 //
 // Enough of a tree to exercise all three presentation levels (group, event,
@@ -361,6 +425,7 @@ console.log(`Seeded the emulators at ${FIRESTORE}:
 
   ${pages.length} content pages, ${events.length} events, 1 announcement
   ${programs.length} programs, ${programEvents.length} program events, ${shots.length} photographs (3 awaiting approval)
+  ${products.length} bookstore products (+1 unpublished draft)
   config/parish, config/integrations, and config/theme
   ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}
 
