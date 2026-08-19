@@ -83,16 +83,46 @@ if (process.env.NODE_ENV === 'development') {
    * the pattern built `squarecheckout` and the emulator rejected it. These are
    * a mirror of the rewrites in firebase.json; add to both together.
    */
-  nextConfig.rewrites = async () => [
-    {
-      source: '/api/square/checkout',
-      destination: `${origin}/${project}/${region}/squareCheckout`,
-    },
-    {
-      source: '/api/square/webhook',
-      destination: `${origin}/${project}/${region}/squareWebhook`,
-    },
-  ];
+  nextConfig.rewrites = async () => ({
+    beforeFiles: [],
+    afterFiles: [
+      {
+        source: '/api/square/checkout',
+        destination: `${origin}/${project}/${region}/squareCheckout`,
+      },
+      {
+        source: '/api/square/webhook',
+        destination: `${origin}/${project}/${region}/squareWebhook`,
+      },
+    ],
+    /*
+     * Program galleries, in development only.
+     *
+     * In production `/events/**` is a Firebase Hosting rewrite onto the
+     * exported gallery shell (see firebase.json). The dev server knows nothing
+     * about Hosting, so without this every gallery URL 404s locally and the
+     * whole section is undevelopable — the same problem, and the same fix, as
+     * the checkout proxy above.
+     *
+     * `fallback` rather than `afterFiles`, and that is the entire point.
+     * Fallback rewrites are applied *after* static assets and dynamic routes
+     * have been checked and before the 404 — which is as close as Next gets to
+     * Hosting's own order (redirects, then files, then rewrites). Under
+     * `afterFiles` this would run before `/events/[slug]` and swallow every
+     * calendar event page.
+     *
+     * What it does NOT cover is a one-segment `/events/summercamp`: that
+     * matches `/events/[slug]`, so the dynamic route wins and the fallback
+     * never runs. That case is handled inside that page instead — see the
+     * development branch in src/app/events/[slug]/page.tsx.
+     */
+    fallback: [
+      {
+        source: '/events/:path*',
+        destination: '/gallery',
+      },
+    ],
+  });
 }
 
 export default nextConfig;

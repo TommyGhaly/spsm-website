@@ -11,7 +11,9 @@
     "build": "next build",
     "start": "npx serve out",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint"
+    "lint": "next lint",
+    "//dev:emulated": "The website against an already-running emulator suite, on the usual port. This is what makes the program galleries developable: they read Firestore in the browser, and the real project has no gallery data. Start the emulators first (npm run emulators) and seed them (npm run seed:emulator).",
+    "dev:emulated": "NEXT_PUBLIC_USE_EMULATORS=1 next dev"
   },
   "dependencies": {
     "@spsm/shared": "*",
