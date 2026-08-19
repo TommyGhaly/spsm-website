@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { formatAddress } from '@spsm/shared';
 import { getParishConfig } from '@/lib/config';
 import { SiteNav } from '@/components/SiteNav';
+import { HeaderAuth } from '@/components/HeaderAuth';
 import { ThemeBootScript, ThemeRuntime } from '@/components/ThemeRuntime';
 import './globals.css';
 
@@ -201,6 +202,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </span>
               </Link>
               <SiteNav items={NAV} />
+              {/*
+                Sign-in, at the right-hand end. A client component, but not one
+                that costs the page anything: it statically imports only
+                lib/authStore.ts, which reaches `firebase/auth` through a
+                dynamic import and therefore keeps the ~150KB SDK in its own
+                chunk. See the rule at the top of lib/auth.ts — this is the
+                first thing in the chrome that touches auth at all, and it is
+                only allowed to because it does not load it.
+              */}
+              <HeaderAuth />
             </div>
           </header>
 

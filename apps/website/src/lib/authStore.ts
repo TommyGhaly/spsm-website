@@ -1,0 +1,305 @@
+/**
+ * The header's view of who is signed in.
+ *
+ * **This module must never statically import ./auth, or anything from
+ * `firebase/auth`.** It is reached from the masthead, the masthead renders on
+ * every page, and the whole point of the rule at the top of ./auth.ts is that
+ * the ~150KB auth SDK stays off the homepage. Every route into it here is a
+ * dynamic `import('./auth')`, which Next splits into its own chunk and fetches
+ * only when one of two things happens: the hint in ./authHint.ts says a session
+ * is probably live, or somebody actually clicks sign in. A parishioner reading
+ * the calendar does neither and downloads none of it.
+ *
+ * A module singleton rather than a React context, because the control is
+ * rendered twice — inline in the bar on a wide screen, and inside the
+ * disclosure panel below the breakpoint, the same both-trees-and-CSS-picks
+ * arrangement `SiteNav` uses. Two components, one subscription, one SDK load.
+ * A context would have needed a provider in the root layout, which is a server
+ * component and is the one place we cannot put a client boundary.
+ *
+ * Read through `useAuthSession` in components/HeaderAuth.tsx; nothing else
+ * should subscribe. /admin and /servants keep using `AdminGate` — they are
+ * behind a gate that has already paid for the SDK, and they need the full user
+ * object rather than the four fields kept here.
+ */
+import { hasRole, type Role, type SpsmClaims } from '@spsm/shared';
+import { hasSessionHint, setSessionHint } from './authHint';
+
+/**
+ * `restoring` is the state that earns this design.
+ *
+ * It means "the hint says yes and the SDK is on its way" — the signed-in user's
+ * first paint. Without it the header would flash "Sign in" at somebody who is
+ * signed in, every navigation, for as long as the chunk takes to arrive.
+ */
+export type AuthState =
+  | { kind: 'signed-out' }
+  | { kind: 'restoring' }
+  | { kind: 'signing-in' }
+  | { kind: 'signed-in'; name: string; email: string | null; claims: SpsmClaims }
+  | { kind: 'error'; message: string };
+
+/**
+ * What the prerendered HTML says, and therefore what almost every visitor sees
+ * painted before any JavaScript runs.
+ *
+ * `signed-out` rather than a blank or a spinner: this is a static export, the
+ * signed-out control is the honest answer for all but a few dozen people, and
+ * rendering it directly means the header does not reflow on hydration. The
+ * signed-in minority get one swap, which is the right way round to spend it.
+ */
+const SERVER_STATE: AuthState = { kind: 'signed-out' };
+
+let state: AuthState =
+  typeof window !== 'undefined' && hasSessionHint()
+    ? { kind: 'restoring' }
+    : { kind: 'signed-out' };
+
+const listeners = new Set<() => void>();
+
+/**
+ * Suppresses the `signed-out` that Firebase reports while a popup is open.
+ *
+ * `onAuthChange` fires as soon as persistence resolves, which for someone
+ * signing in fresh is "no user" — and that would flip the button from "Opening
+ * Microsoft…" back to "Sign in" while their popup is still on screen, reading
+ * as if the click had been dropped.
+ */
+let pendingSignIn = false;
+
+/** The live `onAuthChange` subscription, once the SDK is loaded. Attached once. */
+let detach: (() => void) | null = null;
+
+/**
+ * Resolves with the first answer Firebase gives, so `signIn` can tell "nobody
+ * is signed in, open the popup" from "the hint was stale, we are already in".
+ */
+let firstAnswer: Promise<boolean> | null = null;
+
+function emit(next: AuthState): void {
+  state = next;
+  for (const listener of listeners) listener();
+}
+
+type AuthModule = typeof import('./auth');
+
+/** Loads the SDK and attaches the listener. Idempotent — safe to await anywhere. */
+async function attach(): Promise<{ mod: AuthModule; signedIn: boolean }> {
+  const mod = await import('./auth');
+
+  if (!firstAnswer) {
+    firstAnswer = new Promise<boolean>((resolve) => {
+      let settled = false;
+      detach = mod.onAuthChange((user, claims) => {
+        if (!settled) {
+          settled = true;
+          resolve(user !== null);
+        }
+        if (user) {
+          pendingSignIn = false;
+          emit({
+            kind: 'signed-in',
+            // `displayName` is what Entra sends and what a person recognises;
+            // the email is the fallback for an account that has not set one.
+            name: user.displayName ?? user.email ?? 'Signed in',
+            email: user.email,
+            claims,
+          });
+        } else if (!pendingSignIn) {
+          emit({ kind: 'signed-out' });
+        }
+      });
+    });
+  }
+
+  return { mod, signedIn: await firstAnswer };
+}
+
+let started = false;
+
+/**
+ * Called on first subscribe. Loads the SDK only if the hint says there is
+ * something to restore — this is the branch that keeps the homepage light.
+ */
+function start(): void {
+  if (started) return;
+  started = true;
+  if (state.kind !== 'restoring') return;
+  void attach().catch(() => {
+    // The chunk failed, or Firebase is misconfigured. Falling back to
+    // signed-out leaves a working sign-in button rather than a stuck spinner.
+    emit({ kind: 'signed-out' });
+  });
+}
+
+export function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  start();
+  // The subscription to Firebase itself is deliberately not torn down: the
+  // header is mounted for the whole session, and dropping it on the last
+  // unsubscribe would only re-attach on the next render.
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getSnapshot(): AuthState {
+  return state;
+}
+
+export function getServerSnapshot(): AuthState {
+  return SERVER_STATE;
+}
+
+/**
+ * Sign in, skipping the popup when there is already a session.
+ *
+ * That second case is not hypothetical: it is exactly what a stale hint looks
+ * like — somebody who signed in on /admin before this control existed, or whose
+ * localStorage was cleared while their Firebase session survived in IndexedDB.
+ * They click "Sign in", we load the SDK, discover they already are, and the
+ * header just fills in. No popup, no second trip to Microsoft.
+ */
+export async function signIn(): Promise<void> {
+  if (state.kind === 'signing-in') return;
+
+  pendingSignIn = true;
+  emit({ kind: 'signing-in' });
+
+  try {
+    const { mod, signedIn } = await attach();
+    if (signedIn) {
+      pendingSignIn = false;
+      return; // The listener has already emitted `signed-in`.
+    }
+    await mod.signInWithMicrosoft();
+    pendingSignIn = false;
+    // `onAuthChange` emits `signed-in`; there is nothing to do here.
+  } catch (error) {
+    pendingSignIn = false;
+    // The raw error, once, where a developer will look. The strings below are
+    // for the person in the parish office; this is the `auth/...` code and the
+    // stack, which is what actually gets a misconfiguration fixed.
+    console.error('[auth] Microsoft sign-in failed:', error);
+    // An empty explanation means "not worth reporting" — closing the popup is
+    // the only case, and it should look like never having clicked.
+    const message = explain(error);
+    emit(message === '' ? { kind: 'signed-out' } : { kind: 'error', message });
+  }
+}
+
+/**
+ * Turns a Firebase error into something worth putting in the masthead.
+ *
+ * Firebase puts the code in the message as `(auth/thing)`, so matching on the
+ * text is safe and avoids importing `FirebaseError` — which would mean a static
+ * `firebase/app` import in the one module that must not have one.
+ *
+ * The three that are configuration rather than user error say what to change
+ * and where, because the person who sees them first is the person who can fix
+ * them, and "sign-in failed" would send them to the code instead of the console.
+ *
+ * Returns the empty string for "say nothing", which the caller reads as a
+ * cancelled sign-in rather than a failed one.
+ */
+function explain(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Sign-in failed.';
+
+  // Closing the popup is a decision, not a failure — it puts you back where you
+  // started. Same carve-out as AdminGate, for the same reason.
+  if (message.includes('popup-closed-by-user') || message.includes('cancelled-popup')) {
+    return '';
+  }
+  if (message.includes('popup-blocked')) {
+    return 'Your browser blocked the Microsoft sign-in window. Allow popups for this site, then try again.';
+  }
+  /*
+   * The one that bites on a new domain. Firebase refuses to open the popup at
+   * all unless the *site's own* origin is on Authentication → Settings →
+   * Authorized domains. It is not the Entra redirect URI, which is a different
+   * list in a different portal, and the two get confused constantly — hence
+   * naming both here.
+   */
+  if (message.includes('unauthorized-domain')) {
+    return `${location.hostname} is not an authorized domain for this Firebase project. Add it under Authentication → Settings → Authorized domains.`;
+  }
+  // What a redirect-URI mismatch surfaces as by the time it reaches us: Entra
+  // refuses, the handler closes, and Firebase reports the popup as closed.
+  if (message.includes('operation-not-allowed')) {
+    return 'Microsoft sign-in is not enabled on this Firebase project, or its client ID and secret are missing.';
+  }
+  if (message.includes('network-request-failed')) {
+    return 'Could not reach Microsoft. Check your connection and try again.';
+  }
+  /*
+   * A rejection from `enforceTenantOnCreate`, our own blocking function.
+   *
+   * Firebase wraps whatever the function threw in an `auth/internal-error`
+   * whose message is a JSON envelope with the real sentence buried three levels
+   * down — so the user was shown a wall of `{"error":{"message":...}}` for what
+   * is, in fact, a plain and deliberate refusal. Dig the sentence out and show
+   * only that; the envelope is already in the console for whoever needs it.
+   */
+  const blocked = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(message);
+  if (blocked && message.includes('Cloud Function')) {
+    try {
+      return JSON.parse(`"${blocked[1]}"`) as string;
+    } catch {
+      return blocked[1] ?? message;
+    }
+  }
+  /*
+   * Browser storage, not Microsoft. This surfaced as the raw string "the
+   * database connection is closing" after a sign-in that had otherwise
+   * *succeeded* — Firebase used to persist the session to IndexedDB, and the
+   * write failed. `auth()` now pins persistence to localStorage so this should
+   * be unreachable; it stays because the raw DOMException text reads like a
+   * database outage and sent us looking in the wrong place once already.
+   */
+  if (
+    message.includes('database connection is closing') ||
+    message.includes('InvalidStateError') ||
+    message.includes('indexedDB')
+  ) {
+    return 'Your browser blocked the storage this sign-in needs. Close any other tabs of this site and try again.';
+  }
+  return message;
+}
+
+/**
+ * Sign out, and end up signed out even when Firebase refuses to.
+ *
+ * This used to `await mod.signOut()` inside a bare `try/catch {}` and leave the
+ * UI to `onAuthChange`. That is fine when the call succeeds and silently broken
+ * when it throws — the listener never fires, nothing is logged, and the header
+ * goes on showing your initials as though the click missed. Which is exactly
+ * what happened: `signOut` touches the same persistence layer that was throwing
+ * `Database is closing/hidden`, so the one path that most needed to survive a
+ * storage failure was the one that swallowed it.
+ *
+ * So the local state is cleared unconditionally, before the await. Signing out
+ * is the action where a false "you are still signed in" is worst — someone on a
+ * shared machine deserves the sign-out to look like it worked even if the token
+ * revocation did not. Firebase's own listener will confirm it a moment later
+ * and agree.
+ */
+export async function signOut(): Promise<void> {
+  try {
+    const mod = await import('./auth');
+    await mod.signOut();
+    // `onAuthChange` emits `signed-out`; this is belt and braces for the case
+    // where the listener was never attached in this page's lifetime.
+    emit({ kind: 'signed-out' });
+  } catch (error) {
+    // Loud, unlike before. A sign-out that fails is worth knowing about, and
+    // the raw error is the only thing that says why.
+    console.error('[auth] sign-out failed:', error);
+    setSessionHint(false);
+    emit({ kind: 'signed-out' });
+  }
+}
+
+/** Whether this state can reach a role-gated area. Used for the Admin link. */
+export function canReach(current: AuthState, atLeast: Role): boolean {
+  return current.kind === 'signed-in' && hasRole(current.claims, atLeast);
+}
