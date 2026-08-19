@@ -38,7 +38,8 @@ const NOT_A_PROGRAM: readonly string[] = ['gallery'];
 export function parseGalleryPath(pathname: string): GalleryRoute {
   // Trailing slashes, double slashes, and the query string are all things a
   // real link carries and none of them are route information.
-  const segments = pathname.split('?')[0].split('/').filter((segment) => segment.length > 0);
+  const [beforeQuery = ''] = pathname.split('?');
+  const segments = beforeQuery.split('/').filter((segment) => segment.length > 0);
 
   if (segments[0] !== 'events') return { kind: 'unknown' };
 

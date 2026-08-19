@@ -26,6 +26,9 @@
  * is correct — quarantine is unreadable by everyone, deliberately.
  */
 
+/** Where Firebase serves object bytes from in production. */
+export const FIREBASE_STORAGE_ORIGIN = 'https://firebasestorage.googleapis.com';
+
 /**
  * @param bucket `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, e.g.
  *               `spsm-database.firebasestorage.app`.
@@ -33,9 +36,21 @@
  *               slashes — the Firebase media API takes the whole object name as
  *               one path parameter, so an unencoded `/` reads as a URL
  *               separator and the request 404s.
+ * @param origin The host serving the bytes. Defaults to production.
+ *
+ * **The origin is a parameter because it was once hardcoded, and that was a
+ * bug worth remembering.** With the whole site pointed at the emulators, every
+ * `<img>` still resolved to `firebasestorage.googleapis.com` — so no gallery
+ * image could ever load locally (the layout editor and the presentation would
+ * have been built against grey boxes), and a developer's machine quietly
+ * fetched from the parish's real bucket while believing it was isolated.
  */
-export function mediaUrl(bucket: string, path: string): string {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(path)}?alt=media`;
+export function mediaUrl(
+  bucket: string,
+  path: string,
+  origin: string = FIREBASE_STORAGE_ORIGIN,
+): string {
+  return `${origin}/v0/b/${bucket}/o/${encodeURIComponent(path)}?alt=media`;
 }
 
 /**
@@ -54,18 +69,20 @@ export function mediaUrl(bucket: string, path: string): string {
 export function posterUrlFor(
   bucket: string,
   media: { kind: string; renditionPath: string | null; posterPath: string | null },
+  origin?: string,
 ): string | null {
   const path = media.kind === 'video' ? media.posterPath : media.renditionPath;
-  return path === null ? null : mediaUrl(bucket, path);
+  return path === null ? null : mediaUrl(bucket, path, origin);
 }
 
 /** The clip itself. Null for a photograph, or a video still being processed. */
 export function videoUrlFor(
   bucket: string,
   media: { kind: string; renditionPath: string | null },
+  origin?: string,
 ): string | null {
   if (media.kind !== 'video' || media.renditionPath === null) return null;
-  return mediaUrl(bucket, media.renditionPath);
+  return mediaUrl(bucket, media.renditionPath, origin);
 }
 
 /**

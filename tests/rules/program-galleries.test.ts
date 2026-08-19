@@ -12,6 +12,7 @@ import {
   getDocs,
   query,
   where,
+  orderBy,
   setDoc,
   addDoc,
   updateDoc,
@@ -176,6 +177,53 @@ describe('public gallery reads', () => {
 
   it('hides an unpublished program', async () => {
     await assertFails(getDoc(doc(asAnon(env).firestore(), 'programs', SENIORS)));
+  });
+
+  /*
+   * The reads the gallery pages actually perform, as an anonymous visitor.
+   *
+   * Absent from the first version of this suite, which tested only that an
+   * *unpublished* program was hidden — so a rule that denied the published ones
+   * too passed everything. The pages still rendered in the browser, because the
+   * client swallows a failed read and falls back to empty, and the only sign
+   * was a permission-denied line in a console nobody was reading.
+   */
+  it('lets a stranger read a published program by id', async () => {
+    await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'programs', SUMMERCAMP)));
+  });
+
+  it('lets a stranger list the published programs', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(
+      getDocs(query(collection(db, 'programs'), where('published', '==', true), orderBy('order'))),
+    );
+  });
+
+  it('lets a stranger read a published program event by id', async () => {
+    await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'programEvents', WEEK_1)));
+  });
+
+  it('lets a stranger list a program\'s published events', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(
+      getDocs(query(
+        collection(db, 'programEvents'),
+        where('programId', '==', SUMMERCAMP),
+        where('published', '==', true),
+      )),
+    );
+  });
+
+  it('lets a stranger find one event by slug', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(
+      getDocs(query(
+        collection(db, 'programEvents'),
+        where('programId', '==', SUMMERCAMP),
+        where('published', '==', true),
+        where('slug', '==', WEEK_1),
+      )),
+    );
   });
 });
 
