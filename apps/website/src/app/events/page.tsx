@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getUpcomingEvents, EventCard } from '@/features/events';
+import { ProgramStrip } from '@/features/programs';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
@@ -25,6 +26,16 @@ export default async function EventsPage() {
       <PageHeader title="Events" />
 
       <PageBody>
+        {/*
+          The programs, above the list.
+
+          This page is the only entrance to the galleries — there is no
+          "Ministries" link anywhere, deliberately. The strip fetches in the
+          browser while everything below it stays baked at build time, so a camp
+          added after the last deploy shows up without one.
+        */}
+        <ProgramStrip />
+
         <p className="note">Everything coming up, soonest first. Times are shown in Eastern Time.</p>
         {events.length === 0 ? (
           <EmptyState what="events" collection="events" />
