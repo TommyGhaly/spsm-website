@@ -4,9 +4,8 @@
     {
       "name": "website",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace", "@spsm/website"],
-      "port": 3000,
-      "autoPort": true
+      "runtimeArgs": ["run", "dev:emulated", "--workspace", "@spsm/website"],
+      "port": 3000
     }
   ]
 }
