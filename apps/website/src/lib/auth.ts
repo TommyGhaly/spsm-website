@@ -19,8 +19,11 @@
  * dependency tree on the homepage. Import this from /admin and /servants only.
  */
 import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
   connectAuthEmulator,
   getAuth,
+  initializeAuth,
   OAuthProvider,
   signInWithPopup,
   signOut as fbSignOut,
@@ -30,6 +33,7 @@ import {
 } from 'firebase/auth';
 import { DEFAULT_CLAIMS, isKnownRole, type SpsmClaims, type Group, GROUPS } from '@spsm/shared';
 import { firebaseApp, usingEmulators } from './firebase';
+import { setSessionHint } from './authHint';
 
 /**
  * Next inlines `process.env.NEXT_PUBLIC_*` by literal textual match, so this
@@ -38,18 +42,54 @@ import { firebaseApp, usingEmulators } from './firebase';
  */
 const AZURE_TENANT_ID = process.env.NEXT_PUBLIC_AZURE_TENANT_ID;
 
-let authConnected = false;
+let instance: Auth | null = null;
 
+/**
+ * The Auth instance, pinned to localStorage rather than IndexedDB.
+ *
+ * `initializeAuth` instead of `getAuth`, and that is the whole point of this
+ * function. `getAuth` installs Firebase's default persistence chain, which
+ * tries `indexedDBLocalPersistence` first — and IndexedDB is where sign-in was
+ * dying: the popup returned from Microsoft cleanly and the SDK then threw
+ * `InvalidStateError: the database connection is closing` while writing the
+ * session, so a completed sign-in surfaced as a failure. Safari is the usual
+ * offender, and a second tab on the same origin closing the connection is the
+ * usual trigger; neither is something the site can control.
+ *
+ * `browserLocalPersistence` is plain localStorage. It costs nothing that
+ * matters here — a session is per-device either way, and this app has no
+ * multi-tab handoff to preserve — and it removes the failure mode outright.
+ *
+ * `browserPopupRedirectResolver` has to be passed explicitly. `getAuth` wires
+ * it up for you; `initializeAuth` does not, and without it `signInWithPopup`
+ * throws `auth/argument-error` — trading one broken sign-in for another.
+ *
+ * Cached, because `initializeAuth` throws `auth/already-initialized` on a
+ * second call for the same app. The `getAuth` fallback covers the case where
+ * something else got there first, which should be impossible — this is the
+ * only accessor — but a hard failure in the header on every page is a bad way
+ * to discover otherwise.
+ */
 export function auth(): Auth {
-  const instance = getAuth(firebaseApp());
+  if (instance) return instance;
+
+  try {
+    instance = initializeAuth(firebaseApp(), {
+      persistence: browserLocalPersistence,
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    instance = getAuth(firebaseApp());
+  }
 
   // See `usingEmulators` — the admin cannot be developed against the real
   // project, because getting a role there means being a real member of the
-  // parish directory.
-  if (usingEmulators() && !authConnected) {
-    authConnected = true;
+  // parish directory. Connected here, inside the one-time construction, so it
+  // cannot run twice: `connectAuthEmulator` throws once the instance is used.
+  if (usingEmulators()) {
     connectAuthEmulator(instance, 'http://127.0.0.1:9099', { disableWarnings: true });
   }
+
   return instance;
 }
 
@@ -84,6 +124,11 @@ export async function signInWithMicrosoft(): Promise<User> {
 }
 
 export function signOut(): Promise<void> {
+  // Cleared before the await, not after. `onAuthChange` will clear it too, but
+  // a sign-out that is still in flight when the user navigates would otherwise
+  // leave the hint set, and the next page would load the SDK to discover a
+  // session that is already gone.
+  setSessionHint(false);
   return fbSignOut(auth());
 }
 
@@ -141,6 +186,10 @@ export function onAuthChange(
   callback: (user: User | null, claims: SpsmClaims) => void,
 ): () => void {
   return onAuthStateChanged(auth(), (user) => {
+    // The one place the hint in ./authHint.ts is written from, because this is
+    // the one callback that sees every transition. Set synchronously, ahead of
+    // the claims round-trip, so a reload during that window still guesses right.
+    setSessionHint(user !== null);
     void claimsOf(user).then((claims) => callback(user, claims));
   });
 }

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
+import { HeaderAuth } from './HeaderAuth';
 
 /**
  * The main navigation, in two forms.
@@ -12,6 +13,10 @@ import { useEffect, useId, useState } from 'react';
  * the fold on every page. So: an inline row on a wide screen, and a disclosure
  * panel below 64rem. Both trees are always rendered and CSS picks — see `.nav` /
  * `.nav-panel` in globals.css.
+ *
+ * The panel also carries the sign-in control, because the inline one is hidden
+ * at the same width this appears at — see HeaderAuth, which is rendered once
+ * here and once beside `.nav` in the layout.
  *
  * A client component, and the only one in the chrome. That buys two things
  * worth the boundary: `aria-current` on the page you are on, and a panel that
@@ -111,6 +116,13 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </li>
             ))}
           </ul>
+
+          {/*
+            Below the links, not above them. The nav is what almost everyone
+            opened the panel for; sign-in matters weekly to a few dozen people
+            and should not be the first thing a visitor's thumb lands on.
+          */}
+          <HeaderAuth variant="panel" />
         </div>
       </div>
     </>

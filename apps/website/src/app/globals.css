@@ -441,6 +441,36 @@ main {
   outline-color: var(--color-gold, #b08d43);
 }
 
+/*
+ * The masthead runs wider than the page beneath it.
+ *
+ * `.wrap` caps at `--shell-width` (80rem) and centres, which is right for a
+ * column of prose and wasteful for a bar whose only job is to hold a wordmark
+ * against a nav. On a 1400px screen that cap plus the gutters left about 100px
+ * of empty red at each end while the nav and the sign-in control were pressed
+ * together in the middle.
+ *
+ * So the bar gets its own, wider cap. 96rem rather than `none`: full-bleed
+ * looks deliberate up to about 1600px and stretched past it — on an ultrawide
+ * the wordmark and the sign-in circle end up a screen apart with nothing
+ * between them. 96rem is roughly where that starts, so the bar keeps growing
+ * with the window and then stops.
+ *
+ * The gutter is untouched, so the bar still clears the viewport edge by the
+ * same amount as everything else.
+ *
+ * **The cost, which is real:** the wordmark no longer lines up with the page
+ * content below it, because that content is still capped at 80rem. That is the
+ * trade this rule makes — a wider bar in exchange for losing that vertical
+ * edge. Revert this one block to get the alignment back.
+ *
+ * Also picks up `.nav-panel .wrap`, which is nested inside `.masthead`. That is
+ * wanted: the panel's links stay flush with the wordmark above them.
+ */
+.masthead .wrap {
+  max-width: 96rem;
+}
+
 .masthead__inner {
   display: flex;
   align-items: center;
@@ -823,6 +853,409 @@ main {
     border-radius: 2px;
     background: var(--color-gold, #b08d43);
   }
+}
+
+/* ---- header sign-in ---------------------------------------------------- */
+
+/*
+ * The sign-in control at the right-hand end of the bar.
+ *
+ * Shaped like `.nav-toggle` on purpose — gold hairline, pill, transparent
+ * ground. They are the two controls in the masthead that are not navigation,
+ * they sit next to each other below the breakpoint, and looking like two
+ * different kinds of button would say there was a difference to understand.
+ *
+ * `position: relative` is what the dropdown hangs off, so the menu is
+ * positioned against this and not against `.masthead` the way `.nav-panel` is.
+ */
+.header-auth {
+  position: relative;
+  flex-shrink: 0;
+  /*
+   * Pulls back to a `space-md` gap from the nav.
+   *
+   * `.masthead__inner` sets one `gap` for all its children, and its `space-xl`
+   * is there to separate the wordmark from the nav — two unrelated things. The
+   * nav and this are not unrelated: it is the last item in the row and 40px of
+   * air before it both reads as a detached fragment and spends header budget
+   * the measurement below cannot spare.
+   */
+  margin-left: calc(var(--space-md, 1rem) - var(--space-xl, 2.5rem));
+}
+
+/*
+ * A circle at the far right of the bar, and nothing else.
+ *
+ * This started as a labelled pill and the measurements killed it. `.wrap` caps
+ * at `--shell-width` (80rem) less the gutters, so the header's content box is
+ * 1200px however wide the window gets — the wordmark (408px) and the eight nav
+ * items (631px) leave about 121px, and a "Sign in" pill with the Microsoft mark
+ * measured 103px of that. Two pixels of slack, at every desktop width, with the
+ * signed-in state still to fit and the wordmark set to wrap silently when it
+ * ran out. A 40px circle spends a third of the budget instead.
+ *
+ * The trade is that the control carries no text, so both states set an
+ * `aria-label` and a `title` — see HeaderAuth.tsx. Signed out it shows the
+ * Microsoft mark, which is the one glyph that says what the click does without
+ * a word; signed in it shows initials, which is the convention people already
+ * read as "this is my account, the menu is here".
+ */
+.header-auth__circle {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  /* 2.5rem, matching the height the nav's own pills settle at, so the circle
+     sits on the same optical line rather than looking dropped in. */
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  background: transparent;
+  color: var(--color-gold, #b08d43);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.header-auth__circle:hover:not(:disabled),
+.header-auth__circle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 14%, transparent);
+  border-color: var(--color-gold, #b08d43);
+}
+
+/* Waiting on the popup. Not `not-allowed` — the button is working, not refusing. */
+.header-auth__circle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/*
+ * Signed in, the initials are the content, so the circle fills rather than
+ * outlines. That difference is what makes "signed in" legible at a glance from
+ * across the bar, where two 40px outlines would look like the same control.
+ */
+.header-auth__circle--me {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+}
+
+/*
+ * Held while the auth chunk loads, for a signed-in visitor. Same 40px, so the
+ * bar does not reflow when the real control arrives; it pulses because a static
+ * ring reads as a control that is broken.
+ */
+.header-auth__circle--waiting {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 10%, transparent);
+  cursor: default;
+  animation: header-auth-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes header-auth-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Someone who has asked for less motion still gets the placeholder, held still. */
+@media (prefers-reduced-motion: reduce) {
+  .header-auth__circle--waiting {
+    animation: none;
+  }
+}
+
+/* The brand mark keeps its own colours; only the surround is themed. */
+.header-auth__ms {
+  flex-shrink: 0;
+  border-radius: 1px;
+}
+
+/*
+ * The dropdown.
+ *
+ * `--color-deep` and not the paper: it hangs off the dark bar and belongs to
+ * it, the same argument `.nav-panel--open` makes for continuing the bar rather
+ * than hanging a white sheet from it.
+ *
+ * `z-index` above `.masthead`'s own 50 so it paints over the hero, which is the
+ * first thing under the header on the homepage and has its own stacking from
+ * `isolation: isolate`.
+ */
+.header-auth__menu {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 60;
+  /* Wide enough for a parish address at the micro size before it ellipsizes,
+     and capped so a long display name cannot stretch it off the bar. */
+  min-width: 16.5rem;
+  max-width: 20rem;
+  padding: var(--space-sm, 0.5rem);
+  background: var(--color-deep, #481010);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, 0.15));
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/*
+ * The identity block at the top of the card.
+ *
+ * Avatar beside the name rather than a name on its own: the trigger is a 40px
+ * circle of initials, and repeating those initials here is what tells somebody
+ * that "MG" is them. The email is the quiet line — longest, least important,
+ * and the one that has to be allowed to break.
+ */
+.header-auth__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.5rem);
+}
+
+.header-auth__whoAvatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+  color: var(--color-gold, #b08d43);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+/* `min-width: 0` so the email below can actually ellipsize — without it the
+   flex item refuses to shrink and the card grows to fit the address instead. */
+.header-auth__whoText {
+  display: grid;
+  min-width: 0;
+}
+
+.header-auth__whoName {
+  font-weight: 600;
+  line-height: var(--leading-snug, 1.25);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Ellipsised rather than wrapped. A parish address on a personal name runs long
+ * enough to take two lines, which pushed the card taller than the rows below it
+ * and made the identity block the loudest thing in a menu that exists to hold
+ * links. The full address is in `title`.
+ */
+.header-auth__whoMail {
+  font-size: var(--type-micro, 0.8125rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The role, as a quiet chip with a dot rather than a filled badge.
+ *
+ * It was a gold pill, which at the top of a small dark card read as the most
+ * important thing in it — louder than the person's own name. It is context,
+ * not a heading: when somebody is refused the admin, "you are signed in as
+ * servant" is the whole answer, and it only has to be legible, not prominent.
+ */
+.header-auth__role {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0 var(--space-sm, 0.5rem) var(--space-sm, 0.5rem);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 88%, var(--color-ink-inverse, #f9efec));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
+}
+
+.header-auth__roleDot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-gold, #b08d43);
+}
+
+.header-auth__links {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-xs, 0.25rem) 0;
+  display: grid;
+}
+
+/*
+ * Rows, not links-in-a-list. `gap` puts the icon a fixed distance from the
+ * label so the two rows align on their text regardless of glyph width, which is
+ * the thing that makes a menu look built rather than assembled.
+ */
+.header-auth__links a,
+.header-auth__signout {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  /* 40px floor for a pointer target somebody hits while the menu is already
+     closing. `min-height` rather than padding alone: the button and the anchors
+     resolve different line-heights from their own font metrics, which left the
+     sign-out row 6px shorter than the links above it. */
+  min-height: 2.5rem;
+  padding: 0.4rem var(--space-sm, 0.5rem);
+  border: 0;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: transparent;
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+/* The glyph is secondary to its label until the row is hovered, when both come
+   up together — one state change, not two. */
+.header-auth__links a svg,
+.header-auth__signout svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 120ms ease;
+}
+
+.header-auth__links a:hover,
+.header-auth__signout:hover {
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
+  color: var(--color-gold, #b08d43);
+}
+
+.header-auth__links a:hover svg,
+.header-auth__signout:hover svg {
+  opacity: 1;
+}
+
+/*
+ * Sign out sits below a rule, in the card's padding rather than flush to its
+ * edge — it is the one row that undoes something, and a hairline is enough to
+ * stop a thumb aiming for "Admin" landing on it.
+ */
+.header-auth__signout {
+  margin-top: var(--space-xs, 0.25rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
+  border-radius: 0 0 var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/* Sign-in failed for a reason worth reading. Same box, alarm-tinted edge. */
+.header-auth__menu--error {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  max-width: 20rem;
+  padding: var(--space-md, 1rem);
+}
+
+.header-auth__menu--error p {
+  margin: 0;
+}
+
+/*
+ * ---- below the changeover ----
+ *
+ * 78rem, and it must stay in step with the two `78rem` queries in the
+ * navigation section above. Three literals for one breakpoint is not ideal, and
+ * a media query cannot read a custom property, so the comment is the only thing
+ * holding them together: change one, change all three.
+ *
+ * Measured with the circle in the row, because the note above `.nav-panel` asks
+ * for exactly that before anything is added to the header. The tightest case is
+ * a 1249px viewport — one pixel above the changeover, gutters not yet opened to
+ * their clamp, content box 1170px — where the wordmark, the eight nav items and
+ * this come to 1134px. About 37px spare, and the wordmark still sets on two
+ * lines. Re-measure here, not only at the `.nav-panel` note, if a label grows.
+ */
+@media (max-width: 78rem) {
+  .header-auth {
+    display: none;
+  }
+}
+
+/*
+ * The panel's copy of the control. Only ever visible inside `.nav-panel--open`,
+ * which is itself `display: none` above the changeover, so this needs no query
+ * of its own.
+ */
+.nav-panel__auth {
+  padding-block: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 15%, transparent);
+}
+
+.nav-panel__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-sm, 0.5rem);
+  color: var(--color-ink-inverse, #f9efec);
+  font-weight: 600;
+}
+
+.nav-panel__role {
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+  color: var(--color-gold, #b08d43);
+  font-size: var(--type-micro, 0.8125rem);
+  text-transform: capitalize;
+}
+
+.nav-panel__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm, 0.5rem);
+  width: 100%;
+  /* Full-width and 44px tall — this is the phone, and it is the control the
+     panel exists to offer anyone who is not here to browse. */
+  padding: 0.8rem var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1.0625rem);
+  font-weight: 500;
+  color: var(--color-ink-inverse, #f9efec);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+.nav-panel__button:hover:not(:disabled) {
+  color: var(--color-gold, #b08d43);
+  border-color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
+}
+
+.nav-panel__button:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.nav-panel__note {
+  margin: var(--space-sm, 0.5rem) 0 0;
+  font-size: var(--type-micro, 0.8125rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 75%, transparent);
 }
 
 /* ---- hero -------------------------------------------------------------- */
