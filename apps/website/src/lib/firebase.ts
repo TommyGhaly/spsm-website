@@ -18,6 +18,7 @@
  */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getPublicConfig } from '@spsm/shared';
 
 /**
@@ -71,6 +72,26 @@ export function db(): Firestore {
   if (usingEmulators() && !firestoreConnected) {
     firestoreConnected = true;
     connectFirestoreEmulator(instance, '127.0.0.1', 8080);
+  }
+  return instance;
+}
+
+let storageConnected = false;
+
+/**
+ * Cloud Storage, for program gallery photographs.
+ *
+ * Browser-only in practice. The static build never touches this: an approved
+ * item's public URL is derived from its storage path, so nothing has to be
+ * fetched at build time, and the one caller that does upload — the submission
+ * form — cannot run in Node anyway.
+ */
+export function storage(): FirebaseStorage {
+  const instance = getStorage(firebaseApp());
+
+  if (usingEmulators() && !storageConnected) {
+    storageConnected = true;
+    connectStorageEmulator(instance, '127.0.0.1', 9199);
   }
   return instance;
 }

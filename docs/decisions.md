@@ -208,6 +208,47 @@ both syncs are unimplemented pending schemas. See
 
 ---
 
+### 11. Livestream archive freshness — **a scheduled job, and it deploys `main`**
+
+`archive.json` stopped being fetched at build time (see the header of
+[`features/livestream/data.ts`](../apps/website/src/features/livestream/data.ts)),
+which fixed the empty-archive-on-a-throttled-deploy failure and replaced it with
+a quieter one: the twelve services on `/livestream` are only as current as the
+last time somebody ran `npm run archive` and committed the result. Nothing on
+the page looks stale when it is stale — the dates are real, just old.
+
+[`.github/workflows/refresh-archive.yml`](../.github/workflows/refresh-archive.yml)
+runs the command at 06:20 UTC daily and commits the file if it moved.
+
+**Daily rather than weekly**, which was the first instinct and is wrong: the
+parish streams most days and twice on many of them, so twelve slots turn over in
+roughly eight days. A weekly job is slower than the thing it is tracking. The
+cost is thirteen requests a day, against the many-per-day that got the old
+build-time fetch throttled.
+
+**What it costs, and this is the part to decide on rather than discover:**
+
+- **The deploy job publishes whatever is on `main`.** A static export cannot
+  rebuild one page, so an archive refresh drags every other unpublished commit
+  onto the live site with it. "Keep `main` deployable" stops being a convention
+  and starts being enforced nightly.
+- **It needs most of `.env` mirrored into Actions secrets**, because the pages
+  that cannot reach their configuration degrade silently — `lib/config.ts` falls
+  back to the committed defaults with a warning, and the bulletin removes itself.
+  A robot deploying from a half-populated secret store ships a smaller site than
+  a laptop does. The Firebase web config and the announcements key are guarded
+  with a hard failure before the build; the rest are not.
+- It is off until `FIREBASE_SERVICE_ACCOUNT` exists. The refresh half needs no
+  credential and runs regardless, so until then the snapshot lands in git and
+  ships with the next manual deploy, and the run summary says exactly that
+  instead of letting the absence look like success.
+
+**Revisit if:** the archive ever needs to be current to the hour rather than the
+day. That is a different design — a Function caching the feed, with the page
+reading it client-side — and it is not worth a service for twelve links.
+
+---
+
 ## Out of scope
 
 - App Clips / Android Instant Apps (NFC, TapTag hardware). Vehicle registration's

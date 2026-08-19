@@ -93,6 +93,96 @@
         { "fieldPath": "published", "order": "ASCENDING" },
         { "fieldPath": "order", "order": "ASCENDING" }
       ]
+    },
+
+    {
+      "comment": "Program galleries. These matter more than most: the gallery pages are client-rendered at request time, so a missing index is not a failed build a developer sees — it is a live page that spins forever for a visitor. Every entry below mirrors a query in apps/website/src/features/programs.",
+      "collectionGroup": "programs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "published", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "The events under one program, newest first. Undated events sort last by convention, not by this index.",
+      "collectionGroup": "programEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "published", "order": "ASCENDING" },
+        { "fieldPath": "startAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "comment": "Admin: every event under a program, published or not. Cannot be served by the public index above, which requires the published filter.",
+      "collectionGroup": "programEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "startAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "comment": "One gallery. The status filter is mandatory for public reads — firestore.rules denies the query outright without it, not merely the rows — so it is part of every public index here.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programEventId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "One group within a gallery, and the presentation running a single day.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programEventId", "order": "ASCENDING" },
+        { "fieldPath": "groupId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "Presentation across a whole program, and the program card's cover photo.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "The approval queue, scoped to one program. A program-scoped administrator MUST filter on programId — the rules cannot prove their grant covers an unfiltered list, so the query is denied rather than trimmed.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "The approval queue for one event, which is what an event-scoped volunteer sees.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programEventId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "comment": "The homepage preview band: showcase photographs from every program at once. Placement is a nested map, hence the dotted path.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "placement.homepage", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

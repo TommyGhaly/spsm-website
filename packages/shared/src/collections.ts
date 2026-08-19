@@ -19,6 +19,17 @@ export const COLLECTIONS = {
   /** Servants calendar — staff-gated. */
   servantEvents: 'servantEvents',
   /**
+   * The parish's standing programs, their occurrences, and the photographs
+   * parishioners send in. Reached through `/events` but deliberately a separate
+   * shape — see docs/program-galleries.md.
+   *
+   * `galleryMedia` is top-level rather than nested under an event because the
+   * approval queue and the homepage band both read across every event at once.
+   */
+  programs: 'programs',
+  programEvents: 'programEvents',
+  galleryMedia: 'galleryMedia',
+  /**
    * Configuration only servants may read.
    *
    * Deliberately not a document inside `config`. That collection is

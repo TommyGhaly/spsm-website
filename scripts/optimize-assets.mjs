@@ -608,24 +608,66 @@ for (const [source, slug] of [
     write(join(PUBLIC, 'img/hero-towers-portrait-600.webp'), await webp(towers, { width: 600, quality: 72, extract: port }));
   }
 
+  /*
+   * The second frame: the stained glass and the gold cross, cut out of the
+   * verse image.
+   *
+   * ---------------------------------------------------------------------
+   * **This replaces `hero-domes-*`, and the reason is that the hero had two
+   * frames that read as the same photograph.**
+   *
+   * `hero-domes` was very nearly the whole verse image — cream masonry and
+   * two domes against pale sky, shot from below. `hero-towers` above is
+   * cream masonry and two bell towers against pale sky, shot from below.
+   * Different buildings, indistinguishable at a glance and at hero size
+   * under the veil, so the cross-fade looked like it was cycling one picture
+   * back into itself. That is the complaint this crop answers.
+   *
+   * The same file has one region that looks like nothing else in `assets/`:
+   * the two arched windows at its right, deep blue glass with the figure of
+   * Christ in the left one and a gold cross across the right. Sixteen per
+   * cent of the frame, and the only strong colour either backdrop holds.
+   *
+   * Hand-picked rectangles rather than `window_()`, and that is the point.
+   * `window_` fits the *largest* box of a ratio and then slides it, which is
+   * the right tool when the subject fills the frame — it is what the towers
+   * and the sanctuary want. Here the subject is a sixth of the picture, so
+   * the largest box is the wrong box however it is nudged, and the numbers
+   * below are measured off the pixels:
+   *
+   *   landscape  1800×695   x 1200–3000, y 820–1515
+   *   portrait    800×1067  x 1700–2500, y 700–1767
+   *
+   * Both ratios still match the sanctuary's, which is what keeps the fade
+   * reading as one camera — 1800/695 = 2.590 and 800/1067 = 0.750.
+   *
+   * `top` is 820 and 700 against a verse crop that starts at 650, so the
+   * typeset "2 Corinthians 9:7" is out of both by construction; the
+   * assertion below is there so that stays true if anyone moves them.
+   *
+   * The landscape window is 1800px wide against a 1600px output and the
+   * portrait 800 against 800, so neither is upscaled. 800 rather than the
+   * 900 the other frames carry because 865×1154 is the largest 3:4 box that
+   * fits below the verse text at all, and a file named 900 that is 865 wide
+   * is the small version of the bug that killed the old fourth frame.
+   * ---------------------------------------------------------------------
+   */
   {
-    // Cut from the verse-cropped region, not the raw file — otherwise the
-    // typeset "2 Corinthians 9:7" comes back into the hero.
-    const meta = { width: extract.width, height: extract.height };
-    const offset = (win) => ({ ...win, top: win.top + extract.top });
+    const land = { left: 1200, top: 820, width: 1800, height: 695 };
+    const port = { left: 1700, top: 700, width: 800, height: 1067 };
+    for (const win of [land, port]) {
+      if (win.top < extract.top) throw new Error('hero-glass crop reaches into the verse text');
+    }
 
-    // Already 2.6:1 after the verse crop, so the landscape window is very
-    // nearly the whole thing.
-    const land = offset(window_(meta, HERO_LANDSCAPE, 0.5, 0.5));
-    write(join(PUBLIC, 'img/hero-domes-1600.webp'), await webp(verse, { width: 1600, quality: 74, extract: land }));
-    write(join(PUBLIC, 'img/hero-domes-1000.webp'), await webp(verse, { width: 1000, quality: 72, extract: land }));
+    write(join(PUBLIC, 'img/hero-glass-1600.webp'), await webp(verse, { width: 1600, quality: 76, extract: land }));
+    write(join(PUBLIC, 'img/hero-glass-1000.webp'), await webp(verse, { width: 1000, quality: 74, extract: land }));
 
-    // `focusX: 0.78` — the right of this frame is the blue stained glass and
-    // the gold cross, which is the only strong colour in either backdrop.
-    // A centred portrait crop would be a wall.
-    const port = offset(window_(meta, HERO_PORTRAIT, 0.78, 0.5));
-    write(join(PUBLIC, 'img/hero-domes-portrait-900.webp'), await webp(verse, { width: 900, quality: 74, extract: port }));
-    write(join(PUBLIC, 'img/hero-domes-portrait-600.webp'), await webp(verse, { width: 600, quality: 72, extract: port }));
+    // A touch higher quality than the landscape pair: stained glass is a
+    // field of fine dark leading over saturated blue, which is exactly what
+    // a low WebP quality smears, and the phone shows it larger relative to
+    // the screen.
+    write(join(PUBLIC, 'img/hero-glass-portrait-800.webp'), await webp(verse, { width: 800, quality: 80, extract: port }));
+    write(join(PUBLIC, 'img/hero-glass-portrait-600.webp'), await webp(verse, { width: 600, quality: 78, extract: port }));
   }
 
   // 4.8 MB PNG of a photograph — PNG is the wrong container for continuous
@@ -633,6 +675,67 @@ for (const [source, slug] of [
   const hands = join(SRC, 'Donation.png');
   write(join(PUBLIC, 'img/backdrop-giving-1600.webp'), await webp(hands, { width: 1600, quality: 72 }));
   write(join(PUBLIC, 'img/backdrop-giving-800.webp'), await webp(hands, { width: 800, quality: 70 }));
+}
+
+// ── The Coptic cross ────────────────────────────────────────────────────────
+//
+// The homepage welcome section's picture, at Tommy's direction: the Coptic
+// cross, inscribed Ⲓⲏⲥ Ⲡⲭⲥ / Ⲡ̀ϣⲏⲣⲓ ⲙ̀Ⲫϯ — "Jesus Christ, the Son of God".
+//
+// This replaced a photograph of a cross on a dome
+// (`Coptic_cross_top_church.jpeg`), which is now read by nothing — see
+// "Deliberately not built" at the bottom of this file.
+//
+// Not a photograph, so it is not treated like one:
+//
+//   - **Lossless.** 360×360 of flat primary colour with hard navy outlines.
+//     Lossy WebP puts ringing along every one of those edges, and lossless
+//     comes out *smaller* here than quality 92 does (33 KB against 37 KB)
+//     because there are only a few dozen distinct colours to encode.
+//   - **One size.** The source is 360×360 and `withoutEnlargement` means
+//     that is the ceiling. It is shown in a 13rem (208px) column, so 360
+//     covers it at 1.7× and there is no second file worth writing.
+//
+// The white ground is keyed out to alpha, and that is the part worth
+// explaining. The supplied PNG is opaque white behind the artwork, which on
+// the warm paper of a `.band` would arrive as a white card sitting on the
+// page. The alternative already in this repo's vocabulary is
+// `mix-blend-mode: multiply` in CSS — which is what the pencil study this
+// section briefly used needed — but a blend mode is a property of the
+// *context*: it depends on what is painted underneath, so the same file is
+// wrong the moment it lands on anything but pale paper. A real alpha channel
+// travels with the image, which matters because the mobile app renders these
+// on its own surfaces.
+//
+// `alpha = min(255, (255 - min(r,g,b)) * 4)` rather than a luminance key,
+// because luminance would eat the artwork: the yellow fill is (255, 242, 0)
+// and reads as *bright*. The minimum channel does not — white is the only
+// colour with all three channels high, so it is the only thing that goes
+// transparent. The ×4 makes anything below 192 fully opaque and leaves the
+// anti-aliased edge pixels partly so, which is what keeps the outlines
+// smooth instead of stepped.
+//
+// This also drops the white *inside* the design — the ring around the centre
+// medallion, the gaps between the arabesques — so the band's paper shows
+// through the cross rather than the cross sitting on a rectangle of a
+// slightly different white. That is the better reading, and it is why this is
+// keyed rather than trimmed to its bounding box.
+{
+  const source = join(SRC, 'coptic_cross_image.png');
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  const keyed = Buffer.from(data);
+  for (let i = 0; i < keyed.length; i += 4) {
+    const ground = Math.min(keyed[i], keyed[i + 1], keyed[i + 2]);
+    keyed[i + 3] = Math.min(255, (255 - ground) * 4);
+  }
+
+  write(
+    join(PUBLIC, 'img/cross-coptic-360.webp'),
+    await sharp(keyed, { raw: { width: info.width, height: info.height, channels: 4 } })
+      .webp({ lossless: true, effort: 6 })
+      .toBuffer(),
+  );
 }
 
 // ── Social brand marks ──────────────────────────────────────────────────────
@@ -673,6 +776,16 @@ for (const [source, slug] of [
 }
 
 // ── Deliberately not built ──────────────────────────────────────────────────
+// Coptic_cross_top_church.jpeg
+//                       381×524, which is too small for anything this site
+//                       still asks for. It had two jobs and has lost both:
+//                       the hero's fourth frame, where a 2.591:1 window cut
+//                       from a 524px-tall portrait was a 147px strip of
+//                       crossbar upscaled four-fold and blurred to hide it,
+//                       and the welcome section, now `coptic_cross_image.png`
+//                       above. Keep it — a full-size original of the same
+//                       shot would be genuinely useful — but nothing reads it
+//                       today. See assets/README.md.
 // Coptic_pattern.png    AI-generated; the "Coptic" in its banners is imitation
 //                       letterforms spelling nothing. Compare the genuine
 //                       inscription on Crucifixion.jpg.

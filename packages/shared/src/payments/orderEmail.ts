@@ -35,7 +35,7 @@ export interface OrderEmailLine {
 export interface OrderEmailInput {
   orderId: string;
   email: string;
-  /** True when the order is being posted rather than collected. */
+  /** True when the order is being delivered rather than collected. */
   shipping: boolean;
   lines: readonly OrderEmailLine[];
   /** Order total in integer minor units. */
@@ -82,7 +82,7 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
 
   // The one sentence the Square receipt cannot carry.
   const fulfilment = input.shipping
-    ? 'Your order will be posted to you. The parish packs orders by hand, so allow a few days.'
+    ? 'Your order will be delivered to you. The parish packs orders by hand, so allow a few days.'
     : 'Your order will be waiting for you at the bookstore. You can collect it after any Liturgy.';
 
   const question = input.parishEmail

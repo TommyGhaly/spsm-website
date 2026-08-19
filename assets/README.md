@@ -26,6 +26,8 @@ table records what is known; **unknown is not the same as cleared.**
 | --- | --- | --- |
 | `St Philopater & St. Mena Logo.svg` | Parish/diocese seal | Parish's own mark. Vector, converted from PDF. |
 | `HomeScreen.png` | Parish — livestream frame | **This parish's own sanctuary.** The homepage hero. See below. |
+| `coptic_cross_image.png` | Added by Tommy, 2026-08-19 | The Coptic cross as a drawn mark, not a photograph. The homepage welcome section. Source and licence unrecorded. See below. |
+| `Coptic_cross_top_church.jpeg` | Added by Tommy, 2026-08-19 | A Coptic cross on a dome. Source and licence unrecorded. **Only 381×524, and now read by nothing** — see below. |
 | `Father-Youhanna.jpg` | Parish | Assumed parish-owned. Same session as Fr. Armia. |
 | `Father-Armia.jpg` | Parish | Assumed parish-owned. |
 | `Bishop-David.jpg` | "Photo From The Heart by Nash", 2014 | **Watermarked.** Parish states it owns this; written confirmation still outstanding. See below. |
@@ -56,6 +58,56 @@ coordinates.
 Each platform's brand guidelines permit a monochrome mark used to link to your
 own profile, which is the only use here. The accounts themselves are in
 `DEFAULT_PARISH_CONFIG.social` and overridable from `config/parish`.
+
+### `coptic_cross_image.png` is a drawn mark, and is handled as one
+
+Added 2026-08-19 at Tommy's direction, and it is the homepage welcome section's
+picture. 360×360, inscribed Ⲓⲏⲥ Ⲡⲭⲥ / Ⲡ̀ϣⲏⲣⲓ ⲙ̀Ⲫϯ — "Jesus Christ, the Son of
+God" — which is a genuine inscription, unlike the imitation letterforms on
+`Coptic_pattern.png` below.
+
+Two things `optimize-assets.mjs` does differently for it than for any
+photograph here, both explained at length beside the code:
+
+- **Lossless WebP, one size.** Flat primary colour with hard navy outlines is
+  the case lossy WebP puts ringing into, and at this palette lossless comes out
+  smaller anyway. 360 is the source's own width and the ceiling.
+- **Its white ground is keyed to alpha**, so it sits on the band's warm paper
+  instead of arriving as a white card — including the white *inside* the
+  design, so the paper shows through the interlace. `.welcome__photo`
+  consequently carries no border radius and no shadow.
+
+Provenance is unrecorded. It is a common devotional mark rather than anything
+bespoke, but unknown is not cleared.
+
+### `Coptic_cross_top_church.jpeg` is too small, and is now read by nothing
+
+Added 2026-08-19 at Tommy's direction, and it had two jobs: the homepage's
+welcome section, and a fourth frame in the hero cross-fade. **It has lost both**
+— the welcome section is `coptic_cross_image.png` above, and the hero is back to
+three frames.
+
+**It is 381×524**, and that is why. `optimize-assets.mjs` sets
+`withoutEnlargement`, so nothing was upscaled on the way out — the derivative
+named `hero-cross-1600.webp` was actually 381px wide, and the browser stretched
+it across a hero that is 1458px on a laptop and up to 2400 on a desktop. Two
+consequences, both visible on the live page until 2026-08-19:
+
+- **The wide crop was thin as well as soft.** A 2.591:1 window cut from a 524px
+  tall portrait is 147px, which cannot hold the cross and the dome together, so
+  the landscape frame was the crossbar against sky and nothing else.
+- **The desktop frame was blurred on purpose.** `.hero__frame--4` carried
+  `blur(2.5px)` — compensation, not styling: unblurred, a four-fold upscale
+  reads as a broken image rather than as a photograph. Past ~2px it reads as
+  deliberate soft focus instead.
+
+The file is kept rather than deleted, because a full-size original of the same
+shot would be genuinely useful — the parish has no other photograph of a cross
+in the open air. Drop one over this name, run `npm run assets`, and it is a
+candidate for the hero again on its own merits.
+
+Provenance is unrecorded, as it is for the two backdrops. Unknown is not
+cleared.
 
 ### `HomeScreen.png` is the first usable photograph of this sanctuary
 
@@ -111,9 +163,19 @@ these are `alt=""` and `aria-hidden`, so nothing on the page claims either is
 this parish, and to a screen reader the hero remains one photograph of one
 room. See the note on `Hero` in `apps/website/src/app/page.tsx`.
 
-Their hero crops are separate outputs (`hero-domes-*`, `hero-towers-*`), cut to
+Their hero crops are separate outputs (`hero-glass-*`, `hero-towers-*`), cut to
 the sanctuary's own 2.591:1 and 3:4 so the three frames share geometry. The
 older `backdrop-*` outputs are still generated and are currently unused.
+
+**`hero-glass-*` replaced `hero-domes-*` on 2026-08-19, and the reason was that
+these two photographs are hard to tell apart.** Both are sandstone against pale
+sky shot from below, so at hero size and under the veil the cross-fade looked
+like one picture cycling back into itself rather than three. `hero-domes` was
+very nearly the whole verse image; `hero-glass` is cut from the same file but
+from the arched stained glass at its right — deep blue, with a gold cross across
+it — which is the one region in either backdrop that looks like nothing else in
+this directory. The crop rectangles are hand-picked and written down in
+`scripts/optimize-assets.mjs`.
 
 Their licence is also unverified. If they came off the old Wix site, a Wix stock
 licence does not travel to Firebase Hosting. Replace them as soon as there is

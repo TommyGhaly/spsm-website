@@ -19,8 +19,23 @@ setLogLevel('silent');
  * without real credentials, and it matches `npm run rules:check`.
  */
 const RULES_PATH = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
+const STORAGE_RULES_PATH = fileURLToPath(new URL('../../storage.rules', import.meta.url));
 
-export async function createTestEnv(): Promise<RulesTestEnvironment> {
+/**
+ * @param withStorage Load storage.rules too. **Opt-in, and it has to be.**
+ *
+ * Every suite that calls this uploads its rulesets to the emulator on setup and
+ * tears them down again in `cleanup()`. The emulator holds one ruleset per
+ * service for the whole project, so a suite tearing down a service it never
+ * used pulls it out from under whichever suite is using it — which surfaces as
+ * "no Storage ruleset is currently loaded" in a suite whose own setup
+ * succeeded, several files away from the cause.
+ *
+ * Firestore avoids this only because every suite loads it and the last write
+ * wins with identical content. Storage is needed by exactly one suite, so that
+ * suite is the only one that touches it.
+ */
+export async function createTestEnv(withStorage = false): Promise<RulesTestEnvironment> {
   return initializeTestEnvironment({
     projectId: 'demo-spsm',
     firestore: {
@@ -28,6 +43,25 @@ export async function createTestEnv(): Promise<RulesTestEnvironment> {
       host: '127.0.0.1',
       port: 8080,
     },
+    /*
+     * Storage joined this harness when program galleries opened the first
+     * anonymous upload path on the site. Until then storage.rules said only
+     * "public read, staff write" and had nothing worth asserting; now the
+     * claim it makes — that the quarantine prefix is writable by the world and
+     * readable by nobody — is the thing standing between an approval queue and
+     * an open file host.
+     *
+     * `npm run test:rules` starts both emulators for this reason.
+     */
+    ...(withStorage
+      ? {
+          storage: {
+            rules: readFileSync(STORAGE_RULES_PATH, 'utf8'),
+            host: '127.0.0.1',
+            port: 9199,
+          },
+        }
+      : {}),
   });
 }
 

@@ -1,0 +1,235 @@
+# =============================================================================
+# Refresh the committed snapshot of past livestreams.
+# =============================================================================
+# `apps/website/src/features/livestream/archive.json` is read by the site with
+# no network call at all — see features/livestream/data.ts for why the fetch was
+# taken out of the build. The price of that trade is that the snapshot only
+# moves when somebody runs `npm run archive` and commits the result, so
+# /livestream lists whatever was true the last time a human remembered. This is
+# the thing that remembers.
+#
+# **Daily, not weekly.** The parish streams most days and twice on many of them,
+# so the twelve slots the page shows turn over in about eight days. A weekly job
+# would spend most of every week displaying a list that had already rotated out
+# from under it, and would arrive at the edge of the window each time it ran.
+# Daily costs thirteen requests to YouTube a day — nothing beside the run of
+# builds that got the old per-build fetch throttled on 2026-08-18.
+#
+# The two jobs are separate on purpose. `refresh` needs no credentials and is
+# the part that always works; `deploy` needs most of `.env` mirrored into
+# Actions secrets and stays switched off until it is. Until then the snapshot
+# lands in git and ships with whatever deploy you run next by hand, and the run
+# summary says so rather than letting you assume the site updated itself.
+# =============================================================================
+name: Refresh livestream archive
+
+on:
+  schedule:
+    # 06:20 UTC — after the late-evening stream has finished and been processed
+    # (they start around 23:00 UTC), and before anyone on Eastern time is awake
+    # to read the page. Twenty past rather than on the hour because scheduled
+    # runs queue behind everyone else's midnight cron.
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+# The refresh job commits to main; the default token is read-only.
+permissions:
+  contents: write
+
+# One at a time. Two runs racing would push conflicting snapshots of the same
+# twelve videos, and there is nothing to gain by cancelling the one in flight —
+# it is already most of the way through its requests.
+concurrency:
+  group: refresh-archive
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Read the channel and commit
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+      deployable: ${{ steps.commit.outputs.deployable }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Fetches the feed, then one watch page per video for the real start time,
+      # and writes archive.json only if both succeed. A throttled run exits
+      # non-zero with the snapshot untouched, which fails this job loudly — the
+      # right outcome, and the opposite of the silent empty archive that made
+      # the build-time fetch worth removing.
+      - name: Refresh the snapshot
+        run: npm run archive
+
+      - name: Commit it, if it moved
+        id: commit
+        env:
+          # Read here rather than in the deploy job so the decision can gate
+          # that job's `if:` — a job-level `if:` cannot see `secrets`, but it
+          # can see another job's outputs.
+          DEPLOY_CREDENTIAL: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          SNAPSHOT=apps/website/src/features/livestream/archive.json
+
+          if [ -n "$DEPLOY_CREDENTIAL" ]; then
+            echo 'deployable=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deployable=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          if git diff --quiet -- "$SNAPSHOT"; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'No new streams — the snapshot already matched the channel.' \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email \
+            '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$SNAPSHOT"
+          git commit -m 'Refresh the livestream archive snapshot'
+          git push
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+          {
+            echo '### Snapshot updated'
+            echo
+            git show --stat --oneline HEAD -- "$SNAPSHOT" | tail -n +2
+            echo
+            if [ -z "$DEPLOY_CREDENTIAL" ]; then
+              echo '**The live site does not show this yet.** No'
+              echo '`FIREBASE_SERVICE_ACCOUNT` secret is set, so the deploy job'
+              echo 'was skipped. Run `firebase deploy --only hosting` from a'
+              echo 'checkout of main, or add the secrets listed in'
+              echo '.github/workflows/refresh-archive.yml.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Publish it.
+  # ---------------------------------------------------------------------------
+  # **This deploys main, not the archive commit in isolation.** There is no way
+  # to build one page of a static export, so whatever else is sitting on main
+  # goes out with it. If you merge something you are not ready to publish, this
+  # job publishes it the next morning. Keeping main deployable was already the
+  # rule; this makes it enforced by a robot at 06:20.
+  #
+  # It needs the build's whole environment, because a Next static export inlines
+  # its configuration at build time and the pages that cannot reach their source
+  # degrade *quietly* — src/lib/config.ts falls back to committed defaults with
+  # a warning, and features/bulletin/data.ts drops the bulletin entirely. A
+  # deploy from a half-populated secret store therefore ships a smaller site
+  # than your laptop does, and nothing on the page says which parts are missing.
+  # Two of those are guarded below; the rest are not, so mirror all of `.env`:
+  #
+  #   FIREBASE_SERVICE_ACCOUNT       the deploy credential — a service account
+  #                                  key JSON for spsm-database with the Firebase
+  #                                  Hosting Admin role. Not in `.env`; this one
+  #                                  is new. Its presence is what switches this
+  #                                  job on.
+  #   NEXT_PUBLIC_FIREBASE_*         the six from .env.example §1. Guarded.
+  #   ANNOUNCEMENTS_*                the four from §2. The service account is
+  #                                  guarded; the other three are not.
+  #   NEXT_PUBLIC_SQUARE_*           the bookstore's client-side keys.
+  #   NEXT_PUBLIC_TITHELY_*          giving.
+  #   NEXT_PUBLIC_AZURE_*            the masthead's sign-in.
+  #
+  # The server-side secrets — SQUARE_ACCESS_TOKEN and the rest — are deliberately
+  # absent. They belong to the Cloud Functions runtime via Secret Manager and
+  # have no business in a static build. This job deploys `--only hosting` and
+  # touches no function.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Build and deploy hosting
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true' && needs.refresh.outputs.deployable == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+      NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY }}
+      ANNOUNCEMENTS_PROJECT_ID: ${{ secrets.ANNOUNCEMENTS_PROJECT_ID }}
+      ANNOUNCEMENTS_COLLECTION_PATH: ${{ secrets.ANNOUNCEMENTS_COLLECTION_PATH }}
+      ANNOUNCEMENTS_DATABASE_ID: ${{ secrets.ANNOUNCEMENTS_DATABASE_ID }}
+      ANNOUNCEMENTS_SERVICE_ACCOUNT: ${{ secrets.ANNOUNCEMENTS_SERVICE_ACCOUNT }}
+      NEXT_PUBLIC_SQUARE_APPLICATION_ID: ${{ secrets.NEXT_PUBLIC_SQUARE_APPLICATION_ID }}
+      NEXT_PUBLIC_SQUARE_LOCATION_ID: ${{ secrets.NEXT_PUBLIC_SQUARE_LOCATION_ID }}
+      NEXT_PUBLIC_SQUARE_ENVIRONMENT: ${{ secrets.NEXT_PUBLIC_SQUARE_ENVIRONMENT }}
+      NEXT_PUBLIC_TITHELY_GIVING_URL: ${{ secrets.NEXT_PUBLIC_TITHELY_GIVING_URL }}
+      NEXT_PUBLIC_TITHELY_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_TITHELY_PUBLIC_KEY }}
+      NEXT_PUBLIC_AZURE_TENANT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_TENANT_ID }}
+      NEXT_PUBLIC_AZURE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_CLIENT_ID }}
+    steps:
+      # `ref: main` explicitly: a scheduled run checks out the commit that
+      # triggered it, which is the one *before* the refresh job pushed. Without
+      # this the deploy would faithfully publish the old snapshot.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The website imports @spsm/shared's compiled dist/, which is gitignored.
+      - name: Build @spsm/shared
+        run: npm run build --workspace @spsm/shared
+
+      # Before the build, not after: `getPublicConfig()` throws
+      # `MissingConfigError` naming every variable it could not find, which is a
+      # far better failure than a deploy that succeeds and quietly serves the
+      # committed defaults. The announcements key is checked by hand because
+      # nothing in the config boundary requires it — the bulletin treats its
+      # absence as "no bulletin this week".
+      - name: Check the build can reach its configuration
+        run: |
+          set -euo pipefail
+          node --input-type=module -e \
+            "import { getPublicConfig } from './packages/shared/dist/index.js';
+             getPublicConfig();
+             console.log('Firebase web config present.');"
+          if [ -z "${ANNOUNCEMENTS_SERVICE_ACCOUNT:-}" ]; then
+            echo '::error::ANNOUNCEMENTS_SERVICE_ACCOUNT is not set. The build' \
+                 'would succeed and deploy a homepage with no bulletin.'
+            exit 1
+          fi
+
+      - name: Build the website
+        run: npm run build --workspace @spsm/website
+
+      # firebase-tools reads GOOGLE_APPLICATION_CREDENTIALS as a path, so the
+      # key has to touch disk. It goes in the runner's temp directory, which is
+      # outside the checkout — a stray `git add -A` in some future step cannot
+      # sweep it into a commit. Pinned to 15 to match the CLI on the machine
+      # deploys are run from by hand.
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/deploy-key.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+          trap 'rm -f "$KEY"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          npx --yes firebase-tools@15 deploy \
+            --only hosting \
+            --project spsm-database \
+            --non-interactive \
+            --message "Livestream archive refresh ($GITHUB_RUN_ID)"

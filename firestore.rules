@@ -162,7 +162,15 @@ service cloud.firestore {
         && request.resource.data.roleMirror == 'member'
         && request.resource.data.groupsMirror.size() == 0
         && (!('screenAdmin' in request.resource.data)
-            || !request.resource.data.screenAdmin.values().hasAny([true]));
+            || !request.resource.data.screenAdmin.values().hasAny([true]))
+        // `programAdmin` is the same kind of thing as `screenAdmin` and is
+        // pinned for the same reason — but it is read by the gallery rules
+        // below via `get()`, which makes it the one permission on this site
+        // that a self-written member document could actually exercise. A
+        // member who could seed it on create would own every program.
+        && (!('programAdmin' in request.resource.data)
+            || (request.resource.data.programAdmin.get('programs', []).size() == 0
+                && request.resource.data.programAdmin.get('events', []).size() == 0));
 
       allow update: if isSelf(uid)
         && request.resource.data.roleMirror == resource.data.roleMirror
@@ -171,7 +179,8 @@ service cloud.firestore {
         // not be able to revoke their own grants either — a support call about
         // access that silently disappeared is worse than one about access that
         // was never given.
-        && request.resource.data.get('screenAdmin', {}) == resource.data.get('screenAdmin', {});
+        && request.resource.data.get('screenAdmin', {}) == resource.data.get('screenAdmin', {})
+        && request.resource.data.get('programAdmin', {}) == resource.data.get('programAdmin', {});
 
       allow update: if hasRole('admin');
       allow delete: if hasRole('admin');
@@ -348,6 +357,156 @@ service cloud.firestore {
        * send queue.
        */
       allow read, write: if false;
+    }
+
+    // ---- program galleries ------------------------------------------------
+    // Standing programs, their occurrences, and the photographs parishioners
+    // send in. See docs/program-galleries.md.
+    //
+    // The third permission axis lives here. `role` and `groups` come from the
+    // token; program grants cannot, because they change often enough that
+    // waiting an hour for a token to refresh would be a support call every
+    // time. They are read from the member document instead — which is safe in
+    // a way `role` would not be, because the member rule above pins
+    // `programAdmin` exactly as it pins `screenAdmin`: a member cannot write
+    // their own grants.
+
+    function memberGrants() {
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.get('programAdmin', {})
+        : {};
+    }
+
+    // Ordered so an admin never pays for the member lookup, and so an
+    // unauthenticated request short-circuits before touching `request.auth.uid`.
+    function adminsProgram(programId) {
+      return hasRole('admin')
+        || (signedIn() && programId in memberGrants().get('programs', []));
+    }
+
+    function adminsProgramEvent(programId, programEventId) {
+      return adminsProgram(programId)
+        || (signedIn() && programEventId in memberGrants().get('events', []));
+    }
+
+    // The event an anonymous submission says it belongs to. Guarded by an
+    // `exists()` at the call site — `get()` on a missing document fails the
+    // whole evaluation, which denies, but denies for the wrong reason and is
+    // miserable to debug.
+    function submissionTarget() {
+      return get(/databases/$(database)/documents/programEvents/$(request.resource.data.programEventId)).data;
+    }
+
+    match /programs/{programId} {
+      allow read: if isPublished(resource.data) || adminsProgram(programId);
+      // Creating and retiring a program is the superadmin's alone. A program
+      // administrator runs what they were given; they do not mint new ones.
+      allow create, delete: if hasRole('admin');
+      // Name, description, cover, order — theirs to edit.
+      allow update: if adminsProgram(programId);
+    }
+
+    match /programEvents/{programEventId} {
+      allow read: if isPublished(resource.data)
+        || adminsProgramEvent(resource.data.programId, programEventId);
+
+      // Creating "Week 2 2027" is a statement about the program, so it takes a
+      // program grant. `request.resource` rather than `resource`: on a create
+      // there is no existing document to read the programId from.
+      allow create: if adminsProgram(request.resource.data.programId);
+
+      // Editing one — its description, its groups, its layout — is what an
+      // event-scoped volunteer was given the event for.
+      //
+      // Changing `programId` is a different act, and is checked differently.
+      // Re-filing an event under another program is a statement about both
+      // programs, so it takes a grant on both, at program level. Checking the
+      // destination with `adminsProgramEvent` here would be no check at all:
+      // the writer's grant on *this event* satisfies it whichever program the
+      // event is moved into, which is precisely the escalation it was meant to
+      // stop. tests/rules/program-galleries.test.ts caught that; the compile
+      // check did not.
+      allow update: if adminsProgramEvent(resource.data.programId, programEventId)
+        && (request.resource.data.programId == resource.data.programId
+            || (adminsProgram(resource.data.programId)
+                && adminsProgram(request.resource.data.programId)));
+
+      allow delete: if adminsProgram(resource.data.programId);
+    }
+
+    match /galleryMedia/{mediaId} {
+      /*
+       * Public reads are approved-only, and the client must say so in the
+       * query.
+       *
+       * This is decision #10 again, in a collection where getting it wrong is
+       * worse: a list query is evaluated against the documents it *could*
+       * return, so `where('programEventId','==',x)` alone cannot prove that
+       * nothing pending comes back, and Firestore denies the whole query. Every
+       * public read therefore carries `where('status','==','approved')`, which
+       * proves it. tests/rules covers exactly this — a compile check cannot.
+       */
+      allow read: if resource.data.status == 'approved'
+        || adminsProgramEvent(resource.data.programId, resource.data.programEventId);
+
+      /*
+       * Anonymous submission. Open on purpose, and narrow on purpose.
+       *
+       * There is no account behind this — a parishioner with camp photographs
+       * has no reason to have one — so every constraint that would normally
+       * come from knowing who somebody is has to be spelled out as a shape the
+       * document must have. A submission may only ever arrive pending, placed
+       * nowhere, laid out nowhere, and unreviewed. Anything else is somebody
+       * trying to publish straight past the queue.
+       *
+       * `submissionsOpen` costs a document read on an unauthenticated write,
+       * which is the price of the flag meaning anything at all. Without it,
+       * closing submissions on a three-year-old gallery would be a UI
+       * suggestion.
+       */
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.renditionPath == null
+        && request.resource.data.layout == null
+        && request.resource.data.placement.onPage == false
+        && request.resource.data.placement.slideshow == false
+        && request.resource.data.placement.homepage == false
+        && request.resource.data.caption == ''
+        && request.resource.data.kind in ['photo', 'video']
+        /*
+         * The file this document claims. Constrained to the quarantine folder
+         * for *this event*, and that is not tidiness.
+         *
+         * `sourcePath` is what the transcode Function copies into the public
+         * `galleries/` bucket on approval, using the Admin SDK — which bypasses
+         * storage.rules entirely and will fetch whatever it is pointed at. An
+         * unconstrained path therefore means an anonymous stranger chooses
+         * which object in the bucket gets published, including somebody else's
+         * un-reviewed submission, which is the one prefix that is not otherwise
+         * readable.
+         *
+         * Split rather than a regex: `programEventId` would be interpolated
+         * into the pattern, and a document id is not a safe thing to paste into
+         * a regular expression. The size check also proves the id contains no
+         * slash of its own.
+         */
+        && request.resource.data.sourcePath.split('/').size() == 3
+        && request.resource.data.sourcePath.split('/')[0] == 'submissions'
+        && request.resource.data.sourcePath.split('/')[1] == request.resource.data.programEventId
+        && exists(/databases/$(database)/documents/programEvents/$(request.resource.data.programEventId))
+        // `programId` is denormalised onto every item so the approval queue and
+        // the homepage band can filter without a join. Denormalised, and
+        // therefore forgeable: unchecked, a submitter picks which program's
+        // queue their upload lands in, and a photograph sent to Summercamp
+        // surfaces for the St. Simon lead to approve into the wrong gallery.
+        && request.resource.data.programId == submissionTarget().programId
+        && submissionTarget().submissionsOpen == true;
+
+      // Approving, filing, captioning, laying out, rejecting. The one thing a
+      // submitter cannot do to their own upload is anything at all — they have
+      // no identity to match against, so there is nobody to grant it to.
+      allow update, delete: if adminsProgramEvent(resource.data.programId, resource.data.programEventId);
     }
 
     // Anything not matched above is denied. Adding a collection means adding a

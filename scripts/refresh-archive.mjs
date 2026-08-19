@@ -23,7 +23,21 @@ import {
   watchPageUrl,
 } from '../packages/shared/dist/index.js';
 
-process.loadEnvFile('.env');
+/*
+ * A missing `.env` is fine here, and has to stay fine. This script reads
+ * nothing out of it — the channel id comes from `DEFAULT_INTEGRATIONS_CONFIG`
+ * below, and YouTube's feed wants no credential — but `loadEnvFile` throws
+ * ENOENT rather than shrugging. The scheduled refresh in
+ * .github/workflows/refresh-archive.yml runs on a bare checkout with no `.env`
+ * at all, so without this catch the nightly job would die before making a
+ * single request, and the one error in the log would be about a file the script
+ * does not use.
+ */
+try {
+  process.loadEnvFile('.env');
+} catch {
+  // Nothing here needs one.
+}
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'apps/website/src/features/livestream/archive.json');
@@ -62,7 +76,23 @@ for (const video of videos) {
     // Keep the feed's date for this one. It runs hours late, which is wrong but
     // is better than dropping the stream from the list entirely.
   }
-  streams.push({ id: video.id, startedAt, thumbnailUrl: video.thumbnailUrl });
+  /*
+   * Canonicalised, not stored as YouTube phrased it. Both sources hand back a
+   * timestamp in whatever offset notation they feel like — the watch page says
+   * `+00:00` where an older version of this script wrote `.000Z` for the same
+   * instant — and the page cannot tell the difference, because `isoOf()`
+   * normalises before it reaches the markup.
+   *
+   * The scheduled refresh can, though. It decides whether to commit by asking
+   * `git diff` whether the file moved, so a re-spelled timestamp would read as
+   * a change and push a commit that means nothing. One format keeps that test
+   * honest.
+   */
+  streams.push({
+    id: video.id,
+    startedAt: new Date(startedAt).toISOString(),
+    thumbnailUrl: video.thumbnailUrl,
+  });
 }
 
 streams.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));

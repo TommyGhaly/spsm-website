@@ -16,8 +16,13 @@ import { SITE_ORIGIN } from './layout';
  *
  * Not listed, deliberately: `/admin` (staff tooling, also `noindex`), `/misc`
  * (no longer emitted at all), and the three NFC routes — `/parking`, `/prayer`,
- * and `/welcome` — which are reached by tapping a tag, not by searching. Nothing
- * on the site links to them either; see NAV in layout.tsx.
+ * and `/welcome` — which are reached by tapping a tag, not by searching.
+ *
+ * Two of those three are now linked from `/forms`, which is in the nav. That
+ * changes whether they can be *browsed* to, not whether they should turn up in
+ * a search: `robots.ts` still keeps all three out, on the same reasoning it
+ * always did, and a URL kept out of the crawl has no business in the sitemap
+ * advertising itself. `/welcome` remains unlinked from anywhere.
  */
 
 // Routes that exist as real pages and are not driven by the content collection.
@@ -35,6 +40,11 @@ const FIXED_ROUTES = [
   '/livestream',
   '/giving',
   '/contact',
+  // The hub, not the forms themselves. The individual forms stay out of the
+  // crawl — see the note above — so this page is the one findable entry point
+  // to them, which is the right shape: it says what each form is for before
+  // dropping somebody into one.
+  '/forms',
 ] as const;
 
 // `clergy` joins these because it is no longer a route: the biographies are

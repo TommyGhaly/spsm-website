@@ -217,11 +217,11 @@ export function Shop({
         How a book actually reaches someone, said once, above the books.
 
         These are the two questions a parish bookshop is asked before any other
-        — can I pick it up on Sunday, and will you post it — and the answers
+        — can I pick it up on Sunday, and will you deliver it — and the answers
         were buried three screens down inside a basket nobody had opened yet.
       */}
       <p className="shop-note">
-        Collect your order at the church, or have it posted to you.
+        Collect your order at the church, or have it delivered to you.
       </p>
 
       {needle && (
@@ -287,10 +287,10 @@ export function Shop({
              * What happened, what was bought, and what to do now.
              *
              * This screen used to be a thank-you, a sentence saying the parish
-             * "will be in touch about collection or postage", and a raw
+             * "will be in touch about collection or delivery", and a raw
              * 29-character Square order id under the word "Order". Every part
              * of that was either hedged or machine-facing: the reader had
-             * already *chosen* collection or postage two screens earlier, so
+             * already *chosen* collection or delivery two screens earlier, so
              * being told the parish would be in touch about which one read as
              * though the choice had not registered.
              *
@@ -309,7 +309,7 @@ export function Shop({
               {/* The fulfilment they chose, stated back to them. */}
               <p className="done__lede">
                 {receipt.shipping
-                  ? 'It will be posted to you. Allow a few days — the parish packs orders by hand.'
+                  ? 'It will be delivered to you. Allow a few days — the parish packs orders by hand.'
                   : 'It will be waiting for you at the bookstore. Collect it after any Liturgy.'}
               </p>
 
@@ -354,7 +354,7 @@ export function Shop({
             <div className="basket__empty">
               <p className="basket__emptytitle">Your basket is empty</p>
               <p className="basket__emptynote">
-                Books can be collected at the church or posted to you.
+                Books can be collected at the church or delivered to you.
               </p>
               <button
                 type="button"
@@ -441,7 +441,7 @@ export function Shop({
                 <span className="basket__totallabel">Subtotal</span>
                 <strong className="basket__totalsum">{money(total)}</strong>
                 <span className="basket__totalnote">
-                  {count} {count === 1 ? 'book' : 'books'} · postage, if you
+                  {count} {count === 1 ? 'book' : 'books'} · delivery, if you
                   choose it, is added at the next step
                 </span>
               </div>
@@ -932,7 +932,7 @@ function Detail({
                 </button>
 
                 <p className="buybox__note">
-                  Collect at the church, or have it posted.
+                  Collect at the church, or have it delivered.
                 </p>
               </>
             )}

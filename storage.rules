@@ -1,10 +1,19 @@
 rules_version = '2';
 
 // Storage holds event hero images, clergy portraits, and product photos.
-// All of it is public-read (it's on a public church website) and staff-write.
-// Nothing user-submitted lands here in MVP — prayer requests and vehicle
-// registrations are text-only, deliberately, so there's no upload surface to
-// abuse before we have moderation.
+// Most of it is public-read (it's on a public church website) and staff-write.
+//
+// That was once all of it. Program galleries added the upload surface this
+// comment used to say did not exist — anonymous, unauthenticated, by design —
+// so the moderation it was waiting for is now the thing that makes it safe.
+// See docs/program-galleries.md §4. Two prefixes, and the difference between
+// them is the whole security model:
+//
+//   submissions/  anyone may write, NOBODY may read. Quarantine.
+//   galleries/    world-readable. Only a Function ever writes here.
+//
+// A file crosses from one to the other when an administrator approves it and
+// the transcode Function copies it over. Nothing else moves it.
 
 service firebase.storage {
   match /b/{bucket}/o {
@@ -45,6 +54,62 @@ service firebase.storage {
     match /members/{uid}/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null && request.auth.uid == uid && isImage();
+    }
+
+    // ---- program galleries -------------------------------------------------
+
+    // A photograph straight off somebody's phone. HEIC is the common case and
+    // no browser can display it, so `isImage()` is not enough — and the size
+    // cap has to be far higher than 8MB, because a modern phone photograph is
+    // routinely 12MB and a 4K clip is very much larger.
+    function isSubmittable() {
+      return request.resource.size < 250 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*'));
+    }
+
+    // Quarantine. Write-only to the world, in the strictest sense the word
+    // allows: create but not overwrite, and no read and no list at all.
+    //
+    // `allow read: if false` is the load-bearing line. A submitter cannot fetch
+    // back even the file they just sent. If they could, this would be an
+    // anonymous public file host wearing a parish's domain name, and the
+    // approval queue downstream would be decorative — anyone could upload
+    // anything and simply share the URL.
+    //
+    // Create-but-never-overwrite is `resource == null` — how Storage rules say
+    // "no object at this path yet". It stops an uploader replacing a file after
+    // an administrator has reviewed it, so the thing approved stays the thing
+    // published.
+    //
+    // NOT `exists()`. That is a Firestore rules function with no Storage
+    // equivalent, and this is decision #10 repeating itself in a second rules
+    // language — a policy that compiles clean and denies everything.
+    //
+    // Measured against the emulator, seeding one object and then uploading
+    // anonymously:
+    //
+    //   rule                          new file    overwrite
+    //   !exists(...)                  DENIED      DENIED
+    //   resource == null              ALLOWED     DENIED
+    //
+    // `npm run rules:check` reported PASS on the first row. It does not deny
+    // overwrites specifically; it denies every submission the parish would ever
+    // receive, and the upload form would simply never work. tests/rules/
+    // storage.test.ts is what tells the two rows apart.
+    match /submissions/{programEventId}/{fileName} {
+      allow read: if false;
+      allow create: if isSubmittable() && resource == null;
+      allow update, delete: if hasRole('staff');
+    }
+
+    // Web-ready renditions, written only by the transcode Function — which uses
+    // the Admin SDK and bypasses this file entirely. There is deliberately no
+    // client write path here at all: if a client could write a rendition, it
+    // could publish an image that no administrator ever saw.
+    match /galleries/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
     }
 
     match /{allPaths=**} {
