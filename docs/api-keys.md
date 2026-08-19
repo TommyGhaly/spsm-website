@@ -131,7 +131,22 @@ Done: the app registration exists, and `NEXT_PUBLIC_AZURE_CLIENT_ID` /
 1. Azure portal → **Microsoft Entra ID → App registrations → New registration**.
 2. **Supported account types: "Accounts in this organizational directory only"**
    (single tenant). See the warning below — this one is not cosmetic.
-3. Redirect URI (Web): `https://<project-id>.firebaseapp.com/__/auth/handler`
+3. Redirect URI (**Web** platform, not SPA): for this project, literally
+   `https://spsm-database.firebaseapp.com/__/auth/handler`. It is the Firebase
+   auth handler, *not* the site's own address — `www.spsmwayland.org` does not
+   belong in this box. Confirm what to paste rather than trusting the pattern:
+
+   ```bash
+   curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=$NEXT_PUBLIC_FIREBASE_API_KEY" \
+     -H 'Content-Type: application/json' \
+     -d '{"providerId":"microsoft.com","continueUri":"https://spsm-database.firebaseapp.com/__/auth/handler"}'
+   ```
+
+   The `redirect_uri` in the `authUri` it returns is the exact string Entra
+   must have. Getting this wrong is **AADSTS50011**, and it does not surface
+   until *after* someone types their password — Entra serves a normal-looking
+   sign-in page for an unregistered redirect URI and only rejects at the end,
+   so it cannot be caught by probing the authorize endpoint.
 4. Copy **Application (client) ID** and **Directory (tenant) ID**.
 5. **Certificates & secrets → New client secret.** Copy the *value* immediately;
    it's shown once.
@@ -184,6 +199,18 @@ from the directory.
 - [ ] Square location ID copied
 - [ ] Webhook subscription + signature key (after first Functions deploy)
 - [x] Entra ID app registration — client id and tenant id are in `.env`
+- [ ] **Entra redirect URI** — `https://spsm-database.firebaseapp.com/__/auth/handler`
+      on the app registration's **Authentication** blade. Confirmed missing on
+      2026-08-18: sign-in reached Microsoft, took the password, then failed with
+      AADSTS50011. Firebase's side was correct — it sends that exact URI with
+      client id `149615d2-4f88-4222-b69c-f3b82f2b8901`, which matches `.env`
+- [ ] **Firebase authorized domains** — `www.spsmwayland.org` and
+      `spsmwayland.org` are *not* on the list (checked 2026-08-18; it holds
+      `localhost`, `spsm-database.firebaseapp.com`, `spsm-database.web.app` and
+      one preview channel). Sign-in works locally and will fail on the real
+      domain with `auth/unauthorized-domain` until they are added under
+      Authentication → Settings → Authorized domains. This is a different list
+      in a different console from the redirect URI above — both are needed
 - [ ] **Confirm the app registration is single-tenant** ("Accounts in this
       organizational directory only"). This is now a security control, not a
       preference — see §3 below
