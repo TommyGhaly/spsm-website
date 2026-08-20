@@ -1,9 +1,13 @@
 import { getPrograms } from './data';
-import { captionOf } from './caption';
 import { programHref } from './route';
 
 /**
  * The programs, as sub-items of "Events" in the main navigation.
+ *
+ * Names only. They carried a line of description each, which made the panel
+ * taller than the header it hung from for the sake of five short names — the
+ * sentence explaining what these are now sits once, on `/events`, where there
+ * is room for it.
  *
  * **Read once at build time, in the root layout, and passed down as props.**
  * Nothing here runs in a visitor's browser, so the nav still costs no Firestore
@@ -23,13 +27,12 @@ import { programHref } from './route';
  * deploy for zero per-page reads is the right way round.
  */
 
-export type ProgramNavChild = { href: string; label: string; caption: string };
+export type ProgramNavChild = { href: string; label: string };
 
 export async function programNavChildren(): Promise<ProgramNavChild[]> {
   const programs = await getPrograms();
   return programs.map((program) => ({
     href: programHref(program.slug),
     label: program.name,
-    caption: captionOf(program.description),
   }));
 }
