@@ -7423,43 +7423,32 @@ figure.gallery-grid__media {
 /* `top: 100%` of the masthead, so the band starts exactly where the bar ends —
    no gap for the pointer to cross on its way down, which would fire mouseleave
    and shut the menu just as somebody reached for it. */
+/*
+ * The Events panel.
+ *
+ * A titled block, not a strip of links: a heading, the parish's cross ornament,
+ * the five names in two columns, and a way through to the page. This repo's own
+ * note on the ornament is the argument for it — there is no photograph of the
+ * building, so interest comes from type, colour and ornament, and no program
+ * has a photograph yet either.
+ *
+ * The panel has been a full-width band (1280x136 of furniture for five short
+ * names) and a 51px letterbox of plain text. This is the shape that suits what
+ * is actually in it.
+ */
 .nav__menu {
-  /*
-   * Centred on the word that opens it, and sized to the names inside it.
-   *
-   * This has been a band across the whole window (1280x136 of furniture for
-   * five short names) and a thin strip of plain links. It is a panel now: the
-   * page's paper, the display serif the rest of the site sets names in, real
-   * padding, and hairline dividers so five items read as five choices rather
-   * than a run-on line.
-   */
   position: absolute;
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* `max-content`, or the row collapses into a column: an absolutely positioned
-     box shrink-to-fits against its containing block, and that is the word
-     "Events" — about 88px — so every name would wrap onto its own line. */
-  width: max-content;
+  /* `max-content` would size to the longest name and give an awkward measure;
+     an explicit width lets the two columns be even, and the `max-width` keeps
+     it on screen at the narrowest width the inline nav appears at. */
+  width: 25rem;
   max-width: calc(100vw - 1.5rem);
   z-index: 55;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: stretch;
-  gap: 0;
-  margin: 0;
-  padding: 0.3rem;
-  list-style: none;
+  padding: var(--space-md, 1rem) var(--space-lg, 1.25rem) var(--space-sm, 0.75rem);
 
-  /*
-   * The page's own paper, not the masthead's red.
-   *
-   * Drawn dark it was a second bar under the first and the two ran together —
-   * there was no seeing where the header ended. On paper it is unmistakably a
-   * surface that has opened out of the bar, and it still belongs to the palette
-   * rather than repeating it. The gold edge is what ties it back.
-   */
   background: linear-gradient(
     180deg,
     var(--color-paper-raised, #fdf7f4) 0%,
@@ -7470,51 +7459,119 @@ figure.gallery-grid__media {
   border-top-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
   border-radius: var(--radius-2, 6px);
   box-shadow: 0 14px 32px rgba(72, 16, 16, 0.22);
-}
-
-/* The notch. A panel floating under a bar reads as unrelated to it; a point
-   aimed at the word that opened it does not. Drawn as a rotated square behind
-   the panel so it inherits the same top edge. */
-.nav__menu::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  transform: translateX(-50%) rotate(45deg);
-  background: var(--color-paper-raised, #fdf7f4);
-  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
-  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
-}
-
-/* A hairline between names, and none before the first. Cheaper than borders on
-   the items themselves, which would double up at every join. */
-.nav__menu li + li {
-  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
+  text-align: center;
 }
 
 .nav__menu[hidden] {
   display: none;
 }
 
-.nav__menu a {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  padding: 0.65rem 1.05rem;
+/* The notch. A panel floating loose under a bar reads as unrelated to it; a
+   point aimed at the word that opened it does not. A rotated square carrying
+   only the two edges that show. */
+.nav__menu::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--color-paper-raised, #fdf7f4);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+/* Small caps and letterspaced, the way the site labels a section elsewhere. It
+   is a label, not a heading — the panel is reached from "Events", which has
+   already said where you are. */
+.nav__menu-title {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #7c746a);
+}
+
+/* The ornament sits tighter here than between page sections, where it has a
+   whole band to breathe in.
+   
+   `justify-content` restated: the component's own rule leaves it `normal`, which
+   put the cross hard against the left edge with its rule trailing off to the
+   right. */
+.nav__menu .ornament {
+  justify-content: center;
+  margin: 0.35rem 0 0.5rem;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, transparent);
+}
+
+/* Two columns, filled down the first before the second, so the names read in
+   order rather than across the gap. */
+.nav__menu-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.1rem 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.nav__menu-list a {
+  display: block;
+  padding: 0.45rem 0.55rem;
   border-radius: var(--radius-1, 4px);
-  /* One line each: these are names, and a wrapped name in a row of names reads
-     as two items. */
-  white-space: nowrap;
-  /* The serif the rest of the site sets names in — the program cards below use
-     it too, so the menu and the page it opens agree about what a name is. */
+  /* The serif the program cards set names in, so the menu and the page it
+     opens agree about what a name is. */
   font-family: var(--font-display, Georgia, serif);
-  font-size: 0.95rem;
-  line-height: 1.2;
+  font-size: 0.92rem;
+  line-height: 1.3;
   color: var(--color-ink, #2b2118);
   text-decoration: none;
-  
+  /* Wrapping is fine here and `nowrap` is not: "College and Young
+     Professionals" does not fit half of a 25rem panel on one line, and nav
+     links inherit nowrap from the bar. */
+  white-space: normal;
+}
+
+.nav__menu-list a:hover,
+.nav__menu-list a:focus-visible {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 8%, transparent);
+  color: var(--color-accent, #992a21);
+}
+
+/* The page you are on, marked. Without it the menu says nothing about where
+   you already are, which is most of what a menu is for. */
+.nav__menu-list a[aria-current='page'] {
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+/*
+ * `.nav__menu a` in the selector, not `.nav__menu-all` alone, and that is not
+ * belt-and-braces.
+ *
+ * Links in the masthead are given the inverse ink so they read on deep red. On
+ * this panel's paper that is near-white on near-white: the rule above the link
+ * was visible and the words were not. A class on its own loses to the bar's
+ * descendant selector; naming the anchor wins it back.
+ */
+.nav__menu a.nav__menu-all {
+  display: inline-block;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 24%, transparent);
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--color-accent, #992a21);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav__menu a.nav__menu-all:hover {
+  text-decoration: underline;
+}
 
 /* The same five inside the mobile panel, indented under Events with a gold rule
    to show they belong to it rather than sitting beside it. */
