@@ -1,51 +1,40 @@
 import type { Metadata } from 'next';
-import { getUpcomingEvents, EventCard } from '@/features/events';
-import { ProgramStrip } from '@/features/programs';
-import { EmptyState } from '@/components/Notice';
+import { ProgramDirectory } from '@/features/programs';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Events',
   description:
-    'Upcoming liturgies, classes, and parish events at St. Philopater Mercurius & St. Mina in Wayland, MA.',
+    'Summercamp, St. Simon for Seniors, College and Young Professionals, and Mother of Mercy — the standing programs of St. Philopater Mercurius & St. Mina in Wayland, MA.',
 };
 
 /**
- * What is coming up, in order.
+ * The parish's programs.
  *
- * Retitled from "Parish Calendar" when `/calendar` was added: that name now
- * belongs to the month grid, and two items in the same nav bar leading to two
- * pages with the same title is the reader's problem to untangle, not theirs.
+ * **This page carried a list of upcoming events and no longer does.** The
+ * calendar entries behind it were inaccurate, and a page announcing the wrong
+ * date for a Liturgy is worse than a page that announces none — so it was taken
+ * off at the parish's direction. `/calendar` still renders the month grid over
+ * the same collection, which is where a date belongs.
+ *
+ * That leaves this page as the programs, and nothing else. Please do not put
+ * the list back.
  */
-export default async function EventsPage() {
-  const events = await getUpcomingEvents(100);
-
+export default function EventsPage() {
   return (
     <>
       <PageHeader title="Events" />
 
-      <PageBody>
-        {/*
-          The programs, above the list.
-
-          This page is the only entrance to the galleries — there is no
-          "Ministries" link anywhere, deliberately. The strip fetches in the
-          browser while everything below it stays baked at build time, so a camp
-          added after the last deploy shows up without one.
-        */}
-        <ProgramStrip />
-
-        <p className="note">Everything coming up, soonest first. Times are shown in Eastern Time.</p>
-        {events.length === 0 ? (
-          <EmptyState what="events" collection="events" />
-        ) : (
-          <ul className="grid">
-            {events.map((event) => (
-              <EventCard key={event.id} event={event} showLocation />
-            ))}
-          </ul>
-        )}
+      {/*
+        `flush`, because this page opens straight into a grid. `PageHeader`
+        renders only a hidden h1 and sits outside `PageBody`, so the grid is the
+        first child and `.page-body > * + *` never applies to it — the cards end
+        up hard against the masthead with no gap at all. Pages that open with
+        prose do not show this, which is why it survived unnoticed.
+      */}
+      <PageBody flush>
+        <ProgramDirectory />
       </PageBody>
     </>
   );

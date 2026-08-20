@@ -12,9 +12,18 @@
 export function PageBody({
   children,
   /**
-   * Set on a page that has no `PageHeader` above it, which is `/livestream` and
-   * nothing else. That band supplies the top spacing on every other page, so a
-   * page without one has to restate it — see `.page-body--flush`.
+   * Set on a page whose first child would otherwise sit hard against the
+   * masthead. Two of them now:
+   *
+   *   `/livestream` — no `PageHeader` at all; the band it replaced was what
+   *                   separated the player from the masthead.
+   *   `/events`     — has a `PageHeader`, but it renders only a hidden `h1`
+   *                   *outside* this component, so the first real child is also
+   *                   the first child of `.page-body` and `* + *` never fires.
+   *
+   * Pages that open with prose do not show the problem, because a paragraph
+   * brings its own spacing — which is why it went unnoticed. Anything opening
+   * with a grid or an image needs this. See `.page-body--flush`.
    */
   flush = false,
 }: {
