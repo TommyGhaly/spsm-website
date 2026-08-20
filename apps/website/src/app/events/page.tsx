@@ -34,6 +34,16 @@ export default function EventsPage() {
         prose do not show this, which is why it survived unnoticed.
       */}
       <PageBody flush>
+        {/*
+          The page says what it is before it shows anything. Without this line
+          a visitor arrives at five photographs and has to infer the category
+          from the pictures — and the hidden h1 gives them nothing to read.
+        */}
+        <p className="note">
+          The standing ministries of the parish. Choose one to see its gatherings
+          and photographs.
+        </p>
+
         <ProgramDirectory />
       </PageBody>
     </>

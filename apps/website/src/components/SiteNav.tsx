@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
 
 /**
@@ -25,17 +25,52 @@ import { HeaderAuth } from './HeaderAuth';
  * hardcoded prop from the server layout rather than being fetched.
  */
 
-export type NavItem = { href: string; label: string };
+export type NavChild = { href: string; label: string; caption?: string };
+export type NavItem = { href: string; label: string; children?: readonly NavChild[] };
 
 export function SiteNav({ items }: { items: readonly NavItem[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  /** The href of the top-level item whose dropdown is showing, if any. */
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+
+  /*
+   * Closing is delayed; opening is not.
+   *
+   * The pointer has to cross from the word "Events" to the panel below it, and
+   * people do that on a diagonal that clips the edge of both. Closing the
+   * instant the pointer leaves makes the menu snap shut just as somebody
+   * reaches for it — the single most common way a hover menu feels broken.
+   * A short grace period costs nothing and fixes it.
+   */
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const openNow = (href: string) => {
+    cancelClose();
+    setOpenMenu(href);
+  };
+
+  const closeSoon = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpenMenu(null), 220);
+  };
+
+  // A timer outliving the component would call setState on an unmounted tree.
+  useEffect(() => cancelClose, []);
   const panelId = useId();
 
   // Close on navigation. Without this the panel stays open over the new page,
   // which reads as the link having done nothing.
   useEffect(() => {
     setOpen(false);
+    setOpenMenu(null);
   }, [pathname]);
 
   // Escape closes it, as it must for anything that behaves like a menu.
@@ -47,6 +82,32 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open]);
+
+  /*
+   * Escape closes an open dropdown too, and a click anywhere else dismisses it.
+   *
+   * Separate from the panel's handler above because they are separate things: a
+   * dropdown can be open on a wide screen where the panel does not exist. The
+   * pointer listener is what makes the menu dismissible for a touch user, who
+   * has no hover to leave and no Escape key to press.
+   */
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenu(null);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.nav__group')) return;
+      setOpenMenu(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [openMenu]);
 
   /**
    * Marks the section you are in, not just the exact URL.
@@ -71,15 +132,75 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
   return (
     <>
       <nav className="nav" aria-label="Main">
-        {items.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={isCurrent(item.href) ? 'page' : undefined}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {items.map((item) =>
+          item.children && item.children.length > 0 ? (
+            /*
+              The link and the disclosure are two controls, deliberately.
+              Making the parent itself toggle the menu would leave no way to
+              reach /events, and making it only a link would leave no way to
+              open the menu without a mouse. So: the word navigates, the
+              chevron beside it opens.
+            */
+            <span
+              key={item.href}
+              className="nav__group"
+              onMouseEnter={() => openNow(item.href)}
+              onMouseLeave={closeSoon}
+              // Focus opens it too, so tabbing to Events reveals the same list
+              // a mouse user gets by pointing at it.
+              onFocus={() => openNow(item.href)}
+              // Closes when focus leaves the group entirely, which is what
+              // tabbing off the last item in the dropdown should do.
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  cancelClose();
+                  setOpenMenu(null);
+                }
+              }}
+            >
+              <Link href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+                {item.label}
+              </Link>
+              <button
+                type="button"
+                className="nav__chevron"
+                aria-expanded={openMenu === item.href}
+                aria-label={`${item.label} sections`}
+                /*
+                  Hover is the primary way in and this is the fallback: a
+                  keyboard user who has not tabbed into the group, and a touch
+                  user, who has no hover at all. Nobody with a mouse needs to
+                  click it.
+                */
+                onClick={() => {
+                  cancelClose();
+                  setOpenMenu((current) => (current === item.href ? null : item.href));
+                }}
+              >
+                <Chevron />
+              </button>
+
+              <ul className="nav__menu" hidden={openMenu !== item.href}>
+                {item.children.map((child) => (
+                  <li key={child.href}>
+                    <Link href={child.href} aria-current={isCurrent(child.href) ? 'page' : undefined}>
+                      <span className="nav__menu-label">{child.label}</span>
+                      {child.caption && <span className="nav__menu-caption">{child.caption}</span>}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </span>
+          ) : (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={isCurrent(item.href) ? 'page' : undefined}
+            >
+              {item.label}
+            </Link>
+          ),
+        )}
       </nav>
 
       <button
@@ -113,6 +234,27 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                 >
                   {item.label}
                 </Link>
+
+                {/*
+                  Always expanded rather than an accordion. The panel is already
+                  a disclosure the visitor opened on purpose; making them open a
+                  second one to reach Summercamp is a tap for nothing, and five
+                  short lines cost little scrolling.
+                */}
+                {item.children && item.children.length > 0 && (
+                  <ul className="nav-panel__sublinks">
+                    {item.children.map((child) => (
+                      <li key={child.href}>
+                        <Link
+                          href={child.href}
+                          aria-current={isCurrent(child.href) ? 'page' : undefined}
+                        >
+                          {child.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -126,6 +268,26 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
         </div>
       </div>
     </>
+  );
+}
+
+/** Decorative — the button beside it is labelled for a screen reader. */
+function Chevron() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M5 9l7 7 7-7" />
+    </svg>
   );
 }
 
