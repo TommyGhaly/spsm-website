@@ -7364,3 +7364,142 @@ figure.gallery-grid__media {
     aspect-ratio: 16 / 9;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * The Events dropdown
+ *
+ * A full-width band under the masthead rather than a card floating beside it,
+ * and in the masthead's own colours rather than the page's. A white panel
+ * hanging off a deep red bar reads as a different piece of software; this reads
+ * as the bar opening.
+ *
+ * Horizontal, because five ministries in a vertical stack is a column of text
+ * where the eye has to travel down to compare — laid across, they are five
+ * choices taken in at once.
+ * ------------------------------------------------------------------------ */
+
+/* Static, deliberately: with no positioned ancestor between here and
+   `.masthead` (which is `position: sticky`, and therefore a containing block),
+   the panel below resolves against the masthead and can span its full width.
+   Making this `relative` would pin the panel to the width of the word
+   "Events". */
+.nav__group {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nav__chevron {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.2rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.nav__chevron:hover,
+.nav__chevron[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.nav__chevron svg {
+  transition: transform 160ms ease;
+}
+
+.nav__chevron[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__chevron svg {
+    transition: none;
+  }
+}
+
+/* `top: 100%` of the masthead, so the band starts exactly where the bar ends —
+   no gap for the pointer to cross on its way down, which would fire mouseleave
+   and shut the menu just as somebody reached for it. */
+.nav__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 55;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.25rem;
+  margin: 0;
+  padding: var(--space-md, 1rem) 18px var(--space-lg, 1.5rem);
+  list-style: none;
+
+  /* The masthead gradient, continued downward and a shade deeper, so the band
+     reads as the bar extending rather than as a separate surface. */
+  background: linear-gradient(
+    180deg,
+    var(--color-deep, #481010) 0%,
+    color-mix(in srgb, #000 12%, var(--color-deep, #481010)) 100%
+  );
+  color: var(--color-ink-inverse, #f9efec);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+}
+
+.nav__menu[hidden] {
+  display: none;
+}
+
+.nav__menu a {
+  display: block;
+  height: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-1, 4px);
+  color: var(--color-ink-inverse, #f9efec);
+  text-decoration: none;
+  /* Nav links are `nowrap`, which is right for one row of words across a bar
+     and wrong the moment one of them holds a sentence. Inherited, every caption
+     ran off the panel and was clipped mid-word with no ellipsis. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.nav__menu a:hover,
+.nav__menu a:focus-visible {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 16%, transparent);
+}
+
+.nav__menu-label {
+  display: block;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-gold, #b08d43);
+}
+
+/* The caption: what the ministry actually is, so a visitor choosing between
+   five names is not guessing. Dimmed against the label so the eye picks out the
+   names first and reads only the one it stopped on. */
+.nav__menu-caption {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
+}
+
+/* The same five inside the mobile panel, indented under Events with a gold rule
+   to show they belong to it rather than sitting beside it. */
+.nav-panel__sublinks {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0 0 0 0.9rem;
+  list-style: none;
+  border-left: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 50%, transparent);
+}
+
+.nav-panel__sublinks a {
+  display: block;
+  padding: 0.4rem 0;
+  font-size: 0.95rem;
+}

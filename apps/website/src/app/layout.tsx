@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { formatAddress } from '@spsm/shared';
 import { getParishConfig } from '@/lib/config';
 import { Masthead } from '@/components/Masthead';
-import { SiteNav } from '@/components/SiteNav';
+import { SiteNav, type NavItem } from '@/components/SiteNav';
+import { programNavChildren } from '@/features/programs/nav';
 import { HeaderAuth } from '@/components/HeaderAuth';
 import { ThemeBootScript, ThemeRuntime } from '@/components/ThemeRuntime';
 import './globals.css';
@@ -43,8 +44,15 @@ export const metadata: Metadata = {
  * succeeding, so one bad read empties the navigation everywhere at once. The
  * cost is that adding a top-level section is a code change — which, for
  * something that changes about once a decade, is the better trade.
+ *
+ * **The programs under Events are the one exception, and it does not weaken the
+ * rule.** They are attached below, from a build-time read, because the parish
+ * creates programs and a developer should not have to. A failed read yields an
+ * empty list, so the worst case is a missing dropdown — "Events" itself stays
+ * in the bar and still leads to a page listing them. The top level is still
+ * eight literals that no data can empty.
  */
-const NAV = [
+const NAV: NavItem[] = [
   // The wordmark also links home, which is the convention a regular web user
   // knows. This is here because plenty of parishioners do not, and looking for
   // the word "Home" and not finding it is a worse first impression than one
@@ -69,7 +77,7 @@ const NAV = [
   { href: '/livestream', label: 'Live' },
   { href: '/giving', label: 'Giving' },
   { href: '/contact', label: 'Contact' },
-] as const;
+];
 
 // `/beliefs` has come off the top bar pending a decision to make it a
 // subcategory of something rather than a seventh sibling. The page, its footer
@@ -144,6 +152,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // anyone without JavaScript. The *theme* is deliberately not read here any
   // more; see ThemeRuntime.
   const parish = await getParishConfig();
+
+  /*
+   * The programs, read once here at build time and baked into every page's
+   * header. Nothing fetches them in the browser — see features/programs/nav.ts
+   * for why that matters and what it costs.
+   */
+  const programs = await programNavChildren();
+  const nav: NavItem[] = NAV.map((item) =>
+    item.href === '/events' && programs.length > 0 ? { ...item, children: programs } : item,
+  );
   const address = formatAddress(parish.address);
 
   /*
@@ -214,7 +232,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <span>Coptic Orthodox Church · Wayland, MA</span>
                 </span>
               </Link>
-              <SiteNav items={NAV} />
+              <SiteNav items={nav} />
               {/*
                 Sign-in, at the right-hand end. A client component, but not one
                 that costs the page anything: it statically imports only
