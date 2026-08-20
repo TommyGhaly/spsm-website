@@ -3115,8 +3115,6 @@ main {
   transform: translateY(-4px);
 }
 
-
-
 .alsoin__name {
   font-family: var(--font-body, Georgia, serif);
   font-size: var(--type-small, 0.8125rem);
@@ -4479,8 +4477,6 @@ main {
     0 0 0 1px color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent),
     0 12px 20px -8px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
 }
-
-
 
 .addmore__name {
   font-family: var(--font-body, Georgia, serif);
@@ -7437,10 +7433,11 @@ figure.gallery-grid__media {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* Two even columns need a stated width; `max-content` would size to the
-     longest name and leave an odd measure. The `max-width` keeps it on screen
-     at the narrowest width the inline nav appears at. */
-  width: 23rem;
+  /* Wide enough that every name sets on one line. At 23rem "College and Young
+     Professionals" wrapped, which made one item look like two and was much of
+     why the panel read as cramped. The `max-width` keeps it on screen at the
+     narrowest width the inline nav appears at. */
+  width: 34rem;
   max-width: calc(100vw - 1.5rem);
   z-index: 55;
 
@@ -7448,9 +7445,9 @@ figure.gallery-grid__media {
      order rather than across the gap. */
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.05rem 0.4rem;
+  gap: 0.1rem 0.5rem;
   margin: 0;
-  padding: 0.45rem;
+  padding: 0.5rem;
   list-style: none;
 
   /* The page's own paper, not the masthead's red: drawn dark this was a second
@@ -7488,10 +7485,8 @@ figure.gallery-grid__media {
 }
 
 .nav__menu a {
-  display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  padding: 0.45rem 0.55rem;
+  display: block;
+  padding: 0.55rem 0.75rem;
   border-radius: var(--radius-1, 4px);
   /* The serif the program cards set names in, so the menu and the page it opens
      agree about what a name is. */
@@ -7505,35 +7500,11 @@ figure.gallery-grid__media {
   white-space: normal;
 }
 
-/* Gold at rest, so the panel has something in it besides text; the parish red
-   when pointed at, with the mark following the name rather than staying behind.
-   `flex-shrink: 0` because a cross squeezed by a two-line name stops being a
-   cross. */
-.nav__menu-mark {
-  flex-shrink: 0;
-  color: var(--color-gold, #b08d43);
-  transition: color 140ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
-}
 
 .nav__menu a:hover,
 .nav__menu a:focus-visible {
   background: color-mix(in srgb, var(--color-accent, #992a21) 8%, transparent);
   color: var(--color-accent, #992a21);
-}
-
-.nav__menu a:hover .nav__menu-mark,
-.nav__menu a:focus-visible .nav__menu-mark {
-  color: var(--color-accent, #992a21);
-  transform: scale(1.15);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav__menu-mark {
-    transition: none;
-  }
-  .nav__menu a:hover .nav__menu-mark {
-    transform: none;
-  }
 }
 
 /* The page you are on, marked — otherwise the menu says nothing about where the
@@ -7543,9 +7514,6 @@ figure.gallery-grid__media {
   font-weight: 600;
 }
 
-.nav__menu a[aria-current='page'] .nav__menu-mark {
-  color: var(--color-accent, #992a21);
-}
 
 /* The same five inside the mobile panel, indented under Events with a gold rule
    to show they belong to it rather than sitting beside it. */

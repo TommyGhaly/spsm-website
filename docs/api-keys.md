@@ -156,25 +156,23 @@ Done: the app registration exists, and `NEXT_PUBLIC_AZURE_CLIENT_ID` /
    it's shown once.
 6. Paste the client ID + secret into Firebase console → Authentication →
    Microsoft provider. The secret lives there, not in this repo.
-7. **Confirm Firebase is pointed at the app registration you just made.** The
-   `client_id` in the `authUri` from step 3 is the one Firebase will actually
-   send. If it disagrees with `NEXT_PUBLIC_AZURE_CLIENT_ID`, then the redirect
-   URI is registered on one app and the sign-in arrives as another — and every
-   correction made to the app in `.env` will appear to do nothing at all, which
-   is a very expensive way to lose a day.
-
-   Confirmed disagreeing on 2026-08-19:
+7. **`NEXT_PUBLIC_AZURE_CLIENT_ID` in `.env` is stale, and nothing reads it.**
+   The client ID that matters is the one in the Firebase console, not the one in
+   this repo: the browser never sends a client ID of its own, and the only code
+   that so much as mentions the variable is `verify-scopes.mjs`, which checks
+   that it is non-empty. Two values were in play on 2026-08-19:
 
    | | Client ID |
    |---|---|
-   | What Firebase sends | `9a20458c-d5fd-4b44-80e7-f47ad7bae311` |
-   | `.env`, and step 4 above | `149615d2-4f88-4222-b69c-f3b82f2b8901` |
+   | What Firebase sends — the live one | `9a20458c-d5fd-4b44-80e7-f47ad7bae311` |
+   | What `.env` and step 4 say | `149615d2-4f88-4222-b69c-f3b82f2b8901` |
 
-   Resolve it in one direction, not both: either put `149615d2…` and its secret
-   back in the Firebase console, or register the handler URI on `9a20458c…` and
-   update `.env` and this file to match. Then delete the loser — two app
-   registrations for one sign-in is how this happened, and the spare will be
-   nobody's job to maintain.
+   A real Microsoft sign-in against the live project completed on 2026-08-19 at
+   15:46 and was granted `admin`, so `9a20458c…` is the app registration that
+   is actually wired up, and it already carries the handler redirect URI. Which
+   also means the redirect URI added on 2026-08-18 went onto `149615d2…` — a
+   second registration nothing uses — and did nothing. Point `.env` at the live
+   id so the next person is not sent to the wrong blade, and delete the spare.
 
 ### Why single-tenant is a security control here
 
@@ -222,15 +220,16 @@ from the directory.
 - [ ] Square location ID copied
 - [ ] Webhook subscription + signature key (after first Functions deploy)
 - [x] Entra ID app registration — client id and tenant id are in `.env`
-- [ ] **Entra redirect URI** — `https://spsm-database.firebaseapp.com/__/auth/handler`
-      on the app registration's **Authentication** blade. Confirmed missing on
-      2026-08-18: sign-in reached Microsoft, took the password, then failed with
-      AADSTS50011. Firebase's side was correct — it sent that exact URI with
-      client id `149615d2-4f88-4222-b69c-f3b82f2b8901`, which matches `.env`.
-      **Re-checked 2026-08-19 and Firebase now sends a different client id**
-      (`9a20458c-…`), so a redirect URI added to the app in `.env` is on the
-      wrong app registration. See step 7 of §3 — settle which app is live
-      before touching the redirect URI again
+- [x] **Entra redirect URI** — `https://spsm-database.firebaseapp.com/__/auth/handler`
+      on the app registration's **Authentication** blade. Missing on 2026-08-18:
+      sign-in reached Microsoft, took the password, then failed with AADSTS50011.
+      **Working as of 2026-08-19** — a real Microsoft sign-in against the live
+      project completed at 15:46 and was granted `admin`. The registration that
+      carries it is `9a20458c-…`, *not* the `149615d2-…` in `.env`; see §3 step 7
+- [ ] **Delete the spare Entra app registration** (`149615d2-…`) and point
+      `NEXT_PUBLIC_AZURE_CLIENT_ID` at the live one. Harmless today, because
+      nothing reads the variable — but it is the value anyone debugging sign-in
+      will trust, and it sent one such debugging session to the wrong blade
 - [ ] **Firebase authorized domains** — `www.spsmwayland.org` and
       `spsmwayland.org` are *not* on the list (checked 2026-08-18; it holds
       `localhost`, `spsm-database.firebaseapp.com`, `spsm-database.web.app` and
