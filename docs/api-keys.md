@@ -146,12 +146,35 @@ Done: the app registration exists, and `NEXT_PUBLIC_AZURE_CLIENT_ID` /
    must have. Getting this wrong is **AADSTS50011**, and it does not surface
    until *after* someone types their password — Entra serves a normal-looking
    sign-in page for an unregistered redirect URI and only rejects at the end,
-   so it cannot be caught by probing the authorize endpoint.
+   so it cannot be caught by probing the authorize endpoint. Nor can anything
+   else: on this tenant the authorize endpoint answers `AADSTS50058` ("no
+   session, here is a sign-in page") for a bad redirect URI, an unregistered
+   client id, and a well-formed request alike. Do not spend an afternoon
+   probing it, as has now been done twice.
 4. Copy **Application (client) ID** and **Directory (tenant) ID**.
 5. **Certificates & secrets → New client secret.** Copy the *value* immediately;
    it's shown once.
 6. Paste the client ID + secret into Firebase console → Authentication →
    Microsoft provider. The secret lives there, not in this repo.
+7. **Confirm Firebase is pointed at the app registration you just made.** The
+   `client_id` in the `authUri` from step 3 is the one Firebase will actually
+   send. If it disagrees with `NEXT_PUBLIC_AZURE_CLIENT_ID`, then the redirect
+   URI is registered on one app and the sign-in arrives as another — and every
+   correction made to the app in `.env` will appear to do nothing at all, which
+   is a very expensive way to lose a day.
+
+   Confirmed disagreeing on 2026-08-19:
+
+   | | Client ID |
+   |---|---|
+   | What Firebase sends | `9a20458c-d5fd-4b44-80e7-f47ad7bae311` |
+   | `.env`, and step 4 above | `149615d2-4f88-4222-b69c-f3b82f2b8901` |
+
+   Resolve it in one direction, not both: either put `149615d2…` and its secret
+   back in the Firebase console, or register the handler URI on `9a20458c…` and
+   update `.env` and this file to match. Then delete the loser — two app
+   registrations for one sign-in is how this happened, and the spare will be
+   nobody's job to maintain.
 
 ### Why single-tenant is a security control here
 
@@ -202,8 +225,12 @@ from the directory.
 - [ ] **Entra redirect URI** — `https://spsm-database.firebaseapp.com/__/auth/handler`
       on the app registration's **Authentication** blade. Confirmed missing on
       2026-08-18: sign-in reached Microsoft, took the password, then failed with
-      AADSTS50011. Firebase's side was correct — it sends that exact URI with
-      client id `149615d2-4f88-4222-b69c-f3b82f2b8901`, which matches `.env`
+      AADSTS50011. Firebase's side was correct — it sent that exact URI with
+      client id `149615d2-4f88-4222-b69c-f3b82f2b8901`, which matches `.env`.
+      **Re-checked 2026-08-19 and Firebase now sends a different client id**
+      (`9a20458c-…`), so a redirect URI added to the app in `.env` is on the
+      wrong app registration. See step 7 of §3 — settle which app is live
+      before touching the redirect URI again
 - [ ] **Firebase authorized domains** — `www.spsmwayland.org` and
       `spsmwayland.org` are *not* on the list (checked 2026-08-18; it holds
       `localhost`, `spsm-database.firebaseapp.com`, `spsm-database.web.app` and
