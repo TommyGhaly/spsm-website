@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
-import { Ornament } from './Ornament';
 
 /**
  * The main navigation, in two forms.
@@ -182,41 +181,23 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </button>
 
               {/*
-                A titled panel rather than a bare list of links. This repo's own
-                note on the ornament is the reasoning: there is no photograph of
-                the parish's building, so the visual interest has to come from
-                type, colour and ornament — and none of the programs has a
-                photograph yet either.
+                Just the names. This had a label, the parish's cross ornament
+                and a "see all" footer, which was more panel than five short
+                names ask for — the word "Events" above it already says what
+                these are, and it links to the page that lists them.
               */}
-              <div className="nav__menu" hidden={openMenu !== item.href}>
-                <p className="nav__menu-title">Our ministries</p>
-                {/* Not `start`: that variant drops the leading rule so it can
-                    open a block, which puts the cross hard left with a rule
-                    trailing off it. The full form is rule–cross–rule, centred,
-                    which is what a heading underline wants to be. */}
-                <Ornament />
-
-                <ul className="nav__menu-list">
-                  {item.children.map((child) => (
-                    <li key={child.href}>
-                      <Link
-                        href={child.href}
-                        aria-current={isCurrent(child.href) ? 'page' : undefined}
-                      >
-                        {child.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* The way out for somebody who wants to browse rather than
-                    pick — and the only thing in here that leads to the page
-                    the parent link also leads to, said in words. */}
-                <Link className="nav__menu-all" href={item.href}>
-                  See all programs
-                  <span aria-hidden="true"> →</span>
-                </Link>
-              </div>
+              <ul className="nav__menu" hidden={openMenu !== item.href}>
+                {item.children.map((child) => (
+                  <li key={child.href}>
+                    <Link
+                      href={child.href}
+                      aria-current={isCurrent(child.href) ? 'page' : undefined}
+                    >
+                      {child.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </span>
           ) : (
             <Link
