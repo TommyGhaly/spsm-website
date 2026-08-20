@@ -7498,7 +7498,9 @@ figure.gallery-grid__media {
 .nav__menu a {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   min-height: 3rem;
   padding: 0.45rem 0.6rem;
   overflow: hidden;
@@ -7507,8 +7509,8 @@ figure.gallery-grid__media {
   background:
     linear-gradient(
       150deg,
-      color-mix(in srgb, var(--color-accent, #992a21) 5%, var(--color-paper-raised, #fdf7f4)) 0%,
-      var(--color-paper-sunken, #eeddd7) 100%
+      var(--color-paper-raised, #fdf7f4) 0%,
+      color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 55%, var(--color-paper-raised, #fdf7f4)) 100%
     );
   background-size: cover;
   background-position: center;
@@ -7547,7 +7549,7 @@ figure.gallery-grid__media {
  * shows through exactly when the picture does not.
  */
 .nav__menu a.has-cover {
-  background-color: color-mix(in srgb, #000 18%, var(--color-deep, #481010));
+  background-color: color-mix(in srgb, var(--color-accent, #992a21) 62%, var(--color-deep, #481010));
   border-color: color-mix(in srgb, var(--color-deep, #481010) 30%, transparent);
 }
 
@@ -7555,7 +7557,10 @@ figure.gallery-grid__media {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(40, 10, 8, 0.82) 0%, rgba(40, 10, 8, 0.12) 62%, transparent 100%);
+  /* Centred type needs the scrim across the middle, not only along the bottom
+     edge where the name used to sit. Lighter than it was, but still enough that
+     light type holds on a bright photograph. */
+  background: linear-gradient(to top, rgba(50, 14, 11, 0.62) 0%, rgba(50, 14, 11, 0.44) 100%);
 }
 
 .nav__menu a.has-cover > span {
