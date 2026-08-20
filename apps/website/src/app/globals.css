@@ -5039,7 +5039,7 @@ main {
   font-size: var(--type-micro, 0.8125rem);
   line-height: var(--leading-normal, 1.5);
   color: var(--color-ink-soft, #4b413e);
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 16%, transparent);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 20%, transparent);
   border-radius: var(--radius-sm, 4px);
 }
 
@@ -7436,16 +7436,32 @@ figure.gallery-grid__media {
   padding: var(--space-md, 1rem) 18px var(--space-lg, 1.5rem);
   list-style: none;
 
-  /* The masthead gradient, continued downward and a shade deeper, so the band
-     reads as the bar extending rather than as a separate surface. */
+  /*
+   * The same family as the masthead, one plane in front of it.
+   *
+   * Matching the bar exactly made the two read as one block with words floating
+   * in it, and there was no telling where the header ended. So the band carries
+   * more of `accent-strong` than the bar does: same two pigments, mixed warmer
+   * and lighter, which is the difference between a surface that has opened and
+   * a surface that has simply grown taller.
+   *
+   * The masthead's own gold hairline sits directly above this and does the
+   * separating; the shadow underneath sets the band in front of the page rather
+   * than in front of the bar.
+   */
   background: linear-gradient(
     180deg,
-    var(--color-deep, #481010) 0%,
-    color-mix(in srgb, #000 12%, var(--color-deep, #481010)) 100%
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 62%, var(--color-deep, #481010)) 0%,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 38%, var(--color-deep, #481010)) 100%
   );
   color: var(--color-ink-inverse, #f9efec);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  /* A hairline of light along the top edge, the way a raised surface catches
+     it. Cheaper and steadier than a second border, which would double up with
+     the masthead's own. */
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-gold, #b08d43) 38%, transparent),
+    0 16px 30px rgba(0, 0, 0, 0.34);
 }
 
 .nav__menu[hidden] {
@@ -7468,7 +7484,7 @@ figure.gallery-grid__media {
 
 .nav__menu a:hover,
 .nav__menu a:focus-visible {
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 16%, transparent);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 20%, transparent);
 }
 
 .nav__menu-label {
