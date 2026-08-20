@@ -155,36 +155,51 @@ web app's config points at it and the client would otherwise talk to a different
 emulator namespace than the one you seed:
 
 ```bash
-firebase emulators:start --only auth,firestore --project spsm-database
+npm run dev:backend
 ```
 
-Then the site, pointed at them:
+Then the site, seeded and pointed at them:
 
 ```bash
-NEXT_PUBLIC_USE_EMULATORS=1 npm run dev
+npm run dev:local
 ```
 
-Seed yourself a user and give it a role. The emulator has no Microsoft provider,
-so this is a password account — which is why `signInWithEmulatorAccount` exists
-and why it throws unless `NEXT_PUBLIC_USE_EMULATORS=1`:
+There is no longer any account to create by hand: `dev:local` runs
+`scripts/seed-emulator.mjs` first, which creates six accounts with their role
+claims already set.
 
-```bash
-curl -X POST "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake" \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"staff@spsmwayland.org","password":"emulator-only","returnSecureToken":true}'
-```
+### Signing in locally never contacts Microsoft
 
-Then set the claim, substituting the `localId` from that response:
+This is the part that reads as a bug and is not. The emulator has no Microsoft
+provider, so the masthead's "Sign in with Microsoft" button takes the
+`signInWithEmulatorAccount` branch in `lib/authStore.ts` instead — no popup, no
+account picker, no trip to Entra. One click and you are
+`admin@spsmwayland.org`.
 
-```bash
-curl -X POST "http://localhost:9099/identitytoolkit.googleapis.com/v1/projects/spsm-database/accounts:update" \
-  -H 'Content-Type: application/json' -H 'Authorization: Bearer owner' \
-  -d '{"localId":"<localId>","customAttributes":"{\"role\":\"staff\",\"groups\":[]}"}'
-```
+Which account is a URL question. `?as=` on any page picks one:
 
-`/admin` now shows an extra "Emulator sign-in" panel. It is rendered only when
-`NEXT_PUBLIC_USE_EMULATORS=1`, and the production project has no password
-provider enabled anyway.
+| `?as=` | Role |
+|---|---|
+| *omitted* | `admin` — everything, including role changes |
+| `staff` | `staff` — the events admin |
+| `servant` | `servant` — the schedule only |
+| `father` | `staff` + `clergy` |
+| `lead` | `servant`, with a program grant over all of Summercamp |
+| `volunteer` | `servant`, with a grant over Summercamp Week 1 only |
+
+That last pair is the point of it: the program-grant model is only testable by
+comparing what `lead` and `volunteer` see, and that comparison should be an edit
+to the address bar rather than a sign-out and a re-pick.
+
+The branch is guarded on `NODE_ENV` as well as `NEXT_PUBLIC_USE_EMULATORS`, so
+it folds out of a production build entirely and cannot be switched back on by an
+environment variable — which matters, because `NEXT_PUBLIC_USE_EMULATORS=1` is
+the environment every local build of this app runs in. The seeded password is
+`emulator-only` if you ever need it directly.
+
+`/admin` also has an "Emulator sign-in" panel for picking an account by hand. It
+is rendered only when `NEXT_PUBLIC_USE_EMULATORS=1`, and the production project
+has no password provider enabled anyway.
 
 To read emulator Firestore past the security rules — for checking what the admin
 actually wrote — the emulator accepts `Authorization: Bearer owner` as admin:

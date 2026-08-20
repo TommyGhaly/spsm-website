@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
+import { CopticCross } from './Ornament';
 
 /**
  * The main navigation, in two forms.
@@ -181,10 +182,13 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </button>
 
               {/*
-                Just the names. This had a label, the parish's cross ornament
-                and a "see all" footer, which was more panel than five short
-                names ask for — the word "Events" above it already says what
-                these are, and it links to the page that lists them.
+                The names, each behind the parish's cross.
+                
+                This has been a titled block with an ornament rule and a footer
+                link (too much furniture for five names) and a plain list (too
+                little to look at). A small gold cross per item is the middle:
+                it is the parish's own mark, it earns the panel some character,
+                and it costs no heading, no rule and no footer.
               */}
               <ul className="nav__menu" hidden={openMenu !== item.href}>
                 {item.children.map((child) => (
@@ -193,7 +197,11 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                       href={child.href}
                       aria-current={isCurrent(child.href) ? 'page' : undefined}
                     >
-                      {child.label}
+                      {/* Decorative: the name beside it is the link's text, and
+                          a screen reader announcing "cross" five times tells
+                          nobody anything. */}
+                      <CopticCross size={11} className="nav__menu-mark" />
+                      <span>{child.label}</span>
                     </Link>
                   </li>
                 ))}
