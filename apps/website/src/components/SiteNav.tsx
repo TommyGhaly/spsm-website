@@ -136,19 +136,29 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
         {items.map((item) =>
           item.children && item.children.length > 0 ? (
             /*
-              The link and the disclosure are two controls, deliberately.
-              Making the parent itself toggle the menu would leave no way to
-              reach /events, and making it only a link would leave no way to
-              open the menu without a mouse. So: the word navigates, the
-              chevron beside it opens.
+              No disclosure control beside the word — the menu opens on hover
+              and on focus, and nothing else.
+              
+              What that leaves for each way of using the site:
+              
+                mouse    — pointing at "Events" opens it
+                keyboard — tabbing to "Events" opens it (onFocus below), and the
+                           next Tab walks into the list
+                touch    — no hover, so tapping "Events" simply follows the
+                           link to /events, which lists all five programs as
+                           cards
+              
+              The touch path is the reason a chevron is not needed: the fallback
+              is not a dead end, it is the same content on a page with more room
+              for it.
             */
             <span
               key={item.href}
               className="nav__group"
               onMouseEnter={() => openNow(item.href)}
               onMouseLeave={closeSoon}
-              // Focus opens it too, so tabbing to Events reveals the same list
-              // a mouse user gets by pointing at it.
+              // Focus opens it, which is the whole keyboard path now that there
+              // is no button to press.
               onFocus={() => openNow(item.href)}
               // Closes when focus leaves the group entirely, which is what
               // tabbing off the last item in the dropdown should do.
@@ -162,24 +172,6 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               <Link href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
                 {item.label}
               </Link>
-              <button
-                type="button"
-                className="nav__chevron"
-                aria-expanded={openMenu === item.href}
-                aria-label={`${item.label} sections`}
-                /*
-                  Hover is the primary way in and this is the fallback: a
-                  keyboard user who has not tabbed into the group, and a touch
-                  user, who has no hover at all. Nobody with a mouse needs to
-                  click it.
-                */
-                onClick={() => {
-                  cancelClose();
-                  setOpenMenu((current) => (current === item.href ? null : item.href));
-                }}
-              >
-                <Chevron />
-              </button>
 
               {/*
                 Tiles, each with its program's own photograph behind the name.
@@ -288,26 +280,6 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
         </div>
       </div>
     </>
-  );
-}
-
-/** Decorative — the button beside it is labelled for a screen reader. */
-function Chevron() {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M5 9l7 7 7-7" />
-    </svg>
   );
 }
 

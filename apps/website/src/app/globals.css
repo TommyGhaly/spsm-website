@@ -7383,38 +7383,8 @@ figure.gallery-grid__media {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
 }
 
-.nav__chevron {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.35rem 0.2rem;
-  border: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.7;
-}
-
-.nav__chevron:hover,
-.nav__chevron[aria-expanded='true'] {
-  opacity: 1;
-}
-
-.nav__chevron svg {
-  transition: transform 160ms ease;
-}
-
-.nav__chevron[aria-expanded='true'] svg {
-  transform: rotate(180deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav__chevron svg {
-    transition: none;
-  }
-}
 
 /* `top: 100%` of the masthead, so the band starts exactly where the bar ends —
    no gap for the pointer to cross on its way down, which would fire mouseleave
