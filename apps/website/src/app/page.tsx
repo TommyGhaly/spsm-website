@@ -489,15 +489,23 @@ function QuickFacts({
  * What is here instead says what the parish *is* and then what is not required
  * of anybody. Two rules for editing it:
  *
- *   - **State, do not invite.** "The Divine Liturgy is the centre of its life"
- *     is a fact about the Church. "Come and experience the Liturgy" is an
+ *   - **State, do not invite.** "The Divine Liturgy is the heart of the week
+ *     here" is a fact about the Church. "Come and experience the Liturgy" is an
  *     advertisement, and the Church is not one.
- *   - **Take things off the reader, do not put things on them.** "Nothing is
- *     asked of you" is the kindest sentence available here, and it is kind
- *     precisely because it promises nothing and requests nothing.
+ *   - **Take things off the reader, do not put things on them.** "Nothing asked
+ *     of you" is the kindest sentence available here, and it is kind precisely
+ *     because it promises nothing and requests nothing.
+ *
+ * The second draft kept both rules but was still stiff — "This is a Coptic
+ * Orthodox parish", "as you are able", "one of the fathers will be glad to
+ * speak with you" is the register of a printed notice, not of somebody talking
+ * to you. The register is now plainer and warmer, at Tommy's direction, and the
+ * two rules above survive it intact: the facts are still stated rather than
+ * pitched, and the second paragraph still only ever subtracts.
  *
  * The test to apply to any edit: would a father read this aloud without
- * wincing? Nothing here should sound like it came from a brochure.
+ * wincing? Nothing here should sound like it came from a brochure — and
+ * nothing should sound like it was read off a laminated sign either.
  * ---------------------------------------------------------------------------
  *
  * Hardcoded rather than read from the `content` collection. It is three
@@ -557,14 +565,14 @@ function Welcome({ band }: { band: string }) {
 
           <div className="welcome__words">
             <p>
-              This is a Coptic Orthodox parish, and the Divine Liturgy is the centre of
-              its life. Everything else here — the feasts and the fasts, the teaching of
-              the children, the prayers said for the sick — grows out of it.
+              We are a Coptic Orthodox parish. The Divine Liturgy is the heart of the
+              week here, and most of what else goes on — the feasts and the fasts,
+              Sunday school, the prayers said for the sick — follows from it.
             </p>
             <p>
-              If you are here for the first time, nothing is asked of you. Stand or sit
-              as you are able, stay for as long as you can, and one of the fathers will
-              be glad to speak with you afterwards.
+              If it is your first time, there is nothing you need to know beforehand and
+              nothing asked of you. Sit or stand as you like, stay as long as you can,
+              and the fathers are around afterwards if you would like to say hello.
             </p>
           </div>
         </div>
