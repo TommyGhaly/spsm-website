@@ -7259,38 +7259,111 @@ figure.gallery-grid__media {
   }
 }
 
-/* The programs on /events. This is the page's only content, so the cards carry
-   their name and a line of description rather than relying on a page around
-   them to explain what they are.
-
-   auto-fill with a 250px floor: four across on a wide screen, two on a tablet,
-   one on a phone, with no breakpoint to keep in step. The previous version was
-   two 4:3 cards 444px tall that filled the whole first screen on a laptop. */
+/* ---------------------------------------------------------------------------
+ * The programs on /events.
+ *
+ * This is the whole of that page, so the cards carry their name and a line of
+ * description rather than relying on a page around them to explain what they
+ * are.
+ *
+ * ## Every token this block used to name does not exist
+ *
+ * It was written against `--color-surface`, `--color-sunken`, `--color-bg`,
+ * `--space-5`, `--space-4`, `--space-2` and `--radius-2`. The theme emits none
+ * of those — the names are `--color-paper-raised`, `--color-paper-sunken`,
+ * `--color-paper`, `--space-lg/md/sm` and `--radius-md`, see `emitThemeCss` in
+ * packages/shared/src/schema/theme.ts — so every declaration here fell through
+ * to its hardcoded fallback, and the fallbacks were neutrals from an earlier
+ * palette.
+ *
+ * That is why the page looked like different software: white cards with a
+ * yellow-grey cover and a `#ddd4c7` rule, on a site whose every other surface
+ * is a pale red. Nothing was broken enough to notice and all of it was
+ * off-brand. **Check a token exists before trusting a fallback** — a wrong name
+ * here fails silently and looks like a design decision.
+ *
+ * ## The layout
+ *
+ * Fixed column counts rather than `auto-fill`. A 250px floor fits four across
+ * the 1280px shell and the parish runs five programs, so the fifth sat alone on
+ * a second row — which reads as something having gone wrong rather than as a
+ * grid. Three at most, and five lays out 3 + 2.
+ * ------------------------------------------------------------------------ */
 .program-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: var(--space-5, 1.5rem);
+  grid-template-columns: 1fr;
+  gap: var(--space-lg, 1.5rem);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+@media (min-width: 620px) {
+  .program-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 940px) {
+  .program-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* The site's card, in link form — deliberately the same object as `.card` /
+   `.card--link`, down to the gold rule and the squared top corners it needs.
+
+   Not literally those classes, because this one is photograph-led: the cover is
+   flush to three edges, so the padding belongs to the body rather than to the
+   card, and `.card` puts it on the card. */
 .program-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--color-rule, #ddd4c7);
-  border-radius: var(--radius-2, 6px);
-  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: 0 0 var(--radius-md, 8px) var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-sm, 0 1px 2px #1c161412);
   color: inherit;
   text-decoration: none;
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms ease;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+/* The 2px gold-to-red line every other card on the site carries, and the reason
+   the top corners are square: with a radius there is nowhere for a 2px line to
+   sit that does not either stop short of the curve or poke out past it.
+
+   `z-index` because the cover below is a sibling that paints over it otherwise —
+   `.card` has no such child, so it needs no stacking. */
+.program-card::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-gold, #b08d43),
+    var(--color-accent, #992a21)
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .program-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md, 0 4px 16px #1c16141a);
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, var(--color-rule, #e0cac3));
+}
+
+.program-card:hover::before,
+.program-card:focus-visible::before {
+  transform: scaleX(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7301,13 +7374,25 @@ figure.gallery-grid__media {
   }
 }
 
-/* 3:2 rather than 4:3. A shallower card leaves room for the name and blurb
-   underneath without the whole thing becoming a column of tall boxes. */
+/* A fixed height, not an aspect ratio, and this is the fix that matters most on
+   the page as it actually stands.
+ *
+ * `aspect-ratio: 3 / 2` ties the cover to the column width, so at three across a
+ * 1280px shell it is ~270px tall. With a photograph in it that is a photograph.
+ * With none — which is every card today, and most cards for a while — it is
+ * ~270px of empty ground, three times over, and the page is four fifths blank
+ * space. That was the largest single thing wrong with it.
+ *
+ * A height in `clamp` also makes empty and filled covers exactly the same size,
+ * which is what the note below about mismatched rows was actually reaching for.
+ * An aspect ratio only guarantees that while every card is the same width; a
+ * height guarantees it always, so a row of one photograph and two blanks lines
+ * up regardless. */
 .program-card__cover {
   display: block;
-  aspect-ratio: 3 / 2;
+  height: clamp(9rem, 14vw, 12rem);
   overflow: hidden;
-  background: var(--color-sunken, #efe9e0);
+  background: var(--color-paper-sunken, #eeddd7);
 }
 
 .program-card__cover img {
@@ -7317,50 +7402,72 @@ figure.gallery-grid__media {
   object-fit: cover;
 }
 
-/* A program with no photographs, or one whose rendition is missing. It keeps
-   the card's shape on purpose: collapsing it would make the row's cards
-   different heights depending on which have pictures. */
+/* A program with no photographs yet, or one whose rendition is missing.
+ *
+ * Today this is what *every* card shows — the galleries are new and the seeded
+ * programs have nothing in them — so this state is the page rather than an edge
+ * of it. It keeps the card's shape on purpose: collapsing it would make a row's
+ * cards different heights depending on which have pictures, which is the
+ * mismatch that appears first as the galleries fill unevenly.
+ *
+ * Left as a plain ground, in the site's own blush neutrals rather than the
+ * yellow-grey it was. A mark was the obvious thing to put here and the parish's
+ * cross is the obvious mark — but that was tried on this same surface in the
+ * Events menu and dropped (fe6b407), and it is an ornate full-colour artwork
+ * that reads as a smudge at watermark opacity. An empty ground that matches the
+ * page is quieter and does not re-litigate a decision already taken. */
 .program-card__cover--empty {
-  background:
-    linear-gradient(135deg, var(--color-sunken, #efe9e0) 0%, var(--color-bg, #f7f0e8) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--color-paper-sunken, #eeddd7) 0%,
+    var(--color-paper, #f6e8e3) 100%
+  );
 }
 
 .program-card__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2, 0.5rem);
-  padding: var(--space-4, 1rem);
+  gap: var(--space-xs, 0.35rem);
+  padding: var(--space-md, 1rem);
 }
 
+/* `--font-ui` and `--type-subheading`, matching `.card h3`. The name is a label
+   on a tile, not a page title, and `--font-display` at 1.15rem was neither. */
 .program-card__name {
-  font-family: var(--font-display, Georgia, serif);
-  font-size: 1.15rem;
-  line-height: 1.25;
-  color: var(--color-ink, #2b2118);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-subheading, 1.0625rem);
+  font-weight: 600;
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #1c1614);
+}
+
+.program-card:hover .program-card__name {
+  color: var(--color-accent, #992a21);
 }
 
 /* Two lines, then an ellipsis. The descriptions are prose of no fixed length,
-   and letting one of them run sets the height of every card in its row. */
+   and letting one of them run sets the height of every card in its row.
+
+   Frequently empty in production: `captionOf` returns '' for a seeded
+   description that still opens with its "REPLACE — …" note, so most cards are a
+   name alone until somebody writes the copy. The gap above collapses on its
+   own, so nothing has to handle that case. */
 .program-card__blurb {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  color: var(--color-ink-soft, #5a5048);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
 }
 
-/* A 3:2 cover is most of a phone screen, so five programs become five screens
-   of scrolling with roughly one card visible at a time. 16:9 keeps the card
-   photograph-led while fitting closer to two, which is what makes a directory
-   feel like a list of choices rather than a slideshow. */
-@media (max-width: 699px) {
-  .program-card__cover {
-    aspect-ratio: 16 / 9;
-  }
-}
+/* No phone override any more. The old one dropped the cover from 3:2 to 16:9
+   below 700px, because a 3:2 cover was most of a phone screen and five programs
+   became five screens of scrolling with one card visible at a time. `clamp`
+   floors the height at 9rem instead, which is shorter than 16:9 of any phone
+   width — so the case that override existed for no longer arises. */
 
 /* ---------------------------------------------------------------------------
  * The Events dropdown
@@ -7587,4 +7694,240 @@ figure.gallery-grid__media {
   display: block;
   padding: 0.4rem 0;
   font-size: 0.95rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * An event's photograph.
+ *
+ * Above the title and full-bleed, so it reads as the event's own picture rather
+ * than as an illustration dropped into the first paragraph.
+ *
+ * Capped by viewport height as well as aspect ratio, and that is the part worth
+ * keeping. A 16:9 band across a 1280px window is 720px tall — the entire fold,
+ * with the event's name and date pushed under it. That is the mistake the page
+ * banner was deleted for (see `PageHeader`), and it would come straight back
+ * through the image. `min()` keeps the shape on a phone, where 16:9 of 390px is
+ * only 219px, and stops it swallowing a laptop.
+ * ------------------------------------------------------------------------ */
+.event-hero {
+  position: relative;
+  width: 100%;
+  height: min(56.25vw, 38vh);
+  overflow: hidden;
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.event-hero img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /*
+   * Nudged above centre. There is no focal point on `Event` — unlike
+   * `GalleryMedia`, which has one because a square thumbnail of a group
+   * photograph cuts off faces — and in a wide crop of a parish photograph the
+   * people are reliably in the upper half. 40% is closer to right than 50% for
+   * the same zero fields to fill in.
+   */
+  object-position: 50% 40%;
+}
+
+/* The event head sits directly under the image when there is one, so it needs
+   its own top space back — the band above is not a paragraph. */
+.event-hero + .event-head {
+  margin-top: var(--space-lg, 1.5rem);
+}
+
+/* ---------------------------------------------------------------------------
+ * The calendar entry on a gallery page.
+ *
+ * One line, above the description. `ProgramEvent.calendarEventId` is
+ * one-directional by design — the calendar knows nothing about the gallery — so
+ * this is the only place the two meet on screen.
+ * ------------------------------------------------------------------------ */
+.gallery-calendar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs, 0.35rem);
+  margin: 0 0 var(--space-md, 1rem);
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  border-left: 2px solid var(--color-gold, #b08d43);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/* ---------------------------------------------------------------------------
+ * The photograph field in the events admin.
+ *
+ * A thumbnail beside its controls, rather than above them: the preview only has
+ * to be big enough to confirm the right file was chosen, and a full-width
+ * version of it pushes the rest of a long form further down.
+ * ------------------------------------------------------------------------ */
+.hero-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-md, 1rem);
+}
+
+.hero-field__preview {
+  flex: 0 0 auto;
+  width: 220px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+/* `min-width` rather than a bare `flex: 1`: without a floor the side column
+   collapses to the width of its longest word once the preview has taken its
+   220px, which on a narrow admin pane is one word per line. Below that it wraps
+   under the thumbnail instead, which is the right answer on a tablet. */
+.hero-field__side {
+  flex: 1 1 16rem;
+  min-width: 16rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Sending photographs to a program gallery.
+
+   Set apart from the gallery above it with a rule and a sunken ground rather
+   than a card: this is an aside to the page, not another item in it, and a card
+   would read as one more photograph in the grid.
+   --------------------------------------------------------------------------- */
+
+.submit-photos {
+  margin-top: var(--space-section);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-rule);
+}
+
+.submit-photos h2 {
+  margin-bottom: var(--space-xs);
+}
+
+.submit-photos input[type='file'] {
+  display: block;
+  margin: var(--space-md) 0;
+  /* The native control, deliberately. Every browser and every phone renders its
+     own file picker in a way its users already recognise, and a restyled one
+     loses the camera-roll affordance on iOS — which is where the photographs
+     are. */
+  max-width: 100%;
+  font: inherit;
+  color: var(--color-ink-soft);
+}
+
+.submit-photos__list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-md) 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-sunken);
+}
+
+.submit-photos__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.9375rem;
+}
+
+.submit-photos__list li + li {
+  border-top: 1px solid var(--color-rule);
+}
+
+/* A long filename must not push the status off the row — the status is the
+   only part of this line anybody is reading. */
+.submit-photos__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.submit-photos__ok {
+  color: var(--color-accent-strong);
+  white-space: nowrap;
+}
+
+.submit-photos__bad {
+  color: var(--color-gold);
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   The photograph approval queue, /admin/galleries.
+
+   A row is a preview beside its controls, because the decision is made from the
+   picture and everything else on the row is in service of it. The frame is a
+   fixed height so a queue of a hundred mixed portrait and landscape photographs
+   scrolls at a predictable rate rather than jumping.
+   --------------------------------------------------------------------------- */
+
+.review-queue {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-lg) 0 0;
+}
+
+.review-queue__item {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+/* One column below the breakpoint. A 16rem preview beside a caption field on a
+   phone leaves neither usable. */
+@media (max-width: 40rem) {
+  .review-queue__item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.review-queue__frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12rem;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-paper-sunken);
+}
+
+.review-queue__frame img,
+.review-queue__frame video {
+  width: 100%;
+  height: 100%;
+  /* `contain`, not `cover`. A reviewer has to see the whole photograph to judge
+     it — a crop can hide exactly the part that makes it unpublishable. */
+  object-fit: contain;
+}
+
+.review-queue__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.review-queue__caption input {
+  width: 100%;
+  padding: var(--space-sm);
+  font: inherit;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+}
+
+.review-queue__actions {
+  margin: 0;
 }

@@ -476,6 +476,9 @@ function QuickFacts({
  * being a lede and starts being a paragraph nobody reads over an image. This is
  * where the rest of it goes: two short paragraphs beside the Coptic cross.
  *
+ * Short is load-bearing. The cross is a 13rem column and the band is one row
+ * of a long page; anything longer than this stops being a greeting.
+ *
  * ---------------------------------------------------------------------------
  * On the wording, which is most of this section.
  *
@@ -489,19 +492,20 @@ function QuickFacts({
  * What is here instead says what the parish *is* and then what is not required
  * of anybody. Two rules for editing it:
  *
- *   - **State, do not invite.** "The Divine Liturgy is the heart of the week
- *     here" is a fact about the Church. "Come and experience the Liturgy" is an
+ *   - **State, do not invite.** "The Divine Liturgy is the heart of our week"
+ *     is a fact about the Church. "Come and experience the Liturgy" is an
  *     advertisement, and the Church is not one.
- *   - **Take things off the reader, do not put things on them.** "Nothing asked
- *     of you" is the kindest sentence available here, and it is kind precisely
- *     because it promises nothing and requests nothing.
+ *   - **Do not talk about expectations at all.** Two later drafts tried to be
+ *     kind by subtracting — "nothing is asked of you", "stand or sit as you are
+ *     able", "there is nothing you need to know beforehand" — and Tommy cut all
+ *     of it. Reassurance raises the question it answers: a reader who was not
+ *     wondering whether they would be expected to perform is now wondering it.
+ *     Say hello and say what the parish is; leave the rules unmentioned.
  *
- * The second draft kept both rules but was still stiff — "This is a Coptic
- * Orthodox parish", "as you are able", "one of the fathers will be glad to
- * speak with you" is the register of a printed notice, not of somebody talking
- * to you. The register is now plainer and warmer, at Tommy's direction, and the
- * two rules above survive it intact: the facts are still stated rather than
- * pitched, and the second paragraph still only ever subtracts.
+ * The register is friendly and short, and that too was Tommy's call — the
+ * earlier drafts were stiff in a specific way ("This is a Coptic Orthodox
+ * parish", "one of the fathers will be glad to speak with you"), the register
+ * of a printed notice rather than of somebody talking to you.
  *
  * The test to apply to any edit: would a father read this aloud without
  * wincing? Nothing here should sound like it came from a brochure — and
@@ -565,14 +569,13 @@ function Welcome({ band }: { band: string }) {
 
           <div className="welcome__words">
             <p>
-              We are a Coptic Orthodox parish. The Divine Liturgy is the heart of the
-              week here, and most of what else goes on — the feasts and the fasts,
-              Sunday school, the prayers said for the sick — follows from it.
+              We are glad you found us. This is a Coptic Orthodox parish in Wayland, and
+              the Divine Liturgy is the heart of our week — the feasts and the fasts,
+              Sunday school, the prayers said for the sick all grow out of it.
             </p>
             <p>
-              If it is your first time, there is nothing you need to know beforehand and
-              nothing asked of you. Sit or stand as you like, stay as long as you can,
-              and the fathers are around afterwards if you would like to say hello.
+              Sunday morning is the best time to find us, and the fathers are always
+              happy to say hello.
             </p>
           </div>
         </div>

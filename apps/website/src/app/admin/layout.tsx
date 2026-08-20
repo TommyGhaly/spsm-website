@@ -28,6 +28,11 @@ export const metadata: Metadata = {
 const ADMIN_NAV = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/events', label: 'Events' },
+  // Shown to every staff user, including those with no program grant. The
+  // screen itself says so plainly rather than the link disappearing: a
+  // volunteer told "you do not administer any programs" knows to ask for one,
+  // where a missing link reads as the parish not having the feature.
+  { href: '/admin/galleries', label: 'Photographs' },
 ] as const;
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

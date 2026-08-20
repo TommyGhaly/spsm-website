@@ -7,6 +7,7 @@ import { Prose } from '@/components/Prose';
 import { PageBody } from '@/components/PageBody';
 import { Icon } from '@/components/Icon';
 import { formatEventWhen, isoOf } from '@/lib/dates';
+import { storageUrl } from '@/lib/storage';
 
 type Params = { slug: string };
 
@@ -101,8 +102,31 @@ export default async function EventPage({ params }: { params: Promise<Params> })
 
   const registration = event.registration;
 
+  /*
+   * Null covers three cases that all have to render the same way: no photograph
+   * was ever chosen, the bucket is unconfigured, and the document names an
+   * object that has since been deleted. The page simply opens with its title
+   * instead — a hero that half-loads is worse than none.
+   */
+  const hero = storageUrl(event.heroImagePath);
+
   return (
     <article>
+      {hero && (
+        /*
+          Above the title, full-bleed, because a photograph indented into the
+          text column reads as an illustration of the first paragraph rather than
+          as the event's own picture.
+
+          A plain `img` rather than `next/image`: `output: 'export'` has no
+          optimiser at runtime, and the source is a Storage URL on a host this
+          build would have to be told about in `remotePatterns` — for a single
+          image per page, with the size cap enforced at upload instead.
+        */
+        <div className="event-hero">
+          <img src={hero} alt="" />
+        </div>
+      )}
       {/*
         The event's own title block. It stays here rather than using
         `PageHeader` because an event's name needs its date and location beside

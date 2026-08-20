@@ -120,6 +120,28 @@ export interface GalleryMedia extends AuditFields {
    * display it, so rendering `sourcePath` directly is never correct.
    */
   renditionPath: string | null;
+  /**
+   * The same web-ready bytes, sitting in quarantine, for the approval queue.
+   *
+   * This field exists because of a gap the original design left open: an
+   * administrator has to *look* at a photograph before approving it, and
+   * `sourcePath` is unviewable for both of the reasons that matter. It is under
+   * `submissions/`, which no unauthenticated URL can reach — and it is very
+   * often HEIC, which no browser can decode even with permission.
+   *
+   * So the transcode runs on submission rather than on approval, and writes its
+   * output here first. Approval is then a *copy* from this path to
+   * `galleries/`, which is both instant and impossible to get wrong: the bytes
+   * an administrator approved are byte-for-byte the bytes that get published.
+   *
+   * Still private — this is a `submissions/` path, staff-readable only. The
+   * queue fetches it with `getDownloadURL`, which is authenticated, rather than
+   * the unauthenticated `?alt=media` form the public gallery uses.
+   *
+   * Null for a video (nothing here transcodes one) and null while the Function
+   * is still working.
+   */
+  previewPath: string | null;
   /** Video only. The frame shown before playback and in the grid. */
   posterPath: string | null;
 
