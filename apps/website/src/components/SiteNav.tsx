@@ -187,18 +187,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               <ul className="nav__menu" hidden={openMenu !== item.href}>
                 {item.children.map((child) => (
                   <li key={child.href}>
-                    <Link
-                      href={child.href}
-                      aria-current={isCurrent(child.href) ? 'page' : undefined}
-                      className={child.coverPath ? 'has-cover' : undefined}
-                      style={
-                        child.coverPath
-                          ? { backgroundImage: `url(${galleryPathUrl(child.coverPath)})` }
-                          : undefined
-                      }
-                    >
-                      <span>{child.label}</span>
-                    </Link>
+                    <NavTile child={child} current={isCurrent(child.href)} />
                   </li>
                 ))}
               </ul>
@@ -280,6 +269,50 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * One program in the Events menu.
+ *
+ * The photograph is an `<img>` rather than a CSS `background-image`, and that is
+ * the whole point of this component existing.
+ *
+ * A cover tile needs light type, because the type sits on a scrim over a
+ * picture. A CSS background gives no way to know whether the picture arrived, so
+ * the light type had to be committed to up front — and when the object was
+ * missing the tile fell back to a dark ground to keep the words readable. That
+ * dark tile among four light ones read as *selected*, which is what it looked
+ * like on /events where nothing is selected at all.
+ *
+ * With an element, `onLoad` and `onError` decide. Until a photograph has
+ * actually loaded the tile is an ordinary light one with dark type; a tile whose
+ * photograph never arrives simply stays that way, indistinguishable from a
+ * program that has none yet — which is the honest thing for it to look like.
+ */
+function NavTile({ child, current }: { child: NavChild; current: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <Link
+      href={child.href}
+      aria-current={current ? 'page' : undefined}
+      className={loaded ? 'has-cover' : undefined}
+    >
+      {child.coverPath && (
+        <img
+          src={galleryPathUrl(child.coverPath)}
+          // Decorative: the name is right on top of it.
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => setLoaded(false)}
+        />
+      )}
+      <span>{child.label}</span>
+    </Link>
   );
 }
 
