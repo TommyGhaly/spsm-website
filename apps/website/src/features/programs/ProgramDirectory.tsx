@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { focalPosition, type DocOf, type GalleryMedia, type Program } from '@spsm/shared';
+import { captionOf } from './caption';
 import { getProgramMedia, getPrograms } from './data';
 import { galleryPathUrl } from './media';
 import { programHref } from './route';
@@ -112,8 +113,8 @@ export function ProgramDirectory() {
             <ProgramCover cover={covers[program.id]} />
             <span className="program-card__body">
               <span className="program-card__name">{program.name}</span>
-              {program.description && (
-                <span className="program-card__blurb">{firstLine(program.description)}</span>
+              {blurb(program.description) && (
+                <span className="program-card__blurb">{blurb(program.description)}</span>
               )}
             </span>
           </Link>
@@ -156,8 +157,14 @@ function ProgramCover({ cover }: { cover: DocOf<GalleryMedia> | undefined }) {
   );
 }
 
-/** The first paragraph of a markdown body, stripped of its marks. */
-function firstLine(markdown: string): string {
-  const [first = ''] = markdown.split(/\n\s*\n/);
-  return first.replace(/[#*_`>[\]]/g, '').trim();
+/**
+ * The card's line of description.
+ *
+ * The same helper the header used, at the length a card has room for. It earns
+ * its keep here beyond tidiness: the seeded descriptions open with a
+ * "REPLACE \u2014 ..." note addressed to whoever writes the copy, and the previous
+ * version printed that on the card as though it were the parish's words.
+ */
+function blurb(description: string): string {
+  return captionOf(description, 120);
 }

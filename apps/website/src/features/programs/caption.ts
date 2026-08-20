@@ -19,7 +19,11 @@
  */
 const MAX_CAPTION = 62;
 
-export function captionOf(description: string): string {
+/**
+ * @param maxLength How much room the caller has. A program card gives a blurb
+ *                  two lines; anything shorter is a hint.
+ */
+export function captionOf(description: string, maxLength: number = MAX_CAPTION): string {
   const [firstParagraph = ''] = description.split(/\n\s*\n/);
 
   const plain = firstParagraph
@@ -35,10 +39,10 @@ export function captionOf(description: string): string {
   if (plain.startsWith('REPLACE')) return '';
 
   const sentence = firstSentence(plain);
-  if (sentence.length <= MAX_CAPTION) return sentence;
+  if (sentence.length <= maxLength) return sentence;
 
   // Cut on a word boundary rather than mid-word.
-  const cut = sentence.slice(0, MAX_CAPTION);
+  const cut = sentence.slice(0, maxLength);
   const lastSpace = cut.lastIndexOf(' ');
   return `${(lastSpace > 20 ? cut.slice(0, lastSpace) : cut).replace(/[,;:]$/, '')}…`;
 }

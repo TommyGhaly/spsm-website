@@ -5039,7 +5039,8 @@ main {
   font-size: var(--type-micro, 0.8125rem);
   line-height: var(--leading-normal, 1.5);
   color: var(--color-ink-soft, #4b413e);
-  background: color-mix(in srgb, var(--color-accent, #992a21) 9%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 8%, transparent);
+  color: var(--color-accent, #992a21);
   border-radius: var(--radius-sm, 4px);
 }
 
@@ -7378,13 +7379,12 @@ figure.gallery-grid__media {
  * choices taken in at once.
  * ------------------------------------------------------------------------ */
 
-/* Static, deliberately: with no positioned ancestor between here and
-   `.masthead` (which is `position: sticky`, and therefore a containing block),
-   the panel below resolves against the masthead and can span its full width.
-   Making this `relative` would pin the panel to the width of the word
-   "Events". */
+/* `relative`, so the panel below is positioned against this item rather than
+   the masthead — which is what lets it centre on the word "Events" instead of
+   hanging off an edge of the window. It was `static` while the panel was a
+   full-width band. */
 .nav__group {
-  position: static;
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -7425,38 +7425,40 @@ figure.gallery-grid__media {
    and shut the menu just as somebody reached for it. */
 .nav__menu {
   /*
-   * Anchored to the right of the masthead, not stretched across it.
+   * Centred on the word that opens it, and sized to the names inside it.
    *
-   * Full-bleed, this was a 136px band spanning the window — more furniture than
-   * the page it sat on, for five short names. Hugging the right edge keeps it
-   * near the word that opens it (Events sits in the right half of the bar) and
-   * costs a fraction of the area.
+   * This has been a band across the whole window (1280x136 of furniture for
+   * five short names) and a thin strip of plain links. It is a panel now: the
+   * page's paper, the display serif the rest of the site sets names in, real
+   * padding, and hairline dividers so five items read as five choices rather
+   * than a run-on line.
    */
   position: absolute;
-  top: 100%;
-  right: 0;
-  left: auto;
-  width: min(44rem, calc(100vw - 1.5rem));
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  /* `max-content`, or the row collapses into a column: an absolutely positioned
+     box shrink-to-fits against its containing block, and that is the word
+     "Events" — about 88px — so every name would wrap onto its own line. */
+  width: max-content;
+  max-width: calc(100vw - 1.5rem);
   z-index: 55;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0;
   margin: 0;
-  padding: 0.4rem;
+  padding: 0.3rem;
   list-style: none;
-  border-bottom-left-radius: var(--radius-2, 6px);
 
   /*
-   * The parish's paper, not its vestment red.
+   * The page's own paper, not the masthead's red.
    *
-   * Drawn dark it was a second bar under the first, and the two ran together —
-   * you could not see where the header ended. On the page's own warm paper it
-   * is unmistakably a surface that has opened *out of* the masthead, and it
-   * belongs to the same palette rather than repeating it.
-   *
-   * The gold hairline along the top is what ties it back to the bar; the
-   * masthead already carries the same line on its underside, so the two meet on
-   * one continuous edge.
+   * Drawn dark it was a second bar under the first and the two ran together —
+   * there was no seeing where the header ended. On paper it is unmistakably a
+   * surface that has opened out of the bar, and it still belongs to the palette
+   * rather than repeating it. The gold edge is what ties it back.
    */
   background: linear-gradient(
     180deg,
@@ -7464,10 +7466,32 @@ figure.gallery-grid__media {
     var(--color-paper, #f6e8e3) 100%
   );
   color: var(--color-ink, #2b2118);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 50%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent),
-    0 16px 30px rgba(72, 16, 16, 0.18);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 42%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  border-radius: var(--radius-2, 6px);
+  box-shadow: 0 14px 32px rgba(72, 16, 16, 0.22);
+}
+
+/* The notch. A panel floating under a bar reads as unrelated to it; a point
+   aimed at the word that opened it does not. Drawn as a rotated square behind
+   the panel so it inherits the same top edge. */
+.nav__menu::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--color-paper-raised, #fdf7f4);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+/* A hairline between names, and none before the first. Cheaper than borders on
+   the items themselves, which would double up at every join. */
+.nav__menu li + li {
+  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
 }
 
 .nav__menu[hidden] {
@@ -7475,49 +7499,22 @@ figure.gallery-grid__media {
 }
 
 .nav__menu a {
-  display: block;
+  display: flex;
+  align-items: center;
   height: 100%;
-  padding: 0.4rem 0.5rem;
+  padding: 0.65rem 1.05rem;
   border-radius: var(--radius-1, 4px);
+  /* One line each: these are names, and a wrapped name in a row of names reads
+     as two items. */
+  white-space: nowrap;
+  /* The serif the rest of the site sets names in — the program cards below use
+     it too, so the menu and the page it opens agree about what a name is. */
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 0.95rem;
+  line-height: 1.2;
   color: var(--color-ink, #2b2118);
   text-decoration: none;
-  /* Nav links are `nowrap`, which is right for one row of words across a bar
-     and wrong the moment one of them holds a sentence. Inherited, every caption
-     ran off the panel and was clipped mid-word with no ellipsis. */
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.nav__menu a:hover,
-.nav__menu a:focus-visible {
-  background: color-mix(in srgb, var(--color-accent, #992a21) 9%, transparent);
-}
-
-.nav__menu-label {
-  display: block;
-  font-size: 0.86rem;
-  font-weight: 600;
-  line-height: 1.25;
-  /* The parish red, as everywhere else a heading is a link on light ground. */
-  color: var(--color-accent, #992a21);
-}
-
-/* The caption: what the ministry actually is, so a visitor choosing between
-   five names is not guessing. Dimmed against the label so the eye picks out the
-   names first and reads only the one it stopped on. */
-.nav__menu-caption {
-  /* One line, clipped. The caption is a hint, not a paragraph — letting it run
-     to two or three lines is what made the panel taller than the header. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-top: 0.1rem;
-  font-size: 0.72rem;
-  line-height: 1.3;
-  color: var(--color-ink-soft, #5a5048);
-}
+  
 
 /* The same five inside the mobile panel, indented under Events with a gold rule
    to show they belong to it rather than sitting beside it. */

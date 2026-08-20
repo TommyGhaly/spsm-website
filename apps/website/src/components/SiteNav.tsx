@@ -25,7 +25,7 @@ import { HeaderAuth } from './HeaderAuth';
  * hardcoded prop from the server layout rather than being fetched.
  */
 
-export type NavChild = { href: string; label: string; caption?: string };
+export type NavChild = { href: string; label: string };
 export type NavItem = { href: string; label: string; children?: readonly NavChild[] };
 
 export function SiteNav({ items }: { items: readonly NavItem[] }) {
@@ -184,8 +184,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                 {item.children.map((child) => (
                   <li key={child.href}>
                     <Link href={child.href} aria-current={isCurrent(child.href) ? 'page' : undefined}>
-                      <span className="nav__menu-label">{child.label}</span>
-                      {child.caption && <span className="nav__menu-caption">{child.caption}</span>}
+                      {child.label}
                     </Link>
                   </li>
                 ))}
