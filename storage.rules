@@ -30,9 +30,24 @@ service firebase.storage {
         && request.resource.size < 8 * 1024 * 1024;
     }
 
+    // Event hero images, uploaded from the events admin.
+    //
+    // `create, update` and `delete` are split, and that split is the fix for a
+    // real bug rather than tidiness. It was one `allow write: if hasRole('staff')
+    // && isImage()`, and `write` covers delete — but on a delete there is no
+    // incoming object, so `request.resource` is null and `isImage()` is false.
+    // The effect was that staff could upload an event photograph and then
+    // *never remove it*: the admin's "Remove photograph" cleared the document
+    // and the file stayed in a world-readable bucket, still served at its URL,
+    // with the SDK reporting only `storage/unauthorized`.
+    //
+    // `npm run rules:check` passed throughout — this is decision #10 again, a
+    // policy that compiles clean and denies a real operation.
+    // tests/rules/storage.test.ts is what tells the two apart.
     match /events/{allPaths=**} {
       allow read: if true;
-      allow write: if hasRole('staff') && isImage();
+      allow create, update: if hasRole('staff') && isImage();
+      allow delete: if hasRole('staff');
     }
 
     match /clergy/{allPaths=**} {
@@ -68,14 +83,28 @@ service firebase.storage {
             || request.resource.contentType.matches('video/.*'));
     }
 
-    // Quarantine. Write-only to the world, in the strictest sense the word
-    // allows: create but not overwrite, and no read and no list at all.
+    // Quarantine. Write-only to the *world*, in the strictest sense the word
+    // allows: create but not overwrite, and no anonymous read or list at all.
     //
-    // `allow read: if false` is the load-bearing line. A submitter cannot fetch
-    // back even the file they just sent. If they could, this would be an
-    // anonymous public file host wearing a parish's domain name, and the
-    // approval queue downstream would be decorative — anyone could upload
-    // anything and simply share the URL.
+    // The read rule is the load-bearing line, and it says `hasRole('staff')`
+    // rather than `false` for a reason discovered by building the screen it
+    // serves. A submitter still cannot fetch back even the file they just sent
+    // — without that, this is an anonymous public file host wearing a parish's
+    // domain name, and the approval queue downstream is decorative because
+    // anyone can upload anything and share the URL. That property is intact.
+    //
+    // What `false` also blocked was the administrator. Approving a photograph
+    // means *looking* at it, and every path to the bytes runs through this
+    // rule: the queue cannot show a thumbnail, cannot show the original, and
+    // is reduced to a list of filenames and a guess. The transcode Function
+    // writes its web-ready preview into this same prefix precisely so it stays
+    // unreadable by the public, which only works if staff can read it.
+    //
+    // Note that this is the one prefix on the bucket whose reads are gated, so
+    // the unauthenticated `?alt=media` URLs the public gallery uses do NOT work
+    // here — see packages/shared/src/gallery/urls.ts. The queue uses
+    // `getDownloadURL`, which is authenticated, and the Function stamps a
+    // download token on the preview so that call has something to return.
     //
     // Create-but-never-overwrite is `resource == null` — how Storage rules say
     // "no object at this path yet". It stops an uploader replacing a file after
@@ -98,7 +127,7 @@ service firebase.storage {
     // receive, and the upload form would simply never work. tests/rules/
     // storage.test.ts is what tells the two rows apart.
     match /submissions/{programEventId}/{fileName} {
-      allow read: if false;
+      allow read: if hasRole('staff');
       allow create: if isSubmittable() && resource == null;
       allow update, delete: if hasRole('staff');
     }

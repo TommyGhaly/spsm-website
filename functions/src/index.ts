@@ -18,6 +18,12 @@ export { enforceTenantOnCreate, setMemberRole } from './auth.js';
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
 export { squareCheckout } from './checkout.js';
 
+// Program galleries: transcode on submission, publish on approval, take down on
+// rejection. Deployed to us-east1 rather than us-central1 like everything else
+// here — a v2 Firestore trigger must sit in the database's own region, and
+// spsm-database is us-east1. See the note at the top of galleries.ts.
+export { onGalleryMediaCreated, onGalleryMediaReviewed } from './galleries.js';
+
 // Declared as secrets, not env vars: these are read from Secret Manager at
 // runtime and never appear in source, in git, or in a deployed bundle.
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');

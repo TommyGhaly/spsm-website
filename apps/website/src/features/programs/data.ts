@@ -11,6 +11,7 @@ import {
 import {
   COLLECTIONS,
   type DocOf,
+  type Event,
   type GalleryMedia,
   type Program,
   type ProgramEvent,
@@ -156,6 +157,37 @@ export async function getProgramEvent(
       );
       const [first] = snapshot.docs;
       return first ? docOf<ProgramEvent>(first) : null;
+    },
+    null,
+  );
+}
+
+/**
+ * The calendar entry a gallery is filed against, if there is one.
+ *
+ * Reaches into the `events` collection, which is otherwise none of this file's
+ * business — `features/events/data.ts` owns it. It is here rather than there
+ * because of *when* it runs: that file uses `safely`, which re-throws on
+ * permission-denied so a build fails loudly, and this runs in a visitor's
+ * browser where a throw leaves a stranger looking at nothing.
+ *
+ * `ProgramEvent.calendarEventId` holds an id, not a slug — ids are stable and
+ * slugs are the public URL somebody may rename — so the document has to be read
+ * to find out where it lives. One `getDoc`, on a page that has already made
+ * three.
+ *
+ * Null is ordinary rather than exceptional: the event may have been unpublished
+ * or deleted since it was linked, and a gallery must not stop rendering because
+ * the calendar moved on. The link simply disappears.
+ */
+export async function getLinkedCalendarEvent(eventId: string): Promise<DocOf<Event> | null> {
+  return readOrEmpty(
+    `calendar event ${eventId}`,
+    async () => {
+      const snapshot = await getDoc(doc(db(), COLLECTIONS.events, eventId));
+      if (!snapshot.exists()) return null;
+      const event = { id: snapshot.id, ...(snapshot.data() as Event) };
+      return event.published ? event : null;
     },
     null,
   );

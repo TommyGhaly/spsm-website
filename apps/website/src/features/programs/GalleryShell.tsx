@@ -4,15 +4,25 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   type DocOf,
+  type Event,
   type GalleryMedia,
   type Program,
   type ProgramEvent,
 } from '@spsm/shared';
 import { Prose } from '@/components/Prose';
 import { PageBody } from '@/components/PageBody';
-import { getGalleryMedia, getProgram, getProgramEvent, getProgramEvents } from './data';
+import { Icon } from '@/components/Icon';
+import { formatEventWhen } from '@/lib/dates';
+import {
+  getGalleryMedia,
+  getLinkedCalendarEvent,
+  getProgram,
+  getProgramEvent,
+  getProgramEvents,
+} from './data';
 import { parseGalleryPath, programEventHref, presentHref, type GalleryRoute } from './route';
 import { GalleryGrid } from './GalleryGrid';
+import { SubmitPhotos } from './SubmitPhotos';
 
 /**
  * The one page behind every gallery URL.
@@ -46,6 +56,8 @@ type State =
       program: DocOf<Program>;
       event: DocOf<ProgramEvent>;
       media: DocOf<GalleryMedia>[];
+      /** The parish-calendar entry this occurrence is filed against, if any. */
+      calendar: DocOf<Event> | null;
     };
 
 export function GalleryShell() {
@@ -94,8 +106,16 @@ export function GalleryShell() {
         return;
       }
 
-      const media = await getGalleryMedia(event.id);
-      if (live) setState({ kind: 'event', program, event, media });
+      /*
+        In parallel. The calendar entry is a nicety and the photographs are the
+        page — awaiting them in sequence would hold the gallery behind a read it
+        does not depend on, and most occurrences have no link at all.
+      */
+      const [media, calendar] = await Promise.all([
+        getGalleryMedia(event.id),
+        event.calendarEventId ? getLinkedCalendarEvent(event.calendarEventId) : null,
+      ]);
+      if (live) setState({ kind: 'event', program, event, media, calendar });
     })();
 
     return () => {
@@ -106,7 +126,14 @@ export function GalleryShell() {
   if (state.kind === 'loading') return <GalleryLoading />;
   if (state.kind === 'missing') return <GalleryMissing />;
   if (state.kind === 'program') return <ProgramView program={state.program} events={state.events} />;
-  return <EventView program={state.program} event={state.event} media={state.media} />;
+  return (
+    <EventView
+      program={state.program}
+      event={state.event}
+      media={state.media}
+      calendar={state.calendar}
+    />
+  );
 }
 
 function GalleryLoading() {
@@ -189,10 +216,12 @@ function EventView({
   program,
   event,
   media,
+  calendar,
 }: {
   program: DocOf<Program>;
   event: DocOf<ProgramEvent>;
   media: DocOf<GalleryMedia>[];
+  calendar: DocOf<Event> | null;
 }) {
   // `onPage` and `slideshow` are separate flags on purpose: a page tells its
   // story in twenty photographs and a hall screen runs two hundred. This view
@@ -209,6 +238,30 @@ function EventView({
       </header>
 
       <PageBody>
+        {/*
+          The calendar entry, when an administrator has filed this occurrence
+          against one.
+          
+          Only ever *this* direction. `ProgramEvent.calendarEventId` is
+          one-directional by design — "the calendar knows nothing about the
+          gallery" — so a visitor reaches the date from the pictures and not the
+          other way round. The events admin is what writes the pointer.
+        */}
+        {calendar && (
+          <p className="gallery-calendar">
+            <Icon name="calendar" size={16} />{' '}
+            <Link href={`/events/${calendar.slug}`}>{calendar.title}</Link>{' '}
+            <span className="meta">
+              {formatEventWhen(
+                calendar.startAt,
+                calendar.endAt,
+                calendar.allDay,
+                calendar.timeZone,
+              )}
+            </span>
+          </p>
+        )}
+
         {event.description && <Prose>{event.description}</Prose>}
 
         {onPage.length === 0 ? (
@@ -230,6 +283,14 @@ function EventView({
             </a>
           </p>
         )}
+
+        {/*
+          Below the gallery rather than above it. Somebody arriving from a link
+          came to look at the photographs; the invitation to add to them makes
+          sense after they have. It renders nothing at all when the occurrence
+          has stopped collecting — see `submissionsOpen`.
+        */}
+        <SubmitPhotos event={event} />
       </PageBody>
     </article>
   );

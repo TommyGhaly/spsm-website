@@ -35,11 +35,18 @@ export default function EventsPage() {
       */}
       <PageBody flush>
         {/*
-          The page says what it is before it shows anything. Without this line
-          a visitor arrives at five photographs and has to infer the category
-          from the pictures — and the hidden h1 gives them nothing to read.
+          The page says what it is before it shows anything. Without this line a
+          visitor arrives at five tiles and has to infer the category from them —
+          and the hidden `h1` gives them nothing to read.
+
+          `lede` rather than `note`. `note` is 0.875rem in `--color-ink-soft`,
+          which is the register of a caption or a footnote — right for "times are
+          shown in Eastern Time" under a calendar, wrong for the only sentence on
+          the page. It read as small print above the content rather than as the
+          page introducing itself. This is still one short line, so it costs
+          nothing at the fold.
         */}
-        <p className="note">
+        <p className="lede">
           The standing ministries of the parish. Choose one to see its gatherings
           and photographs.
         </p>

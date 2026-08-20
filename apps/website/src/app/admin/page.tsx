@@ -15,6 +15,11 @@ export default function AdminHome() {
           <Link href="/admin/events">Events</Link> — add, edit, publish, and remove entries
           on the parish calendar.
         </li>
+        <li>
+          <Link href="/admin/galleries">Photographs</Link> — approve or refuse the pictures
+          parishioners send to the ministry galleries. Nothing they send appears anywhere
+          until it passes through here.
+        </li>
       </ul>
 
       <h2>What isn&apos;t here yet</h2>

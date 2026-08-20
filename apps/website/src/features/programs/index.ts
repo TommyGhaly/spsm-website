@@ -10,6 +10,8 @@ export {
 export { GalleryGrid } from './GalleryGrid';
 export { GalleryShell } from './GalleryShell';
 export { ProgramDirectory } from './ProgramDirectory';
+export { SubmitPhotos } from './SubmitPhotos';
+export { submitOne, submissionsAreOpen, SUBMISSION_MAX_BYTES } from './submit';
 export {
   parseGalleryPath,
   presentHref,
