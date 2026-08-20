@@ -1,4 +1,4 @@
-import { getPrograms } from './data';
+import { getProgramMedia, getPrograms } from './data';
 import { programHref } from './route';
 
 /**
@@ -27,12 +27,37 @@ import { programHref } from './route';
  * deploy for zero per-page reads is the right way round.
  */
 
-export type ProgramNavChild = { href: string; label: string };
+export type ProgramNavChild = {
+  href: string;
+  label: string;
+  /**
+   * Storage path of a photograph to sit behind the name, or null.
+   *
+   * A path rather than a URL: the bucket host differs between production and
+   * the emulators, and only the browser knows which it is talking to. `media.ts`
+   * turns it into a URL at render time.
+   */
+  coverPath: string | null;
+};
 
 export async function programNavChildren(): Promise<ProgramNavChild[]> {
   const programs = await getPrograms();
-  return programs.map((program) => ({
+
+  /*
+   * A cover each, fetched in parallel at build time.
+   *
+   * This is the only reason the menu costs more than one query, and it costs it
+   * once per build rather than once per visitor. A program with no approved
+   * photographs yields null and its tile falls back to a plain ground — which
+   * is every program today, and progressively fewer as the galleries fill.
+   */
+  const covers = await Promise.all(
+    programs.map(async (program) => (await getProgramMedia(program.id, 1))[0]?.renditionPath ?? null),
+  );
+
+  return programs.map((program, index) => ({
     href: programHref(program.slug),
     label: program.name,
+    coverPath: covers[index] ?? null,
   }));
 }
