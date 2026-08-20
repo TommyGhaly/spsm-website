@@ -9,7 +9,7 @@ export {
 } from './data';
 export { GalleryGrid } from './GalleryGrid';
 export { GalleryShell } from './GalleryShell';
-export { ProgramStrip } from './ProgramStrip';
+export { ProgramDirectory } from './ProgramDirectory';
 export {
   parseGalleryPath,
   presentHref,

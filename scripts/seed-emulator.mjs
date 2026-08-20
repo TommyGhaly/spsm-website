@@ -325,6 +325,9 @@ await put('products/unreleased-title', {
 const programs = [
   ['summercamp', 'Summercamp', 10],
   ['st-simon-for-seniors', 'St. Simon for Seniors', 20],
+  ['college-and-young-professionals', 'College and Young Professionals', 30],
+  ['mother-of-mercy', 'Mother of Mercy', 40],
+  ['iconography', 'Iconography Class', 50],
 ];
 for (const [slug, name, order] of programs) {
   await put(`programs/${slug}`, {
