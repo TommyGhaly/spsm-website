@@ -7448,7 +7448,7 @@ figure.gallery-grid__media {
      capped by `max-width` and drops to two columns on its own. */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.1rem 0.5rem;
+  gap: 0.4rem;
   margin: 0;
   padding: 0.5rem;
   list-style: none;
@@ -7487,10 +7487,32 @@ figure.gallery-grid__media {
   border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
 }
 
+/*
+ * A tile per program, with its photograph behind the name.
+ *
+ * `min-height` and not just padding: a row of tiles is only a row if they are
+ * the same size, and a photograph needs some height to be a photograph rather
+ * than a stripe. The plain ground below is what an empty gallery gets, and it is
+ * warm rather than grey so a menu of five of them still looks intentional.
+ */
 .nav__menu a {
-  display: block;
-  padding: 0.55rem 0.75rem;
-  border-radius: var(--radius-1, 4px);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 4.25rem;
+  padding: 0.55rem 0.7rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+  border-radius: var(--radius-2, 6px);
+  background:
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--color-accent, #992a21) 5%, var(--color-paper-raised, #fdf7f4)) 0%,
+      var(--color-paper-sunken, #eeddd7) 100%
+    );
+  background-size: cover;
+  background-position: center;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
   /* The serif the program cards set names in, so the menu and the page it opens
      agree about what a name is. */
   font-family: var(--font-display, Georgia, serif);
@@ -7498,23 +7520,81 @@ figure.gallery-grid__media {
   line-height: 1.35;
   color: var(--color-ink, #2b2118);
   text-decoration: none;
-  /* Nav links inherit `nowrap` from the bar, and "College and Young
-     Professionals" does not fit half of a 23rem panel on one line. */
+  /* Nav links inherit `nowrap` from the bar, and the longest name does not fit
+     a third of the panel on one line at every width. */
   white-space: normal;
 }
 
+/*
+ * With a photograph behind it, the name needs its own ground or it lands on
+ * whatever the picture happens to be — dark hair, bright sky, anything. A
+ * gradient scrim darkens only the bottom strip where the words are, so the
+ * photograph survives above it.
+ */
+/*
+ * A dark ground *under* the photograph, and it is not decoration.
+ *
+ * The name on a cover tile is light, because it sits on a scrim over a picture.
+ * A CSS `background-image` has no `onError`, so if the object is missing — a
+ * transcode that failed, a file deleted from the bucket — the light type lands
+ * on whatever is behind it. With the pale fallback that meant near-white on
+ * near-white: the tile looked empty and the name was unreadable. Caught by the
+ * emulator, where the seeded paths point at objects that were never uploaded,
+ * so every cover fails; the same thing happens in production one tile at a
+ * time.
+ *
+ * Declaring the colour separately from the inline `background-image` means it
+ * shows through exactly when the picture does not.
+ */
+.nav__menu a.has-cover {
+  background-color: color-mix(in srgb, #000 18%, var(--color-deep, #481010));
+  border-color: color-mix(in srgb, var(--color-deep, #481010) 30%, transparent);
+}
 
+.nav__menu a.has-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(40, 10, 8, 0.82) 0%, rgba(40, 10, 8, 0.12) 62%, transparent 100%);
+}
+
+.nav__menu a.has-cover > span {
+  position: relative;
+  color: var(--color-ink-inverse, #f9efec);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+
+/* Lift rather than a colour change: a tile carrying a photograph cannot be
+   recoloured on hover without fighting the picture. */
 .nav__menu a:hover,
 .nav__menu a:focus-visible {
-  background: color-mix(in srgb, var(--color-accent, #992a21) 8%, transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(72, 16, 16, 0.22);
+}
+
+.nav__menu a:not(.has-cover):hover,
+.nav__menu a:not(.has-cover):focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
   color: var(--color-accent, #992a21);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__menu a,
+  .nav__menu a:hover {
+    transition: none;
+    transform: none;
+  }
 }
 
 /* The page you are on, marked — otherwise the menu says nothing about where the
    reader already is, which is most of what a menu is for. */
 .nav__menu a[aria-current='page'] {
-  color: var(--color-accent, #992a21);
   font-weight: 600;
+  /* A gold rule rather than red type: the type may be sitting on a photograph,
+     where a colour change would be invisible. */
+  outline: 2px solid var(--color-gold, #b08d43);
+  outline-offset: -1px;
 }
 
 

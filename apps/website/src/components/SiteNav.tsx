@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
+import { galleryPathUrl } from '@/features/programs/media';
 
 /**
  * The main navigation, in two forms.
@@ -25,7 +26,7 @@ import { HeaderAuth } from './HeaderAuth';
  * hardcoded prop from the server layout rather than being fetched.
  */
 
-export type NavChild = { href: string; label: string };
+export type NavChild = { href: string; label: string; coverPath?: string | null };
 export type NavItem = { href: string; label: string; children?: readonly NavChild[] };
 
 export function SiteNav({ items }: { items: readonly NavItem[] }) {
@@ -181,12 +182,15 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </button>
 
               {/*
-                The names, and the room to set them properly.
+                Tiles, each with its program's own photograph behind the name.
                 
-                Width is doing the work that a heading, an ornament rule and a
-                bullet were each tried for: at 34rem every name fits on one
-                line, and a list of five things that each read as one thing
-                needs no decoration to stop looking bland.
+                A plain list of five names had nothing to look at, and the
+                decorations tried instead — a heading, an ornament rule, a cross
+                per item — were furniture rather than substance. This section is
+                about photographs, so the photographs are the background. A
+                program with none yet gets a plain warm ground, and the type
+                stays dark either way so a half-filled menu still reads as one
+                thing.
               */}
               <ul className="nav__menu" hidden={openMenu !== item.href}>
                 {item.children.map((child) => (
@@ -194,8 +198,14 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                     <Link
                       href={child.href}
                       aria-current={isCurrent(child.href) ? 'page' : undefined}
+                      className={child.coverPath ? 'has-cover' : undefined}
+                      style={
+                        child.coverPath
+                          ? { backgroundImage: `url(${galleryPathUrl(child.coverPath)})` }
+                          : undefined
+                      }
                     >
-                      {child.label}
+                      <span>{child.label}</span>
                     </Link>
                   </li>
                 ))}
