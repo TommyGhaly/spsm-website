@@ -7433,18 +7433,21 @@ figure.gallery-grid__media {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* Wide enough that every name sets on one line. At 23rem "College and Young
-     Professionals" wrapped, which made one item look like two and was much of
-     why the panel read as cramped. The `max-width` keeps it on screen at the
-     narrowest width the inline nav appears at. */
-  width: 34rem;
+  /* Three names per row, each on one line. "College and Young Professionals" is
+     the one that sets the floor: at 23rem it wrapped in two columns, which made
+     one item read as two. The `max-width` keeps the panel on screen at the
+     narrowest width the inline nav appears at, and the columns collapse below
+     it rather than overflowing. */
+  width: 52rem;
   max-width: calc(100vw - 1.5rem);
   z-index: 55;
 
-  /* Two columns, filled down the first before the second, so the names read in
-     order rather than across the gap. */
+  /* Three across, filling row by row, so the names read left-to-right in the
+     order an administrator set them. `auto-fit` rather than a fixed `1fr 1fr
+     1fr`: on the narrowest screen that still shows the inline nav the panel is
+     capped by `max-width` and drops to two columns on its own. */
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 0.1rem 0.5rem;
   margin: 0;
   padding: 0.5rem;
