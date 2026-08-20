@@ -68,18 +68,67 @@ async function authPost(path, body) {
   return { ok: res.ok, body: await res.json() };
 }
 
-/** A sign-in-able account with a role claim. Idempotent across re-runs. */
+/**
+ * A sign-in-able account with a role claim. Idempotent across re-runs.
+ *
+ * Created **twice over**, with a password and as a `microsoft.com` identity,
+ * because the two sign-in paths look for different things and only one of them
+ * is the path the website actually uses.
+ *
+ * `signIn()` in lib/authStore.ts always calls `signInWithMicrosoft`, emulators
+ * or not. Against the Auth emulator that opens its IdP widget, which lists
+ * federated accounts only — so with password accounts alone the widget said
+ * "No Microsoft.com accounts exist in the Auth Emulator" and local sign-in was
+ * a dead end. The federated identity below is what puts the parish's test
+ * accounts in that list, one click each.
+ *
+ * The password is kept because `signInWithEmulatorAccount` still uses it, and
+ * because it is the only way in if the widget is ever unavailable.
+ */
 async function user(email, role, groups = []) {
   await authPost('accounts:signUp?key=fake', {
     email,
     password: 'emulator-only',
     returnSecureToken: true,
   });
+
+  /*
+   * Attach a microsoft.com identity to the same address.
+   *
+   * The emulator accepts an unsigned JSON object where a real provider would
+   * send a signed JWT — that is the whole point of it — so `sub` can simply be
+   * derived from the address and stays stable across re-runs, which is what
+   * makes this idempotent rather than piling up an account per seed.
+   */
+  const idToken = JSON.stringify({
+    sub: `microsoft-${email.split('@')[0]}`,
+    email,
+    email_verified: true,
+    name: email.split('@')[0],
+  });
+  await authPost('accounts:signInWithIdp?key=fake', {
+    postBody: `id_token=${encodeURIComponent(idToken)}&providerId=microsoft.com`,
+    requestUri: 'http://localhost',
+    returnIdpCredential: true,
+    returnSecureToken: true,
+  });
+
   const found = await authPost(`projects/${PROJECT}/accounts:lookup`, { email: [email] });
   const uid = found.body.users?.[0]?.localId;
   if (!uid) throw new Error(`could not create or find ${email}`);
+  /*
+   * Claims and password in one update, and the password is not redundant.
+   *
+   * Attaching the microsoft.com identity above leaves the account holding that
+   * provider and no password hash — the `accounts:signUp` call earlier is
+   * superseded rather than merged with. Setting it here restores the
+   * email/password path that `signInWithEmulatorAccount` uses, so both ways in
+   * work: the IdP widget lists the account, and the website signs into it
+   * directly without a popup.
+   */
   await authPost(`projects/${PROJECT}/accounts:update`, {
     localId: uid,
+    password: 'emulator-only',
     customAttributes: JSON.stringify({ role, groups }),
   });
   return uid;
@@ -432,7 +481,8 @@ console.log(`Seeded the emulators at ${FIRESTORE}:
   config/parish, config/integrations, and config/theme
   ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}
 
-Sign in at /admin or /servants with password  emulator-only
+Sign in from the masthead: "Sign in with Microsoft" lists these in the
+emulator's IdP widget. (Password  emulator-only  also works where a form asks.)
 
   admin@spsmwayland.org      admin    — everything, including role changes
   staff@spsmwayland.org      staff    — the events admin

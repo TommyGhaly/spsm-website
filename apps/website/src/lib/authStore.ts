@@ -172,6 +172,43 @@ export async function signIn(): Promise<void> {
       pendingSignIn = false;
       return; // The listener has already emitted `signed-in`.
     }
+
+    /*
+     * Local development never opens the Microsoft popup.
+     *
+     * `signInWithEmulatorAccount` was written so the admin would be
+     * developable — "every role check needs a signed-in user with a claim" —
+     * and then nothing ever called it, so the only way in locally was the
+     * popup. Against the Auth emulator that is a round trip through its IdP
+     * widget in a second window, which is slow, needs the account picked by
+     * hand every time, and fails outright wherever popups are blocked.
+     *
+     * Which account is a URL question: `?as=lead` on any page signs in as
+     * lead@spsmwayland.org. That is what makes the program-grant model
+     * testable — the whole point of it is that `lead` and `volunteer` see
+     * different things, and comparing them should be an edit to the address
+     * bar rather than a sign-out and a re-pick.
+     *
+     * **`NODE_ENV` is checked first, and it is the part that matters.** The
+     * public flag alone left this branch in the production bundle, reading the
+     * variable at runtime rather than folded away — so a build made with
+     * `NEXT_PUBLIC_USE_EMULATORS=1` still in the environment would have shipped
+     * a site whose sign-in tried a seeded password against the real project.
+     * That is an easy environment to be in by accident; it is the one every
+     * local build of this app uses. `NODE_ENV` is always `production` in a
+     * build, so this whole branch folds out and cannot be switched back on by
+     * an environment variable.
+     *
+     * Deliberately not imported from lib/firebase: this module lazy-loads the
+     * SDK on purpose, and importing anything from there would pull it into
+     * every page's bundle.
+     */
+    if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_USE_EMULATORS === '1') {
+      await mod.signInWithEmulatorAccount(emulatorAccount(), 'emulator-only');
+      pendingSignIn = false;
+      return;
+    }
+
     await mod.signInWithMicrosoft();
     pendingSignIn = false;
     // `onAuthChange` emits `signed-in`; there is nothing to do here.
@@ -186,6 +223,23 @@ export async function signIn(): Promise<void> {
     const message = explain(error);
     emit(message === '' ? { kind: 'signed-out' } : { kind: 'error', message });
   }
+}
+
+/**
+ * Which seeded account `?as=` asks for. Local development only.
+ *
+ * A bare name is expanded, so `?as=volunteer` is enough and nobody has to type
+ * the domain. Defaults to the admin, because that is the account somebody
+ * signing in locally almost always wants.
+ */
+function emulatorAccount(): string {
+  const asked =
+    typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('as');
+
+  if (!asked) return 'admin@spsmwayland.org';
+  return asked.includes('@') ? asked : `${asked}@spsmwayland.org`;
 }
 
 /**
