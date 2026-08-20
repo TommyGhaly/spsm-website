@@ -7433,22 +7433,17 @@ figure.gallery-grid__media {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* Three names per row, each on one line. "College and Young Professionals" is
-     the one that sets the floor: at 23rem it wrapped in two columns, which made
-     one item read as two. The `max-width` keeps the panel on screen at the
-     narrowest width the inline nav appears at, and the columns collapse below
-     it rather than overflowing. */
-  width: 47rem;
+  /* One column. "College and Young Professionals" still sets the floor — the
+     panel has to be wide enough for it on one line, or a stack of five tiles
+     gains a sixth row's worth of height from a single wrapped name. */
+  width: 18rem;
   max-width: calc(100vw - 1.5rem);
   z-index: 55;
 
-  /* Three across, filling row by row, so the names read left-to-right in the
-     order an administrator set them. `auto-fit` rather than a fixed `1fr 1fr
-     1fr`: on the narrowest screen that still shows the inline nav the panel is
-     capped by `max-width` and drops to two columns on its own. */
+  /* A single column, in the order an administrator set them. */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 0.3rem;
+  grid-template-columns: 1fr;
+  gap: 0.25rem;
   margin: 0;
   padding: 0.4rem;
   list-style: none;
@@ -7501,8 +7496,8 @@ figure.gallery-grid__media {
   align-items: center;
   justify-content: center;
   text-align: center;
-  min-height: 3rem;
-  padding: 0.45rem 0.6rem;
+  min-height: 2.6rem;
+  padding: 0.4rem 0.7rem;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
   border-radius: var(--radius-2, 6px);
