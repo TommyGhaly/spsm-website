@@ -170,9 +170,18 @@ export function DisclosureGroup({
 
         {/*
           The detail pane. Always present so the panel does not change width when
-          a row opens — an empty one says what to do instead, which is the only
-          place the panel can answer "how do I edit anything" for somebody who has
-          just pressed Edit and been given a list.
+          a row opens.
+
+          Its empty state used to be five paragraphs explaining what every control
+          on the page does — Add pictures, the ×, the grip, the shapes, clicking a
+          photograph. That was written when this panel was docked across the foot
+          of the window and always open, so it had to say *something*, and what it
+          said was a manual for glyphs.
+
+          The glyphs have words on them now (see `BlockFrame`), and the panel is
+          not always open. So the manual has nothing left to explain, and one line
+          does the job the pane still has: telling somebody the list on the left is
+          not the only way in.
         */}
         <div className="disclosures__body" id={bodyId}>
           {open ? (
@@ -181,32 +190,9 @@ export function DisclosureGroup({
               {open.children}
             </>
           ) : (
-            <div className="disclosures__idle">
-              <p>Pick something on the left, or work straight on the page:</p>
-              <ul>
-                <li>
-                  <strong>Add pictures</strong> under a block to choose exactly what
-                  it shows, from any part of this ministry.
-                </li>
-                <li>
-                  <strong>Press the <span aria-hidden="true">×</span></strong> on any
-                  picture to take it out of that block. Nothing is deleted.
-                </li>
-                <li>
-                  <strong>Drag a block</strong> by the grip in its corner to move it
-                  up or down, and <strong>press a shape</strong> there to make it a
-                  grid, a sideways wheel or an upright one.
-                </li>
-                <li>
-                  <strong>Drag a photograph</strong> to move it — anywhere on a grid,
-                  or into a new position in a wheel.
-                </li>
-                <li>
-                  <strong>Click a photograph</strong> to change its caption or its
-                  crop.
-                </li>
-              </ul>
-            </div>
+            <p className="disclosures__idle">
+              Pick something on the left, or click any block or photograph on the page.
+            </p>
           )}
         </div>
       </div>

@@ -110,7 +110,7 @@ describe('parseGalleryPath', () => {
   });
 
   it('rejects paths outside /events', () => {
-    for (const path of ['/', '/calendar', '/giving/summercamp', '/admin/events/x']) {
+    for (const path of ['/', '/calendar', '/giving/summercamp', '/bookstore/events/x']) {
       expect(parseGalleryPath(path)).toEqual({ kind: 'unknown' });
     }
   });

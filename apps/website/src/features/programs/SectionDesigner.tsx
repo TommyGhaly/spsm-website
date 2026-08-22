@@ -141,7 +141,13 @@ export function SectionDesigner({
         options={GALLERY_DISPLAYS}
         value={layout.display}
         names={GALLERY_DISPLAY_NAMES}
-        onPick={(display: GalleryDisplay) => onChange(layoutForLook(display, layout.scale))}
+        onPick={(display: GalleryDisplay) =>
+          // The width goes through too, for the same reason the scale does:
+          // somebody who dragged this block to half the page and is now changing
+          // its shape has changed their mind about one thing. There is no width
+          // row here — it is the handle on the block's own edge.
+          onChange(layoutForLook(display, layout.scale, layout.width))
+        }
       />
 
       <Row

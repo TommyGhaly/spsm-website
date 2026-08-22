@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -68,6 +69,26 @@ interface EditModeValue {
   /** May this person edit at all? False hides the toggle entirely. */
   allowed: boolean;
   selection: Selection;
+  /**
+   * The element that was pressed to make the current selection, when there was
+   * one — what the properties panel positions itself beside.
+   *
+   * ## Why this is tracked here rather than passed in
+   *
+   * The panel used to be a 272px strip across the foot of the window, so it did
+   * not need to know: it was always in the same place. It is a panel beside the
+   * thing it describes now, which means something has to know where that thing
+   * is — and the alternative was a `data-` attribute or an anchor prop on every
+   * selectable element in four files, threaded through the same components this
+   * context exists to keep editing concerns out of.
+   *
+   * So: the last element pressed before the selection changed. That is not a
+   * heuristic standing in for the real answer, it *is* the answer — selection in
+   * this editor happens by clicking the thing, so the thing clicked is the thing
+   * selected. It is null when the selection was set by something other than a
+   * press, which is the case the panel has a fallback for.
+   */
+  anchor: HTMLElement | null;
   setOn: (next: boolean) => void;
   select: (next: Selection) => void;
   /** Whether this exact thing is the current selection. */
@@ -78,6 +99,7 @@ const OFF: EditModeValue = {
   on: false,
   allowed: false,
   selection: { kind: 'page' },
+  anchor: null,
   setOn: () => undefined,
   select: () => undefined,
   isSelected: () => false,
@@ -94,12 +116,44 @@ export function EditModeProvider({
 }) {
   const [on, setOnState] = useState(false);
   const [selection, setSelection] = useState<Selection>({ kind: 'page' });
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+
+  /*
+   * The last element pressed. Captured in the capture phase, so it is recorded
+   * before any handler on the way up can call `select` — which is the whole
+   * ordering this depends on. `pointerdown` rather than `click` for the same
+   * reason: it happens first.
+   */
+  const pressed = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    function onPointerDown(event: PointerEvent) {
+      pressed.current = event.target instanceof HTMLElement ? event.target : null;
+    }
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [on]);
+
+  const select = useCallback((next: Selection) => {
+    setSelection(next);
+    setAnchor(pressed.current);
+    /*
+     * Cleared straight after being read, so a selection set later by something
+     * that was *not* a press — a keyboard shortcut, a write completing — does not
+     * inherit the anchor of whatever was last clicked, which could be anywhere
+     * on the page or no longer in the document at all.
+     */
+    pressed.current = null;
+  }, []);
 
   const setOn = useCallback((next: boolean) => {
     setOnState(next);
     // Leaving edit mode drops the selection, so re-entering does not open the
     // panel on a picture somebody was looking at ten minutes ago.
-    if (!next) setSelection({ kind: 'page' });
+    if (!next) {
+      setSelection({ kind: 'page' });
+      setAnchor(null);
+    }
   }, []);
 
   const value = useMemo<EditModeValue>(
@@ -110,11 +164,12 @@ export function EditModeProvider({
       on: allowed && on,
       allowed,
       selection,
+      anchor,
       setOn,
-      select: setSelection,
+      select,
       isSelected: (next) => sameSelection(selection, next),
     }),
-    [allowed, on, selection, setOn],
+    [allowed, on, selection, anchor, setOn, select],
   );
 
   return <EditModeContext.Provider value={value}>{children}</EditModeContext.Provider>;

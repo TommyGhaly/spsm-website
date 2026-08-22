@@ -36,7 +36,7 @@
     "archive": "npm run build --workspace @spsm/shared && node scripts/refresh-archive.mjs",
     "//assets": "Rebuilds the web-ready images in public/ and app/ from the originals in assets/. Run after adding a photo; --check verifies the committed outputs exist.",
     "assets": "node scripts/optimize-assets.mjs",
-    "//dev:local": "The whole site against the emulators, with sample data and sign-in-able accounts. The only way to work on /admin or /servants, since both need a role and the real project only grants one to the parish directory.",
+    "//dev:local": "The whole site against the emulators, with sample data and sign-in-able accounts. The only way to work on /servants or on editing anything in place, since both need a role and the real project only grants one to the parish directory.",
     "dev:local": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs && NEXT_PUBLIC_USE_EMULATORS=1 npm run dev --workspace @spsm/website",
     "//seed:emulator": "Re-fills the emulators without restarting the dev server.",
     "seed:emulator": "npm run build --workspace @spsm/shared && node scripts/seed-emulator.mjs",

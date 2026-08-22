@@ -5,7 +5,28 @@ import type { AuditFields, Publishable, Timestamped } from './common.js';
  * (camp, festival, feeding the homeless, seniors, iconography class). Adding an
  * event should never mean adding a route.
  */
-export interface Event extends AuditFields, Publishable {
+/**
+ * ## An event has no published state, and that is deliberate
+ *
+ * `Event` used to extend `Publishable` — `published` and `publishAt`. It does
+ * not, at Tommy's direction: *"get rid of the publishing logic it should just
+ * autosave much less confusing."* Typing saves, and an event either exists or it
+ * does not.
+ *
+ * What that costs, stated where somebody will find it:
+ *
+ *  - **There is no way to take an event off the website except deleting it.** A
+ *    postponed festival is a delete and a retype, where it used to be one switch.
+ *  - **Everything in this collection is public**, so `firestore.rules` reads
+ *    `allow read: if true` here now. The build reads it anonymously and there is
+ *    no longer a field to distinguish a draft by.
+ *  - `publishAt` and the scheduled-publish Function it was reserved for are gone
+ *    with it. Neither ever existed beyond the field.
+ *
+ * `Announcement` below still extends `Publishable`, and should: the homepage
+ * genuinely does need to write one before showing it.
+ */
+export interface Event extends AuditFields {
   slug: string;
   title: string;
   /** Short line for calendar cells and list views. */
@@ -40,6 +61,7 @@ export interface Event extends AuditFields, Publishable {
 
   /** Recurrence is deliberately out of scope for MVP — see docs/decisions.md. */
   recurrence: null;
+
 }
 
 export interface EventLocation {

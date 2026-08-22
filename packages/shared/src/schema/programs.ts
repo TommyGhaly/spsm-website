@@ -74,6 +74,21 @@ export interface Program extends AuditFields, Publishable {
   featuredMediaIds: string[];
 
   /**
+   * What the things inside this one are called, in the parish's own words.
+   *
+   * Editable rather than a constant, at Tommy's direction. It was hardcoded
+   * "Gatherings" — *"I don't know why theyre called gatherings that's just not a
+   * thing"* — and he is right that no single word can be: the things inside
+   * Summercamp are years, the things inside a year are weeks, and the things
+   * inside a week are days. A word chosen here is wrong one level down whatever
+   * it is, so the parish names its own.
+   *
+   * Null or absent means `DEFAULT_CHILD_LABEL`. Stored on the **parent**, because
+   * it describes the set of children rather than any one of them.
+   */
+  childLabel?: string | null;
+
+  /**
    * How the ministry page presents those pictures — grid, sideways rail, or
    * drifting column, at what size, with the title and captions set how.
    *
@@ -111,6 +126,33 @@ export interface Program extends AuditFields, Publishable {
    * of.
    */
   showAllPictures?: boolean;
+
+  /**
+   * Whether this page draws its **own** photographs at all.
+   *
+   * Absent or false is "yes", so adding this field changed no existing page.
+   *
+   * ## Why removing them is a field and not an empty list
+   *
+   * `featuredMediaIds: []` cannot mean it. On this document, empty has meant
+   * "choose automatically" since long before blocks carried their own picks — see
+   * the call to `pagePictures` in `GalleryShell` — so the page's first block has
+   * two states where a band has three, and there is no empty list left to express
+   * "none, on purpose". Rather than change what an empty `featuredMediaIds` means,
+   * which every page written so far relies on, this says it outright.
+   *
+   * ## It takes the leftovers strip with it
+   *
+   * "Also from here" is defined as whatever the blocks above left out, so with the
+   * page's own block gone it would otherwise show *everything* filed on this
+   * level — pressing Delete would make more pictures appear, not fewer. The two
+   * are two halves of one thing and already share one `hiddenMediaIds` list, so
+   * one flag governs both. Bands are untouched: each is deleted on its own.
+   *
+   * Tommy asked for this directly — he wanted to be able to remove every section
+   * of pictures from a page and leave it empty.
+   */
+  hidePagePictures?: boolean;
   /**
    * Photographs taken off *this page* by hand, without deleting them.
    *
@@ -181,6 +223,22 @@ export interface ProgramEvent extends AuditFields, Publishable {
   title: string;
   /** Markdown, shown above the gallery. */
   description: string;
+
+  /**
+   * What the things inside this one are called, in the parish's own words.
+   *
+   * Editable rather than a constant, at Tommy's direction. It was hardcoded
+   * "Gatherings" — *"I don't know why theyre called gatherings that's just not a
+   * thing"* — and he is right that no single word can be: the things inside
+   * Summercamp are years, the things inside a year are weeks, and the things
+   * inside a week are days. A word chosen here is wrong one level down whatever
+   * it is, so the parish names its own.
+   *
+   * Null or absent means `DEFAULT_CHILD_LABEL`. Stored on the **parent**, because
+   * it describes the set of children rather than any one of them.
+   */
+  childLabel?: string | null;
+
 
   startAt: Timestamped | null;
   endAt: Timestamped | null;
@@ -258,6 +316,9 @@ export interface ProgramEvent extends AuditFields, Publishable {
 
   /** See `Program.showAllPictures`. The same three-way choice at every depth. */
   showAllPictures?: boolean;
+
+  /** See `Program.hidePagePictures`. The same switch at every depth. */
+  hidePagePictures?: boolean;
   /**
    * Photographs taken off *this page* by hand, without deleting them.
    *
@@ -517,4 +578,22 @@ export function clampPlacement(placement: GridPlacement): GridPlacement {
   const col = Math.min(Math.max(Math.round(placement.col), 1), GALLERY_COLUMNS - colSpan + 1);
   const row = Math.max(Math.round(placement.row), 1);
   return { col, row, colSpan, rowSpan };
+}
+
+/**
+ * What to call the things inside a level, falling back to a word that is true at
+ * every depth.
+ *
+ * "Albums" rather than a word about *gatherings* or *years*: every level of this
+ * tree is a set of photographs, whatever else it also is, so the fallback cannot
+ * be wrong the way a more specific one would be. It is only a fallback — the
+ * parish sets `childLabel` and this stops being read.
+ */
+export const DEFAULT_CHILD_LABEL = 'Albums';
+
+export function childLabelOf(
+  parent: { childLabel?: string | null } | null | undefined,
+): string {
+  const named = parent?.childLabel?.trim();
+  return named ? named : DEFAULT_CHILD_LABEL;
 }

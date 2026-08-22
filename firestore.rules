@@ -116,7 +116,32 @@ service cloud.firestore {
       // Parish calendar. Servant-only entries live in /servantEvents so this
       // stays a path check rather than a per-doc audience filter — a filter
       // would leak titles through list queries if anyone forgot a where().
-      allow read: if isPublished(resource.data) || hasRole('staff');
+      //
+      // ---------------------------------------------------------------------
+      // WORLD-READABLE, and that is a deliberate change rather than a slip.
+      //
+      // This was `isPublished(resource.data) || hasRole('staff')`, which kept
+      // unpublished events staff-only. The `published` field is gone: at Tommy's
+      // direction the events editor has no publish step at all — typing saves,
+      // and an event exists or it does not. There is no longer any such thing as
+      // an event that is in the collection but not on the website, so there is
+      // nothing for a read rule to distinguish.
+      //
+      // Two things follow, and both are consequences of that decision rather
+      // than of this line:
+      //
+      //  - **The rule had to change or the site would go blank.** `data.ts` reads
+      //    this collection *anonymously* at build time. With `published` absent,
+      //    `isPublished(resource.data)` is false for every document, so the old
+      //    rule would have denied the build's read and every event would have
+      //    disappeared from the site at the next deploy.
+      //  - **Anything left in the collection is public.** An event nobody wants
+      //    seen has to be deleted, not hidden. That is the model now.
+      //
+      // Servant-only entries are unaffected: they are in /servantEvents below,
+      // which is a different path with a different rule, and always were.
+      // ---------------------------------------------------------------------
+      allow read: if true;
       allow write: if hasRole('staff');
     }
 

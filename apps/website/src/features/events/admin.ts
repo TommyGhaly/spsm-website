@@ -1,5 +1,5 @@
 /**
- * Browser-side reads and writes for the events admin.
+ * Browser-side reads and writes for editing an event.
  *
  * Separate from `data.ts` on purpose. That file is build-time only: it runs
  * unauthenticated during `next build` and every query filters on
@@ -7,8 +7,29 @@
  * writes. Mixing them would put write helpers one import away from a public
  * page, and put `serverTimestamp` in the static build.
  *
- * Not re-exported from `index.ts`, so importing it is a deliberate act. The
- * admin routes are its only callers.
+ * Not re-exported from `index.ts`, so importing it is a deliberate act, and
+ * every import of it is dynamic — see the note in EventArticle.tsx. It was
+ * named for the `/admin/events` screen that used to be its only caller; that
+ * screen is gone and the in-place editor on the event's own page is now what
+ * calls this.
+ *
+ * ## Creating, deleting and listing drafts now have callers again
+ *
+ * `listEventsForAdmin`, `createEvent` and `deleteEvent` sat here unused after
+ * `/admin/events` was deleted, because a new event has no page to be in place
+ * on and an unpublished one is not exported. They are reached again from the
+ * account menu in the masthead — see `features/events/StaffMenu` — which is the
+ * one staff-only surface that is not any particular event's page.
+ *
+ * `setProgramLink` is still uncalled. Pointing a calendar event at a ministry
+ * gallery has no home in the editor yet; leave it.
+ *
+ * ## Typing is the only save, and it writes live
+ *
+ * There is no `publishEvent`, no `unpublishEvent` and no `discardPendingEdit` in
+ * here any more, and no `published` field on the document for them to have moved.
+ * `updateEventContent` writes the parish's copy directly, a second after somebody
+ * stops typing. See its own note for what that trade gives up.
  *
  * Security lives in `firestore.rules` — `allow write: if hasRole('staff')` —
  * not here. Everything in this file is convenience for a person who already
@@ -19,10 +40,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -31,6 +54,7 @@ import {
   COLLECTIONS,
   type DocOf,
   type Event,
+  type EventLocation,
   type Program,
   type ProgramEvent,
 } from '@spsm/shared';
@@ -38,13 +62,13 @@ import { db, storage } from '@/lib/firebase';
 import { docOf } from '@/lib/firestore';
 
 /**
- * Every event, drafts included.
+ * Every event.
  *
- * No `where('published','==',true)` here, and that is exactly what makes this a
- * staff-only query: Firestore judges a list by what it *could* return, so an
- * unfiltered read of `events` is allowed only by the `hasRole('staff')` branch.
- * A member running this gets permission-denied rather than a filtered list,
- * which is the correct and honest failure.
+ * Identical in effect to `getAllEvents` in ./data now that there is no
+ * `published` field to filter on and no reader that could be refused — the two
+ * are kept apart because that one runs unauthenticated inside `next build` and
+ * this one runs in a signed-in browser, and mixing them would put write helpers
+ * one import away from a public page.
  */
 export async function listEventsForAdmin(): Promise<DocOf<Event>[]> {
   const snapshot = await getDocs(
@@ -53,30 +77,50 @@ export async function listEventsForAdmin(): Promise<DocOf<Event>[]> {
   return snapshot.docs.map(docOf<Event>);
 }
 
-/** What the form owns. Everything else on `Event` is set here or unused in MVP. */
-export type EventDraft = Pick<
-  Event,
-  | 'slug'
-  | 'title'
-  | 'summary'
-  | 'body'
-  | 'allDay'
-  | 'timeZone'
-  | 'location'
-  | 'category'
-  | 'tags'
-  | 'audience'
-  | 'published'
-  | 'heroImagePath'
-> & {
+/**
+ * One event, read fresh, drafts included.
+ *
+ * For the in-place editor on the event's own page. That page's HTML is baked at
+ * build time, so what it shows may be hours or days old — and editing from a
+ * stale copy silently reverts whatever somebody else changed in between, because
+ * the write sends every field. So pressing Edit re-reads the document first.
+ *
+ * Returns null for a document that has since been deleted, which the caller has
+ * to say out loud rather than letting a save re-create it.
+ */
+export async function readEvent(id: string): Promise<DocOf<Event> | null> {
+  const snapshot = await getDoc(doc(db(), COLLECTIONS.events, id));
+  return snapshot.exists() ? docOf<Event>(snapshot) : null;
+}
+
+/**
+ * What the editor owns, in the editor's own units.
+ *
+ * `Date` and a bare URL string rather than the document's `Timestamped` and
+ * `registration` object, because this is the boundary: everything above it
+ * thinks in wall clocks and text fields, everything below it thinks in the
+ * shapes `schema/events.ts` describes. `slug` and `published` are absent on
+ * purpose — see `EventContent` for why neither is something you type.
+ */
+export interface EventContentDraft {
+  title: string;
+  summary: string;
+  body: string;
   startAt: Date;
   endAt: Date | null;
+  allDay: boolean;
+  timeZone: string;
+  location: EventLocation | null;
+  heroImagePath: string | null;
+  category: Event['category'];
+  tags: string[];
+  audience: Event['audience'];
   registrationUrl: string | null;
-};
+}
 
-function toDocument(draft: EventDraft) {
+/** The draft as the document wants it. Never includes `slug` or `published`. */
+function toContent(draft: EventContentDraft) {
   return {
-    slug: draft.slug,
     title: draft.title,
     summary: draft.summary,
     body: draft.body,
@@ -105,43 +149,116 @@ function toDocument(draft: EventDraft) {
           capacity: null,
         }
       : null,
-
-    // Out of scope for MVP; see docs/decisions.md #8.
-    recurrence: null,
-
-    published: draft.published,
-
-    // Always null. `publishAt` instructs a scheduled Function that does not
-    // exist yet, so setting it here would only produce a document that looks
-    // scheduled and never publishes. `published` is the switch.
-    publishAt: null,
-
-    updatedAt: serverTimestamp(),
   };
 }
 
-export async function createEvent(draft: EventDraft, uid: string | null): Promise<string> {
+/**
+ * Autosave. Writes what has been typed, straight onto the event.
+ *
+ * Called every second or two while somebody types, which is the whole interface:
+ * there is no Save button and no Publish button. Tommy: *"get rid of the
+ * publishing logic it should just autosave much less confusing."*
+ *
+ * ## What this replaced, and what it gave up
+ *
+ * It used to write a `pendingEdit` copy that a separate Publish promoted, so a
+ * half-typed sentence was never the parish's copy. That is gone, and the trade is
+ * worth being blunt about: **this writes live, and there is no undo.** The mobile
+ * app reads this document directly, so a mistyped title is the parish's title
+ * about a second later. What is bought for it is that the editor cannot ever show
+ * different words than the page — which is the confusion that was being paid for.
+ *
+ * `updatedAt` is stamped, unlike the pending-edit version that deliberately left
+ * it alone: this *is* a change to the parish's copy now, so the field means what
+ * it says again.
+ */
+export async function updateEventContent(
+  id: string,
+  draft: EventContentDraft,
+  uid: string | null,
+): Promise<void> {
+  await updateDoc(doc(db(), COLLECTIONS.events, id), {
+    ...toContent(draft),
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/**
+ * A new event, with nothing filled in but its slug and its day.
+ *
+ * **It is on the website from this moment**, because there is no other state for
+ * it to be in. That is the direct consequence of dropping the publish step, and
+ * it is the one thing to keep in mind when creating one: an event named and dated
+ * now appears on the parish calendar at the next build with an empty description.
+ * The editor says what is still missing; nothing stops it being public meanwhile.
+ *
+ * The slug is settled here and never again. It is the public URL, the value
+ * `generateStaticParams` enumerates, and the folder the photograph is filed
+ * under, so the editor shows it and does not offer to change it.
+ */
+export async function createEvent(
+  slug: string,
+  draft: EventContentDraft,
+  uid: string | null,
+): Promise<string> {
   const created = await addDoc(collection(db(), COLLECTIONS.events), {
-    ...toDocument(draft),
+    ...toContent(draft),
+    slug,
+    // Out of scope for MVP; see docs/decisions.md #8.
+    recurrence: null,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
     updatedBy: uid,
   });
   return created.id;
 }
 
-export async function updateEvent(
-  id: string,
-  draft: EventDraft,
-  uid: string | null,
-): Promise<void> {
-  await updateDoc(doc(db(), COLLECTIONS.events, id), {
-    ...toDocument(draft),
-    updatedBy: uid,
-  });
+/**
+ * Is this slug free?
+ *
+ * Asked before creating, because two events sharing a slug emit the same route
+ * twice and `generateStaticParams` de-duplicates them — so one of the two
+ * silently stops having a page. The read is a query rather than a `getDoc`
+ * because the slug is a field, not the document id.
+ */
+export async function slugTaken(slug: string): Promise<boolean> {
+  const found = await getDocs(
+    query(collection(db(), COLLECTIONS.events), where('slug', '==', slug)),
+  );
+  return !found.empty;
 }
 
-export async function deleteEvent(id: string): Promise<void> {
+/**
+ * Delete the event, handing back everything needed to put it back.
+ *
+ * The returned data is what makes the undo window honest. Firestore has no
+ * trash and no soft delete here, so "undo" can only mean *write it again* —
+ * which needs every field, read before the delete rather than after.
+ *
+ * `id` is preserved on restore, so anything that already links to this event by
+ * id still resolves. That is why this pairs with `restoreEvent` and a `setDoc`
+ * rather than with `createEvent`.
+ */
+export async function deleteEvent(id: string): Promise<Record<string, unknown> | null> {
+  const snapshot = await getDoc(doc(db(), COLLECTIONS.events, id));
+  const data = snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null;
   await deleteDoc(doc(db(), COLLECTIONS.events, id));
+  return data;
+}
+
+/**
+ * Put back an event that was just deleted, under its original id.
+ *
+ * Only meaningful within the undo window, and only with the exact data
+ * `deleteEvent` returned. Restoring stamps neither `createdAt` nor `updatedAt`:
+ * an undone delete should leave the event as it was, not look like an edit.
+ */
+export async function restoreEvent(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await setDoc(doc(db(), COLLECTIONS.events, id), data);
 }
 
 /**

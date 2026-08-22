@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { AdminGate } from '../admin/AdminGate';
+import { AdminGate } from '@/components/AdminGate';
 import { ScheduleEmbed } from '@/features/servants';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
@@ -7,7 +7,7 @@ import { PageBody } from '@/components/PageBody';
 /**
  * The servants schedule.
  *
- * Half the reason sign-in exists at all — the other half being /admin. On the
+ * The reason sign-in exists at all, now that the /admin section is gone. On the
  * Wix site this page sat behind one shared password; it is now per person, via
  * the parish Microsoft account people already have.
  *

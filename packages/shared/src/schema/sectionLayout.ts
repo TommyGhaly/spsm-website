@@ -73,6 +73,117 @@ export type GalleryDisplay = (typeof GALLERY_DISPLAYS)[number];
 export const SECTION_SCALES = ['small', 'medium', 'large', 'full'] as const;
 export type SectionScale = (typeof SECTION_SCALES)[number];
 
+/**
+ * How much of the page's width one block takes.
+ *
+ * ## Why this exists at all
+ *
+ * Every block was the width of the page, so blocks could only ever stack. Tommy:
+ * *"I want the ability to adjust the sizes of the grid layout in the events pages
+ * so i can put a grid next to a vertical scroll wheel."* Which is not a size
+ * setting on the *pictures* — that is `scale`, and it was already there — it is a
+ * size setting on the **block**, and it is the one thing that lets two blocks
+ * share a row.
+ *
+ * Two blocks sit side by side because their widths fit, not because anything says
+ * "put these together". A half beside a half, a two-thirds beside a third: the
+ * page is a twelve-column grid and blocks flow into it in their own order. There
+ * is no row object, no pairing, and nothing to keep consistent — which is what
+ * keeps this one field rather than a layout engine.
+ *
+ * ## Four names, not a percentage
+ *
+ * The same argument as everything else in this file, and it bites harder here:
+ * a free width is how a page ends up with a 47% block beside a 51% one and a
+ * hairline of paper between them that nobody can find the cause of. Four names
+ * cannot express that.
+ *
+ * The drag handle on a block's edge *feels* continuous and is not — it snaps to
+ * these four as it moves, and only ever stores one of them. See
+ * `nearestSectionWidth`, which is where the snapping lives, in shared rather than
+ * in the handle, so the mobile app's own editor snaps identically.
+ *
+ * `full` is the default, so adding this field to a document changes nothing about
+ * how any existing page renders.
+ */
+export const SECTION_WIDTHS = ['full', 'two-thirds', 'half', 'third'] as const;
+export type SectionWidth = (typeof SECTION_WIDTHS)[number];
+
+/**
+ * The page is twelve columns wide, for the same divisibility reason the canvas
+ * inside a block is — see `GALLERY_COLUMNS`, which is deliberately the same
+ * number about a different thing. Not imported from there: `programs.ts` imports
+ * *this* file, and a cycle between the two would be a real one.
+ */
+export const SECTION_COLUMNS = 12;
+
+/** Columns of `SECTION_COLUMNS` each width takes. */
+export const SECTION_WIDTH_COLUMNS: Record<SectionWidth, number> = {
+  full: 12,
+  'two-thirds': 8,
+  half: 6,
+  third: 4,
+};
+
+/** The same thing as a fraction of the page, for the drag handle's arithmetic. */
+export function sectionWidthFraction(width: SectionWidth): number {
+  return SECTION_WIDTH_COLUMNS[width] / SECTION_COLUMNS;
+}
+
+/**
+ * The width a drag has landed on.
+ *
+ * `fraction` is how much of the page's width the pointer is currently asking for
+ * — it can be negative (dragged past the block's own left edge), more than one
+ * (dragged off the right of the window), or `NaN` from a container that measured
+ * zero. All three are ordinary things a pointer does, so none of them is an
+ * error: every input produces one of the four widths.
+ *
+ * Ties go to the **wider** of the two. A drag stopped exactly between a half and
+ * a third is more likely to be somebody easing off a full-width block than
+ * somebody aiming at the narrowest thing on offer.
+ *
+ * That is why the comparison carries a tolerance rather than being a plain `<`.
+ * `SECTION_WIDTHS` is ordered widest-first, so keeping the incumbent unless the
+ * next one is *meaningfully* closer is what makes the tie go wide — and a plain
+ * `<` does not achieve it, because these fractions are twelfths. The midpoint of
+ * a half and a third comes out a hair nearer the third in binary, so the wider
+ * one lost a tie the code claimed it would win. The tolerance is four orders of
+ * magnitude below the gap between two adjacent widths, so it can only ever
+ * decide an actual tie.
+ */
+export function nearestSectionWidth(fraction: number): SectionWidth {
+  if (!Number.isFinite(fraction)) return 'full';
+
+  const TIE = 1e-9;
+
+  let best: SectionWidth = 'full';
+  let smallest = Number.POSITIVE_INFINITY;
+  for (const width of SECTION_WIDTHS) {
+    const gap = Math.abs(sectionWidthFraction(width) - fraction);
+    if (gap < smallest - TIE) {
+      smallest = gap;
+      best = width;
+    }
+  }
+  return best;
+}
+
+/**
+ * One step wider or narrower, stopping at each end.
+ *
+ * The keyboard's route to the same setting. A drag has no keyboard equivalent, so
+ * the handle takes arrow keys as well — the same reason `BlockFrame`'s grip is a
+ * focusable `role="button"` rather than a bare span.
+ */
+export function stepSectionWidth(width: SectionWidth, delta: -1 | 1): SectionWidth {
+  // `SECTION_WIDTHS` runs widest to narrowest, so a step *wider* is a step back
+  // along it. Written out rather than left to the reader of `index - delta`.
+  const index = SECTION_WIDTHS.indexOf(width);
+  const next = delta === 1 ? index - 1 : index + 1;
+  return SECTION_WIDTHS[Math.min(Math.max(next, 0), SECTION_WIDTHS.length - 1)] ?? width;
+}
+
 /** The type scale a section's title is set at. */
 export const TEXT_SCALES = ['small', 'medium', 'large', 'display'] as const;
 export type TextScale = (typeof TEXT_SCALES)[number];
@@ -127,6 +238,12 @@ export interface SectionLayout {
   display: GalleryDisplay;
   scale: SectionScale;
   /**
+   * How much of the page's width the block takes, so two of them can share a
+   * row. `full` unless somebody has dragged the block's edge. See
+   * `SECTION_WIDTHS`.
+   */
+  width: SectionWidth;
+  /**
    * Whether a `rail` or a `column` moves on its own.
    *
    * Ignored by `grid`, which has nowhere to drift to. Kept as a stored flag
@@ -159,6 +276,7 @@ export function defaultSectionLayout(): SectionLayout {
   return {
     display: 'grid',
     scale: 'medium',
+    width: 'full',
     drift: true,
     title: { scale: 'small', placement: 'above', align: 'start' },
     caption: { scale: 'small', placement: 'over', align: 'start' },
@@ -193,6 +311,7 @@ export function resolveSectionLayout(value: unknown): SectionLayout {
   return {
     display: oneOf(source['display'], GALLERY_DISPLAYS, fallback.display),
     scale: oneOf(source['scale'], SECTION_SCALES, fallback.scale),
+    width: oneOf(source['width'], SECTION_WIDTHS, fallback.width),
     // `!== false` rather than `=== true`: absent means default, and the default
     // is on. Only an explicit `false` switches the drift off.
     drift: source['drift'] === undefined ? fallback.drift : source['drift'] !== false,
@@ -414,10 +533,21 @@ function mediaIds(value: unknown): string[] {
  * The fields it does not mention do not exist — every field of `SectionLayout` is
  * written, for the reason `setSectionLayout` gives about nested writes.
  */
-export function layoutForLook(display: GalleryDisplay, scale: SectionScale): SectionLayout {
+export function layoutForLook(
+  display: GalleryDisplay,
+  scale: SectionScale,
+  /**
+   * Carried through for the same reason `scale` is a parameter: somebody who has
+   * dragged a block to half the page and then changes its shape has changed their
+   * mind about one thing. Defaulted rather than required, because a *new* block is
+   * full width and its caller has no width to pass.
+   */
+  width: SectionWidth = 'full',
+): SectionLayout {
   return {
     display,
     scale,
+    width,
     drift: true,
     title: { scale: 'small', placement: 'above', align: 'start' },
     caption: {
@@ -454,6 +584,20 @@ export const GALLERY_DISPLAY_NAMES: Record<GalleryDisplay, string> = {
   grid: 'Grid',
   rail: 'Sideways wheel',
   column: 'Upright wheel',
+};
+
+/*
+ * The words on the drag handle's readout.
+ *
+ * "Full width" rather than "Full", unlike the scale ladder next to it: this is
+ * the only vocabulary where `full` sits beside three fractions, and "Full" alone
+ * next to "Half" reads as a size of picture rather than a share of the page.
+ */
+export const SECTION_WIDTH_NAMES: Record<SectionWidth, string> = {
+  full: 'Full width',
+  'two-thirds': 'Two thirds',
+  half: 'Half',
+  third: 'One third',
 };
 
 export const SECTION_SCALE_NAMES: Record<SectionScale, string> = {

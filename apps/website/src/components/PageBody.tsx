@@ -26,12 +26,32 @@ export function PageBody({
    * with a grid or an image needs this. See `.page-body--flush`.
    */
   flush = false,
+  /**
+   * Lets the column go wider than `--shell-width`. For the galleries, where the
+   * photographs *are* the page.
+   *
+   * `--shell-width` is 80rem, which is a measure chosen for pages that are
+   * mostly words — and it left a gallery 1,200px wide inside a 1,512px laptop,
+   * with 156px of empty paper down each side. Tommy: *"the gallery is very
+   * narrow."*
+   *
+   * A prop rather than raising the token, because the token is a *theme* value
+   * read out of Firestore (`theme.web.shellWidth`) and shared by every page on
+   * the site. Widening the parish's prose to 1,700px to fix the gallery would be
+   * the wrong trade, and it would need a theme write to boot.
+   */
+  wide = false,
 }: {
   children: React.ReactNode;
   flush?: boolean;
+  wide?: boolean;
 }) {
   return (
-    <div className={`wrap page-body${flush ? ' page-body--flush' : ''}`}>
+    <div
+      className={`wrap page-body${flush ? ' page-body--flush' : ''}${
+        wide ? ' page-body--wide' : ''
+      }`}
+    >
       {children}
     </div>
   );

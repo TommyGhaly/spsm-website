@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   GALLERY_DISPLAY_NAMES,
   SECTION_SCALE_NAMES,
@@ -12,6 +13,7 @@ import {
   resolveBands,
   resolveSectionLayout,
   subtreeSlideshow,
+  childLabelOf,
   summariseChildren,
   trailLabel,
   trailSlugs,
@@ -46,6 +48,7 @@ import {
   withoutPresent,
   type GalleryRoute,
 } from './route';
+import { AutoClip } from './AutoClip';
 import { GallerySection } from './GallerySection';
 import { Lightbox } from './Lightbox';
 import { Presentation } from './Presentation';
@@ -53,22 +56,23 @@ import { MediaPicker } from './MediaPicker';
 import { SectionDesigner } from './SectionDesigner';
 import { MediaProperties } from './MediaProperties';
 import { Disclosure, DisclosureGroup } from './Disclosure';
-import { SubgroupShelf, shelfCover, shelfNote, type ShelfItem } from './SubgroupShelf';
+import { SubgroupShelf, shelfCover, shelfCovers, shelfNote, type ShelfItem } from './SubgroupShelf';
 import { BlockFrame as Block } from './BlockFrame';
 import { Inspector } from './Inspector';
 import { BodyEditingClass, EditModeProvider, EditToggle, useEditMode } from './editMode';
 import { togglePick } from './pick';
 import { SubmitPhotos } from './SubmitPhotos';
 /*
- * `setCaption` lives in ./review — the approval queue's data layer — because the
- * caption is written there first, when a photograph is approved. The properties
- * column is the second place it is edited, and one function for both is right:
- * the field, the trim and the cap are the same.
+ * `setCaption` lives in ./review because the caption used to be written there
+ * first, when a photograph was approved in the queue at /admin/galleries. That
+ * queue is gone and the properties column is now the only thing that writes a
+ * caption — see the note at the top of ./review.
  */
 import { setCaption } from './review';
 import {
   MAX_BANDS,
   addBand,
+  setPagePicturesHidden,
   setPageShowsAll,
   createProgramEvent,
   deleteProgramEvent,
@@ -145,6 +149,23 @@ type State =
       calendar: DocOf<Event> | null;
     };
 
+/**
+ * "Albums" -> "album", for a count of one.
+ *
+ * `childLabel` is stored plural, because it is written over a list. A count line
+ * needs the singular, and asking the parish for both words to satisfy one label
+ * is two fields where one will do.
+ *
+ * Trailing "s" only, which is stated because it is a real limit rather than an
+ * oversight: an irregular plural comes out wrong ("children" -> "childre"). The
+ * words this actually receives are Albums, Years, Weeks, Days, Sessions and
+ * whatever the parish types, and a wrong singular on a count line is a cosmetic
+ * fault where a required second field would be a permanent one.
+ */
+function singularOf(plural: string): string {
+  return /s$/i.test(plural) && plural.length > 2 ? plural.slice(0, -1) : plural;
+}
+
 export function GalleryShell() {
   const [route, setRoute] = useState<GalleryRoute | null>(null);
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -169,13 +190,34 @@ export function GalleryShell() {
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((n) => n + 1), []);
 
-  // `location` does not exist during the export build, so the path can only be
-  // read once mounted. That is the source of the spinner on first paint, and
-  // it is the cost decision #2 in docs/program-galleries.md accepted.
+  /*
+   * The path, re-read on every navigation.
+   *
+   * `usePathname` rather than `window.location.pathname` in a mount-only effect,
+   * and that is a bug fix rather than a modernisation. Every gallery below the
+   * first two segments is served by the *same* route — Hosting rewrites
+   * `/events/**` onto this one shell — so a click from `…/sc-2027` to
+   * `…/sc-2027/week-1-2027` is a client-side transition **within one route**.
+   * Next does not remount for that, the mount-only effect never ran again, and
+   * the shell went on rendering the level it had first read: the address bar
+   * changed, the heading and the menu did not. Two levels deep it appeared to
+   * work only because the level above is served by `/events/[slug]`, so crossing
+   * into this route did remount it.
+   *
+   * `usePathname` is safe under `output: 'export'` in a way `useSearchParams` is
+   * not — it does not suspend, so it cannot force this route out of
+   * prerendering. That is why `search` is still read straight off `location`
+   * below; see the note at the top of the file.
+   *
+   * `location` does not exist during the export build, so the first paint is
+   * still a spinner — the cost decision #2 in docs/program-galleries.md accepted.
+   */
+  const pathname = usePathname();
+
   useEffect(() => {
-    setRoute(parseGalleryPath(window.location.pathname));
+    setRoute(parseGalleryPath(pathname));
     setPresent(isPresenting(window.location.search));
-  }, []);
+  }, [pathname]);
 
   /**
    * Leaving the presentation, without a navigation.
@@ -406,6 +448,12 @@ function LevelView({
    */
   const [pageHidden, setPageHidden] = useState<string[] | null>(null);
   /**
+   * Whether the page's own block has been removed, held locally so it disappears
+   * on the press rather than after the round trip. `null` is "nobody has touched
+   * this, use the document".
+   */
+  const [picturesOffDraft, setPicturesOffDraft] = useState<boolean | null>(null);
+  /**
    * The same two lists for each band, keyed by band id.
    *
    * Local because a band's lists are written with `updateBand`, which is a
@@ -446,6 +494,7 @@ function LevelView({
     setCover(undefined);
     setAllPictures(null);
     setPageHidden(null);
+    setPicturesOffDraft(null);
     setBandSets({});
     bandsWritten.current = {};
     setPicking(null);
@@ -494,6 +543,18 @@ function LevelView({
   const showAll = allPictures ?? (node === null ? program.showAllPictures : node.showAllPictures);
 
   /**
+   * Whether this page draws its own photographs at all.
+   *
+   * The page's first block is not in `bands`, so "delete it" cannot mean removing
+   * an array member — it is a fact about the page. See
+   * `Program.hidePagePictures` for why an empty `featuredMediaIds` could not
+   * carry this, and why it governs the "Also from here" strip as well.
+   */
+  const picturesOff =
+    picturesOffDraft ??
+    (node === null ? program.hidePagePictures : node.hidePagePictures) === true;
+
+  /**
    * The pictures pressed × on in the page's *own* blocks — its first one, and the
    * "Also from here" strip.
    *
@@ -515,20 +576,30 @@ function LevelView({
    */
   const pictures = useMemo(
     () =>
-      pagePictures(tree, nodeId, media, {
-        /*
-          `null` for an empty list, not the empty list itself. This block's picks
-          live in `featuredMediaIds`, where empty has meant "automatic" since long
-          before blocks had their own lists — so it has two states where a band has
-          three. `pagePictures` distinguishes them by null, and the call site is
-          where the difference belongs.
-        */
-        curated: chosen.length > 0 ? chosen : null,
-        showAll: showAll === true,
-        hidden,
-        max: MAX_FEATURED,
-      }),
-    [tree, nodeId, media, chosen, showAll, hidden],
+      /*
+        Empty rather than unresolved when the block has been removed. Computing the
+        set and then declining to draw it would leave `alsoHere` below — which is
+        defined as "what the blocks did not show" — believing these were shown, so
+        the leftovers strip would keep excluding exactly the photographs that are
+        no longer anywhere on the page.
+      */
+      picturesOff
+        ? []
+        : pagePictures(tree, nodeId, media, {
+            /*
+              `null` for an empty list, not the empty list itself. This block's
+              picks live in `featuredMediaIds`, where empty has meant "automatic"
+              since long before blocks had their own lists — so it has two states
+              where a band has three. `pagePictures` distinguishes them by null,
+              and the call site is where the difference belongs. The third state a
+              band has is `hidePagePictures` here; see `picturesOff`.
+            */
+            curated: chosen.length > 0 ? chosen : null,
+            showAll: showAll === true,
+            hidden,
+            max: MAX_FEATURED,
+          }),
+    [tree, nodeId, media, chosen, showAll, hidden, picturesOff],
   );
 
   /**
@@ -552,6 +623,14 @@ function LevelView({
    */
   const alsoHere = useMemo(() => {
     if (nodeId === null) return [];
+    /*
+      Gone with the page's own block, and this is the line that makes Delete mean
+      what it says. This strip is whatever the blocks above left out, so with the
+      first block removed it would otherwise hold *everything* filed on this level:
+      one press would take a block away and put more photographs on the page than
+      were there before.
+    */
+    if (picturesOff) return [];
     const shown = new Set(pictures.map((item) => item.id));
     const off = new Set(hidden);
     return media.filter(
@@ -666,6 +745,20 @@ function LevelView({
     return { flat: list, offsets: at };
   }, [pictures, bandBlocks, alsoHere]);
 
+  /**
+   * The page draws no photographs anywhere and has no levels inside it.
+   *
+   * Measured off `flat` — every block's contents, the leftovers strip included —
+   * rather than off `pictures` and `alsoHere`. That was the old test, and it was
+   * wrong as soon as a band could carry its own set: a leaf with the page's own
+   * block removed and a band full of photographs satisfied it, so "No photographs
+   * have been added here yet" would print underneath four of them.
+   *
+   * Unreachable until the page's own block could be removed at all, which is why
+   * it was not a bug worth finding before now.
+   */
+  const showsNothing = flat.length === 0 && children.length === 0;
+
   /** Where a block's own index `n` sits in `flat`. */
   const openAt = useCallback(
     (key: string, index: number) => setOpen((offsets.get(key) ?? 0) + index),
@@ -742,6 +835,11 @@ function LevelView({
       void write(() => updateBand(target, id, { picks: set.picks, hidden: set.hidden }, admin.uid));
     }
   }, [bandSets, target, admin.uid, write]);
+
+  useEffect(() => {
+    if (picturesOffDraft === null) return;
+    void write(() => setPagePicturesHidden(target, picturesOffDraft, admin.uid));
+  }, [picturesOffDraft, target, admin.uid, write]);
 
   useEffect(() => {
     if (allPictures === null) return;
@@ -1038,15 +1136,17 @@ function LevelView({
   /*
    * The heading over the cards, and what an empty one says.
    *
-   * Two wordings rather than one, because "Gatherings" is right under a ministry
-   * and wrong under a week — the things inside Week 1 are its days, and calling
-   * them gatherings of it is not what anybody would say out loud. Deeper than
-   * that, the level's own name is the most useful thing to say.
+   * The word comes from the document now — `childLabel` on whichever of the
+   * ministry or the level this page is — because no constant can be right at
+   * every depth: the parts of Summercamp are years and the parts of a year are
+   * weeks. It was hardcoded "Gatherings", which Tommy's answer to was that it is
+   * "just not a thing". See `childLabelOf`.
    */
-  const insideTitle = node ? `Inside ${node.title}` : 'Gatherings';
+  const childLabel = childLabelOf(node ?? program);
+  const insideTitle = childLabel;
   const insideEmpty = node
     ? 'Nothing is inside this yet, so this page shows every photograph filed here. Add a part to divide them up.'
-    : 'No gatherings of this ministry have been published yet.';
+    : `No ${childLabel.toLowerCase()} of this ministry have been published yet.`;
 
   /* ---- the properties column --------------------------------------------- */
 
@@ -1432,7 +1532,7 @@ function LevelView({
 
           <Disclosure
             id="details"
-            label={node ? 'This gathering' : 'This ministry'}
+            label={node ? 'This page' : 'This ministry'}
             value={published ? (node && when ? when : 'visible') : 'draft'}
           >
             {node ? (
@@ -1499,15 +1599,57 @@ function LevelView({
    * for two lists side by side — so the navigation moved out to the page and the
    * properties kept the panel. See `SubgroupShelf`.
    */
+  /*
+   * The same shelf, for everybody else.
+   *
+   * Built separately rather than by passing `readOnly` to the one below, because
+   * the two differ in more than a flag: this one has no callbacks to give — a
+   * visitor cannot rename or reorder anything — and its tiles carry an `href`
+   * and a set of pictures to cycle, which the editing shelf has no use for.
+   * Sharing one item list would mean every no-op callback existing so that the
+   * read-only branch could ignore it.
+   *
+   * The cards at the foot of the page are removed when this is shown; that is
+   * why it opens by default. See the header of `SubgroupShelf`.
+   */
+  const visitorShelf = (
+    <SubgroupShelf
+      readOnly
+      legend={childLabel}
+      addLabel=""
+      onAdd={() => undefined}
+      empty=""
+      items={children.map((child): ShelfItem => {
+        const summary = summaries.get(child.id);
+        const count = (summary?.photos ?? 0) + (summary?.videos ?? 0);
+        const inside = summary?.children ?? 0;
+        return {
+          id: child.id,
+          label: child.title,
+          href: hrefOf(child.id),
+          coverPath: shelfCover(summary?.cover),
+          coverPaths: shelfCovers(summary?.covers),
+          note: shelfNote(child, inside, count),
+          selected: false,
+          onSelect: () => undefined,
+          onRename: () => undefined,
+          onMove: () => undefined,
+          onRemove: () => undefined,
+          removeWarning: '',
+        };
+      })}
+    />
+  );
+
   const shelf = (
     <SubgroupShelf
-      legend={node ? 'Inside this' : 'Gatherings'}
+      legend={childLabel}
       busy={saving}
-      addLabel={node ? 'Add a part…' : 'Add a gathering…'}
+      addLabel={`Add to ${childLabel.toLowerCase()}…`}
       empty={
         node
           ? 'Nothing inside this yet. Add a part — “Day 1”, “Chapel”, “The hike” — and it gets its own page.'
-          : 'No gatherings yet. Add one — a camp, a week, a year — and its photographs go inside it.'
+          : `No ${childLabel.toLowerCase()} yet. Add one — a camp, a week, a year — and its photographs go inside it.`
       }
       items={children.map((child): ShelfItem => {
         const summary = summaries.get(child.id);
@@ -1559,9 +1701,19 @@ function LevelView({
     />
   );
 
+  /*
+   * Whether the visitor's side menu is on screen, which the head has to know:
+   * the menu is `position: fixed` in the top-right corner and the head's own
+   * action sits in that corner too, so without this the menu is drawn over
+   * "Present this" on the first screen.
+   */
+  const sideMenu = !edit.on && children.length > 0;
+
   return (
-    <article>
-      <PageBody flush>
+    <article className={sideMenu ? 'gallery gallery--side-menu' : 'gallery'}>
+      {/* `wide`: the photographs are the page here, so it is not held to the
+          80rem measure the prose pages use. See `.page-body--wide`. */}
+      <PageBody flush wide>
         {/*
           Back link, then the name and its facts, then the one action — with the
           action on the *same row* as the title on a wide screen rather than
@@ -1616,16 +1768,28 @@ function LevelView({
                 {when && <span>{when}</span>}
                 {children.length > 0 && (
                   <span>
-                    {children.length} {node ? 'part' : 'gathering'}
-                    {children.length === 1 ? '' : 's'}
+                    {children.length}{' '}
+                    {children.length === 1
+                      ? singularOf(childLabel).toLowerCase()
+                      : childLabel.toLowerCase()}
                   </span>
                 )}
-                {photos > 0 && (
+                {/*
+                  Not drawn when the page shows nothing and leads nowhere.
+
+                  The counts are of the subtree, which stays true and useful while
+                  there are levels inside to reach the photographs through. On a
+                  leaf whose own block has been removed there is no such route, so
+                  the masthead would advertise "3 photographs" directly above "No
+                  photographs have been added here yet" — two true statements that
+                  read as one contradiction.
+                */}
+                {photos > 0 && !showsNothing && (
                   <span>
                     {photos} {photos === 1 ? 'photograph' : 'photographs'}
                   </span>
                 )}
-                {clips > 0 && (
+                {clips > 0 && !showsNothing && (
                   <span>
                     {clips} {clips === 1 ? 'clip' : 'clips'}
                   </span>
@@ -1659,6 +1823,21 @@ function LevelView({
         </header>
 
         {/*
+          The menu, directly after the head.
+          
+          Its **position in the document matters only on a phone.** From 40rem up
+          it is `position: fixed` in the top-right corner and could be written
+          anywhere; below that there is no width to float 13rem beside a title, so
+          it returns to the flow — and the flow has to put it here, under the
+          name of the thing it lists, rather than at the foot of the page where it
+          used to live. See `.shelf--reading`.
+
+          A visitor gets the read-only one, and only when there is something in
+          it: a label reading "Albums" over nothing is furniture.
+        */}
+        {edit.on ? shelf : sideMenu && visitorShelf}
+
+        {/*
           The calendar entry, when an administrator has filed this level against
           one.
 
@@ -1686,227 +1865,316 @@ function LevelView({
 
         {/* ---- the photographs that summarise this level -------------------- */}
 
-        {(pictures.length > 0 || edit.on) && (
-          /*
-            The page's own block, and the first of however many it carries.
-
-            Its controls are *on it* while editing — grab it, change its shape,
-            and (for the ones below) throw it away. See `BlockFrame`: moving a
-            block is a gesture, and no arrangement of a settings list makes a
-            gesture out of a button labelled "Move up the page".
-
-            This one has no grip and no bin, because it is the page's own block —
-            stored in `sectionLayout` rather than in `bands`, and always present.
-
-            Drawn while editing **even when it is empty**, which it was not. Somebody
-            who presses × on the last photograph in it would otherwise watch the
-            whole block vanish, footer and all — taking with it the one control that
-            puts the photographs back.
-
-            `frozen` while editing: a rail drifting under a hand is one that moves
-            the very tiles being aimed at.
-          */
-          <Block
-            display={summaryLayout.display}
-            label="the first block"
-            busy={saving}
-            onShape={(next) => {
-              const layout = layoutForLook(next, summaryLayout.scale);
-              setDrafts((was) => ({ ...was, summary: layout }));
-              void write(() => setSectionLayout(target, layout, admin.uid));
-            }}
-            {...(edit.on
-              ? {
-                  pictures: {
-                    count: pictures.length,
-                    picked: chosen.length > 0,
-                    onAdd: () => setPicking(picking === 'summary' ? null : 'summary'),
-                    ...(chosen.length > 0 || hidden.length > 0
-                      ? { onAutomatic: () => automaticFor('summary') }
-                      : {}),
-                  },
-                  picker: pickerFor(
-                    'summary',
-                    'The pictures in the first block',
-                    pictures,
-                    chosen.length > 0 ? chosen : null,
-                  ),
-                }
-              : {})}
-          >
-            <GallerySection
-              id="summary"
-              /*
-                No heading. It was a hardcoded "Photographs" over the first block of
-                every gallery in the parish, at Tommy's direction to remove it — and
-                it was the only heading on the site that named the medium rather
-                than the thing: the page is already titled "Day 2" and everything
-                under it is photographs of Day 2, so the word bought a line of
-                display type and no information.
-
-                `label` is what remains: the block's accessible name, and the wording
-                on the little tab an administrator clicks to select it. A heading
-                nobody needs and a name every screen reader does are different
-                things, which is exactly the split `GallerySection` draws.
-              */
-              title=""
-              label="Photographs"
-              layout={summaryLayout}
-              media={pictures}
-              onSelect={(at) => openAt('summary', at)}
-              onPlace={place}
-              frozen={edit.on}
-              empty={
-                <p className="gallery-empty">
-                  Nothing in this block. Press <strong>Add pictures</strong> to choose
-                  some, or <strong>Back to automatic</strong> to show what this level
-                  holds.
-                </p>
-              }
-              onDropPicture={(ordered) => dropInto('summary', chosen.length > 0, ordered)}
-              onRemovePicture={(mediaId) => removeFrom('summary', mediaId)}
-            />
-          </Block>
-        )}
-
         {/*
-          The rest of the blocks, straight after the first.
+          Every block on the page, in one twelve-column grid.
 
-          They sat *below* the cards once, on the reasoning that a block was the
-          archive and the cards were the way to one particular day. That reasoning
-          went when the blocks became a set of ways to look at one level's
-          photographs: a grid and a wheel are two halves of one thing to look at,
-          and putting the navigation between them separates them for no reason.
+          The wrapper is what makes a width mean anything. Blocks were children of
+          `.page-body` and each took the whole measure, so "half" had no room to be
+          half *of* — two of them would have stacked exactly as two full ones did.
+          Here they flow into twelve columns in their own order and a pair that
+          fits shares a row: a grid beside an upright wheel, which is the whole
+          reason `SectionLayout.width` exists.
+
+          Nothing pairs them and there is no row object. Auto-placement never runs
+          backwards, so the order blocks are written in — and dragged into — is the
+          order they appear in, and a block that does not fit starts a new row.
+
+          The Add row is inside rather than after, so it lands in the flow beneath
+          the blocks it adds to rather than after a grid it is not part of. It
+          spans all twelve; see `.blocks > .addblock`.
         */}
-        {bandBlocks.map(({ band, layout, picks, media: shown }, index) => (
-          <Block
-            key={band.id}
-            display={layout.display}
-            label={`block ${index + 2}`}
-            busy={saving}
-            onShape={(next) => {
-              const shaped = layoutForLook(next, layout.scale);
-              setDrafts((was) => ({ ...was, [band.id]: shaped }));
-              void write(async () => {
-                await updateBand(target, band.id, { layout: shaped }, admin.uid);
-                refresh();
-              });
-            }}
-            onMove={(delta) =>
-              void write(async () => {
-                await moveBand(target, band.id, delta, admin.uid);
-                refresh();
-              })
-            }
-            onRemove={() =>
-              void write(async () => {
-                await removeBand(target, band.id, admin.uid);
-                refresh();
-              })
-            }
-            {...(edit.on
-              ? {
-                  pictures: {
-                    count: shown.length,
-                    picked: picks !== null,
-                    onAdd: () => setPicking(picking === band.id ? null : band.id),
-                    ...(picks !== null || band.hidden.length > 0
-                      ? { onAutomatic: () => automaticFor(band.id) }
-                      : {}),
-                  },
-                  picker: pickerFor(
-                    band.id,
-                    `The pictures in ${band.title || `block ${index + 2}`}`,
-                    shown,
-                    picks,
-                  ),
-                }
-              : {})}
-          >
-            <GallerySection
-              id={band.id}
-              /*
-                An empty title draws no heading, which is the ordinary case: a
-                second block under a page that already says "Photographs" rarely
-                wants one. `label` is what it is called when it has none — its
-                accessible name.
-              */
-              title={band.title}
-              label={`${GALLERY_DISPLAY_NAMES[layout.display]} of photographs`}
-              layout={layout}
-              media={shown}
-              onPlace={place}
-              frozen={edit.on}
-              empty={
-                <p className="gallery-empty">
-                  Nothing in this block. Press <strong>Add pictures</strong> to choose
-                  some.
-                </p>
-              }
-              onDropPicture={(ordered) => dropInto(band.id, picks !== null, ordered)}
-              onRemovePicture={(mediaId) => removeFrom(band.id, mediaId)}
-              /*
-                Into its own stretch of the flat list, which it needs now that it
-                draws its own set — so the arrow keys in the lightbox walk the page
-                rather than jumping into whatever sits at that index in the block
-                above.
-              */
-              onSelect={(at) => openAt(band.id, at)}
-            />
-          </Block>
-        ))}
+        <div className="blocks">
+          {!picturesOff && (pictures.length > 0 || edit.on) && (
+            /*
+              The page's own block, and the first of however many it carries.
 
-        {/*
-          Add another block, right under the ones already there.
+              Its controls are *on it* while editing — grab it, change its shape,
+              and (for the ones below) throw it away. See `BlockFrame`: moving a
+              block is a gesture, and no arrangement of a settings list makes a
+              gesture out of a button labelled "Move up the page".
 
-          On the page rather than in the panel, for the same reason the grip and the
-          bin are: what it makes appears right here, and a button that makes a thing
-          belongs next to where the thing lands. It was a row in the properties
-          panel whose entire body was these buttons — a click spent to reveal a
-          click.
-        */}
-        {edit.on && bands.length < MAX_BANDS && (
-          <div className="addblock">
-            {/*
-              It said "Show the same photographs again, as", which was true when every
-              block drew the page's one set and is not now: a new block starts on the
-              page's photographs and stops the moment somebody presses Add on it.
-            */}
-            <p className="addblock__legend">Add another block</p>
-            <p className="addblock__choices">
-              {(
-                [
-                  ['grid', 'A grid'],
-                  ['rail', 'A sideways wheel'],
-                  ['column', 'An upright wheel'],
-                ] as const
-              ).map(([display, label]) => (
-                <button
-                  key={display}
-                  type="button"
-                  className="addblock__button"
-                  disabled={saving}
-                  onClick={() =>
-                    void write(async () => {
-                      await addBand(target, display, admin.uid);
-                      refresh();
-                    })
+              This one has no grip, because it is the page's own block — stored in
+              `sectionLayout` rather than in `bands`, so there is no order for it to
+              have a position in. It does have a bin: Tommy asked to be able to remove
+              every section of pictures and leave a page empty, and this was the one
+              block that refused. Its Delete writes `hidePagePictures` rather than
+              splicing an array, and takes the "Also from here" strip with it.
+
+              Drawn while editing **even when it is empty**, which it was not. Somebody
+              who presses × on the last photograph in it would otherwise watch the
+              whole block vanish, footer and all — taking with it the one control that
+              puts the photographs back.
+
+              `frozen` while editing: a rail drifting under a hand is one that moves
+              the very tiles being aimed at.
+            */
+            <Block
+              display={summaryLayout.display}
+              label="the first block"
+              busy={saving}
+              onShape={(next) => {
+                const layout = layoutForLook(next, summaryLayout.scale, summaryLayout.width);
+                setDrafts((was) => ({ ...was, summary: layout }));
+                void write(() => setSectionLayout(target, layout, admin.uid));
+              }}
+              /*
+                The page's own block can be resized like any other, so a wheel
+                added under it can sit beside it rather than below it. Its width
+                lives in `sectionLayout` where the rest of its arrangement does.
+
+                Drafted before it is written, for the reason every other control
+                here is: the write is a round trip, and a block that snaps back to
+                its old width for half a second reads as the drag having failed.
+              */
+              width={summaryLayout.width}
+              onWidth={(next) => {
+                const layout = { ...summaryLayout, width: next };
+                setDrafts((was) => ({ ...was, summary: layout }));
+                void write(() => setSectionLayout(target, layout, admin.uid));
+              }}
+              {...(edit.on
+                ? {
+                    /*
+                      Nothing is destroyed by it — `featuredMediaIds`, the hidden list
+                      and the arrangement all stay exactly as they are, and the way
+                      back is one press in the row below. Same reason the bin on a band
+                      needs no confirmation.
+                    */
+                    onRemove: () => setPicturesOffDraft(true),
+                    removeTitle: 'Take the page\u2019s own pictures off this page',
+                    pictures: {
+                      count: pictures.length,
+                      picked: chosen.length > 0,
+                      onAdd: () => setPicking(picking === 'summary' ? null : 'summary'),
+                      ...(chosen.length > 0 || hidden.length > 0
+                        ? { onAutomatic: () => automaticFor('summary') }
+                        : {}),
+                    },
+                    picker: pickerFor(
+                      'summary',
+                      'The pictures in the first block',
+                      pictures,
+                      chosen.length > 0 ? chosen : null,
+                    ),
                   }
-                >
-                  <span
-                    className={`block__glyph block__glyph--${display}`}
-                    aria-hidden="true"
+                : {})}
+            >
+              <GallerySection
+                id="summary"
+                /*
+                  No heading. It was a hardcoded "Photographs" over the first block of
+                  every gallery in the parish, at Tommy's direction to remove it — and
+                  it was the only heading on the site that named the medium rather
+                  than the thing: the page is already titled "Day 2" and everything
+                  under it is photographs of Day 2, so the word bought a line of
+                  display type and no information.
+
+                  `label` is what remains: the block's accessible name, and the wording
+                  on the little tab an administrator clicks to select it. A heading
+                  nobody needs and a name every screen reader does are different
+                  things, which is exactly the split `GallerySection` draws.
+                */
+                title=""
+                label="Photographs"
+                layout={summaryLayout}
+                media={pictures}
+                onSelect={(at) => openAt('summary', at)}
+                onPlace={place}
+                frozen={edit.on}
+                empty={
+                  <p className="gallery-empty">
+                    Nothing in this block. Press <strong>Add pictures</strong> to choose
+                    some, or <strong>Back to automatic</strong> to show what this level
+                    holds.
+                  </p>
+                }
+                onDropPicture={(ordered) => dropInto('summary', chosen.length > 0, ordered)}
+                onRemovePicture={(mediaId) => removeFrom('summary', mediaId)}
+              />
+            </Block>
+          )}
+
+          {/*
+            The rest of the blocks, straight after the first.
+
+            They sat *below* the cards once, on the reasoning that a block was the
+            archive and the cards were the way to one particular day. That reasoning
+            went when the blocks became a set of ways to look at one level's
+            photographs: a grid and a wheel are two halves of one thing to look at,
+            and putting the navigation between them separates them for no reason.
+          */}
+          {bandBlocks.map(({ band, layout, picks, media: shown }, index) => (
+            <Block
+              key={band.id}
+              display={layout.display}
+              label={`block ${index + 2}`}
+              busy={saving}
+              onShape={(next) => {
+                const shaped = layoutForLook(next, layout.scale, layout.width);
+                setDrafts((was) => ({ ...was, [band.id]: shaped }));
+                void write(async () => {
+                  await updateBand(target, band.id, { layout: shaped }, admin.uid);
+                  refresh();
+                });
+              }}
+              width={layout.width}
+              onWidth={(next) => {
+                const sized = { ...layout, width: next };
+                setDrafts((was) => ({ ...was, [band.id]: sized }));
+                void write(async () => {
+                  await updateBand(target, band.id, { layout: sized }, admin.uid);
+                  refresh();
+                });
+              }}
+              onMove={(delta) =>
+                void write(async () => {
+                  await moveBand(target, band.id, delta, admin.uid);
+                  refresh();
+                })
+              }
+              onRemove={() =>
+                void write(async () => {
+                  await removeBand(target, band.id, admin.uid);
+                  refresh();
+                })
+              }
+              {...(edit.on
+                ? {
+                    pictures: {
+                      count: shown.length,
+                      picked: picks !== null,
+                      onAdd: () => setPicking(picking === band.id ? null : band.id),
+                      ...(picks !== null || band.hidden.length > 0
+                        ? { onAutomatic: () => automaticFor(band.id) }
+                        : {}),
+                    },
+                    picker: pickerFor(
+                      band.id,
+                      `The pictures in ${band.title || `block ${index + 2}`}`,
+                      shown,
+                      picks,
+                    ),
+                  }
+                : {})}
+            >
+              <GallerySection
+                id={band.id}
+                /*
+                  An empty title draws no heading, which is the ordinary case: a
+                  second block under a page that already says "Photographs" rarely
+                  wants one. `label` is what it is called when it has none — its
+                  accessible name.
+                */
+                title={band.title}
+                label={`${GALLERY_DISPLAY_NAMES[layout.display]} of photographs`}
+                layout={layout}
+                media={shown}
+                onPlace={place}
+                frozen={edit.on}
+                empty={
+                  <p className="gallery-empty">
+                    Nothing in this block. Press <strong>Add pictures</strong> to choose
+                    some.
+                  </p>
+                }
+                onDropPicture={(ordered) => dropInto(band.id, picks !== null, ordered)}
+                onRemovePicture={(mediaId) => removeFrom(band.id, mediaId)}
+                /*
+                  Into its own stretch of the flat list, which it needs now that it
+                  draws its own set — so the arrow keys in the lightbox walk the page
+                  rather than jumping into whatever sits at that index in the block
+                  above.
+                */
+                onSelect={(at) => openAt(band.id, at)}
+              />
+            </Block>
+          ))}
+
+          {/*
+            Add another block, right under the ones already there.
+
+            On the page rather than in the panel, for the same reason the grip and the
+            bin are: what it makes appears right here, and a button that makes a thing
+            belongs next to where the thing lands. It was a row in the properties
+            panel whose entire body was these buttons — a click spent to reveal a
+            click.
+          */}
+          {edit.on && (picturesOff || bands.length < MAX_BANDS) && (
+            <div className="addblock">
+              {/*
+                It said "Show the same photographs again, as", which was true when every
+                block drew the page's one set and is not now: a new block starts on the
+                page's photographs and stops the moment somebody presses Add on it.
+              */}
+              <p className="addblock__legend">
+                {picturesOff && bands.length === 0 ? 'Add a block of pictures' : 'Add another block'}
+              </p>
+
+              {/*
+                The way back from having removed the page's own block.
+
+                Here rather than in the properties panel, and first in the row: this is
+                the one entry that puts something back rather than making something new,
+                and somebody looking for it has just pressed a bin a few pixels above.
+                A switch in a panel would be a control you have to go looking for after
+                an action you took on the page.
+
+                It is drawn whatever the band count, unlike the three below — the row
+                itself now renders when the page's block is off even at `MAX_BANDS`,
+                because otherwise a page with four bands and no first block would have
+                removed it permanently.
+              */}
+              {picturesOff && (
+                <p className="addblock__choices">
+                  <button
+                    type="button"
+                    className="addblock__button addblock__button--restore"
+                    disabled={saving}
+                    onClick={() => setPicturesOffDraft(false)}
                   >
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  {label}
-                </button>
-              ))}
-            </p>
-          </div>
-        )}
+                    <Icon name="photos" size={15} />
+                    The page&apos;s own pictures
+                  </button>
+                </p>
+              )}
+
+              {bands.length < MAX_BANDS && (
+              <p className="addblock__choices">
+                {(
+                  [
+                    ['grid', 'A grid'],
+                    ['rail', 'A sideways wheel'],
+                    ['column', 'An upright wheel'],
+                  ] as const
+                ).map(([display, label]) => (
+                  <button
+                    key={display}
+                    type="button"
+                    className="addblock__button"
+                    disabled={saving}
+                    onClick={() =>
+                      void write(async () => {
+                        await addBand(target, display, admin.uid);
+                        refresh();
+                      })
+                    }
+                  >
+                    <span
+                      className={`block__glyph block__glyph--${display}`}
+                      aria-hidden="true"
+                    >
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    {label}
+                  </button>
+                ))}
+              </p>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ---- what is inside ---------------------------------------------- */}
 
@@ -1924,7 +2192,15 @@ function LevelView({
           Shown while editing, because otherwise adding the first level inside
           something appears to do nothing at all.
         */}
-        {(children.length > 0 || edit.on) && (
+        {/*
+          Editing only, now that a visitor has the shelf.
+
+          Tommy: *"the subgroups for the regular user is still on the bottom."*
+          They were the visitor's route in and are now the administrator's — the
+          cards are what a level is *selected* from, and there is nowhere else to
+          click to put one in the properties panel.
+        */}
+        {edit.on && (
         <section className="gallery-section" aria-labelledby="level-inside">
           <h2 id="level-inside" className="gallery-title gallery-title--small">
             {insideTitle}
@@ -2013,7 +2289,7 @@ function LevelView({
         )}
 
 
-        {pictures.length === 0 && alsoHere.length === 0 && children.length === 0 && (
+        {showsNothing && (
           <p className="gallery-empty">No photographs have been added here yet.</p>
         )}
 
@@ -2038,8 +2314,6 @@ function LevelView({
         panel changing shape from reading as inconsistency — it says which of four
         different things it is describing.
       */}
-      {/* The shelf is on the page, not in the panel — see `shelf` above. */}
-      {edit.on && shelf}
 
       {edit.on && (
         <Inspector title={inspecting.title} kind={inspecting.kind} saving={saving}>
@@ -2140,6 +2414,14 @@ function LevelCard({
   summary: NodeSummary<DocOf<GalleryMedia>> | undefined;
 }) {
   const cover = summary?.cover ?? null;
+  /*
+   * A clip cover plays; a photograph cover is a photograph.
+   *
+   * `posterPath` is still what the plate falls back to while the clip loads, and
+   * what it shows if the clip will not play at all — it is a frame of the same
+   * material, so the card keeps its shape either way.
+   */
+  const clip = cover?.kind === 'video' ? cover.renditionPath : null;
   const path = cover?.kind === 'video' ? cover.posterPath : cover?.renditionPath ?? null;
   const when = formatDateSpan(node.startAt, node.endAt, node.timeZone);
   const photos = summary?.photos ?? 0;
@@ -2149,10 +2431,14 @@ function LevelCard({
   return (
     <Link className="gathering-card" href={href}>
       <span
-        className={`gathering-card__cover${path ? '' : ' gathering-card__cover--empty'}`}
+        className={`gathering-card__cover${path || clip ? '' : ' gathering-card__cover--empty'}`}
         aria-hidden="true"
       >
-        {path && <img src={galleryPathUrl(path)} alt="" loading="lazy" decoding="async" />}
+        {clip ? (
+          <AutoClip src={galleryPathUrl(clip)} poster={path ? galleryPathUrl(path) : null} />
+        ) : (
+          path && <img src={galleryPathUrl(path)} alt="" loading="lazy" decoding="async" />
+        )}
       </span>
 
       <span className="gathering-card__body">

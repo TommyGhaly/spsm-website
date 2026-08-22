@@ -227,13 +227,15 @@ The same value has to exist wherever Functions are deployed from.
 `defineSecret`. Without it the emulator prompts for each one on startup and
 appears to hang. It is gitignored; keep only dummy or sandbox values in it.
 
-## Working on /admin
+## Working on anything that needs a signed-in role
 
+There is no /admin section any more — it was deleted, and the site is edited in
+place on the pages themselves. What has not changed is the problem it had:
 `npm run dev` reads the real Firestore, which is right for the public pages and
-useless for the admin: every screen there needs a signed-in user with a role,
-and the only way to get one against the real project is to be an actual member
-of the parish Microsoft directory. So the admin is developed against the
-emulators.
+useless for editing. Pressing Edit needs a signed-in user with a role, and the
+only way to get one against the real project is to be an actual member of the
+parish Microsoft directory. So editing — the event pages, the galleries, the
+ministries, and /servants — is developed against the emulators.
 
 Two terminals. First the emulators — **use the real project id**, because the
 web app's config points at it and the client would otherwise talk to a different
@@ -302,11 +304,12 @@ environment variable — which matters, because `NEXT_PUBLIC_USE_EMULATORS=1` is
 the environment every local build of this app runs in. The seeded password is
 `emulator-only` if you ever need it directly.
 
-`/admin` also has an "Emulator sign-in" panel for picking an account by hand. It
-is rendered only when `NEXT_PUBLIC_USE_EMULATORS=1`, and the production project
-has no password provider enabled anyway.
+`/servants` also has an "Emulator sign-in" panel for picking an account by hand
+— it is `AdminGate`'s, so it appears wherever that gate does. It is rendered
+only when `NEXT_PUBLIC_USE_EMULATORS=1`, and the production project has no
+password provider enabled anyway.
 
-To read emulator Firestore past the security rules — for checking what the admin
+To read emulator Firestore past the security rules — for checking what an edit
 actually wrote — the emulator accepts `Authorization: Bearer owner` as admin:
 
 ```bash

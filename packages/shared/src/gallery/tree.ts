@@ -511,11 +511,34 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
  */
 export interface NodeSummary<M extends SummaryMedia> {
   cover: M | null;
+  /**
+   * A handful from the same subtree, `cover` first, for a tile that cycles.
+   *
+   * The side menu on a gallery page shows its levels the way `/events` shows the
+   * ministries — a photograph with the name over it, cross-fading to the next
+   * one — and a single cover cannot do that. Everything here is already in
+   * `mine`, so this costs a slice and no extra reads.
+   *
+   * Capped at `SUMMARY_COVERS`. `cover` is kept beside it rather than being
+   * replaced by `covers[0]`, because the cards elsewhere on the page want
+   * exactly one and should not have to know about the cap.
+   */
+  covers: M[];
   photos: number;
   videos: number;
   /** How many levels hang directly beneath. Zero for a leaf. */
   children: number;
 }
+
+/**
+ * How many pictures a cycling tile is given.
+ *
+ * Five, for the reason `CYCLE_MAX` in `ProgramTile` is five: every one of them is
+ * an `<img>` in the DOM at once — that is what makes it a cross-fade rather than
+ * a cut — so the count is a page-weight decision, not a taste one. A level with
+ * fewer cycles between however many it has.
+ */
+export const SUMMARY_COVERS = 5;
 
 /**
  * Summarise every child of a level, for the cards on its page.
@@ -559,8 +582,27 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
       ) ??
       null;
 
+    /*
+     * The cycle's pictures: the cover first, then the rest of the subtree's
+     * page-cleared photographs in order.
+     *
+     * Same `hasRenderableFile` guard as the cover above, and for the same
+     * reason — a mid-transcode file in the cycle is a tile that blinks to blank
+     * once per lap. The cover is put at the head rather than deduplicated after,
+     * so the picture an administrator chose is the one the tile opens on.
+     */
+    const rest = mine.filter(
+      (item) =>
+        item.id !== cover?.id &&
+        item.kind === 'photo' &&
+        item.placement.onPage &&
+        hasRenderableFile(item),
+    );
+    const covers = (cover ? [cover, ...rest] : rest).slice(0, SUMMARY_COVERS);
+
     summaries.set(child.id, {
       cover,
+      covers,
       photos: mine.filter((item) => item.kind === 'photo').length,
       videos: mine.filter((item) => item.kind === 'video').length,
       children: childrenOf(tree, child.id).length,

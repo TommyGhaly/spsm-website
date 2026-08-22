@@ -408,14 +408,20 @@ function ProgramRail() {
     */
     <>
       {/*
-        Three times the site's default drift, for this rail only.
+        Well over twice the site's default drift, for this rail only.
 
         Asked for directly, and it is the rail that needed it: `speed` is in
         pixels per second, and these plates are now 889px wide where the shelf's
         books are 176. At the shared 75px/s a ministry took twelve seconds to
         cross — the same number that reads as a gentle drift on a strip of book
-        covers reads as barely moving on a strip of photographs this size. 225
-        crosses one in about four.
+        covers reads as barely moving on a strip of photographs this size.
+
+        225, then 180, now 144, all three at Tommy's direction and each a fifth
+        off the last. 225 crossed a plate in about four seconds, which is quick
+        enough that a photograph is gone before it has been looked at; 144
+        crosses one in about six and still reads as going somewhere rather than
+        as a rail that has stopped. Do not tune this from a screenshot; it is a
+        speed, and it only exists in motion.
 
         This is what the `speed` prop is for, and why it is a prop rather than a
         second constant in `useDragRail`: the shelf, the clergy and the shop's
@@ -423,7 +429,7 @@ function ProgramRail() {
       */}
       <DragRail
         className="rail--programs rail--bleed"
-        speed={225}
+        speed={144}
         frozen={edit.on}
       >
         {/*

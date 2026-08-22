@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   focalPosition,
   trailLabel,
@@ -49,6 +50,31 @@ import type { PickerMode } from './pick';
  * position it will appear in, so an administrator arranging a page can see the
  * arrangement rather than inferring it. Clicking a chosen tile again removes it,
  * and the numbers close up.
+ *
+ * ## It takes the whole screen, with the folders down one side
+ *
+ * Tommy: adding and choosing pictures was confusing. It was a grid inside a panel
+ * inside a disclosure row inside a strip across the foot of the window — so the
+ * thumbnails were about 90px, the level filters were a wrapped mat of chips above
+ * them, and choosing from "every approved photograph in every day of every week"
+ * meant doing it three tiles at a time.
+ *
+ * The width the panel had was the reason it was docked along the bottom in the
+ * first place. Giving the picker its own screen resolves that: the panel no longer
+ * has to be big enough to hold the biggest thing anybody ever put in it, which is
+ * what let the properties panel become something that sits beside what it
+ * describes. See `Inspector`.
+ *
+ * The level filters became a **list down the left**, which is the change that
+ * matters most. As chips they were a paragraph of similar-looking phrases that
+ * wrapped over four lines and reflowed as you picked one; as a column they are a
+ * place, they hold still, and each can carry its own count — so "where are the
+ * photographs actually filed" is answerable at a glance rather than by reading.
+ *
+ * A portal, and modal. It covers the page, so leaving it in the block's own
+ * subtree would put a fixed overlay inside a horizontally scrolling rail — and
+ * `aria-modal` is the truth of it either way: while this is open there is nothing
+ * else to do.
  */
 
 export type { PickerMode };
@@ -155,161 +181,207 @@ export function MediaPicker({
   const ceiling = max ?? (mode === 'one' ? 1 : Number.POSITIVE_INFINITY);
   const full = mode === 'many' && selected.length >= ceiling;
 
-  return (
-    <section className="picker" aria-label={title}>
+  /*
+   * Escape closes, and the page underneath does not scroll.
+   *
+   * The scroll lock is not decoration: this is a full-screen overlay with its own
+   * scrolling grid, and without it a wheel gesture that reaches the end of the
+   * grid carries on scrolling the gallery behind — so closing the picker leaves
+   * somebody somewhere else on the page than where they opened it.
+   */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeRow();
+        onClose();
+      }
+    }
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [closeRow, onClose]);
+
+  /**
+   * How many are in each level, and how many altogether, after the kind filter.
+   *
+   * Counted from the kind filter's result rather than from everything, so
+   * switching to Clips does not leave a folder advertising 40 items and showing
+   * none. The counts are the whole reason the folders beat the chips they replaced
+   * — a list of places with numbers on it says where the photographs are.
+   */
+  const counts = useMemo(() => {
+    const byLevel = new Map<string, number>();
+    let all = 0;
+    for (const item of media) {
+      if (kind !== 'all' && item.kind !== kind) continue;
+      all += 1;
+      byLevel.set(item.programEventId, (byLevel.get(item.programEventId) ?? 0) + 1);
+    }
+    return { all, byLevel };
+  }, [media, kind]);
+
+  const done = () => {
+    closeRow();
+    onClose();
+  };
+
+  return createPortal(
+    <div className="picker" role="dialog" aria-modal="true" aria-label={title}>
       <header className="picker__head">
-        <h3>{title}</h3>
-        <button
-          type="button"
-          className="button button--quiet button--small"
-          onClick={() => {
-            closeRow();
-            onClose();
-          }}
-        >
+        <div className="picker__title">
+          <p className="picker__kind">Choosing pictures</p>
+          <h3>{title}</h3>
+        </div>
+
+        {/*
+          For `many`, this says out loud the one thing that is not obvious: the
+          ticks it opens with are what the block is *already* showing, so the
+          first click is not "start a list" but "change this one". A block that
+          opened as a blank grid would make adding a thirteenth photograph mean
+          losing twelve.
+        */}
+        <p className="picker__hint">
+          {mode === 'one'
+            ? 'Choose one picture. Click it again to go back to the newest photograph.'
+            : `The numbered ones are what this block shows now, in order. Click to add, click again to take one out.${
+                Number.isFinite(ceiling) ? ` Up to ${ceiling}.` : ''
+              }`}
+        </p>
+
+        <button type="button" className="button picker__done" onClick={done}>
           Done
         </button>
       </header>
 
-      {/*
-        For `many`, this says out loud the one thing that is not obvious: the ticks
-        it opens with are what the block is *already* showing, so the first click is
-        not "start a list" but "change this one". A block that opened as a blank grid
-        would make adding a thirteenth photograph mean losing twelve.
-      */}
-      <p className="picker__hint">
-        {mode === 'one'
-          ? 'Choose one picture. Click it again to go back to the newest photograph.'
-          : `The ticked ones are what this block shows now. Click to add, click again to take one out — the number on a picture is where it appears.${
-              Number.isFinite(ceiling) ? ` Up to ${ceiling}.` : ''
-            }`}
-      </p>
-
-      {/*
-        The filters. Present even with one level, because their absence at one
-        and appearance at two reads as the panel changing shape for no reason —
-        and because "Everywhere" is the state worth naming.
-
-        One chip per level that has photographs, named by its trail. A ministry
-        with ten years behind it has a lot of chips; they wrap, and the
-        alternative — a select — hides from an administrator the one fact this row
-        is for, which is *where the photographs actually are*.
-      */}
-      <div className="picker__filters">
-        <div className="chips" role="group" aria-label="Level">
+      <div className="picker__body">
+        {/*
+          The folders. A list down the side rather than the mat of wrapped chips
+          this replaced — see the note at the top of the file. Each is named by its
+          whole trail, because a slug is unique only among siblings and four camps
+          each have a "Day 1".
+        */}
+        <nav className="picker__folders" aria-label="Where the photographs are">
           <button
             type="button"
-            className={`chip${level === null ? ' is-on' : ''}`}
+            className={`picker__folder${level === null ? ' is-on' : ''}`}
             aria-pressed={level === null}
             onClick={() => setLevel(null)}
           >
-            Everywhere
+            <span>Everywhere</span>
+            <b>{counts.all}</b>
           </button>
+
           {levels.map((one) => (
             <button
               key={one.id}
               type="button"
-              className={`chip${level === one.id ? ' is-on' : ''}`}
+              className={`picker__folder${level === one.id ? ' is-on' : ''}`}
               aria-pressed={level === one.id}
               onClick={() => setLevel(one.id)}
             >
-              {one.label}
+              <span>{one.label}</span>
+              <b>{counts.byLevel.get(one.id) ?? 0}</b>
             </button>
           ))}
-        </div>
 
-        <div className="chips" role="group" aria-label="Kind">
-          {(['all', 'photo', 'video'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={`chip${kind === option ? ' is-on' : ''}`}
-              aria-pressed={kind === option}
-              onClick={() => setKind(option)}
-            >
-              {option === 'all' ? 'Both' : option === 'photo' ? 'Photographs' : 'Clips'}
-            </button>
-          ))}
+          {/*
+            Photographs or clips, at the foot of the folders rather than in a
+            second row above the grid. It is the same kind of question — "show me
+            less of this" — and two filter rows in two different places was half of
+            what made the old header hard to read.
+          */}
+          <div className="picker__kinds" role="group" aria-label="Kind">
+            {(['all', 'photo', 'video'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`chip${kind === option ? ' is-on' : ''}`}
+                aria-pressed={kind === option}
+                onClick={() => setKind(option)}
+              >
+                {option === 'all' ? 'Both' : option === 'photo' ? 'Photographs' : 'Clips'}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div className="picker__sections">
+          {sections.length === 0 ? (
+            <p className="note">
+              There are no approved photographs here yet. They appear once somebody has
+              approved them.
+            </p>
+          ) : (
+            sections.map((section) => (
+              <div className="picker__gathering" key={section.id}>
+                {/* The heading stays put while its own run of pictures scrolls
+                    past, so it is always clear which level you are looking at in a
+                    ministry with ten years behind it. */}
+                <h4>{section.title}</h4>
+                <ul className="picker__grid">
+                  {section.items.map((item) => {
+                    const at = selected.indexOf(item.id);
+                    const chosen = at !== -1;
+                    const poster = galleryPosterUrl(item);
+
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          className={`picker__tile${chosen ? ' is-chosen' : ''}`}
+                          // Disabled only when the list is full *and* this one is
+                          // not already in it — otherwise the last-added picture
+                          // could not be removed, which is the one action
+                          // somebody at the limit actually wants.
+                          disabled={full && !chosen}
+                          aria-pressed={chosen}
+                          onClick={() => onToggle(item.id)}
+                        >
+                          {poster ? (
+                            <img
+                              src={poster}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              style={{ objectPosition: focalPosition(item.focal) }}
+                            />
+                          ) : (
+                            <span className="picker__tile-blank">Processing…</span>
+                          )}
+
+                          {item.kind === 'video' && (
+                            <span className="picker__tile-kind" aria-hidden="true">
+                              <Icon name="film" size={14} />
+                            </span>
+                          )}
+
+                          {chosen && (
+                            <span className="picker__tile-mark">
+                              {mode === 'many' ? at + 1 : <Icon name="check" size={14} />}
+                              <span className="visually-hidden">
+                                {mode === 'many' ? `Position ${at + 1}` : 'Chosen'}
+                              </span>
+                            </span>
+                          )}
+
+                          <span className="visually-hidden">
+                            {item.caption || 'Untitled photograph'}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))
+          )}
         </div>
       </div>
-
-      {sections.length === 0 ? (
-        <p className="note">
-          There are no approved photographs under this level yet. They appear here once
-          somebody has approved them.
-        </p>
-      ) : (
-        /*
-          Its own scroll area, capped in height.
-          
-          A ministry with ten years behind it has hundreds of approved
-          photographs, and unbounded this panel grew to many screens — pushing
-          the gatherings, the footer and everything else off the bottom of a page
-          somebody was in the middle of editing. Scrolling the picker rather than
-          the page also keeps the *chosen* set visible in the grid above it.
-        */
-        <div className="picker__sections">
-          {sections.map((section) => (
-            <div className="picker__gathering" key={section.id}>
-              <h4>{section.title}</h4>
-              <ul className="picker__grid">
-                {section.items.map((item) => {
-                  const at = selected.indexOf(item.id);
-                  const chosen = at !== -1;
-                  const poster = galleryPosterUrl(item);
-
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        className={`picker__tile${chosen ? ' is-chosen' : ''}`}
-                        // Disabled only when the list is full *and* this one is
-                        // not already in it — otherwise the last-added picture
-                        // could not be removed, which is the one action
-                        // somebody at the limit actually wants.
-                        disabled={full && !chosen}
-                        aria-pressed={chosen}
-                        onClick={() => onToggle(item.id)}
-                      >
-                        {poster ? (
-                          <img
-                            src={poster}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            style={{ objectPosition: focalPosition(item.focal) }}
-                          />
-                        ) : (
-                          <span className="picker__tile-blank">Processing…</span>
-                        )}
-
-                        {item.kind === 'video' && (
-                          <span className="picker__tile-kind" aria-hidden="true">
-                            <Icon name="film" size={14} />
-                          </span>
-                        )}
-
-                        {chosen && (
-                          <span className="picker__tile-mark">
-                            {mode === 'many' ? at + 1 : <Icon name="check" size={14} />}
-                            <span className="visually-hidden">
-                              {mode === 'many' ? `Position ${at + 1}` : 'Chosen'}
-                            </span>
-                          </span>
-                        )}
-
-                        <span className="visually-hidden">
-                          {item.caption || 'Untitled photograph'}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+    </div>,
+    document.body,
   );
 }

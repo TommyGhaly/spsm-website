@@ -1,9 +1,21 @@
 'use client';
 
-import { useState } from 'react';
-import type { DocOf, GalleryMedia, ProgramEvent } from '@spsm/shared';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { SUMMARY_COVERS, type DocOf, type GalleryMedia, type ProgramEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { galleryPathUrl } from './media';
+
+/**
+ * How long each picture holds on a shelf tile.
+ *
+ * Slower than the 1.4s on `/events`, and deliberately: those plates drift past
+ * on a moving rail and have a few seconds of a reader's attention, so the cycle
+ * has to be quick or it never happens. These sit still in a column, so the same
+ * speed would be a flicker in the corner of the eye while somebody is reading
+ * the page. Paired with the 500ms cross-fade in globals.css.
+ */
+const SHELF_CYCLE_MS = 3200;
 
 /**
  * What is inside this level, as a shelf in the corner of the page.
@@ -34,6 +46,25 @@ import { galleryPathUrl } from './media';
  * The one thing it can do that the cards cannot: reach a part with **no
  * photographs in it**, which draws no meaningful card and is exactly the part an
  * administrator has just made and wants to fill.
+ *
+ * ## Two modes, because a visitor gets it too
+ *
+ * It began as an administrator's control. Tommy: *"the subgroups for the regular
+ * user is still on the bottom — what happened to leaving them in a menu on the
+ * side."* So `readOnly` gives a visitor the same shelf without the furniture:
+ * no rename, no reorder, no remove, no add, and each tile is a **link** rather
+ * than something that selects.
+ *
+ * Two differences beyond that, both consequences of the cards at the bottom of
+ * the page going away when this appears:
+ *
+ *   - it **starts open**. Closed-by-default was right while the page also had a
+ *     card for every level — the shelf was the shortcut, not the route. Take the
+ *     cards away and a closed shelf hides the whole of the gallery behind a
+ *     handle nobody has been told to press.
+ *   - its tiles **cycle through their pictures**, the way the ministries do on
+ *     `/events`. That is what makes a column of small tiles legible as places
+ *     rather than as labels — see `covers` on `NodeSummary`.
  */
 export function SubgroupShelf({
   legend,
@@ -42,6 +73,7 @@ export function SubgroupShelf({
   addLabel,
   empty,
   busy = false,
+  readOnly = false,
 }: {
   /** "Gatherings", "Inside this". What these are, in the parish's words. */
   legend: string;
@@ -50,28 +82,87 @@ export function SubgroupShelf({
   addLabel: string;
   empty: string;
   busy?: boolean;
+  /** A visitor's shelf: links, no editing furniture. See the note above. */
+  readOnly?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  /*
+   * A read-only menu has no closed state, and this is not merely a default.
+   *
+   * `useState(readOnly)` was not enough: the visitor's menu and the
+   * administrator's are the same component in the same position of the tree, so
+   * React reconciles them as one and carries the state across. Leaving edit mode
+   * therefore handed the visitor whatever `open` the administrator's shelf had
+   * last — and since the read-only version draws no handle, a closed one could
+   * not be opened again. Derived rather than stored, so there is nothing to
+   * carry.
+   */
+  const [expanded, setOpen] = useState(false);
+  const open = readOnly || expanded;
   const [adding, setAdding] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
 
+  /*
+   * One counter for the whole shelf, taken modulo each tile's own length — the
+   * same arrangement as the rail on `/events`, and for the same reason: one timer
+   * per shelf rather than one per tile.
+   *
+   * Only runs when there is something to cycle and somebody to see it. A closed
+   * shelf, an editing session, or a shelf whose tiles have one picture each all
+   * get no timer at all rather than a timer that re-renders to show the same
+   * photograph. Reduced motion switches it off and leaves the first picture up,
+   * which is what that setting is asking for.
+   */
+  const [shot, setShot] = useState(0);
+  const longest = Math.max(0, ...items.map((item) => item.coverPaths?.length ?? 0));
+
+  useEffect(() => {
+    if (!open || !readOnly || longest < 2) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setShot((n) => n + 1), SHELF_CYCLE_MS);
+    return () => window.clearInterval(timer);
+  }, [open, readOnly, longest]);
+
   return (
-    <div className={`shelf${open ? ' is-open' : ''}`}>
+    <div
+      className={`shelf${open ? ' is-open' : ''}${readOnly ? ' shelf--reading' : ''}`}
+    >
       {/*
-        The handle. Says what the shelf holds and how many, so a closed shelf is
-        still informative — the count is the reason somebody opens it.
+        A visitor gets no toggle at all.
+
+        Tommy: *"the subgroups is getting in the way very much I want it to be an
+        untoggled menu more subtle."* A handle is a control, and a control in the
+        corner of a page of photographs is one more thing to look at than a quiet
+        list of where to go next. The count goes with it — it was there to make a
+        *closed* shelf informative, and nothing is closed any more.
+
+        The label stays, as a line of small caps rather than a button. Without it
+        two tiles in a corner are two pictures with no explanation.
       */}
-      <button
-        type="button"
-        className="shelf__handle"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Icon name={open ? 'close' : 'expand'} size={14} />
-        <span>{legend}</span>
-        <span className="shelf__count">{items.length}</span>
-      </button>
+      {readOnly ? (
+        /*
+          The tab. What is visible when the cursor is anywhere else.
+          
+          It carries the count as well as the word, because it is the only thing
+          on screen saying the albums exist — "Albums 3" is an invitation and
+          "Albums" alone is a heading over nothing.
+        */
+        <p className="shelf__legend">
+          {legend}
+          <span className="shelf__count">{items.length}</span>
+        </p>
+      ) : (
+        <button
+          type="button"
+          className="shelf__handle"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <Icon name={open ? 'close' : 'expand'} size={14} />
+          <span>{legend}</span>
+          <span className="shelf__count">{items.length}</span>
+        </button>
+      )}
 
       {open && (
         <div className="shelf__body">
@@ -118,26 +209,9 @@ export function SubgroupShelf({
                         half-painted image — and a part with no cover keeps the
                         plain ground, which is the honest thing for it to look like.
                       */}
-                      <button
-                        type="button"
-                        className={`shelf__tile${item.selected ? ' is-selected' : ''}${
-                          item.coverPath ? ' has-cover' : ''
-                        }`}
-                        onClick={item.onSelect}
-                      >
-                        {item.coverPath && (
-                          <img
-                            src={galleryPathUrl(item.coverPath)}
-                            alt=""
-                            aria-hidden="true"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        )}
-                        <span className="shelf__name">{item.label}</span>
-                        {item.note && <span className="shelf__note">{item.note}</span>}
-                      </button>
+                      <Tile item={item} shot={shot} readOnly={readOnly} />
 
+                      {!readOnly && (
                       <span className="shelf__actions">
                         <button
                           type="button"
@@ -176,6 +250,7 @@ export function SubgroupShelf({
                           <Icon name="close" size={12} />
                         </button>
                       </span>
+                      )}
                     </>
                   )}
 
@@ -207,6 +282,7 @@ export function SubgroupShelf({
             </ul>
           )}
 
+          {!readOnly && (
           <form
             className="shelf__add"
             onSubmit={(submit) => {
@@ -230,15 +306,88 @@ export function SubgroupShelf({
               Add
             </button>
           </form>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+/**
+ * One tile: the level's pictures with its name over them.
+ *
+ * A `Link` for a visitor and a `button` for an administrator, which is not a
+ * detail — a visitor is *going* to the level, an administrator is *selecting* it
+ * to edit on the page they are already on, and an anchor that does the second is
+ * a link that does not navigate.
+ *
+ * All the pictures are in the DOM at once, stacked, with opacity deciding which
+ * is seen — the same construction as `ProgramTile`'s plate, and for the same
+ * reason: swapping one element's `src` shows the ground for however long the new
+ * file takes to decode, which reads as a flash.
+ */
+function Tile({
+  item,
+  shot,
+  readOnly,
+}: {
+  item: ShelfItem;
+  shot: number;
+  readOnly: boolean;
+}) {
+  const shots = item.coverPaths ?? (item.coverPath ? [item.coverPath] : []);
+  const current = shots.length > 0 ? shot % shots.length : 0;
+
+  const className = `shelf__tile${item.selected ? ' is-selected' : ''}${
+    shots.length > 0 ? ' has-cover' : ''
+  }`;
+
+  const inside = (
+    <>
+      {shots.map((path, index) => (
+        <img
+          key={path}
+          className={`shelf__shot${index === current ? ' is-current' : ''}`}
+          src={galleryPathUrl(path)}
+          alt=""
+          aria-hidden="true"
+          // The first is what the tile shows before any cycling; the rest can
+          // arrive at their leisure.
+          loading={index === 0 ? 'eager' : 'lazy'}
+          decoding="async"
+        />
+      ))}
+      <span className="shelf__name">{item.label}</span>
+      {item.note && <span className="shelf__note">{item.note}</span>}
+    </>
+  );
+
+  if (readOnly && item.href) {
+    return (
+      <Link className={className} href={item.href}>
+        {inside}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" className={className} onClick={item.onSelect}>
+      {inside}
+    </button>
+  );
+}
+
 export interface ShelfItem {
   id: string;
   label: string;
+  /** Where a visitor goes when they press it. Unused in the editing shelf. */
+  href?: string | undefined;
+  /**
+   * Up to `SUMMARY_COVERS` pictures for the tile to cycle through, the chosen
+   * cover first. Falls back to `coverPath` alone when absent, so the editing
+   * shelf — which has no use for a slideshow — need not supply it.
+   */
+  coverPaths?: readonly string[] | undefined;
   /**
    * Storage path of its cover, or null.
    *
@@ -262,6 +411,22 @@ export interface ShelfItem {
 export function shelfCover(cover: DocOf<GalleryMedia> | null | undefined): string | null {
   if (!cover) return null;
   return cover.kind === 'video' ? cover.posterPath : cover.renditionPath;
+}
+
+/**
+ * The same, for the several a cycling tile wants.
+ *
+ * Capped again here rather than trusting the summary: `covers` is already sliced
+ * to `SUMMARY_COVERS`, and a second cap costs nothing and means this cannot be
+ * the place a wider summary quietly puts twelve images in a corner tile.
+ */
+export function shelfCovers(
+  covers: readonly (DocOf<GalleryMedia> | null | undefined)[] | undefined,
+): string[] {
+  return (covers ?? [])
+    .map(shelfCover)
+    .filter((path): path is string => path !== null)
+    .slice(0, SUMMARY_COVERS);
 }
 
 /** Narrow helper so the caller does not repeat the draft/count wording. */

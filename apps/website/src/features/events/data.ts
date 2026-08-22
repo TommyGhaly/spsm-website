@@ -1,7 +1,7 @@
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { COLLECTIONS, toDate, type DocOf, type Event } from '@spsm/shared';
 import { db } from '@/lib/firebase';
-import { docOf, safely, withoutEmbargoed } from '@/lib/firestore';
+import { docOf, safely } from '@/lib/firestore';
 
 /**
  * The parish calendar.
@@ -12,20 +12,35 @@ import { docOf, safely, withoutEmbargoed } from '@/lib/firestore';
  * put them in the build at all.
  */
 
+/*
+ * ## Nothing is filtered here any more, and that is the whole change
+ *
+ * These queries used to carry `where('published', '==', true)`, run their result
+ * through `withoutEmbargoed` for a future `publishAt`, and then strip a
+ * `pendingEdit` field holding staff's unpublished words. All three are gone
+ * because the thing they protected is gone: at Tommy's direction the events
+ * editor has no publish step, so an event in the collection *is* an event on the
+ * website.
+ *
+ * That deleted a real hazard along with the feature. `pendingEdit` put
+ * unpublished text into the exported HTML of a public page, and the only thing
+ * standing between it and the CDN was a strip in this file. A field that cannot
+ * exist cannot leak.
+ *
+ * The corresponding read rule is now `allow read: if true` on `/events`. It had
+ * to be: this file reads the collection anonymously during `next build`, and with
+ * `published` absent the old rule denied it.
+ */
+
 export async function getUpcomingEvents(max = 12): Promise<DocOf<Event>[]> {
   return safely(
     'upcoming events',
     async () => {
       const snapshot = await getDocs(
-        query(
-          collection(db(), COLLECTIONS.events),
-          where('published', '==', true),
-          orderBy('startAt', 'asc'),
-          limit(max * 3),
-        ),
+        query(collection(db(), COLLECTIONS.events), orderBy('startAt', 'asc'), limit(max * 3)),
       );
 
-      const live = withoutEmbargoed('events', snapshot.docs.map(docOf<Event>));
+      const live = snapshot.docs.map(docOf<Event>);
 
       // Past events are filtered here rather than with where('startAt','>=',now)
       // for a reason worth keeping: a build-time range filter bakes the build
@@ -49,10 +64,8 @@ export async function getAllEvents(): Promise<DocOf<Event>[]> {
   return safely(
     'all events',
     async () => {
-      const snapshot = await getDocs(
-        query(collection(db(), COLLECTIONS.events), where('published', '==', true)),
-      );
-      return withoutEmbargoed('events', snapshot.docs.map(docOf<Event>));
+      const snapshot = await getDocs(collection(db(), COLLECTIONS.events));
+      return snapshot.docs.map(docOf<Event>);
     },
     [],
   );

@@ -150,18 +150,15 @@ export function endInstantOf(form: FormState): Date | null {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The document as the editor's fields, preferring what has been typed but not
- * yet published.
+ * The document as the editor's fields.
  *
- * `pendingEdit` wins where it exists, and that is the whole point of it: staff
- * pick up where they left off, while the fields underneath stay whatever the
- * parish is currently being shown. The fallback is not a nicety — an event
- * written before `pendingEdit` existed does not have the key at all.
+ * One source now. This briefly read from a `pendingEdit` copy where one existed,
+ * so that staff picked up their unpublished words while the page kept showing the
+ * parish's — the whole mechanism went with the publish step, and with it the one
+ * thing about this editor that could make the fields and the page disagree.
  */
 export function fromEvent(event: DocOf<Event>): FormState {
-  // Spread rather than branch per field, so a field added to `EventContent`
-  // later cannot be silently read from the wrong one of the two.
-  const content = event.pendingEdit ? { ...event, ...event.pendingEdit } : event;
+  const content = event;
 
   const zone = content.timeZone || PARISH_TIME_ZONE;
   const start = toDate(content.startAt);
@@ -172,8 +169,6 @@ export function fromEvent(event: DocOf<Event>): FormState {
 
   return {
     title: content.title,
-    // From the document, never from the pending edit: the slug is not editable
-    // and `EventContent` does not carry it.
     slug: event.slug,
     summary: content.summary,
     body: content.body,
@@ -263,16 +258,19 @@ export interface Problem {
   field: FieldKey;
   message: string;
   /**
-   * True for something the public page needs and a draft does not.
+   * True for something the page *wants* rather than something that is wrong.
    *
-   * This is the difference that makes the form usable. Somebody standing in the
-   * church hall wants to write down "Festival, September 3rd" and finish it at
-   * home — and the old form refused to save that at all, because it demanded a
-   * summary and a description first. So a draft needs only a name and a date,
-   * and the rest is required at the moment it becomes public, which is the
-   * moment it is actually true.
+   * It used to mean "needed to publish, not to save", and gated a Publish button.
+   * There is no publish step any more, so nothing is gated by it — but the
+   * distinction it draws is the one thing worth keeping from that mechanism:
+   * "you have not written a description yet" is a fact about an unfinished event
+   * and "it ends before it starts" is a mistake. Marking both in red the moment
+   * an editor opens is how a form teaches people to ignore red.
+   *
+   * So these are advice, drawn quietly in the bar, and the others are errors,
+   * drawn on the field. See `mistakes` and `stillMissing`.
    */
-  publishOnly?: boolean;
+  optional?: boolean;
 }
 
 export function problemsOf(form: FormState): Problem[] {
@@ -338,15 +336,15 @@ export function problemsOf(form: FormState): Problem[] {
     found.push({
       field: 'summary',
       message: 'Write the one-line summary — it is what the calendar shows.',
-      publishOnly: true,
+      optional: true,
     });
   }
 
   if (!form.body.trim()) {
     found.push({
       field: 'body',
-      message: 'Write the description before this goes on the website.',
-      publishOnly: true,
+      message: 'This event has no description yet.',
+      optional: true,
     });
   }
 
@@ -354,26 +352,27 @@ export function problemsOf(form: FormState): Problem[] {
 }
 
 /**
- * Everything that must be true before this event may go on the website.
+ * The things that are actually *wrong* — an end before a start, a link that is
+ * not a link, a date the calendar cannot read.
  *
- * All of them, `publishOnly` included — that flag's whole meaning is "needed to
- * publish, not to save", and this is the one caller for which it is needed.
+ * Drawn on the field, in red, as soon as they are true. Nothing blocks a save,
+ * because saving is not an action any more; what these buy is that a mistake is
+ * pointed at rather than silently written.
  */
-export function publishProblems(form: FormState): Problem[] {
-  return problemsOf(form);
+export function mistakes(form: FormState): Problem[] {
+  return problemsOf(form).filter((problem) => !problem.optional);
 }
 
 /**
- * The problems worth showing while somebody is still typing.
+ * The things the event has not got round to yet — a summary, a description.
  *
- * Not the `publishOnly` ones. "Write the description" is true of a draft and is
- * not a mistake, and marking an empty field red the moment an editor opens is
- * how a form teaches people to ignore red. These are the entries that are
- * actually *wrong* — an end before a start, a link that is not a link — and
- * saying so immediately is the only time it is useful.
+ * Advice, not errors, and shown once in the bar rather than on the fields. An
+ * event with neither is a real thing to have on the website for an afternoon
+ * while somebody writes them, and it is now on the website the whole time, so
+ * nagging in red about it would be nagging about the normal case.
  */
-export function liveProblems(form: FormState): Problem[] {
-  return problemsOf(form).filter((problem) => !problem.publishOnly);
+export function stillMissing(form: FormState): Problem[] {
+  return problemsOf(form).filter((problem) => problem.optional);
 }
 
 /* -------------------------------------------------------------------------- */

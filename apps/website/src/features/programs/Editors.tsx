@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { DocOf, Program, ProgramEvent } from '@spsm/shared';
+import { DEFAULT_CHILD_LABEL, type DocOf, type Program, type ProgramEvent } from '@spsm/shared';
 import { dayKey, fromDayKey, PARISH_TIME_ZONE } from '@/lib/dates';
 import {
   deleteProgram,
@@ -123,6 +123,7 @@ function LiveText({
   placeholder,
   note,
   busy = false,
+  allowEmpty = false,
 }: {
   label: string;
   value: string;
@@ -132,6 +133,15 @@ function LiveText({
   placeholder?: string;
   note?: string;
   busy?: boolean;
+  /**
+   * Whether clearing the field is a real answer.
+   *
+   * False for a name, where empty would leave a level with nothing to click on.
+   * True for a field whose empty state *means* something — "use the default" —
+   * and where the guard below otherwise makes the value impossible to unset:
+   * it can be typed in and never taken out again.
+   */
+  allowEmpty?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -142,7 +152,7 @@ function LiveText({
     // An empty name would leave a level with nothing to click on in the menu, so
     // it is refused by putting the old one back rather than by an error message
     // about a field somebody has already left.
-    if (rows === undefined && next === '') {
+    if (rows === undefined && next === '' && !allowEmpty) {
       setDraft(value);
       return;
     }
@@ -313,6 +323,27 @@ export function ProgramDetails({
         }
       />
 
+      {/*
+        What this ministry's parts are called. Shows on the side menu, on the
+        heading over the cards, and in "Add a …" — see `childLabelOf`.
+      */}
+      <LiveText
+        label="Its parts are called"
+        value={program.childLabel ?? ''}
+        busy={busy}
+        placeholder={DEFAULT_CHILD_LABEL}
+        allowEmpty
+        onCommit={(childLabel) =>
+          void write('rename the parts of this ministry', () =>
+            // Empty means "no opinion", which has to reach the document as null
+            // rather than as an empty string the fallback would then have to
+            // second-guess.
+            updateProgram(program.id, { childLabel: childLabel.trim() || null }, null),
+          )
+        }
+        note={`Plural, as it appears over a list — "${DEFAULT_CHILD_LABEL}", "Years", "Weeks". Leave it empty for "${DEFAULT_CHILD_LABEL}".`}
+      />
+
       <Toggle
         checked={program.published}
         disabled={busy}
@@ -445,6 +476,24 @@ export function LevelDetails({
         standing class. Undated levels sort after dated ones, in the order you put
         them in.
       </p>
+
+      {/*
+        What the parts *inside this one* are called — the weeks of a year, the
+        days of a week. Set here rather than inherited from the ministry because
+        that is exactly where one word stops fitting: the parts of Summercamp are
+        years, and the parts of a year are not.
+      */}
+      <LiveText
+        label="Its parts are called"
+        value={node.childLabel ?? ''}
+        busy={busy}
+        placeholder={DEFAULT_CHILD_LABEL}
+        allowEmpty
+        onCommit={(childLabel) =>
+          void write('rename the parts of this', { childLabel: childLabel.trim() || null })
+        }
+        note={`Plural — "Weeks", "Days", "${DEFAULT_CHILD_LABEL}". Leave it empty for "${DEFAULT_CHILD_LABEL}".`}
+      />
 
       <Toggle
         checked={node.published}

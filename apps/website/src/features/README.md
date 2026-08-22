@@ -38,7 +38,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | Feature | Route | State |
 |---|---|---|
 | `content` | `/about` `/beliefs` `/clergy` | Working. Waiting on content. |
-| `events` | `/events`, `/events/[slug]`, `/admin/events` | Working, **with a staff editor**. |
+| `events` | `/events`, `/events/[slug]`, `/staff/events` | Working, **edited in place on the page**. Typing autosaves into `pendingEdit`; a separate Publish makes it the parish's copy. `/staff/events` exists only for what has no page to be in place on — creating one, and reaching a draft the export skipped. |
 | `bulletin` | homepage | **Live with real data.** |
 | `announcements` | homepage | Working. Waiting on content. |
 | `parish` | `/contact` | Working. Waiting on `config/parish`. |

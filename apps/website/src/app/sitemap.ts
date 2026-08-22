@@ -14,9 +14,10 @@ import { SITE_ORIGIN } from './layout';
  * `output: 'export'` still runs this during `next build` and writes
  * `out/sitemap.xml`.
  *
- * Not listed, deliberately: `/admin` (staff tooling, also `noindex`), `/misc`
- * (no longer emitted at all), and the three NFC routes — `/parking`, `/prayer`,
- * and `/welcome` — which are reached by tapping a tag, not by searching.
+ * Not listed, deliberately: `/servants` (behind sign-in, also `noindex`),
+ * `/misc` (no longer emitted at all), and the three NFC routes — `/parking`,
+ * `/prayer`, and `/welcome` — which are reached by tapping a tag, not by
+ * searching.
  *
  * Two of those three are now linked from `/forms`, which is in the nav. That
  * changes whether they can be *browsed* to, not whether they should turn up in
