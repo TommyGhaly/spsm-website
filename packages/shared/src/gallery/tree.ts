@@ -59,8 +59,6 @@ export interface GalleryTreeNode {
    * that carry nothing but a shape.
    */
   featuredMediaIds?: readonly string[] | undefined;
-  /** The picture chosen for this node's card. See `summariseChildren`. */
-  coverMediaId?: string | null | undefined;
 }
 
 /**
@@ -216,6 +214,99 @@ export function subtreeIds<N extends GalleryTreeNode>(
 ): string[] {
   const ids = descendantsOf(tree, nodeId).map((node) => node.id);
   return nodeId === null ? ids : [nodeId, ...ids];
+}
+
+/** One level, and how deep under the program it sits. Zero is a direct child. */
+export interface GalleryTreeRow<N extends GalleryTreeNode> {
+  node: N;
+  depth: number;
+}
+
+/**
+ * The whole tree as a flat list, in reading order, each row carrying its depth.
+ *
+ * `descendantsOf` already walks in this order and is what this is built on. What
+ * it does not return is the depth, and the depth is the whole point here: this
+ * exists for the two places that have to render the tree as a **one-dimensional
+ * list of choices** rather than as nested pages —
+ *
+ *  - the picker a visitor uses to say which level their photograph belongs to
+ *  - the control an administrator uses to re-file a photograph before approving
+ *
+ * Both are `<select>` elements, and a `<select>` has no nesting. Without a depth
+ * per row, "Day 1" appears three times in a ministry with three weeks and there
+ * is no way to tell which week each one is in. With it, the label can be
+ * indented and the list reads as the tree it came from.
+ *
+ * A prefix-of-titles label would be the other way to solve that, and is what
+ * `trailLabel` gives — but it needs a walk *up* per row, which is O(depth) reads
+ * of `byId` for every node in the ministry. This is one walk down.
+ *
+ * Shared rather than in the website for the reason the rest of this file is: the
+ * mobile app has the same upload form to build, over the same tree, and two
+ * implementations of "flatten this for a picker" would eventually disagree about
+ * ordering.
+ */
+export function flattenGalleryTree<N extends GalleryTreeNode>(
+  tree: GalleryTree<N>,
+): GalleryTreeRow<N>[] {
+  const rows: GalleryTreeRow<N>[] = [];
+  // The same cycle guard as every other walk in this file. A single bad
+  // `parentId` is all it takes, and this one runs on a public page.
+  const seen = new Set<string>();
+
+  const walk = (parent: string | null, depth: number): void => {
+    if (depth > GALLERY_MAX_DEPTH) return;
+    for (const child of childrenOf(tree, parent)) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      rows.push({ node: child, depth });
+      walk(child.id, depth + 1);
+    }
+  };
+
+  walk(null, 0);
+  return rows;
+}
+
+/**
+ * The level a submitted photograph is filed under unless its sender says
+ * otherwise.
+ *
+ * Three fallbacks, in this order, and the order is the feature:
+ *
+ *  1. **The parish's priority section** — `Program.prioritySubmissionNodeId`. It
+ *     wins over the page, which is the whole point of it: somebody arriving
+ *     anywhere in the ministry during camp week uploads to today's session
+ *     without having to find it in a list.
+ *  2. **The level being looked at**, which is the sensible reading of a form on
+ *     Day 1's page when the parish has set no priority.
+ *  3. **The first level in the ministry**, so the form on a ministry page with no
+ *     priority set still has an answer rather than refusing to send.
+ *
+ * A priority id that does not resolve falls through to (2) rather than being
+ * returned. A level can be deleted long after it was made the priority, and a
+ * stale id must cost a preselection and never a working form — so every reader
+ * of that field has to tolerate one, and this is where that happens.
+ *
+ * Pure, shared, and tested rather than inlined in the form, because every branch
+ * of it produces a page that looks completely correct and quietly files
+ * photographs somewhere nobody chose. Nothing on screen would say so.
+ *
+ * `null` only for a ministry with no levels at all — a program created five
+ * minutes ago. There is nowhere for a photograph to go, and `firestore.rules`
+ * would refuse one, so the form renders nothing.
+ */
+export function defaultSubmissionNode<N extends GalleryTreeNode>(
+  tree: GalleryTree<N>,
+  /** `Program.prioritySubmissionNodeId`, however absent it happens to be. */
+  priorityId: string | null | undefined,
+  /** The level whose page the form is on, or null for the ministry's own page. */
+  pageNodeId: string | null,
+): string | null {
+  if (priorityId && tree.byId.has(priorityId)) return priorityId;
+  if (pageNodeId && tree.byId.has(pageNodeId)) return pageNodeId;
+  return flattenGalleryTree(tree)[0]?.node.id ?? null;
 }
 
 /**
@@ -543,14 +634,20 @@ export const SUMMARY_COVERS = 5;
 /**
  * Summarise every child of a level, for the cards on its page.
  *
- * The cover is the child's own `coverMediaId` when an administrator chose one —
- * honoured even mid-transcode, because a chosen cover that silently does not
- * appear makes the control look broken — and otherwise the first photograph in
- * the child's subtree that is cleared for a page and has a file.
+ * The cover is the first photograph in the child's subtree that is cleared for a
+ * page and has a file, and `covers` is that one followed by the rest — a card
+ * cycles, so "the cover" is only which lap it starts on.
  *
- * A video is never an automatic cover. Its poster frame is a still nobody chose,
- * and one of those beside three chosen photographs is always the odd card out.
- * Chosen explicitly, it is honoured.
+ * **Nothing is chosen here any more.** `coverMediaId` used to win over the
+ * automatic pick, with a chooser in the panel for it at Tommy's direction
+ * removed: a card cross-fades every four seconds, so the setting's entire effect
+ * was which picture was on screen when you first looked at it. Documents written
+ * before this still carry the key; nothing reads it. See
+ * `ProgramEvent.coverMediaId` in the schema.
+ *
+ * A video is never a cover. Its poster frame is a still nobody chose, and one of
+ * those beside three photographs is always the odd card out — and with the
+ * chooser gone there is no longer any way to mean it deliberately.
  */
 export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMedia>(
   tree: GalleryTree<N>,
@@ -563,19 +660,14 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
     const ids = new Set(subtreeIds(tree, child.id));
     const mine = media.filter((item) => ids.has(item.programEventId));
 
-    const chosen = child.coverMediaId
-      ? mine.find((item) => item.id === child.coverMediaId)
-      : undefined;
-
     /*
      * `hasRenderableFile` is the part that is easy to leave out and impossible
-     * to miss once it bites: without it the automatic cover is the first
-     * approved photograph, which may be one whose transcode has not finished —
-     * and a card cover has no "Processing…" state to fall back on, so the level
-     * renders with the blank ground of one that has no photographs at all.
+     * to miss once it bites: without it the cover is the first approved
+     * photograph, which may be one whose transcode has not finished — and a card
+     * cover has no "Processing…" state to fall back on, so the level renders
+     * with the blank ground of one that has no photographs at all.
      */
     const cover =
-      chosen ??
       mine.find(
         (item) =>
           item.kind === 'photo' && item.placement.onPage && hasRenderableFile(item),
@@ -589,7 +681,8 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
      * Same `hasRenderableFile` guard as the cover above, and for the same
      * reason — a mid-transcode file in the cycle is a tile that blinks to blank
      * once per lap. The cover is put at the head rather than deduplicated after,
-     * so the picture an administrator chose is the one the tile opens on.
+     * so the one picture the cards elsewhere on the page draw is also the one
+     * the cycle opens on.
      */
     const rest = mine.filter(
       (item) =>

@@ -7,7 +7,7 @@ import {
   getProgramMedia,
   getProgramPageMedia,
   getPrograms,
-  pickProgramCover,
+  programFallbackShot,
   programTileMedia,
 } from './data';
 import { CYCLE_MAX, CYCLE_MS, ProgramTile } from './ProgramTile';
@@ -90,8 +90,8 @@ export function ActivitiesPreview({ band }: { band: string }) {
           const featured = programTileMedia(program, media, CYCLE_MAX);
           if (featured.length > 0) return [program.id, featured] as const;
 
-          const cover = pickProgramCover(program, media);
-          return [program.id, cover ? [cover] : []] as const;
+          const fallback = programFallbackShot(media);
+          return [program.id, fallback ? [fallback] : []] as const;
         }),
       );
 

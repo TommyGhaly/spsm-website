@@ -1,8 +1,17 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import {
   driftsFor,
+  fitWheelHeight,
+  spinFor,
+  spinReversed,
   titlePlacementFor,
   type DocOf,
   type GalleryMedia,
@@ -40,6 +49,28 @@ import { useEditMode } from './editMode';
  * be meaningless. Instead each display's block sets the one variable it needs
  * (`--gallery-row-height`, `--rail-tile`, `--rail-height`) from a shared four-step
  * ladder in globals.css. The names are the contract; the numbers are per display.
+ *
+ * ## Where the panel goes: `data-panel-group` and `data-panel-anchor`
+ *
+ * The properties panel anchors **per block, not per picture.** Selection is still
+ * per picture — clicking a photograph selects that photograph — but the panel
+ * opens beside the *section* and stays put while somebody clicks from one picture
+ * to the next inside it.
+ *
+ * It used to anchor to the exact element pressed, so working through a grid of
+ * twenty pictures moved the panel twenty times. Tommy's words: it "is kind of just
+ * loading whereever". `editMode.select` reads these two attributes; see the note
+ * there.
+ *
+ * The anchor is the section *tab*, not the block's toolbar. The toolbar is the
+ * other stable per-block element and it is at the **bottom** of a block that can
+ * be ten thousand pixels tall — a panel hung off it opens thousands of pixels
+ * below the picture that was clicked. The tab is at the top, is small, and already
+ * says what the section is.
+ *
+ * Marked with attributes rather than matched by class name upstream, so that a
+ * selectable thing which is *not* a container of other selectable things — a level
+ * card, a ministry plate — keeps anchoring to itself, which is right for it.
  */
 export function GallerySection({
   id,
@@ -105,6 +136,22 @@ export function GallerySection({
   const placement = titlePlacementFor(layout);
   const drifts = driftsFor(layout);
 
+  /*
+   * A `fit` column's frame height: one photograph at the column's own width, less
+   * a sliver, so the next one is always showing. See `fitWheelHeight`.
+   *
+   * Measured here rather than expressed in CSS because it needs two things the
+   * stylesheet cannot put together: the column's rendered width, and the *shape of
+   * the pictures in it*. `aspect-ratio` on the tiles gets each tile right
+   * individually; nothing in CSS can say "make the frame as tall as one of these".
+   */
+  const strip = useRef<HTMLUListElement | null>(null);
+  const fitHeight = useFitHeight(
+    strip,
+    layout.display === 'column' && layout.scale === 'fit',
+    medianAspect(media),
+  );
+
   /**
    * An empty title draws no heading at all.
    *
@@ -158,6 +205,7 @@ export function GallerySection({
         onReorder={onDropPicture}
         onRemove={onRemovePicture}
         onSelect={onSelect}
+        captions={layout.caption.placement !== 'hidden'}
       />
     ) : (
       /*
@@ -183,10 +231,11 @@ export function GallerySection({
         axis={layout.display === 'column' ? 'y' : 'x'}
         className={`rail--gallery rail--gallery-${layout.display}`}
         drift={drifts}
+        reverse={spinReversed(spinFor(layout))}
         speed={90}
         frozen={frozen}
       >
-        <ul className={`gallery-strip gallery-strip--${layout.display}`}>
+        <ul ref={strip} className={`gallery-strip gallery-strip--${layout.display}`}>
           {media.map((item, index) => (
             /*
               The tile's shape comes from the *document*, not from the loaded
@@ -206,7 +255,17 @@ export function GallerySection({
               scrolls, lazy loading works as intended, and nothing reflows when a
               picture lands.
             */
-            <li key={item.id} style={{ aspectRatio: aspectOf(item) }}>
+            /*
+              `uniform` sets no ratio at all and lets the stylesheet square the
+              tile off. It has to be the absence of the inline style rather than an
+              inline `1 / 1`, because the deadlock above is only avoided while the
+              tile has *some* shape before its photograph lands — and a square is a
+              shape, so the stylesheet can supply it.
+            */
+            <li
+              key={item.id}
+              {...(layout.fit === 'uniform' ? {} : { style: { aspectRatio: aspectOf(item) } })}
+            >
               <GalleryFigure
                 item={item}
                 caption={layout.caption}
@@ -224,6 +283,7 @@ export function GallerySection({
         'gallery-band',
         `gallery-band--${layout.display}`,
         `gallery-band--scale-${layout.scale}`,
+        `gallery-band--fit-${layout.fit}`,
         `gallery-band--title-${placement}`,
         `gallery-band--caption-${layout.caption.placement}`,
         selected ? 'is-selected' : '',
@@ -231,6 +291,19 @@ export function GallerySection({
         .join(' ')
         .trim()}
       {...(named ? { 'aria-labelledby': id } : { 'aria-label': label ?? 'Photographs' })}
+      /*
+        The one height this file sets in JavaScript, and only for `fit`. Every named
+        size is four numbers in the stylesheet — see `WHEEL_HEIGHT_REM`, which says
+        why the two copies are worth it. `fit` is not a number, so it cannot be
+        there; until the measurement lands this is absent and the
+        `gallery-band--scale-fit` rule's own value holds, which is what stops the
+        block jumping on first paint.
+      */
+      {...(fitHeight === null
+        ? {}
+        : { style: { '--rail-height': `${fitHeight}px` } as CSSProperties })}
+      // The block the properties panel hangs off. See "Where the panel goes".
+      data-panel-group=""
     >
       {/*
         A section is a heading plus a grid of photographs, and the photographs are
@@ -242,6 +315,8 @@ export function GallerySection({
         <button
           type="button"
           className={`section-handle${selected ? ' is-selected' : ''}`}
+          // …and the element within it that the panel sits beside.
+          data-panel-anchor=""
           onClick={() => edit.select({ kind: 'section', key: id })}
         >
           {title || label || 'Photographs'}
@@ -278,6 +353,69 @@ export function GallerySection({
  * landscape snapshot is the least wrong guess, and the image is cropped to the
  * box either way, so a wrong guess costs a crop rather than a broken layout.
  */
+/**
+ * The shape to size a `fit` column's frame from: the median of its pictures.
+ *
+ * The median and not the first, because the first changes every time somebody
+ * reorders the wheel and the frame would jump with it — and not the mean either,
+ * since one panorama among twenty portraits would drag the frame short of all of
+ * them. The median is the shape most of the wheel actually is.
+ *
+ * `null` when nothing in the set carries dimensions, which is a real state for a
+ * document written before `GalleryMedia.width` existed.
+ */
+function medianAspect(media: readonly DocOf<GalleryMedia>[]): number | null {
+  const ratios = media
+    .filter((item) => item.width && item.height && item.width > 0 && item.height > 0)
+    .map((item) => item.width! / item.height!)
+    .sort((a, b) => a - b);
+  if (ratios.length === 0) return null;
+  return ratios[Math.floor((ratios.length - 1) / 2)] ?? null;
+}
+
+/**
+ * The measured width of the strip, turned into a frame height.
+ *
+ * The measure runs **synchronously before `observe`**, and the effect has no
+ * dependency array on purpose. `ResizeObserver` callbacks are not delivered in
+ * this project's headless preview, so an implementation that waited for the first
+ * callback would be a column that never got a height there — and the observer is
+ * the part that cannot be relied on, not the part that does the work. Re-running
+ * per render is cheap: `clientWidth` on one element, and the state only changes
+ * when the number does.
+ */
+function useFitHeight(
+  strip: React.RefObject<HTMLUListElement | null>,
+  enabled: boolean,
+  aspect: number | null,
+): number | null {
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!enabled || aspect === null) {
+      setHeight((was) => (was === null ? was : null));
+      return;
+    }
+    const el = strip.current;
+    if (!el) return;
+
+    const measure = () => {
+      const next = fitWheelHeight(el.clientWidth, aspect);
+      if (next === null) return;
+      // Rounded, so a sub-pixel reflow does not re-render the block forever.
+      const rounded = Math.round(next);
+      setHeight((was) => (was === rounded ? was : rounded));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  return enabled ? height : null;
+}
+
 function aspectOf(item: DocOf<GalleryMedia>): string {
   if (item.width && item.height && item.width > 0 && item.height > 0) {
     return `${item.width} / ${item.height}`;

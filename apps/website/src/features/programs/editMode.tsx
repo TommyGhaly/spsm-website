@@ -82,11 +82,12 @@ interface EditModeValue {
    * selectable element in four files, threaded through the same components this
    * context exists to keep editing concerns out of.
    *
-   * So: the last element pressed before the selection changed. That is not a
-   * heuristic standing in for the real answer, it *is* the answer — selection in
-   * this editor happens by clicking the thing, so the thing clicked is the thing
-   * selected. It is null when the selection was set by something other than a
-   * press, which is the case the panel has a fallback for.
+   * So: derived from the last element pressed before the selection changed, by
+   * `anchorFor` — which resolves a press inside a marked block to the *block's*
+   * anchor rather than to the pixel that was hit, so that clicking through the
+   * pictures in a section does not walk the panel across the screen. It is null
+   * when the selection was set by something other than a press, which is the case
+   * the panel has a fallback for.
    */
   anchor: HTMLElement | null;
   setOn: (next: boolean) => void;
@@ -136,7 +137,7 @@ export function EditModeProvider({
 
   const select = useCallback((next: Selection) => {
     setSelection(next);
-    setAnchor(pressed.current);
+    setAnchor(anchorFor(pressed.current));
     /*
      * Cleared straight after being read, so a selection set later by something
      * that was *not* a press — a keyboard shortcut, a write completing — does not
@@ -173,6 +174,38 @@ export function EditModeProvider({
   );
 
   return <EditModeContext.Provider value={value}>{children}</EditModeContext.Provider>;
+}
+
+/**
+ * The element the panel should sit beside, given the element that was pressed.
+ *
+ * **Per block, not per picture.** A press inside something marked
+ * `data-panel-group` resolves to that group's `data-panel-anchor` — so every
+ * photograph in a gallery band yields the *same* anchor, and clicking from one
+ * picture to the next changes what the panel says without moving it.
+ *
+ * That is the fix for the panel "just loading whereever": selection here happens
+ * by clicking the thing, and the thing clicked is a different pixel every time, so
+ * a panel anchored to it necessarily jumped on every click. Anchoring to the
+ * container keeps the association — the panel is beside the section being worked
+ * in — and drops the jumping, which was all the movement was buying.
+ *
+ * Anything not inside a group anchors to itself, unchanged. A level card and a
+ * ministry plate are single things rather than containers of selectable ones, and
+ * for those "beside what I clicked" is exactly right.
+ */
+function anchorFor(element: HTMLElement | null): HTMLElement | null {
+  if (element === null) return null;
+  const group = element.closest<HTMLElement>('[data-panel-group]');
+  if (group === null) return element;
+  /*
+   * Falls back to the group itself when it carries no marked anchor. Not
+   * reachable today — the anchor is only read while editing and the tab that
+   * carries it only renders while editing, so the pair is either both present or
+   * both absent — but written out because the alternative, returning null, sends
+   * the panel to the corner of the window with no way to tell why.
+   */
+  return group.querySelector<HTMLElement>('[data-panel-anchor]') ?? group;
 }
 
 export function useEditMode(): EditModeValue {
@@ -222,17 +255,40 @@ export function BodyEditingClass() {
  * Renders nothing at all for a visitor. Not hidden with CSS: absent.
  */
 export function EditToggle() {
-  const { allowed, on, setOn } = useEditMode();
+  const { allowed, on } = useEditMode();
   if (!allowed) return null;
 
+  /*
+   * Nothing while editing. **Done lives in the editing column**, under the saved
+   * indicator, at Tommy's direction — *"put the done editing pill under the saved
+   * indicator for simplicity."*
+   *
+   * It is the right call for a reason worth recording: this pill was the last
+   * fixed thing floating over the page besides the column, and two controls in two
+   * corners for one mode is what produced the overlapping-pills bug the events bar
+   * was rebuilt to fix. One place says you are editing, and the same place is how
+   * you stop.
+   *
+   * The two callers that render this without a column — `EventArticle` — only
+   * render it on their read-only branch, so `on` is never true there. Anything new
+   * that renders this *must* provide its own way out of edit mode.
+   */
+  if (on) return null;
+
+  return <EditStart />;
+}
+
+/** The pill that starts editing. Separated only so `EditToggle` reads as a gate. */
+function EditStart() {
+  const { setOn } = useEditMode();
   return (
     <button
       type="button"
-      className={`edit-toggle${on ? ' is-on' : ''}`}
-      onClick={() => setOn(!on)}
-      aria-pressed={on}
+      className="edit-toggle"
+      onClick={() => setOn(true)}
+      aria-pressed={false}
     >
-      {on ? 'Done editing' : 'Edit this page'}
+      Edit this page
     </button>
   );
 }

@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
+  PACE_FACTORS,
+  PRESENTATION_PACES,
+  PRESENTATION_STYLES,
   isPresenting,
   parseGalleryPath,
+  presentationPace,
+  presentationStyle,
   programHref,
   programEventHref,
   presentHref,
+  withPresentationPace,
+  withPresentationStyle,
   withoutPresent,
 } from '../../apps/website/src/features/programs/route.js';
 
@@ -163,18 +170,25 @@ describe('href builders', () => {
   });
 
   /*
-   * The level is the path now, not a value in the query. "Present Day 2",
-   * "present Week 1" and "present all of Summercamp" are one operation over
-   * three subtrees, so the only thing the query still says is *that* the page is
-   * being presented.
+   * The level is the path, not a value in the query. "Present Day 2", "present
+   * Week 1" and "present all of Summercamp" are one operation over three
+   * subtrees, so what the query carries is the *style* — see the block on
+   * `presentationStyle` below.
    */
   it('builds a presentation link at any depth', () => {
-    expect(presentHref('summercamp')).toBe('/events/summercamp?present=all');
+    expect(presentHref('summercamp')).toBe('/events/summercamp?present=columns');
     expect(presentHref('summercamp', ['week-1-2027'])).toBe(
-      '/events/summercamp/week-1-2027?present=all',
+      '/events/summercamp/week-1-2027?present=columns',
     );
     expect(presentHref('summercamp', ['2026', 'week-1', 'day-2'])).toBe(
-      '/events/summercamp/2026/week-1/day-2?present=all',
+      '/events/summercamp/2026/week-1/day-2?present=columns',
+    );
+  });
+
+  it('carries a chosen style', () => {
+    expect(presentHref('summercamp', [], 'notebook')).toBe('/events/summercamp?present=notebook');
+    expect(presentHref('summercamp', ['day-2'], 'slide')).toBe(
+      '/events/summercamp/day-2?present=slide',
     );
   });
 
@@ -244,6 +258,17 @@ describe('withoutPresent', () => {
     );
   });
 
+  /*
+   * The pace goes with it. It only ever meant anything to the presentation, and
+   * leaving it behind would put `?pace=brisk` on an ordinary gallery page — where
+   * it describes nothing, and gets carried into every link copied from there.
+   */
+  it('drops the pace as well', () => {
+    expect(withoutPresent('/events/summercamp', '?present=notebook&pace=fast')).toBe(
+      '/events/summercamp',
+    );
+  });
+
   /** Anything else in the query is somebody else's — a campaign tag, a share
       link — and leaving the presentation is not a reason to lose it. */
   it('keeps every other parameter', () => {
@@ -254,5 +279,182 @@ describe('withoutPresent', () => {
 
   it('is a no-op on a page that was not being presented', () => {
     expect(withoutPresent('/events/summercamp', '')).toBe('/events/summercamp');
+  });
+});
+
+/**
+ * Which of the three styles a URL asks for.
+ *
+ * The same parameter answers two questions — *whether* to present and *how* —
+ * and the reason that is safe is entirely in this block: every value the
+ * parameter has ever had still presents. `?present=all` and `?present=day-2` are
+ * on printed sheets and in kiosk bookmarks around the parish, and the worst
+ * outcome for either would be a screen that refuses to start.
+ */
+describe('presentationStyle', () => {
+  it('reads each style back', () => {
+    expect(presentationStyle('?present=columns')).toBe('columns');
+    expect(presentationStyle('?present=slide')).toBe('slide');
+    expect(presentationStyle('?present=notebook')).toBe('notebook');
+  });
+
+  /** The two older meanings of the value, and a bare flag. */
+  it('gives the old URLs the style they have always shown', () => {
+    expect(presentationStyle('?present=all')).toBe('columns');
+    expect(presentationStyle('?present=day-2')).toBe('columns');
+    expect(presentationStyle('?present')).toBe('columns');
+    expect(presentationStyle('?present=')).toBe('columns');
+  });
+
+  it('does not care about a missing question mark or other parameters', () => {
+    expect(presentationStyle('present=slide')).toBe('slide');
+    expect(presentationStyle('?utm_source=bulletin&present=notebook')).toBe('notebook');
+  });
+
+  /*
+   * Case and whitespace are not corrected, deliberately: `Slide` is a typo, and
+   * a typo that silently works is a URL nobody ever fixes. It still presents.
+   */
+  it('falls back on anything it does not recognise', () => {
+    expect(presentationStyle('?present=Slide')).toBe('columns');
+    expect(presentationStyle('?present=carousel')).toBe('columns');
+    expect(presentationStyle('')).toBe('columns');
+  });
+
+  it('does not throw on a malformed escape', () => {
+    expect(() => presentationStyle('?present=%zz')).not.toThrow();
+  });
+
+  it('reads back every style presentHref can write', () => {
+    for (const style of PRESENTATION_STYLES) {
+      const [, search = ''] = presentHref('summercamp', ['day-2'], style).split('?');
+      expect(isPresenting(search)).toBe(true);
+      expect(presentationStyle(search)).toBe(style);
+    }
+  });
+});
+
+/**
+ * Switching style on screen.
+ *
+ * What the switcher hands to `history.replaceState`. It is a URL rewrite rather
+ * than a navigation, so getting it wrong does not throw — it leaves a kiosk
+ * showing one style and bookmarking another.
+ */
+describe('withPresentationStyle', () => {
+  it('replaces the style and keeps the path', () => {
+    expect(withPresentationStyle('/events/summercamp/day-2', '?present=columns', 'notebook')).toBe(
+      '/events/summercamp/day-2?present=notebook',
+    );
+  });
+
+  it('upgrades a URL that carried an old value', () => {
+    expect(withPresentationStyle('/events/summercamp', '?present=all', 'slide')).toBe(
+      '/events/summercamp?present=slide',
+    );
+  });
+
+  /** Somebody else's parameters are not the switcher's to drop. */
+  it('keeps every other parameter', () => {
+    expect(
+      withPresentationStyle('/events/summercamp', '?utm_source=bulletin&present=all', 'notebook'),
+    ).toBe('/events/summercamp?utm_source=bulletin&present=notebook');
+  });
+
+  /*
+   * A page that was not being presented gets the flag rather than nothing. Only
+   * reachable if the switcher were ever rendered outside the presentation, and
+   * "start presenting in that style" is the only sensible answer if it is.
+   */
+  it('adds the flag when there was none', () => {
+    expect(withPresentationStyle('/events/summercamp', '', 'slide')).toBe(
+      '/events/summercamp?present=slide',
+    );
+  });
+});
+
+/**
+ * How fast it moves.
+ *
+ * The second thing a kiosk URL carries. Tested for the same reason the style is:
+ * it is read out of a string a stranger can type, and the only acceptable failure
+ * is "the speed it has always been".
+ */
+describe('presentationPace', () => {
+  it('reads each pace back', () => {
+    expect(presentationPace('?present=notebook&pace=slow')).toBe('slow');
+    expect(presentationPace('?pace=steady')).toBe('steady');
+    expect(presentationPace('?pace=brisk')).toBe('brisk');
+    expect(presentationPace('?pace=fast')).toBe('fast');
+  });
+
+  it('is steady when the URL says nothing', () => {
+    expect(presentationPace('')).toBe('steady');
+    expect(presentationPace('?present=columns')).toBe('steady');
+    expect(presentationPace('?pace=')).toBe('steady');
+    expect(presentationPace('?pace=147')).toBe('steady');
+    expect(presentationPace('?pace=Fast')).toBe('steady');
+  });
+
+  it('does not throw on a malformed escape', () => {
+    expect(() => presentationPace('?pace=%zz')).not.toThrow();
+  });
+
+  /**
+   * `steady` must be exactly 1, or every screen in the parish changes speed the
+   * day this ships — a URL with no `pace` in it has to behave as it did before
+   * there was a setting.
+   */
+  it('leaves steady at exactly one', () => {
+    expect(PACE_FACTORS.steady).toBe(1);
+  });
+
+  /** Ordered slowest to fastest, which is what the −/+ control steps through. */
+  it('is ordered', () => {
+    const factors = PRESENTATION_PACES.map((pace) => PACE_FACTORS[pace]);
+    expect(factors).toEqual([...factors].sort((a, b) => a - b));
+  });
+});
+
+describe('withPresentationPace', () => {
+  it('sets the pace and keeps the style', () => {
+    expect(withPresentationPace('/events/summercamp', '?present=notebook', 'fast')).toBe(
+      '/events/summercamp?present=notebook&pace=fast',
+    );
+  });
+
+  it('replaces a pace that was already there', () => {
+    expect(withPresentationPace('/events/summercamp', '?present=slide&pace=slow', 'brisk')).toBe(
+      '/events/summercamp?present=slide&pace=brisk',
+    );
+  });
+
+  /*
+   * The default writes *no* parameter. A bookmark carrying `?pace=steady` claims
+   * a decision was made where none was, and these URLs get pasted into the
+   * bulletin.
+   */
+  it('drops the parameter at the default', () => {
+    expect(withPresentationPace('/events/summercamp', '?present=slide&pace=fast', 'steady')).toBe(
+      '/events/summercamp?present=slide',
+    );
+    expect(withPresentationPace('/events/summercamp', '', 'steady')).toBe('/events/summercamp');
+  });
+
+  it('keeps every other parameter', () => {
+    expect(
+      withPresentationPace('/events/summercamp', '?utm_source=bulletin&present=columns', 'slow'),
+    ).toBe('/events/summercamp?utm_source=bulletin&present=columns&pace=slow');
+  });
+
+  /** Round trip, over every pace and both directions. */
+  it('reads back what it writes', () => {
+    for (const pace of PRESENTATION_PACES) {
+      const url = withPresentationPace('/events/summercamp', '?present=notebook', pace);
+      const [, search = ''] = url.split('?');
+      expect(presentationPace(search)).toBe(pace);
+      expect(presentationStyle(search)).toBe('notebook');
+      expect(isPresenting(search)).toBe(true);
+    }
   });
 });

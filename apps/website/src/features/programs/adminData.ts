@@ -47,6 +47,7 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  CONFIG_DOC_EVENTS,
   GALLERY_SUMMARY_MAX,
   buildGalleryTree,
   defaultBand,
@@ -137,7 +138,6 @@ export async function createProgram(draft: ProgramDraft): Promise<string> {
     slug,
     name: draft.name.trim(),
     description: draft.description,
-    coverMediaId: null,
     // Written explicitly rather than left absent. `programFeatured` tolerates a
     // missing key — it has to, for the programs that predate the field — but a
     // document created today with the field absent is a second shape of "empty"
@@ -164,10 +164,22 @@ export async function createProgram(draft: ProgramDraft): Promise<string> {
 export async function updateProgram(
   programId: string,
   patch: Partial<Omit<ProgramDraft, never>> & {
-    coverMediaId?: string | null;
     featuredMediaIds?: string[];
     /** What the ministry's parts are called. Null ⇒ the default. */
     childLabel?: string | null;
+    /** Whether the parish is collecting photographs anywhere under this one. */
+    submissionsOpen?: boolean;
+    /**
+     * The level a visitor's upload is preselected for. Null ⇒ none, and the form
+     * starts on the level whose page the visitor is standing on.
+     *
+     * Not validated against the tree here. It is written from a `<select>` built
+     * out of that same tree, so a value that does not resolve means the level was
+     * deleted between the page loading and the choice being made — and every
+     * reader already tolerates a stale id, because a level can be deleted at any
+     * time after this is set. See `Program.prioritySubmissionNodeId`.
+     */
+    prioritySubmissionNodeId?: string | null;
   },
   uid: string | null,
 ): Promise<void> {
@@ -302,7 +314,6 @@ export async function createProgramEvent(
     // document created today with the field absent is a second shape of "empty"
     // for no reason.
     featuredMediaIds: [],
-    coverMediaId: null,
     calendarEventId: null,
     submissionsOpen: draft.submissionsOpen,
     published: draft.published,
@@ -567,39 +578,20 @@ export async function setNodeFeatured(
   });
 }
 
-/** The one picture that stands for the ministry in the rail on /events. */
-export async function setProgramCover(
-  programId: string,
-  mediaId: string | null,
-  uid: string | null,
-): Promise<void> {
-  await updateProgram(programId, { coverMediaId: mediaId }, uid);
-}
-
-/**
- * The one picture that stands for a level on the card its parent draws for it.
+/*
+ * `setProgramCover` and `setNodeCover` are both gone, with the two
+ * `coverMediaId` fields themselves.
  *
- * Separate from `updateProgramEvent` rather than a field on `ProgramEventDraft`,
- * because it is not set from the form: it is set by clicking a photograph, in a
- * picker, and folding it into the draft would mean the form had to hold and
- * write back a value it never shows.
+ * The ministry's was never read — `programTileMedia` takes `featuredMediaIds`, in
+ * the order they were chosen — so the panel offered a second answer to a question
+ * the featured set had already answered and threw it away. The level's *was* read,
+ * by `summariseChildren`, and went later and for a different reason: a card
+ * cycles, so the pick only decided which lap it opened on. See
+ * `ProgramEvent.coverMediaId` in the schema.
  *
- * The picture may come from anywhere in that level's subtree, which is what makes
- * a cover choosable for a week that has no photographs of its own — only days
- * with photographs in them. `summariseChildren` reads the same subtree to find
- * the automatic one.
+ * `setNodeFeatured` and `setProgramFeatured` are what choose a tile's pictures. A
+ * card's are whatever is filed beneath it, and nothing writes them.
  */
-export async function setNodeCover(
-  programEventId: string,
-  mediaId: string | null,
-  uid: string | null,
-): Promise<void> {
-  await updateDoc(doc(db(), COLLECTIONS.programEvents, programEventId), {
-    coverMediaId: mediaId,
-    updatedAt: serverTimestamp(),
-    updatedBy: uid,
-  });
-}
 
 /* -------------------------------------------------------------------------- */
 /* Arranging a section                                                        */
@@ -1072,4 +1064,35 @@ export async function reorderMedia(
 
   if (touched === 0) return;
   await batch.commit();
+}
+
+/* -------------------------------------------------------------------------- */
+/* The /events page's own settings                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Point the parish at one ministry — or at none.
+ *
+ * `config/events`, not a field on a program: see `EventsPageConfig.mainSection`
+ * for why this is a property of the moment rather than of any one ministry, and
+ * what will read it. The value is a `programs` document id, which is also that
+ * ministry's slug and therefore its URL.
+ *
+ * `setDoc` with `merge`, because the document may not exist yet — it is created
+ * the first time somebody chooses a ministry, and a bare `updateDoc` fails on a
+ * missing document rather than creating it. Merge rather than overwrite so that
+ * the next setting to land in this document is not wiped by somebody changing
+ * this one.
+ *
+ * Not validated against the collection. The choice comes from a `<select>` built
+ * out of `listProgramsForAdmin`, and every reader has to tolerate a stale pointer
+ * regardless — a ministry can be removed by somebody who has never seen this
+ * control. Same rule as `prioritySubmissionNodeId` above.
+ */
+export async function setMainSection(programId: string | null): Promise<void> {
+  await setDoc(
+    doc(db(), COLLECTIONS.config, CONFIG_DOC_EVENTS),
+    { mainSection: programId, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
 }

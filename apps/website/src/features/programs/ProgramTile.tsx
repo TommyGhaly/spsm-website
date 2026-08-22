@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { focalPosition, type DocOf, type GalleryMedia, type Program } from '@spsm/shared';
+import { Grow, Plain } from '@/components/Inline';
 import { AutoClip } from './AutoClip';
 import { captionOf } from './caption';
 import { galleryPathUrl } from './media';
@@ -49,32 +50,103 @@ export const CYCLE_MAX = 5;
 export const CYCLE_MS = 1400;
 
 /**
- * One card, without any editing furniture.
+ * One card.
  *
- * Extracted because the ticker renders the whole set **twice** — the second copy
- * is what makes the loop seamless — and duplicating the admin controls with it
- * would put two "Edit" buttons on screen for the same ministry.
+ * ## Two shapes, and why it is not a link in both
+ *
+ * Read, it is a `Link` to the ministry. **Edited, it is a `div`** — not a link
+ * with its navigation suppressed, which is what the rail used to do. An `<input>`
+ * inside an `<a>` is invalid HTML and behaves like it: the anchor swallows the
+ * first click, so the caret lands somewhere unpredictable and dragging to select
+ * a word starts a link drag instead. The rail's `onClickCapture` still stops a
+ * stray click on the plate from navigating; this is about the words.
+ *
+ * ## What is editable on the tile, and what is not
+ *
+ * The name and the description, because those are the two things the tile *is*.
+ * Everything else about a ministry — whether it is public, its cover, removing
+ * it — is in the panel that opens beside the selected tile, because a tile has
+ * nowhere to put a switch that would not look like part of the parish's page.
+ *
+ * The **web address is not editable at all**, and cannot be: a program's slug is
+ * its Firestore document id (see `createProgram`), so renaming a ministry changes
+ * what it is called and never where it lives. That is why the add-a-ministry
+ * plate asks for a name before it creates anything.
  */
 export function ProgramTile({
   program,
   shots,
   shot,
+  editing = false,
+  onName,
+  onDescription,
 }: {
   program: DocOf<Program>;
   /** The ministry's featured pictures, in the order it chose them. */
   shots: DocOf<GalleryMedia>[];
   /** The rail's shared counter; taken modulo this tile's own length. */
   shot: number;
+  /** Draw the words as fields. False for every visitor, and on the homepage. */
+  editing?: boolean;
+  onName?: ((name: string) => void) | undefined;
+  onDescription?: ((description: string) => void) | undefined;
 }) {
-  return (
-    <Link className="program-card" href={programHref(program.slug)}>
+  const inside = (
+    <>
       <ProgramCover shots={shots} shot={shot} />
       <span className="program-card__body">
-        <span className="program-card__name">{program.name}</span>
-        {blurb(program.description) && (
-          <span className="program-card__blurb">{blurb(program.description)}</span>
+        {editing && onName ? (
+          <span className="program-card__name">
+            <Plain
+              name={`program-name-${program.id}`}
+              label={`The name of ${program.name || 'this ministry'}`}
+              value={program.name}
+              placeholder="Name this ministry"
+              onChange={onName}
+            />
+          </span>
+        ) : (
+          <span className="program-card__name">{program.name}</span>
+        )}
+
+        {editing && onDescription ? (
+          /*
+            The **whole** description, not `blurb()`'s 120 characters.
+            
+            This is the one place the editing view cannot match the reading view,
+            and it is the right way round: a field showing a truncation would edit
+            the truncation, and pressing a key would silently discard whatever came
+            after the cut. So the tile grows while editing. It can afford to — the
+            rail is `frozen` in edit mode, so plates of different heights no longer
+            slide past each other, which is the reason they were kept equal.
+          */
+          <span className="program-card__blurb program-card__blurb--editing">
+            <Grow
+              name={`program-blurb-${program.id}`}
+              className="ee-plain"
+              value={program.description}
+              minRows={2}
+              aria-label={`What ${program.name || 'this ministry'} is`}
+              placeholder="A line about this ministry, for the tile."
+              onChange={onDescription}
+            />
+          </span>
+        ) : (
+          blurb(program.description) && (
+            <span className="program-card__blurb">{blurb(program.description)}</span>
+          )
         )}
       </span>
+    </>
+  );
+
+  if (editing) {
+    return <div className="program-card program-card--editing">{inside}</div>;
+  }
+
+  return (
+    <Link className="program-card" href={programHref(program.slug)}>
+      {inside}
     </Link>
   );
 }

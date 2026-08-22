@@ -17,6 +17,20 @@
 export const ANCHOR_GAP = 8;
 export const ANCHOR_MARGIN = 12;
 
+/**
+ * The least room worth squeezing a panel into.
+ *
+ * Below this, sitting beside the anchor stops being a service. A panel of
+ * captions and dates in a 160px letterbox is a scrolling slot two rows tall, and
+ * that is what a full-height anchor produces: `/events` draws window-tall
+ * ministry plates, so a tile 686px high in a 900px window leaves 47px under it
+ * and 127px over it, and the arithmetic below dutifully picked the larger.
+ *
+ * Tommy on the result: *"I don't like how the editing panel looks and where it is
+ * located very inconvenient."* Quite so.
+ */
+export const ANCHOR_MIN_ROOM = 260;
+
 export interface Placement {
   left: number;
   top: number;
@@ -24,6 +38,15 @@ export interface Placement {
   flipped: boolean;
   /** The room available, so a long panel scrolls rather than running off. */
   maxHeight: number;
+  /**
+   * There was nowhere beside the anchor worth using, so the caller should stop
+   * anchoring and present the panel as a sheet.
+   *
+   * Reported rather than handled here because this module only does arithmetic —
+   * where a sheet goes and what it looks like is a CSS question, and the two
+   * callers answer it the same way but own it themselves.
+   */
+  cramped: boolean;
 }
 
 export interface Viewport {
@@ -56,7 +79,16 @@ export function placeBeside(
    * what everybody expects.
    */
   const flipped = panel.height > below && above > below;
-  const maxHeight = Math.max(160, flipped ? above : below);
+  const room = flipped ? above : below;
+
+  /*
+   * Neither side has enough room, which is not the same as "the panel is taller
+   * than the space". An anchor most of the window high has no usable side at all,
+   * and the honest answer is to stop pretending: the caller centres it instead.
+   */
+  const cramped = Math.max(above, below) < ANCHOR_MIN_ROOM;
+
+  const maxHeight = Math.max(ANCHOR_MIN_ROOM, room);
 
   const top = flipped
     ? Math.max(ANCHOR_MARGIN, anchor.top - ANCHOR_GAP - Math.min(panel.height, maxHeight))
@@ -74,5 +106,5 @@ export function placeBeside(
     Math.max(ANCHOR_MARGIN, view.width - panel.width - ANCHOR_MARGIN),
   );
 
-  return { left, top, flipped, maxHeight };
+  return { left, top, flipped, maxHeight, cramped };
 }

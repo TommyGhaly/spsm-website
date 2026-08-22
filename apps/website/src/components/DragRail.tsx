@@ -65,6 +65,7 @@ export function DragRail({
   drift = true,
   loop = false,
   axis = 'x',
+  reverse = false,
 }: {
   children: ReactNode;
   /** Modifier(s) on the wrapper — `rail--programs`, `rail--bleed`, and so on. */
@@ -87,6 +88,8 @@ export function DragRail({
    * A vertical rail claims neither the wheel nor touch; see `useDragRail`.
    */
   axis?: 'x' | 'y';
+  /** Run the drift the other way along the axis. See `useDragRail`. */
+  reverse?: boolean;
 }) {
   const rail = useDragRail({
     frozen,
@@ -94,6 +97,7 @@ export function DragRail({
     drift,
     loop,
     axis,
+    reverse,
   });
 
   return (

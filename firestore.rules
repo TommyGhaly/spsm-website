@@ -427,6 +427,18 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/programEvents/$(request.resource.data.programEventId)).data;
     }
 
+    // The ministry an anonymous submission lands in, which is what decides
+    // whether the parish is collecting at all. Guarded by an `exists()` at the
+    // call site for the same reason as above.
+    //
+    // This replaced a read of `submissionsOpen` on the *level* — see
+    // `Program.submissionsOpen`. The flag moved up because the upload form did:
+    // a visitor now picks any level in the ministry from a single picker, and a
+    // flag per level made that picker a list with unexplained holes in it.
+    function submissionProgram() {
+      return get(/databases/$(database)/documents/programs/$(request.resource.data.programId)).data;
+    }
+
     match /programs/{programId} {
       allow read: if isPublished(resource.data) || adminsProgram(programId);
       // Creating and retiring a program is the superadmin's alone. A program
@@ -542,7 +554,27 @@ service cloud.firestore {
         // queue their upload lands in, and a photograph sent to Summercamp
         // surfaces for the St. Simon lead to approve into the wrong gallery.
         && request.resource.data.programId == submissionTarget().programId
-        && submissionTarget().submissionsOpen == true;
+        /*
+         * Is the parish collecting at all.
+         *
+         * One flag on the ministry, not on the level — see
+         * `Program.submissionsOpen`. Defaulting to `true` when the field is
+         * absent is deliberate and is the one place in this file where a missing
+         * field permits rather than denies: every program document written
+         * before the field existed has no value for it, and reading absence as
+         * "closed" would refuse every upload the parish receives until somebody
+         * hand-wrote a field onto five documents. That is decision #10's failure
+         * mode — a policy that compiles, passes, and denies everything real.
+         *
+         * The flag's job is to turn a deliberately-public surface *off*, and
+         * every other constraint above still applies to what comes through it:
+         * pending, unplaced, uncaptioned, and quarantined.
+         *
+         * `Program.submissionsOpen` documents the same default. If one changes,
+         * both change; tests/rules/program-galleries.test.ts covers both sides.
+         */
+        && exists(/databases/$(database)/documents/programs/$(request.resource.data.programId))
+        && submissionProgram().get('submissionsOpen', true) == true;
 
       // Approving, filing, captioning, laying out, rejecting. The one thing a
       // submitter cannot do to their own upload is anything at all — they have

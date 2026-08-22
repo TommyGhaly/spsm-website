@@ -3,6 +3,7 @@ import {
   clampPlacement,
   type GridPlacement,
 } from '../schema/programs.js';
+import { SECTION_COLUMNS } from '../schema/sectionLayout.js';
 
 /**
  * Placing photographs on the gallery canvas.
@@ -152,7 +153,118 @@ export function packGallery(items: readonly Placeable[]): PlacedItem[] {
   // wants the administrator's ordering, and the DOM order is what a screen
   // reader and keyboard tabbing follow.
   const byId = new Map(placed.map((p) => [p.id, p]));
-  return items.map((item) => byId.get(item.id)).filter((p): p is PlacedItem => p !== undefined);
+  return items
+    .map((item) => byId.get(item.id))
+    .filter((p): p is PlacedItem => p !== undefined);
+}
+
+/* -------------------------------------------------------------------------- */
+/* The same thing again, for the blocks a page is made of                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One block, as the packer sees it: how many of the page's columns it takes, and
+ * how many row units tall it is.
+ *
+ * Deliberately not a `SectionLayout`. A photograph's shape comes from its
+ * proportions and a block's comes from what is inside it, which only the browser
+ * knows — so the caller measures and this stays pure. See `useBlockPacking`.
+ */
+export interface BlockBox {
+  columns: number;
+  rows: number;
+}
+
+/** Where one block landed. 1-indexed, like `GridPlacement`, for the same reason. */
+export interface BlockSpot {
+  col: number;
+  row: number;
+}
+
+/**
+ * Lay out the blocks of a page the way `packGallery` lays out photographs.
+ *
+ * Tommy: *"I want the entire sections to work the same way as the grid — where if
+ * there is room to fit them in a given place it can go there, it doesn't have to be
+ * set in stone and reserve more space than necessary."*
+ *
+ * ## What this replaced
+ *
+ * CSS auto-placement, which never runs backwards: a block that did not fit the
+ * current row started a new one, under the *page* rather than under its neighbour,
+ * and the columns beside a tall block stayed empty for its whole height. A page
+ * with a tall grid and two wheels reserved three rows for two rows of content.
+ *
+ * Now every block takes the first place it fits, top to bottom and left to right —
+ * so a wheel drops into the space beside a grid, and a second one under the first,
+ * without anything being told to. It is the same first-fit scan as `packGallery`,
+ * on the same twelve columns, and that is the point: a page of blocks and a block
+ * of photographs should not have two different ideas of what "there is room here"
+ * means.
+ *
+ * ## Why it scans candidate rows rather than every row
+ *
+ * `packGallery` walks `row = 1, 2, 3…` because a photograph is a handful of rows
+ * tall. A block is measured in units of half a rem and can be two hundred of them,
+ * so the same loop would test tens of thousands of positions per block.
+ *
+ * It does not need to: a first fit can only *start* at the top of the page or
+ * immediately below something already placed. Anywhere else has a block directly
+ * above it, and if there were room there, the scan would already have taken it one
+ * row higher. So the candidates are `1` and the bottom edge of each placed block —
+ * at most five rows on a page that carries four.
+ *
+ * ## Reading order is the document's, not this
+ *
+ * Blocks come back in the order they were given, and the caller renders them in
+ * that order — only their *position* comes from here. A screen reader and the tab
+ * key follow the page's own order, which is the same choice the photograph canvas
+ * makes.
+ */
+export function packBlocks(boxes: readonly BlockBox[]): BlockSpot[] {
+  const placed: (BlockSpot & BlockBox)[] = [];
+
+  const clear = (col: number, row: number, box: BlockBox) =>
+    placed.every(
+      (one) =>
+        col + box.columns <= one.col ||
+        one.col + one.columns <= col ||
+        row + box.rows <= one.row ||
+        one.row + one.rows <= row,
+    );
+
+  return boxes.map((box) => {
+    // Never wider than the page, and never zero-height: a block that measured
+    // nothing — one whose pictures have not been laid out yet — would otherwise be
+    // a hole every later block could be placed inside.
+    const columns = Math.min(Math.max(box.columns, 1), SECTION_COLUMNS);
+    const rows = Math.max(box.rows, 1);
+    const shape = { columns, rows };
+
+    const candidates = [1, ...placed.map((one) => one.row + one.rows)].sort(
+      (a, b) => a - b,
+    );
+
+    for (const row of candidates) {
+      for (let col = 1; col <= SECTION_COLUMNS - columns + 1; col += 1) {
+        if (clear(col, row, shape)) {
+          const spot = { col, row };
+          placed.push({ ...spot, ...shape });
+          return spot;
+        }
+      }
+    }
+
+    /*
+     * Unreachable: the row below everything placed is always among the candidates
+     * and always empty. Written out rather than left to a non-null assertion,
+     * because "cannot happen" in a layout function usually means "happens on the
+     * one page nobody tested".
+     */
+    const bottom = placed.reduce((low, one) => Math.max(low, one.row + one.rows), 1);
+    placed.push({ col: 1, row: bottom, ...shape });
+    return { col: 1, row: bottom };
+  });
 }
 
 /**
@@ -245,5 +357,8 @@ export function collapseToColumn(placed: readonly PlacedItem[]): PlacedItem[] {
  * does not collapse around absolutely-nothing when every item is manual.
  */
 export function canvasRows(placed: readonly PlacedItem[]): number {
-  return placed.reduce((max, { placement }) => Math.max(max, placement.row + placement.rowSpan - 1), 0);
+  return placed.reduce(
+    (max, { placement }) => Math.max(max, placement.row + placement.rowSpan - 1),
+    0,
+  );
 }

@@ -84,6 +84,7 @@ export function MediaPicker({
   tree,
   mode,
   selected,
+  elsewhere,
   onToggle,
   max,
   /** What the chosen pictures are for. Shown as the picker's own heading. */
@@ -97,6 +98,21 @@ export function MediaPicker({
   mode: PickerMode;
   /** Ids, in order, for `many`; zero or one id for `one`. */
   selected: readonly string[];
+  /**
+   * Already drawn by a *different* block on the same page.
+   *
+   * Tommy: *"When selecting the pictures for a new section within a screen I want
+   * some indication to tell me which pictures are already on the current screen but
+   * they can still be selected."* Both halves are the requirement. The mark is a
+   * note, not a rule — repeating one photograph in two blocks is a legitimate
+   * thing to do deliberately, and the only problem it has ever caused is doing it
+   * *by accident* while picking twenty out of four hundred.
+   *
+   * So nothing here is disabled and nothing is filtered. `selected` still wins the
+   * corner: a picture in this block *and* another one shows its position number,
+   * because where it sits in the block being edited is the more useful fact.
+   */
+  elsewhere?: readonly string[];
   /**
    * One tile was clicked. The *caller* applies it, with `togglePick` and a
    * functional state update — see the note on that function for why the next
@@ -116,6 +132,9 @@ export function MediaPicker({
      action at the bottom of a grid the header may be three screens above.
   */
   const closeRow = useDisclosureClose();
+
+  /* A set, because this is asked once per tile and a picker holds hundreds. */
+  const already = useMemo(() => new Set(elsewhere ?? []), [elsewhere]);
 
   /** `null` is "everything". Otherwise one level's id. */
   const [level, setLevel] = useState<string | null>(null);
@@ -326,13 +345,16 @@ export function MediaPicker({
                   {section.items.map((item) => {
                     const at = selected.indexOf(item.id);
                     const chosen = at !== -1;
+                    const alsoHere = !chosen && already.has(item.id);
                     const poster = galleryPosterUrl(item);
 
                     return (
                       <li key={item.id}>
                         <button
                           type="button"
-                          className={`picker__tile${chosen ? ' is-chosen' : ''}`}
+                          className={`picker__tile${chosen ? ' is-chosen' : ''}${
+                            alsoHere ? ' is-elsewhere' : ''
+                          }`}
                           // Disabled only when the list is full *and* this one is
                           // not already in it — otherwise the last-added picture
                           // could not be removed, which is the one action
@@ -365,6 +387,21 @@ export function MediaPicker({
                               <span className="visually-hidden">
                                 {mode === 'many' ? `Position ${at + 1}` : 'Chosen'}
                               </span>
+                            </span>
+                          )}
+
+                          {/*
+                            A quiet corner dot rather than a number or a tick, so it
+                            cannot be mistaken for a selection at a glance across a
+                            grid of two hundred. The words are for a screen reader,
+                            which has no corner to read.
+                          */}
+                          {alsoHere && (
+                            <span className="picker__tile-elsewhere" aria-hidden="true" />
+                          )}
+                          {alsoHere && (
+                            <span className="visually-hidden">
+                              Already shown elsewhere on this page
                             </span>
                           )}
 

@@ -19,22 +19,31 @@
  * file is that the editing surface is inside the same `PageBody` the read-only
  * page uses, and inherits the same measure.
  *
- * ## Typing is the save
+ * ## Typing is the save, and there is nothing else
  *
- * There is no Save button for content. Keystrokes land in `pendingEdit` a second
- * after they stop, and one deliberate press promotes that to what the parish is
- * shown. The whole argument for the split is on `EventPendingEdit` in the shared
- * schema; the mechanics are in `useAutosave`.
+ * No Save button, no Publish button, no draft state. Keystrokes are written to
+ * the event a second after they stop, and that is the entire model. Tommy: *"get
+ * rid of the publishing logic it should just autosave much less confusing."*
  *
- * The practical consequence, which is the thing to hold on to: **the fields on
- * this screen are not necessarily what a visitor sees.** When they differ the
- * bar says so, and there is a way back to the published version in the ellipsis
- * menu.
+ * This replaced a two-stage arrangement where edits accumulated in a `pendingEdit`
+ * copy that a separate Publish promoted. Every awkward thing about the bar came
+ * from it: a state pill, an "unpublished changes" marker, a Publish button that
+ * appeared and disappeared, a line explaining why it was disabled, and a "throw
+ * away my changes" item. All of that is gone, along with `Event.published` itself.
+ *
+ * **The two things it costs, since nothing in the interface says them any more.**
+ * There is no undo — the mobile app reads this document directly, so a mistyped
+ * title is the parish's title about a second later. And there is no way to take an
+ * event off the website except deleting it; a postponed festival used to be one
+ * switch. Both were named before the change was made, and both are the price of
+ * the editor never being able to show different words than the page.
+ *
+ * The mechanics are in `useAutosave`.
  *
  * ## The document is re-read on the way in
  *
  * This page's HTML is baked at build time, so the copy it renders can be days
- * old, and a publish writes every field. Editing from the baked copy would
+ * old, and every autosave writes every field. Editing from the baked copy would
  * silently revert anything changed since the build.
  */
 
@@ -44,7 +53,8 @@ import { useEditMode } from '@/features/programs/editMode';
 import { PageBody } from '@/components/PageBody';
 import { Icon } from '@/components/Icon';
 import { BackLink } from '@/components/BackLink';
-import { Cols, Fold, Group, Plain, Segmented, TagField } from './EditorParts';
+import { Plain } from '@/components/Inline';
+import { Cols, Fold, Group, Segmented, TagField } from './EditorParts';
 import { HeroBand, type HeroStatus } from './HeroBand';
 import { WhenLine } from './WhenLine';
 import { BodyField } from './BodyField';
@@ -191,9 +201,9 @@ export function EventEditor({
    * which is built from the *baked* copy of the event — the words in the HTML
    * this page was exported with, possibly days old. This effect then replaces the
    * form with what Firestore actually holds. Unless the hook is told, it sees a
-   * form that differs from its record and concludes somebody typed: it writes a
-   * `pendingEdit` containing exactly what it just read, and the bar announces
-   * unpublished changes nobody made.
+   * form that differs from its record and concludes somebody typed — so opening
+   * an event would write back exactly what it had just read, stamping `updatedAt`
+   * and `updatedBy` on a document nobody touched.
    *
    * Invisible in development, where the dev server renders the "baked" copy
    * fresh on every request and the two always agree. It would have happened on

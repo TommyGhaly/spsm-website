@@ -1,23 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { type DocOf, type GalleryMedia, type Program } from '@spsm/shared';
 import {
   COVER_WINDOW,
   getProgramMedia,
   getProgramPageMedia,
   getPrograms,
-  pickProgramCover,
+  programFallbackShot,
   programTileMedia,
 } from './data';
-import { createProgram, listProgramsForAdmin, reorderPrograms } from './adminData';
+import {
+  createProgram,
+  deleteProgram,
+  listProgramsForAdmin,
+  reorderPrograms,
+  updateProgram,
+} from './adminData';
 import { ProgramDetails } from './Editors';
 import { BodyEditingClass, EditModeProvider, EditToggle, useEditMode } from './editMode';
 import { Inspector } from './Inspector';
+import { MainSectionField } from './MainSection';
 import { SubgroupShelf, shelfCover, type ShelfItem } from './SubgroupShelf';
 import { useProgramAdmin } from './useProgramAdmin';
 import { CYCLE_MAX, CYCLE_MS, ProgramTile } from './ProgramTile';
 import { DragRail } from '@/components/DragRail';
+import { Icon } from '@/components/Icon';
 
 /**
  * The parish's standing programs. This is the whole of `/events`.
@@ -101,17 +109,13 @@ function ProgramRail() {
       setPrograms(found);
 
       /*
-       * One cover each, in parallel. A loop with `await` inside it would be
+       * One picture set each, in parallel. A loop with `await` inside it would be
        * five sequential round trips on the page's only content.
        *
-       * `pickProgramCover` decides which one, and it is worth reading: it
-       * honours `Program.coverMediaId` — the ministry page now has a control
-       * that writes it, so a reader that ignored the field would make that
-       * control do nothing — and it skips an approved photograph whose transcode
-       * has not finished, which is what made Summercamp's tile blank while the
-       * ministry had a dozen photographs behind it.
-       *
-       * A small window rather than one item, for that second reason.
+       * A small window rather than one item, because an approved photograph whose
+       * transcode has not finished has no file to draw — which is what made
+       * Summercamp's tile blank while the ministry had a dozen photographs behind
+       * it. Both readers below skip those.
        */
       const found_covers = await Promise.all(
         found.map(async (program) => {
@@ -144,17 +148,17 @@ function ProgramRail() {
            * `programTileMedia` for why that trade is made here and not there.
            *
            * The fallback matters more than it looks. `programTileMedia` can
-           * return nothing where `pickProgramCover` would still find something:
-           * a curated id that no longer resolves, or an automatic set whose
-           * every candidate is mid-transcode. Falling back to the cover keeps
-           * the tile showing what it showed before this change rather than
-           * going blank, which is the worse failure of the two.
+           * return nothing where `programFallbackShot` still finds something: a
+           * curated id that no longer resolves, an automatic set whose every
+           * candidate is mid-transcode, or a ministry whose photographs are all
+           * approved but none cleared for a page. Drawing one of those beats a
+           * blank plate, which is the worse failure of the two.
            */
           const featured = programTileMedia(program, media, CYCLE_MAX);
           if (featured.length > 0) return [program.id, featured] as const;
 
-          const cover = pickProgramCover(program, media);
-          return [program.id, cover ? [cover] : []] as const;
+          const fallback = programFallbackShot(media);
+          return [program.id, fallback ? [fallback] : []] as const;
         }),
       );
 
@@ -231,6 +235,71 @@ function ProgramRail() {
     [programs, admin.uid],
   );
 
+  /**
+   * The name and the description, written a moment after typing stops.
+   *
+   * ## Why the local copy comes first
+   *
+   * The tile draws from `programs`, so the field has to be the document's value
+   * or typing would not appear. Waiting for the round trip to redraw means every
+   * keystroke lands a frame late and the caret jumps; so the list is updated
+   * locally on each keystroke and the write is debounced behind it. Same shape as
+   * `move` above, and the same reasoning.
+   *
+   * ## Why a debounce rather than write-on-blur
+   *
+   * Because there is nothing to blur *to*. The tile has no Save and no form
+   * around it — the events editor set the pattern that typing is the save, and a
+   * ministry's name behaving differently from an event's title is one more thing
+   * to remember. `updatedAt` on every pause is the cost, and it is a field nobody
+   * reads on a program.
+   *
+   * The timer is per ministry, so editing two tiles does not have the second one
+   * cancel the first one's write.
+   */
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const edited = useCallback(
+    (id: string, patch: { name?: string; description?: string }) => {
+      setPrograms((was) =>
+        was === null ? was : was.map((one) => (one.id === id ? { ...one, ...patch } : one)),
+      );
+
+      const running = timers.current[id];
+      if (running) clearTimeout(running);
+      timers.current[id] = setTimeout(() => {
+        void (async () => {
+          try {
+            await updateProgram(id, patch, admin.uid);
+          } catch (error) {
+            console.error('[programs] could not save the ministry:', error);
+            // Put the document's own value back, so the tile never shows words
+            // that are not stored.
+            setReloadKey((n) => n + 1);
+          }
+        })();
+      }, 800);
+    },
+    [admin.uid],
+  );
+
+  /*
+   * Pending writes are **dropped** when this unmounts, not flushed.
+   *
+   * Firing them would be the obvious choice and is the wrong one: the write
+   * targets a document by id, and the most common reason this unmounts is the
+   * ministry having just been removed — so the flush would land on something that
+   * no longer exists and report `NOT_FOUND` about a name nobody recognises. The
+   * cost of dropping is the last 800ms of typing before a navigation, and the
+   * field is a ministry's name.
+   */
+  useEffect(
+    () => () => {
+      for (const timer of Object.values(timers.current)) clearTimeout(timer);
+    },
+    [],
+  );
+
   if (programs === null && !failed) {
     return (
       <div className="gallery-loading" aria-busy="true" aria-live="polite">
@@ -275,6 +344,7 @@ function ProgramRail() {
    */
   const shelf = (
     <SubgroupShelf
+      inline
       legend="Ministries"
       busy={saving}
       addLabel="Add a ministry…"
@@ -289,13 +359,37 @@ function ProgramRail() {
           onSelect: () => edit.select({ kind: 'program', id: program.id }),
           onMove: (delta) => void move(index, index + delta),
           /*
-            Renaming and removing are absent, so these two are the shelf's
-            no-ops rather than an omission the type would let through. The panel
-            is where both live, for the reason above.
+            Renaming and removing, wired.
+            
+            These were `() => undefined` — deliberate no-ops, on the reasoning that
+            the panel owned both. The shelf draws a rename and a bin on every row
+            regardless, so what that actually produced was two buttons that opened a
+            field and a confirmation and then silently did nothing. Tommy asked for
+            the names in this list to be editable, which they now are; the bin is
+            wired with them because a dead button beside a live one is worse than
+            either.
           */
-          onRename: () => undefined,
-          onRemove: () => undefined,
-          removeWarning: '',
+          onRename: (name) => edited(program.id, { name }),
+          onRemove: () =>
+            void (async () => {
+              setSaving(true);
+              try {
+                await deleteProgram(program.id);
+                reload();
+              } catch (error) {
+                console.error('[programs] could not remove the ministry:', error);
+              } finally {
+                setSaving(false);
+              }
+            })(),
+          /*
+            `deleteProgram` refuses while any gatherings remain beneath it — a
+            client-side cascade that stops halfway leaves galleries pointing at a
+            ministry that is gone. Said here so the confirmation is honest about
+            when it will not work.
+          */
+          removeWarning:
+            'Its albums have to be removed first. Nothing else about the parish changes.',
         }),
       )}
       onAdd={(name) =>
@@ -325,6 +419,15 @@ function ProgramRail() {
           title: program.name,
           body: (
             <div className="inspector__body">
+              {/*
+                First, not last. It sat under `ProgramDetails`, which ends in the
+                Remove button — so a line of orientation was printed *after* the
+                one destructive action in the panel, and got clipped by the scroll
+                besides. Nothing explanatory belongs below a delete.
+              */}
+              <p className="inspector__note">
+                Its photographs and its albums are edited on the ministry&apos;s own page.
+              </p>
               <ProgramDetails
                 program={program}
                 onChanged={reload}
@@ -334,27 +437,33 @@ function ProgramRail() {
                 */
                 onRemoved={reload}
               />
-              <p className="inspector__note">
-                Its pictures, its gatherings and how they are laid out are edited on the
-                ministry&apos;s own page — open it with editing off.
-              </p>
             </div>
           ),
         };
       }
     }
 
+    /*
+     * Nothing selected draws the one setting that belongs to the *parish* rather
+     * than to a ministry.
+     *
+     * This was `body: null`, on the argument that there is genuinely nothing
+     * page-wide to edit here — a ministry's settings belong to the ministry, and
+     * the order belongs to the shelf. That argument held until there was a
+     * setting whose subject is this page: the main section, which is a pointer at
+     * one level of one ministry and is read by the NFC routes rather than by
+     * anything on screen. It is not a property of Summercamp, so it cannot live on
+     * Summercamp's panel. See `MainSectionField`.
+     *
+     * What still is not here: instructions. The paragraph this used to hold —
+     * "choose a ministry above to edit it" — was a panel whose entire contents
+     * told you to use a different control. What tells somebody what to do is the
+     * page: the tiles gain fields, and the last plate says "New ministry".
+     */
     return {
       kind: 'Page',
       title: 'Our activities',
-      body: (
-        <div className="inspector__body">
-          <p className="inspector__note">
-            Choose a ministry from the list above to edit it, or add one. Reorder them with
-            the arrows — that is the order they appear in on this page.
-          </p>
-        </div>
-      ),
+      body: <MainSectionField />,
     };
   })();
 
@@ -379,15 +488,134 @@ function ProgramRail() {
         most.
       */}
       <EditToggle />
-      {edit.on && shelf}
       {edit.on && (
-        <Inspector title={inspecting.title} kind={inspecting.kind} saving={saving}>
+        <Inspector
+          title={inspecting.title}
+          kind={inspecting.kind}
+          saving={saving}
+          aside={shelf}
+        >
           {inspecting.body}
         </Inspector>
       )}
       </>
     );
   }
+
+  /*
+   * The plates, built once and rendered by whichever rail is in use.
+   *
+   * Extracted when the rail split in two — the reading one loops, the editing one
+   * does not. Two copies of this JSX is two places to add a prop to the tile and
+   * one place to forget.
+   */
+  const tiles = (
+    <>
+          {programs.map((program, index) => (
+            <li key={program.id}>
+              {(
+                <div
+                  className={`program-card__slot${
+                    edit.on && edit.isSelected({ kind: 'program', id: program.id })
+                      ? ' is-selected'
+                      : ''
+                  }`}
+                  onClickCapture={(click) => {
+                    if (!edit.on) return;
+                    /*
+                      Selecting the ministry, except when the click was aimed at
+                      one of the tile's own fields.
+                  
+                      The guard is load-bearing now that the name and the blurb are
+                      inputs: `preventDefault` on a click that landed in a text
+                      field stops the caret being placed, so clicking into the
+                      middle of a word put the cursor at the end of it. It still
+                      selects — a field belongs to its ministry — but it lets the
+                      click through.
+                    */
+                    const onAField =
+                      click.target instanceof HTMLElement &&
+                      click.target.closest('input, textarea');
+
+                    if (!onAField) {
+                      click.preventDefault();
+                      click.stopPropagation();
+                    }
+                    edit.select({ kind: 'program', id: program.id });
+                  }}
+                >
+                  <ProgramTile
+                    program={program}
+                    shots={covers[program.id] ?? []}
+                    shot={shot}
+                    editing={edit.on}
+                    onName={(name) => edited(program.id, { name })}
+                    onDescription={(description) => edited(program.id, { description })}
+                  />
+
+                  {/*
+                    A draft badge, and nothing else.
+
+                    The Edit button and the two reorder arrows that used to sit
+                    here are gone: the ministries are listed in the properties
+                    column while editing, where reordering is two buttons in a menu
+                    rather than two buttons on every tile of a drifting rail. The
+                    badge stays because it is a *state of the thing* rather than an
+                    action on it — an administrator needs to see which ministries
+                    are not yet public without clicking each one.
+                  */}
+                  {edit.on && !program.published && (
+                    <div className="program-card__admin">
+                      <span className="badge badge--draft" title="Only you can see this">
+                        Draft
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+
+          {/*
+            The last plate, while editing: make another one.
+
+            On the rail rather than in the shelf, at Tommy's direction. What it
+            makes appears exactly here, and a control that makes a thing belongs
+            next to where the thing lands — the same reasoning as the galleries'
+            add-a-block row.
+
+            It asks for the name before it creates anything, which is not a form
+            for the sake of one: a program's slug **is** its Firestore document id,
+            so the name chosen here is the URL for good. A plate that created
+            "New ministry" and let you rename it afterwards would leave every
+            ministry in the parish living at /events/new-ministry.
+          */}
+          {edit.on && (
+            <li>
+              <NewMinistryPlate
+                busy={saving}
+                onCreate={async (name) => {
+                  setSaving(true);
+                  try {
+                    const id = await createProgram({
+                      name,
+                      description: '',
+                      order: nextOrder,
+                      published: false,
+                    });
+                    reload();
+                    // Selected on arrival, so its panel is already open at the
+                    // one thing a new ministry needs: making it public.
+                    edit.select({ kind: 'program', id });
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              />
+            </li>
+          )}
+    </>
+  );
 
   return (
     /*
@@ -427,66 +655,38 @@ function ProgramRail() {
         second constant in `useDragRail`: the shelf, the clergy and the shop's
         strips are unchanged.
       */}
-      <DragRail
-        className="rail--programs rail--bleed"
-        speed={144}
-        frozen={edit.on}
-      >
-        {/*
-          No drag handlers. Reordering the ministries is two buttons per row in
-          the properties column — see the note on `move`.
-        */}
-        <ul className="program-rail">
-          {programs.map((program, index) => (
-            <li key={program.id}>
-              {(
-                <div
-                  className={`program-card__slot${
-                    edit.on && edit.isSelected({ kind: 'program', id: program.id })
-                      ? ' is-selected'
-                      : ''
-                  }`}
-                  onClickCapture={(click) => {
-                    if (!edit.on) return;
-                    // The tile is a link. While editing, a click selects the
-                    // ministry instead — otherwise choosing one to edit would
-                    // leave the page it is being edited on.
-                    click.preventDefault();
-                    click.stopPropagation();
-                    edit.select({ kind: 'program', id: program.id });
-                  }}
-                >
-                  <ProgramTile
-                    program={program}
-                    shots={covers[program.id] ?? []}
-                    shot={shot}
-                  />
-
-                  {/*
-                    A draft badge, and nothing else.
-
-                    The Edit button and the two reorder arrows that used to sit
-                    here are gone: the ministries are listed in the properties
-                    column while editing, where reordering is two buttons in a menu
-                    rather than two buttons on every tile of a drifting rail. The
-                    badge stays because it is a *state of the thing* rather than an
-                    action on it — an administrator needs to see which ministries
-                    are not yet public without clicking each one.
-                  */}
-                  {edit.on && !program.published && (
-                    <div className="program-card__admin">
-                      <span className="badge badge--draft" title="Only you can see this">
-                        Draft
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-
-        </ul>
-      </DragRail>
+      {/*
+        Two rails, and only one of them at a time.
+        
+        Read, it is the looping `DragRail` — the drifting wall of plates the page
+        exists for. **Edited, it is a plain scrolling strip**, because `DragRail`
+        renders its children two or three times to hide the seam, and `frozen`
+        only stops the drift: `copies` is measured off the content and stays at two
+        or more however still the rail is. Five ministries came out as ten editable
+        tiles, two of every name, and a second "New ministry" plate further along.
+        
+        Duplicates are harmless for the read-only tile — every handler is keyed by
+        id, so a copy navigates to the same page — and that is exactly the note in
+        `DragRail`'s own header. They stop being harmless the moment the tile holds
+        a *field*: two inputs for one ministry, and an add-plate whose open/closed
+        state is per copy.
+        
+        `PictureStrip` made the same call for the gallery wheels and for the same
+        reason, which is the precedent this follows rather than a new idea.
+      */}
+      {edit.on ? (
+        <div className="rail-wrap rail--programs rail--bleed">
+          <div className="rail program-rail__still scroller">
+            <ul className="program-rail">
+            {tiles}
+            </ul>
+          </div>
+        </div>
+      ) : (
+        <DragRail className="rail--programs rail--bleed" speed={144}>
+          <ul className="program-rail">{tiles}</ul>
+        </DragRail>
+      )}
 
       {/*
         No admin bar and no editor panel below the rail.
@@ -498,10 +698,16 @@ function ProgramRail() {
         that there was nowhere else to put it.
       */}
       <EditToggle />
-      {edit.on && shelf}
-
       {edit.on && (
-        <Inspector title={inspecting.title} kind={inspecting.kind} saving={saving}>
+        <Inspector
+          title={inspecting.title}
+          kind={inspecting.kind}
+          saving={saving}
+          /* The ministries list, in the column rather than floating in the corner.
+             On this page it is the whole reason the column is not empty when
+             nothing is selected. */
+          aside={shelf}
+        >
           {inspecting.body}
         </Inspector>
       )}
@@ -509,3 +715,116 @@ function ProgramRail() {
   );
 }
 
+
+/**
+ * The last plate on the rail while editing: a new ministry.
+ *
+ * Two states rather than a prompt, because of what a program's slug is. The slug
+ * is the Firestore document id (see `createProgram`), and `updateProgram` refuses
+ * to change it — so the name typed here is the ministry's URL for as long as the
+ * parish has a website. A plate that made one immediately and let you rename it
+ * would put every ministry at `/events/new-ministry`.
+ *
+ * So: press it, and the plate becomes one field. It is still on the page, still
+ * one thing to fill in, and it gets the address right.
+ *
+ * Its own component, and not a closure inside `ProgramRail`: a function defined
+ * in a render body is a new component *type* on every render, which unmounts and
+ * remounts the subtree — the bug that made the gallery band editors appear not to
+ * work. See the note at the top of `BandRows`.
+ */
+function NewMinistryPlate({
+  busy,
+  onCreate,
+}: {
+  busy: boolean;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [name, setName] = useState('');
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const ready = name.trim().length > 0;
+
+  async function create() {
+    if (!ready) return;
+    setFailed(null);
+    try {
+      await onCreate(name.trim());
+      setName('');
+      setAsking(false);
+    } catch (error) {
+      setFailed(
+        error instanceof Error ? error.message : 'Could not make the ministry.',
+      );
+    }
+  }
+
+  if (!asking) {
+    return (
+      <button type="button" className="program-new" onClick={() => setAsking(true)}>
+        <span className="program-new__mark" aria-hidden="true">
+          <Icon name="plus" size={22} />
+        </span>
+        <span className="program-new__label">New ministry</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="program-new program-new--asking">
+      <label className="program-new__field">
+        <span>What is it called?</span>
+        <input
+          name="newMinistry"
+          size={1}
+          value={name}
+          autoFocus
+          placeholder="Mother of Mercy"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && ready) void create();
+            if (event.key === 'Escape') {
+              setAsking(false);
+              setName('');
+            }
+          }}
+        />
+      </label>
+
+      {/* Said before it is typed, not after it is too late: this is the one field
+          on the site whose value cannot be changed afterwards. */}
+      <p className="program-new__note">
+        This also sets its web address, which cannot be changed later.
+      </p>
+
+      {failed && (
+        <p className="program-new__bad" role="alert">
+          {failed}
+        </p>
+      )}
+
+      <div className="program-new__actions">
+        <button
+          type="button"
+          className="button button--small"
+          disabled={!ready || busy}
+          onClick={() => void create()}
+        >
+          {busy ? 'Making…' : 'Make it'}
+        </button>
+        <button
+          type="button"
+          className="button button--quiet button--small"
+          onClick={() => {
+            setAsking(false);
+            setName('');
+            setFailed(null);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}

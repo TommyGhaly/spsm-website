@@ -5,7 +5,7 @@ import { PageBody } from '@/components/PageBody';
 import { StaffEvents } from '@/features/events';
 
 /**
- * Events and drafts — the one events screen that is not an event's own page.
+ * Parish events — the one events screen that is not an event's own page.
  *
  * This is **not** the return of `/admin/events`. That screen was a second editor
  * over the same collection, and having two was the problem it was deleted for.
@@ -34,7 +34,7 @@ import { StaffEvents } from '@/features/events';
  * why it is where the event id lives.
  */
 export const metadata: Metadata = {
-  title: 'Events and drafts',
+  title: 'Parish events',
   robots: { index: false, follow: false },
 };
 

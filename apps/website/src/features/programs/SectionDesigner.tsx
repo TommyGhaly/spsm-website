@@ -3,12 +3,19 @@
 import {
   GALLERY_DISPLAYS,
   GALLERY_DISPLAY_NAMES,
-  SECTION_SCALES,
+  SECTION_FITS,
+  SECTION_FIT_NAMES,
   SECTION_SCALE_NAMES,
+  SPINS_FOR_DISPLAY,
+  WHEEL_SPIN_NAMES,
   layoutForLook,
+  scalesFor,
+  spinFor,
   type GalleryDisplay,
+  type SectionFit,
   type SectionLayout,
   type SectionScale,
+  type WheelSpin,
 } from '@spsm/shared';
 import { useDisclosureClose } from './Disclosure';
 
@@ -146,17 +153,67 @@ export function SectionDesigner({
           // somebody who dragged this block to half the page and is now changing
           // its shape has changed their mind about one thing. There is no width
           // row here — it is the handle on the block's own edge.
-          onChange(layoutForLook(display, layout.scale, layout.width))
+          //
+          // The size is dropped back onto the ladder when it was `fit` and this is
+          // no longer a column: `fit` means "one picture tall", which a sideways
+          // wheel and a grid have no way to be. The spin and the tile shape go
+          // through untouched — see `layoutForLook`.
+          onChange(
+            layoutForLook(
+              display,
+              display === 'column' || layout.scale !== 'fit' ? layout.scale : 'large',
+              layout.width,
+              layout.caption.placement,
+              layout.spin,
+              layout.fit,
+            ),
+          )
         }
       />
 
+      {/*
+        `scalesFor` rather than every size: "One picture" is the upright wheel's
+        alone, because a sideways wheel's height *is* its tile height and a grid
+        has no frame to fit anything to.
+      */}
       <Row
         label="Size"
-        options={SECTION_SCALES}
+        options={scalesFor(layout.display)}
         value={layout.scale}
         names={SECTION_SCALE_NAMES}
         onPick={(scale: SectionScale) => onChange({ ...layout, scale })}
       />
+
+      {/*
+        The two wheel rows, and only for a wheel.
+
+        A grid has nowhere to spin to and its tiles are sized by the canvas, so both
+        of these would be controls that did nothing. The stored values survive the
+        trip through grid regardless — `layoutForLook` carries them and `spinFor`
+        settles the axis — so switching to a grid and back does not cost either.
+      */}
+      {layout.display !== 'grid' && (
+        <>
+          <Row
+            label="Direction"
+            options={SPINS_FOR_DISPLAY[layout.display]}
+            /* `spinFor`, not `layout.spin`: a column still holding "rightward" from
+               when it was a sideways wheel must show the direction it is actually
+               going, or the row states something the page contradicts. */
+            value={spinFor(layout)}
+            names={WHEEL_SPIN_NAMES}
+            onPick={(spin: WheelSpin) => onChange({ ...layout, spin })}
+          />
+
+          <Row
+            label="Pictures"
+            options={SECTION_FITS}
+            value={layout.fit}
+            names={SECTION_FIT_NAMES}
+            onPick={(fit: SectionFit) => onChange({ ...layout, fit })}
+          />
+        </>
+      )}
     </section>
   );
 }

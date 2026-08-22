@@ -40,8 +40,20 @@ export interface Program extends AuditFields, Publishable {
    * those three files are unpublished drafts and this is where their text goes.
    */
   description: string;
-  /** `galleryMedia` id shown on the program's card. Null ⇒ newest approved. */
-  coverMediaId: string | null;
+  /*
+   * `coverMediaId` was here: one `galleryMedia` id, "the picture on this
+   * ministry's tile", with a panel control that wrote it.
+   *
+   * Removed because the tile never read it. `programTileMedia` builds the tile's
+   * pictures from `featuredMediaIds` below, in the order they were chosen, and the
+   * cover was consulted only when that came back empty — so the panel asked a
+   * question `featuredMediaIds` had already answered and threw the answer away.
+   * Choosing the tile's pictures, and which one it opens on, is `featuredMediaIds`.
+   *
+   * `ProgramEvent.coverMediaId` has since gone the same way, for a related
+   * reason — see it below. Documents written before either removal still carry
+   * the keys; nothing reads them.
+   */
 
   /**
    * The photographs shown on the program's own page, in this order — the
@@ -177,6 +189,57 @@ export interface Program extends AuditFields, Publishable {
    */
   hiddenMediaIds?: string[];
 
+  /**
+   * Whether the parish is collecting photographs anywhere under this ministry.
+   *
+   * **One flag for the whole tree**, at Tommy's direction. It used to be a flag
+   * per level — `ProgramEvent.submissionsOpen` — and the reason that had to move
+   * up is what the upload form now is: a visitor standing anywhere in a ministry
+   * chooses which level their photograph belongs to, from a picker of the whole
+   * tree. Per-level flags turned that picker into a list with holes in it, where
+   * the level a parishioner wants is missing for a reason nobody on the public
+   * side can see.
+   *
+   * The cost, stated because it is a real loss: there is no longer a way to
+   * close last year's camp while this year's collects. Everything under a
+   * ministry is open together or shut together.
+   *
+   * **Absent means open**, and that is deliberate rather than lazy. Every
+   * program document written before this field existed has no value for it, and
+   * a rule that read absence as "closed" would deny every upload the parish
+   * receives until somebody remembered to write the field to five documents by
+   * hand — which is exactly the class of failure `docs/decisions.md` #10 is
+   * about: a policy that is correct on paper and refuses everything real. The
+   * surface is public by design and moderated downstream; this flag exists to
+   * turn it *off*.
+   *
+   * `firestore.rules` reads it with the same default. The two must agree.
+   */
+  submissionsOpen?: boolean;
+
+  /**
+   * The level a visitor's upload is filed under unless they say otherwise —
+   * "the priority section".
+   *
+   * A `programEvents` id, or null for none. What it does is preselect: the form
+   * offers the whole tree and starts on this one, so a parish that is running
+   * Week 1 Day 2 today sets it once and everybody who uploads from anywhere in
+   * the ministry lands there without choosing. Tommy asked for exactly this —
+   * *"they can set that as priority so the user automatically uploads to that"*.
+   *
+   * Preselected rather than forced, because the other half of the same request
+   * is that a submitter *does* get to say where a photograph belongs. The
+   * administrator's real safety net is the queue: whatever level a photograph
+   * arrives on, the queue can re-file it before approving.
+   *
+   * Null and stale ids both mean "no priority" — a level can be deleted long
+   * after it was made the priority, and resolving this against the tree on read
+   * (rather than cleaning it up on delete) means a deleted level costs a
+   * preselection and never a broken form. Every reader must tolerate an id that
+   * no longer resolves.
+   */
+  prioritySubmissionNodeId?: string | null;
+
   /** Manual order in the programs strip. Lower sorts first. */
   order: number;
 }
@@ -295,7 +358,22 @@ export interface ProgramEvent extends AuditFields, Publishable {
    */
   groups?: ProgramEventGroup[];
 
-  coverMediaId: string | null;
+  /*
+   * `coverMediaId` was here too: one `galleryMedia` id from anywhere in this
+   * level's subtree, "the picture on its card", with a chooser in the properties
+   * panel — two of them, in fact, one for the level being looked at and one for a
+   * child selected from its card.
+   *
+   * Removed at Tommy's direction, and the reason is not the ministry's. This
+   * field *was* read: `summariseChildren` put the chosen picture at the head of
+   * the card's cycle. But a card cycles — it cross-fades through five pictures
+   * from the subtree — so the whole effect of the choice was which one happened
+   * to be showing when the page first drew. A setting nobody can verify four
+   * seconds later is a question not worth asking twice on every page.
+   *
+   * So a card's pictures are simply what is filed beneath it, in filing order.
+   * `summariseChildren` is the only thing that decides them.
+   */
 
   /**
    * How this node's own photograph block is presented. Independent of its
@@ -351,12 +429,20 @@ export interface ProgramEvent extends AuditFields, Publishable {
   calendarEventId: string | null;
 
   /**
-   * Whether the public upload form accepts anything right now.
+   * Legacy: whether *this level* accepted uploads.
    *
-   * Closing it is how a program stops collecting for an event that finished
-   * three years ago, without unpublishing the gallery.
+   * Superseded by `Program.submissionsOpen`, which governs the whole tree. Read
+   * nowhere and checked by no rule — a level with this set to `false` accepts
+   * uploads now if its program is open, which is the change Tommy asked for when
+   * he chose one flag per ministry over one per level.
+   *
+   * Still written by `createProgramEvent` so that a document created today looks
+   * like every document created before it, and still on the interface so old
+   * documents type-check. Nothing decides anything from it.
+   *
+   * @deprecated Use `Program.submissionsOpen`.
    */
-  submissionsOpen: boolean;
+  submissionsOpen?: boolean;
 }
 
 /**

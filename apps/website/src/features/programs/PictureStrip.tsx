@@ -48,9 +48,23 @@ export function PictureStrip({
   onReorder,
   onRemove,
   onSelect,
+  captions = false,
 }: {
   media: readonly DocOf<GalleryMedia>[];
   axis: 'x' | 'y';
+  /**
+   * Draw each tile's caption, because the section says to.
+   *
+   * The strip is the *editing* view of a wheel, and the caption switch lives on
+   * the block's own bar — so without this, turning captions on for a wheel changed
+   * nothing you could see until you pressed Done. A control you cannot judge where
+   * you use it is the thing this whole editor is built to avoid.
+   *
+   * Drawn over the tile rather than under it, matching what `over` renders on the
+   * real wheel. `below` is not distinguished here: the strip's job is to answer
+   * "will there be words on these, and what do they say", and it does.
+   */
+  captions?: boolean;
   /** The whole set, in its new order. One write, never a swap. */
   onReorder: (ordered: DocOf<GalleryMedia>[]) => void;
   /** Take this one off the page. Never deletes the photograph itself. */
@@ -223,6 +237,15 @@ export function PictureStrip({
                 <span className="pstrip__blank">Processing…</span>
               )}
             </button>
+
+            {/* Over the picture, and only when the block says so. `title` as well
+                as the text, since a long caption is clipped to the tile's width and
+                the point of turning these on is to read them. */}
+            {captions && item.caption && (
+              <span className="pstrip__caption" title={item.caption}>
+                {item.caption}
+              </span>
+            )}
 
             {/*
               Off the page, not deleted.
