@@ -278,3 +278,181 @@ export function parseBulletin(raw: Raw, origin: BulletinOrigin): Bulletin {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Which bulletin is the live one
+// ---------------------------------------------------------------------------
+
+/**
+ * The document in the announcements project that names the bulletin currently
+ * being presented: `{ id: "318bf22a-…" }`, an id in `bulletins`.
+ *
+ * ---------------------------------------------------------------------------
+ * **This pointer is the answer, and nothing derived from the documents is.**
+ *
+ * The original rule here was "sort by week and take the newest", written when
+ * the source was documented as a singleton overwritten weekly. It is not one:
+ * the collection holds the week being presented *plus* whichever future week
+ * staff have started drafting. Newest-wins therefore showed the draft. Nor can
+ * the date be used instead — a bulletin is a schedule somebody publishes, not a
+ * calendar range, and the parish is entitled to leave last week's up over a
+ * feast or to put next week's up early. Guessing from `days[]` overrides that
+ * decision; guessing from `lastPublished` gets the common case right and still
+ * silently disagrees with the screen in the narthex.
+ *
+ * The announcements app writes this document when a bulletin is made active.
+ * Following it means the website and that app cannot disagree, by construction.
+ * ---------------------------------------------------------------------------
+ *
+ * Path rather than a configurable value, because it is a fact about the source
+ * app's own schema — the same category of thing as the field names in
+ * `parseBulletin`, and not something a parish administrator should be invited to
+ * change in `config/integrations`.
+ */
+export const ANNOUNCEMENTS_ACTIVE_BULLETIN_DOC = 'config/active_bulletin';
+
+/** The `id` out of `config/active_bulletin`, or null if it says nothing usable. */
+export function activeBulletinId(raw: unknown): string | null {
+  const record = asRecord(raw);
+  return record ? str(record['id']) : null;
+}
+
+/**
+ * The most recently published week — the fallback for when the pointer is
+ * missing, or names a document that is not there.
+ *
+ * Deliberately **published**, not newest. An unpublished draft is the one thing
+ * that must never reach the homepage, and it is exactly what a naive fallback
+ * reaches for: the draft is always the newest document, because drafting next
+ * week is what people do with this app.
+ *
+ * Returns null when nothing has ever been published, rather than falling back
+ * again to "any week at all". At that point there is no honest answer and a
+ * missing section is better than a wrong schedule.
+ */
+export function mostRecentlyPublished(bulletins: Bulletin[]): Bulletin | null {
+  const published = bulletins.filter((b) => b.source.publishedAt !== null);
+  if (published.length === 0) return null;
+
+  return published.reduce((newest, candidate) =>
+    // Non-null on both sides, guaranteed by the filter above.
+    candidate.source.publishedAt!.getTime() > newest.source.publishedAt!.getTime()
+      ? candidate
+      : newest,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Crossing a network
+// ---------------------------------------------------------------------------
+
+/**
+ * Rebuild a `Bulletin` from its JSON form.
+ *
+ * The counterpart to sending one over the wire. `JSON.stringify` turns the two
+ * `Date` fields into ISO strings and there is no reviver that knows which
+ * strings those were, so a response cannot simply be cast — do that and
+ * `publishedAt.getTime` is a runtime TypeError in a browser, on a field a
+ * type-checked build swears is a Date.
+ *
+ * Written as a validating parse rather than a conversion for the same reason
+ * `parseBulletin` is: this is a value arriving from outside the program. The
+ * endpoint is ours, but a response can still be a cached older shape, an error
+ * page from a proxy, or half a document — and the caller's fallback is to keep
+ * the week already on screen, so returning null is worth more than throwing.
+ */
+export function reviveBulletin(value: unknown): Bulletin | null {
+  const raw = asRecord(value);
+  if (!raw) return null;
+
+  const weekLabel = str(raw['weekLabel']);
+  const source = asRecord(raw['source']);
+  if (weekLabel === null || source === null) return null;
+
+  const days = asArray(raw['days'])
+    .map(reviveDay)
+    .filter((d): d is BulletinDay => d !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Same rule as `parseBulletin`: the week's identity is the one thing not
+  // worth guessing at. Trust `days` over the transmitted `weekOf` so the two
+  // cannot disagree.
+  const weekOf = days[0]?.date;
+  if (weekOf === undefined) return null;
+
+  return {
+    weekOf,
+    weekLabel,
+    presetName: str(raw['presetName']),
+    announcements: asArray(raw['announcements'])
+      .map((item, index) => {
+        const record = asRecord(item);
+        const text = record && str(record['text']);
+        if (!record || text === null) return null;
+        return {
+          sourceId: str(record['sourceId']) ?? `untitled-${index}`,
+          text,
+          image: str(record['image']),
+          addedAt: date(record['addedAt']),
+        };
+      })
+      .filter((a): a is BulletinAnnouncement => a !== null),
+    days,
+    multiDayEvents: asArray(raw['multiDayEvents'])
+      .map((item, index) => {
+        const base = reviveEvent(item, index);
+        const record = asRecord(item);
+        if (!base || !record) return null;
+        const startDate = str(record['startDate']);
+        const endDate = str(record['endDate']);
+        if (startDate === null || endDate === null) return null;
+        return { ...base, startDate, endDate };
+      })
+      .filter((e): e is BulletinMultiDayEvent => e !== null),
+    headerNotes: asArray(raw['headerNotes'])
+      .map(str)
+      .filter((n): n is string => n !== null),
+    source: {
+      project: str(source['project']) ?? '',
+      collection: str(source['collection']) ?? '',
+      documentId: str(source['documentId']) ?? '',
+      publishedAt: date(source['publishedAt']),
+      sourceUpdatedAt: date(source['sourceUpdatedAt']),
+    },
+  };
+}
+
+function reviveEvent(value: unknown, index: number): BulletinEvent | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const name = str(record['name']);
+  if (name === null) return null;
+
+  return {
+    sourceId: str(record['sourceId']) ?? `unnamed-${index}`,
+    name,
+    time: str(record['time']),
+    timeTo: str(record['timeTo']),
+    notes: str(record['notes']),
+    color: str(record['color']),
+    image: str(record['image']),
+    contacts: asArray(record['contacts']),
+  };
+}
+
+function reviveDay(value: unknown): BulletinDay | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const day = str(record['date']);
+  if (day === null || !ISO_DATE.test(day)) return null;
+
+  return {
+    date: day,
+    day: str(record['day']) ?? '',
+    events: asArray(record['events'])
+      .map(reviveEvent)
+      .filter((e): e is BulletinEvent => e !== null),
+  };
+}

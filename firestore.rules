@@ -360,8 +360,13 @@ service cloud.firestore {
     }
 
     // ---- program galleries ------------------------------------------------
-    // Standing programs, their occurrences, and the photographs parishioners
-    // send in. See docs/program-galleries.md.
+    // Standing programs, the tree of levels beneath each one, and the
+    // photographs parishioners send in. See docs/program-galleries.md.
+    //
+    // `programEvents` is that tree: a program is the root, and every level under
+    // it — a year, a week, a day, a part of a day — is one document in this
+    // collection with a `parentId`. There is no separate collection or field for
+    // "subgroup" any more, and no fixed depth.
     //
     // The third permission axis lives here. `role` and `groups` come from the
     // token; program grants cannot, because they change often enough that
@@ -413,10 +418,21 @@ service cloud.firestore {
       // Creating "Week 2 2027" is a statement about the program, so it takes a
       // program grant. `request.resource` rather than `resource`: on a create
       // there is no existing document to read the programId from.
+      //
+      // Nothing here checks `parentId`, and that is deliberate rather than
+      // missing. This collection is a tree of arbitrary depth — every level is
+      // one of these documents and `parentId` names the one above it — but the
+      // *containment* that matters is `programId`, which is checked. A forged
+      // `parentId` pointing into another ministry cannot smuggle a level into
+      // that ministry's pages: every read filters `programId ==`, so a foreign
+      // parent is simply absent from the tree that gets built and the level is
+      // shown at the top of its own ministry (see `buildGalleryTree`). Checking
+      // it properly would cost a `get()` on the parent for every write, to
+      // prevent a mis-drawn page in one's own program.
       allow create: if adminsProgram(request.resource.data.programId);
 
-      // Editing one — its description, its groups, its layout — is what an
-      // event-scoped volunteer was given the event for.
+      // Editing one — its description, where it sits, its layout, the pictures it
+      // shows — is what an event-scoped volunteer was given the event for.
       //
       // Changing `programId` is a different act, and is checked differently.
       // Re-filing an event under another program is a statement about both
@@ -506,6 +522,16 @@ service cloud.firestore {
       // Approving, filing, captioning, laying out, rejecting. The one thing a
       // submitter cannot do to their own upload is anything at all — they have
       // no identity to match against, so there is nobody to grant it to.
+      //
+      // Filing is a write to `programEventId` now — moving a photograph to
+      // another level of the tree — rather than to a `groupId` beside it. Note
+      // what that means for an *event-scoped* grant: it is checked against the
+      // level the photograph is on **before** the write, so a volunteer given one
+      // week can move a photograph out of it and cannot move it back. That is
+      // the right way round of the two: the alternative check, on the
+      // destination, would let a grant on one day pull the whole ministry's
+      // photographs into it. Program-scoped grants, which is what these
+      // volunteers are normally given, are unaffected.
       allow update, delete: if adminsProgramEvent(resource.data.programId, resource.data.programEventId);
     }
 

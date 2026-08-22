@@ -138,3 +138,46 @@ function attributeOf(xml: string, tag: string, attribute: string): string | null
   const match = new RegExp(`\\b${attribute}="([^"]*)"`).exec(element);
   return match?.[1]?.trim() || null;
 }
+
+/**
+ * The videos among `candidates` that YouTube says are streaming right now.
+ *
+ * Reads a `videos.list` response. One request answers for every candidate at
+ * once — up to 50 ids — for a single unit of quota, which is what makes polling
+ * this every half-minute affordable where `search.list` (100 units a call)
+ * would not be.
+ *
+ * Returned in **candidate order, not response order**. The API does not promise
+ * to echo ids back in the order they were asked for, and the caller's order is
+ * the meaningful one: it is the channel feed's, so the first live entry is the
+ * most recently published broadcast rather than whichever the API happened to
+ * list first.
+ *
+ * Never throws. An unparseable body yields an empty list, which the caller
+ * reports as "could not find out" rather than as "nothing is on" — a
+ * distinction the page acts on.
+ */
+export function liveBroadcastIds(body: unknown, candidates: readonly string[]): string[] {
+  const items = (body as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return [];
+
+  const live = new Set<string>();
+  for (const item of items) {
+    const id = (item as { id?: unknown })?.id;
+    const content = (item as { snippet?: { liveBroadcastContent?: unknown } })?.snippet
+      ?.liveBroadcastContent;
+    // `'live'` exactly. The other values are `'none'` for an ordinary video or a
+    // finished stream, and `'upcoming'` for a scheduled one — and an upcoming
+    // broadcast must not put a player on the page, because there is nothing in
+    // it yet.
+    if (typeof id === 'string' && content === 'live') live.add(id);
+  }
+
+  return candidates.filter((id) => live.has(id));
+}
+
+/** The `videos.list` request that answers `liveBroadcastIds` for these ids. */
+export function videosListUrl(ids: readonly string[]): string {
+  const params = new URLSearchParams({ part: 'snippet', id: ids.join(',') });
+  return `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`;
+}

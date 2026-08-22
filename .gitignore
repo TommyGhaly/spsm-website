@@ -33,6 +33,10 @@ node_modules/
 dist/
 out/
 .next/
+# The second dev server's output — see `dev:emulated:second` in
+# apps/website/package.json. A separate directory is what lets it run alongside
+# a server already using .next/.
+.next-emulated/
 .turbo/
 coverage/
 *.tsbuildinfo

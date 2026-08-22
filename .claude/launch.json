@@ -1,11 +1,28 @@
 {
   "version": "0.0.1",
   "//": "Attach-only: `next dev` refuses a second server for the same directory, and the emulated server is normally already running from `npm run dev:emulated`. Start that in a terminal first; this config just points the preview at it.",
+  "//website-dev": "Starts `next dev` itself, for when nothing is already running. The entry above attaches to a server you started; this one owns the process, so do not leave both in play \u2014 `next dev` refuses a second server for the same directory. Stop this one before starting your own in a terminal.",
   "configurations": [
+    {
+      "name": "website-dev",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
     {
       "name": "website-emulated",
       "url": "http://localhost:3000",
       "port": 3000
+    },
+    {
+      "name": "website-emulated-3100",
+      "url": "http://localhost:3100",
+      "port": 3100
     }
-  ]
+  ],
+  "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. The only way to see /admin \u2014 the real project grants no role to a browser here."
 }

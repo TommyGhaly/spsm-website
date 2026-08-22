@@ -27,6 +27,11 @@
  * Optional: SPSM_BREEZE_EMBED_URL=... to populate the servants schedule. It is
  * a bearer credential, so it is never committed — see docs/integrations.md.
  */
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
@@ -35,12 +40,24 @@ import {
 } from '../packages/shared/dist/index.js';
 import { toFieldMap } from './lib/firestore-rest.mjs';
 import { collectPages } from './lib/content-files.mjs';
+import { webpSize } from './lib/webp-size.mjs';
 
 const PROJECT = 'spsm-database';
 const FIRESTORE = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
 const AUTH = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
+const STORAGE = process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? '127.0.0.1:9199';
 
-for (const [name, host] of [['Firestore', FIRESTORE], ['Auth', AUTH]]) {
+/**
+ * The bucket the website resolves at runtime, so the objects written here are
+ * the ones its `<img src>` asks for. A different default would upload happily
+ * and render nothing, which is the failure this whole change is undoing.
+ */
+const BUCKET = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? `${PROJECT}.firebasestorage.app`;
+
+/** Where the gallery photographs come from. Already in the repo, already webp. */
+const IMAGE_DIR = fileURLToPath(new URL('../apps/website/public/img', import.meta.url));
+
+for (const [name, host] of [['Firestore', FIRESTORE], ['Auth', AUTH], ['Storage', STORAGE]]) {
   if (!/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(host)) {
     console.error(`Refusing to run: ${name} host ${host} is not localhost.`);
     process.exit(1);
@@ -67,6 +84,98 @@ async function authPost(path, body) {
   });
   return { ok: res.ok, body: await res.json() };
 }
+
+/**
+ * Put an object in the Storage emulator.
+ *
+ * `Bearer owner` is the emulator's admin bypass, the same one `put` uses for
+ * Firestore — and it is required rather than convenient: `storage.rules` allows
+ * nobody to write `galleries/` from a client, and quite rightly, since approval
+ * is what moves bytes there in production. This script is standing in for the
+ * transcode Function, not for a user.
+ */
+async function uploadBytes(path, bytes, contentType) {
+  const url = `http://${STORAGE}/v0/b/${BUCKET}/o?uploadType=media&name=${encodeURIComponent(path)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': contentType },
+    body: bytes,
+  });
+  if (!res.ok) {
+    throw new Error(`upload ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  /*
+   * A second call, because the emulator drops the `Content-Type` header on a
+   * media upload and files everything as `application/octet-stream`. A browser
+   * sniffs an image and shows it anyway, so this looks harmless — and then
+   * `<video>` refuses to play an octet-stream, which reads as a bug in the
+   * player rather than in the fixture.
+   */
+  const patch = await fetch(
+    `http://${STORAGE}/v0/b/${BUCKET}/o/${encodeURIComponent(path)}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contentType }),
+    },
+  );
+  if (!patch.ok) throw new Error(`content type for ${path}: HTTP ${patch.status}`);
+}
+
+async function upload(path, file, contentType) {
+  return uploadBytes(path, readFileSync(file), contentType);
+}
+
+/**
+ * A few seconds of moving colour, as mp4.
+ *
+ * Generated because a committed video is the one binary that would make this
+ * repo unpleasant to clone, and because the thing being tested is the player and
+ * the slide timing rather than any particular footage. Returns null when
+ * `ffmpeg` is not installed — the seeded document then has a poster and no clip,
+ * which is a real state (a transcode still running) and worth being able to see.
+ */
+async function makeClip(seconds) {
+  const out = join(tmpdir(), `spsm-seed-clip-${seconds}s.mp4`);
+  try {
+    execFileSync(
+      'ffmpeg',
+      ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i',
+       `testsrc=size=960x540:rate=24:duration=${seconds}`,
+       '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out],
+      { stdio: 'ignore' },
+    );
+    return readFileSync(out);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Captions, because they are the alt text and an empty one is an accessibility
+ * hole you cannot see. Anything unlisted falls back to its id.
+ */
+const CAPTIONS = {
+  'm-01': 'The domes at dusk, from the car park',
+  'm-16': 'The sanctuary from the back',
+  'm-17': 'Light across the whole east wall',
+  'm-18': 'A single window, close',
+  'm-19': 'The nave, end to end',
+  'm-20': 'Looking up at the north tower',
+  'm-21': 'A study in charcoal',
+  'm-22': 'The towers against the field',
+  'm-02': 'The crucifixion icon in the north aisle',
+  'm-03': 'Afternoon light through the glass',
+  'm-04': 'Packing the food parcels',
+  'm-05': 'The bell towers from the field',
+  'm-06': 'The sanctuary, before the Liturgy',
+  'm-07': 'A face, in progress',
+  'm-11': 'Christ, sketched in charcoal',
+  'm-12': 'The towers, looking up',
+  'm-13': 'Glass, end to end',
+  'm-14': 'The Coptic cross',
+};
 
 /**
  * A sign-in-able account with a role claim. Idempotent across re-runs.
@@ -365,11 +474,22 @@ await put('products/unreleased-title', {
 // Enough of a tree to exercise all three presentation levels (group, event,
 // program) and both grant shapes, without pretending to be a real camp.
 //
-// The photographs are references, not files: `renditionPath` points into the
-// emulator's Storage bucket and nothing puts an image there. The gallery
-// therefore renders its layout with broken images, which is the right trade —
-// seeding real binaries would make this script slow and large, and the thing
-// worth testing locally is the packing, the ordering and the permissions.
+// The photographs are **real bytes**, and that changed. They used to be
+// references only — `renditionPath` pointed into the emulator's bucket and
+// nothing ever put an object there, so every gallery rendered as a lattice of
+// broken-image icons. That was defended as a fair trade ("seeding binaries
+// would make this script slow and large"), and it was the wrong one: the whole
+// point of the gallery is the arrangement of the pictures, and you cannot judge
+// an arrangement of torn-page icons. Nobody could tell a packing bug from a
+// missing file.
+//
+// Nothing new is committed to get them. The files are the site's own webp
+// images from apps/website/public/img, re-uploaded under `galleries/` — a few
+// hundred kilobytes, already in the repo, and varied enough in shape (a
+// panorama, two portraits, several landscapes) to make the packer produce
+// something other than a uniform grid. `width`/`height` are read off the files
+// rather than invented, so the layout you see locally is the layout the real
+// aspect ratios produce.
 
 const programs = [
   ['summercamp', 'Summercamp', 10],
@@ -384,6 +504,24 @@ for (const [slug, name, order] of programs) {
     name,
     description: `${name} — local test copy, not the parish's words.`,
     coverMediaId: null,
+    featuredMediaIds: [],
+    /*
+     * Summercamp gets a sideways rail with its title beside it; the rest keep the
+     * default grid. Two arrangements across five ministries, so the local site
+     * shows both what an administrator has styled and what an untouched one looks
+     * like.
+     */
+    ...(slug === 'summercamp'
+      ? {
+          sectionLayout: {
+            display: 'rail',
+            scale: 'large',
+            drift: true,
+            title: { scale: 'display', placement: 'beside', align: 'start' },
+            caption: { scale: 'small', placement: 'below', align: 'start' },
+          },
+        }
+      : {}),
     order,
     published: true,
     publishAt: null,
@@ -391,28 +529,119 @@ for (const [slug, name, order] of programs) {
   });
 }
 
-const GROUPS = [
-  { id: 'day-1', name: 'Day 1', order: 10 },
-  { id: 'day-2', name: 'Day 2', order: 20 },
-  { id: 'talent-show', name: 'Talent Show', order: 30 },
+/*
+ * The tree under Summercamp, five levels deep.
+ *
+ * `[id, parentId, title, order, submissionsOpen, layout]`. This is the fixture
+ * for the thing the section is actually for — **a level summarises everything
+ * beneath it** — and it cannot be exercised at two levels. Summercamp has to
+ * reach past 2027 and past Week 1 to find Day 2's photographs, and "The hike"
+ * has to be a page of its own that Day 2 then summarises.
+ *
+ * So: ministry → year → week → day → part. Anything shallower and a bug in the
+ * spread across children, or in the trail resolution, or in the subtree counts,
+ * simply does not render locally.
+ *
+ * `order` matters at exactly one level here and that is the point of seeding it:
+ * the days carry 10/20/30, because "Day 2 after Day 1" is not something a date
+ * or an alphabet can express. The years and weeks carry 0 and fall back to their
+ * dates, which is what every document written before `order` existed does.
+ *
+ * The layouts are spread on purpose. `SectionLayout` is the other half of the
+ * redesign — every level arranges itself — and a seed where all of them are the
+ * default proves only that the default works. One grid, one sideways rail with
+ * its title on the pictures, one drifting column with its title beside it, and
+ * two with no layout at all so `resolveSectionLayout` is exercised too.
+ */
+const GRID_LAYOUT = {
+  display: 'grid',
+  scale: 'medium',
+  drift: true,
+  title: { scale: 'medium', placement: 'above', align: 'start' },
+  caption: { scale: 'small', placement: 'over', align: 'start' },
+};
+const RAIL_LAYOUT = {
+  display: 'rail',
+  scale: 'large',
+  drift: true,
+  title: { scale: 'large', placement: 'over', align: 'start' },
+  caption: { scale: 'small', placement: 'hidden', align: 'start' },
+};
+const COLUMN_LAYOUT = {
+  display: 'column',
+  scale: 'medium',
+  drift: true,
+  title: { scale: 'large', placement: 'beside', align: 'start' },
+  caption: { scale: 'small', placement: 'below', align: 'start' },
+};
+
+const nodes = [
+  // The year. A branch with nothing filed on it directly — its page is nothing
+  // but a summary of the two weeks, which is the case that used to be impossible.
+  ['sc-2027', null, 'Summercamp 2027', 0, false, GRID_LAYOUT],
+
+  // Week 1 takes submissions; week 2 does not, so the closed-form path is
+  // reachable without editing anything.
+  ['week-1-2027', 'sc-2027', 'Week 1', 0, true, GRID_LAYOUT],
+  ['day-1', 'week-1-2027', 'Day 1', 10, true, GRID_LAYOUT],
+  ['day-2', 'week-1-2027', 'Day 2', 20, true, RAIL_LAYOUT],
+  // The fifth level. Its parent summarises it, and its parent's parent
+  // summarises that — which is the whole claim this fixture exists to check.
+  ['the-hike', 'day-2', 'The hike', 10, true, COLUMN_LAYOUT],
+  ['talent-show', 'week-1-2027', 'Talent Show', 30, true, COLUMN_LAYOUT],
+
+  // A different set of names under week 2, deliberately: two weeks sharing one
+  // list would hide the case where a picker has to name a level by its whole
+  // trail rather than by its own title.
+  ['week-2-2027', 'sc-2027', 'Week 2', 0, false, null],
+  ['chapel', 'week-2-2027', 'Chapel', 10, false, null],
 ];
 
-// Week 1 takes submissions; week 2 does not, so the closed-form path is
-// reachable without editing anything.
-const programEvents = [
-  ['week-1-2027', 'summercamp', 'Summercamp Week 1 2027', GROUPS, true],
-  ['week-2-2027', 'summercamp', 'Summercamp Week 2 2027', [], false],
-];
-for (const [id, programId, title, groups, submissionsOpen] of programEvents) {
+for (const [id, parentId, title, order, submissionsOpen, sectionLayout] of nodes) {
   await put(`programEvents/${id}`, {
-    programId,
+    programId: 'summercamp',
+    parentId,
     slug: id,
     title,
     description: `${title} — local test copy.`,
     startAt: day(-30, 9),
     endAt: day(-26, 16),
     timeZone: 'America/New_York',
-    groups,
+    order,
+    // Left empty everywhere except the year, below: an uncurated level is the
+    // ordinary state and the automatic spread is the code path worth seeing.
+    featuredMediaIds: [],
+    ...(sectionLayout ? { sectionLayout } : {}),
+    /*
+     * Week 1 carries a second block, so the multi-block path renders locally.
+     *
+     * A page is one set of photographs and a list of ways to show it: the grid
+     * above and this wheel draw the *same* set. `showAllPictures` below makes that
+     * set every approved photograph in the week — its own, its three days', and
+     * the hike inside Day 2 — which is the combination worth seeing locally,
+     * because a capped grid and an uncapped wheel of the same set is exactly what
+     * the two together are for.
+     */
+    ...(id === 'week-1-2027'
+      ? {
+          bands: [
+            {
+              id: 'band-everything',
+              title: 'The same photographs, turning',
+              layout: {
+                display: 'rail',
+                scale: 'large',
+                drift: true,
+                title: { scale: 'small', placement: 'above', align: 'start' },
+                caption: { scale: 'small', placement: 'hidden', align: 'start' },
+              },
+            },
+          ],
+        }
+      : {}),
+    // Week 1 shows everything beneath it rather than a selection, so the wheel it
+    // carries has something worth turning through.
+    ...(id === 'week-1-2027' ? { showAllPictures: true } : {}),
     coverMediaId: null,
     calendarEventId: null,
     submissionsOpen,
@@ -423,43 +652,138 @@ for (const [id, programId, title, groups, submissionsOpen] of programEvents) {
 }
 
 /*
- * Aspect ratios are spread on purpose: a panorama, a portrait and a run of
- * ordinary snapshots are what make auto-layout produce something other than a
- * uniform grid, so a uniform grid on screen means the packer is not running.
+ * The photographs, as `[id, node, file, status, placement, layout]`.
  *
- * `m-05` is pinned by hand — it is the fixture that proves a dragged
- * photograph survives a reload rather than being re-packed.
+ * One node id, not an event and a group: filing a photograph is a pointer at a
+ * level of the tree now, at whatever depth that level sits.
+ *
+ * Shapes are spread on purpose: a panorama, two portraits and a run of ordinary
+ * landscapes are what make auto-layout produce something other than a uniform
+ * grid, so a uniform grid on screen means the packer is not running. The files
+ * are the site's own images — no new binaries — and their real dimensions are
+ * read off disk below.
+ *
+ * `m-05` is pinned by hand: it is the fixture that proves a dragged photograph
+ * survives a reload rather than being re-packed.
+ *
+ * The distribution is the fixture, not padding. Every case the summaries have to
+ * get right is here:
+ *
+ *  - **Photographs at five different depths**, so `/events/summercamp` has to
+ *    spread its page across two weeks it cannot see directly, and Day 2 has to
+ *    reach into The hike.
+ *  - **`m-14` filed on Week 2 itself**, which is a branch. It appears in Week
+ *    2's own "Also from here" block — the case that used to be "Also from this
+ *    gathering", and the reason it exists is that an unfiled submission is
+ *    otherwise invisible on the only page that could show it.
+ *  - **Two weeks with different names underneath**, so the picker has to name a
+ *    level by its whole trail rather than by its own title.
+ *  - **Three pending**, on Week 1, so bulk selection in the approval queue has
+ *    something to act on.
  */
+const ON_PAGE = { onPage: true, slideshow: true, homepage: false };
+const SHOWCASE = { onPage: true, slideshow: true, homepage: true };
+const SLIDESHOW_ONLY = { onPage: false, slideshow: true, homepage: false };
+const NOWHERE = { onPage: false, slideshow: false, homepage: false };
+
 const shots = [
-  ['m-01', 'day-1', 3.0, 'approved', { onPage: true, slideshow: true, homepage: true }, null],
-  ['m-02', 'day-1', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
-  ['m-03', 'day-1', 0.7, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
-  ['m-04', 'day-2', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false }, null],
-  ['m-05', 'day-2', 1.5, 'approved', { onPage: true, slideshow: true, homepage: false },
+  // Week 1 — Day 1
+  ['m-01', 'day-1', 'backdrop-domes-1600', 'approved', SHOWCASE, null],
+  ['m-02', 'day-1', 'icon-crucifixion-1200', 'approved', ON_PAGE, null],
+  ['m-03', 'day-1', 'hero-glass-portrait-600', 'approved', ON_PAGE, null],
+  // Week 1 — Day 2
+  ['m-04', 'day-2', 'backdrop-giving-1600', 'approved', ON_PAGE, null],
+  ['m-05', 'day-2', 'backdrop-towers-1600', 'approved', ON_PAGE,
     { col: 1, row: 1, colSpan: 6, rowSpan: 4 }],
-  ['m-06', 'day-2', 1.33, 'approved', { onPage: false, slideshow: true, homepage: false }, null],
-  ['m-07', 'talent-show', 1.5, 'approved', { onPage: true, slideshow: true, homepage: true }, null],
+  ['m-06', 'day-2', 'home-sanctuary-1600', 'approved', SLIDESHOW_ONLY, null],
+  /*
+   * Five more in Day 2, and the reason is the rail rather than the photographs.
+   *
+   * Day 2 is seeded as a sideways rail, and with two pictures in it a rail does
+   * not overflow — so it renders as a static row, `copies` stays at 1, and the
+   * drift and the loop, which are the whole feature, cannot be seen locally at
+   * all. Seven pictures at `scale: large` is comfortably wider than a laptop.
+   */
+  ['m-16', 'day-2', 'home-sanctuary-1000', 'approved', ON_PAGE, null],
+  ['m-17', 'day-2', 'hero-glass-1000', 'approved', ON_PAGE, null],
+  ['m-18', 'day-2', 'hero-glass-portrait-800', 'approved', ON_PAGE, null],
+  ['m-19', 'day-2', 'home-sanctuary-2400', 'approved', ON_PAGE, null],
+  ['m-20', 'day-2', 'hero-towers-portrait-600', 'approved', ON_PAGE, null],
+  // The fifth level, inside Day 2. Day 2's page summarises these alongside its
+  // own, which is what a level one step from the bottom has to do.
+  ['m-23', 'the-hike', 'backdrop-towers-800', 'approved', SHOWCASE, null],
+  ['m-24', 'the-hike', 'hero-towers-1000', 'approved', ON_PAGE, null],
+  // Week 1 — Talent Show
+  ['m-07', 'talent-show', 'sketch-face-800', 'approved', SHOWCASE, null],
+  ['m-11', 'talent-show', 'sketch-christ-800', 'approved', ON_PAGE, null],
+  ['m-21', 'talent-show', 'home-sanctuary-portrait-900', 'approved', ON_PAGE, null],
+  ['m-22', 'talent-show', 'hero-glass-1600', 'approved', ON_PAGE, null],
+  // Week 2, so the ministry's spread has a second week to reach.
+  ['m-12', 'chapel', 'hero-towers-portrait-900', 'approved', ON_PAGE, null],
+  ['m-13', 'chapel', 'hero-glass-1000', 'approved', ON_PAGE, null],
+  // Filed on Week 2 itself rather than inside it: the "Also from here" case.
+  ['m-14', 'week-2-2027', 'cross-coptic-360', 'approved', ON_PAGE, null],
   // The approval queue. Three waiting, so bulk selection has something to act on.
-  ['m-08', null, 1.5, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
-  ['m-09', null, 1.5, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
-  ['m-10', null, 0.75, 'pending', { onPage: false, slideshow: false, homepage: false }, null],
+  ['m-08', 'week-1-2027', 'backdrop-domes-800', 'pending', NOWHERE, null],
+  ['m-09', 'week-1-2027', 'hero-towers-1000', 'pending', NOWHERE, null],
+  ['m-10', 'week-1-2027', 'home-sanctuary-portrait-600', 'pending', NOWHERE, null],
 ];
 
-for (const [id, groupId, aspect, status, placement, layout] of shots) {
+/**
+ * One clip, so the video path is reachable at all.
+ *
+ * Its poster is a real image and its `renditionPath` is a real mp4 — generated
+ * here rather than committed, because a checked-in video is the one binary that
+ * would make this repo unpleasant to clone. `ffmpeg` writes it if it is
+ * installed; without it the document is still seeded and the poster still
+ * renders, which is exactly the state a transcode-in-progress produces and worth
+ * being able to see.
+ */
+const CLIP = {
+  id: 'm-15',
+  node: 'talent-show',
+  poster: 'sketch-christ-800',
+  seconds: 6,
+};
+
+let uploaded = 0;
+let clipBytes = null;
+
+for (const [id, node, file, status, placement, layout] of shots) {
   const approved = status === 'approved';
+  const source = `${IMAGE_DIR}/${file}.webp`;
+  const { width, height } = webpSize(source);
+
+  /*
+   * Only an approved photograph gets a public object, and that is the quarantine
+   * modelled rather than a shortcut: `renditionPath` is null until approval, and
+   * the bytes live under `submissions/` — unreadable to the public — until then.
+   * `previewPath` is what the approval queue displays, which is why a pending
+   * item needs one or the queue shows three grey boxes.
+   */
+  const rendition = approved ? `galleries/summercamp/${node}/${id}.webp` : null;
+  const preview = approved ? null : `submissions/${node}/${id}-preview.webp`;
+
+  if (rendition) await upload(rendition, source, 'image/webp');
+  if (preview) await upload(preview, source, 'image/webp');
+  uploaded += 1;
+
   await put(`galleryMedia/${id}`, {
     programId: 'summercamp',
-    programEventId: 'week-1-2027',
-    groupId,
+    programEventId: node,
+    // Legacy, and written null on purpose: filing is `programEventId` now. See
+    // the note on `GalleryMedia.groupId`.
+    groupId: null,
     kind: 'photo',
     status,
-    sourcePath: `submissions/week-1-2027/${id}.heic`,
-    renditionPath: approved ? `galleries/summercamp/week-1-2027/${id}.webp` : null,
+    sourcePath: `submissions/${node}/${id}.heic`,
+    renditionPath: rendition,
     posterPath: null,
-    width: Math.round(1200 * (aspect >= 1 ? 1 : aspect)),
-    height: Math.round(1200 * (aspect >= 1 ? 1 / aspect : 1)),
+    previewPath: preview,
+    width,
+    height,
     durationSeconds: null,
-    caption: approved ? `Local test photograph ${id}` : '',
+    caption: approved ? CAPTIONS[id] ?? `Local test photograph ${id}` : '',
     focal: { x: 0.5, y: 0.5 },
     placement,
     layout,
@@ -471,12 +795,50 @@ for (const [id, groupId, aspect, status, placement, layout] of shots) {
   });
 }
 
+{
+  const poster = `${IMAGE_DIR}/${CLIP.poster}.webp`;
+  const { width, height } = webpSize(poster);
+  const posterPath = `galleries/summercamp/${CLIP.node}/${CLIP.id}-poster.webp`;
+  const clipPath = `galleries/summercamp/${CLIP.node}/${CLIP.id}.mp4`;
+
+  await upload(posterPath, poster, 'image/webp');
+  clipBytes = await makeClip(CLIP.seconds);
+  if (clipBytes) await uploadBytes(clipPath, clipBytes, 'video/mp4');
+
+  await put(`galleryMedia/${CLIP.id}`, {
+    programId: 'summercamp',
+    programEventId: CLIP.node,
+    groupId: null,
+    kind: 'video',
+    status: 'approved',
+    sourcePath: `submissions/${CLIP.node}/${CLIP.id}.mov`,
+    renditionPath: clipPath,
+    posterPath,
+    previewPath: null,
+    width,
+    height,
+    durationSeconds: CLIP.seconds,
+    caption: 'A clip, so the video path is reachable',
+    focal: { x: 0.5, y: 0.5 },
+    placement: ON_PAGE,
+    layout: null,
+    order: 150,
+    submittedAt: day(-20, 12),
+    reviewedAt: day(-19, 9),
+    reviewedBy: 'seed',
+    ...audit(),
+  });
+}
+
 // --- done -------------------------------------------------------------------
 
 console.log(`Seeded the emulators at ${FIRESTORE}:
 
   ${pages.length} content pages, ${events.length} events, 1 announcement
-  ${programs.length} programs, ${programEvents.length} program events, ${shots.length} photographs (3 awaiting approval)
+  ${programs.length} programs, ${nodes.length} levels beneath them (Summercamp is 5 deep)
+  ${shots.length} photographs + 1 clip, with real bytes in the Storage emulator (3 awaiting approval)${
+    clipBytes ? '' : '\n  the clip has no video file — install ffmpeg to seed one'
+  }
   ${products.length} bookstore products (+1 unpublished draft)
   config/parish, config/integrations, and config/theme
   ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}

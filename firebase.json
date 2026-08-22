@@ -8,7 +8,7 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
-    "//rewrites": "Still no catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status \u2014 which is what src/app/not-found.tsx emits it for. The /events/** entry below is the ONE deliberate exception and is scoped to that prefix for exactly that reason. It works because Hosting resolves in a fixed order \u2014 redirects, then exact static files, then rewrites \u2014 so /events and /events/some-liturgy are served from disk and never reach it; only a path with no file falls through. Order matters within this array too: it is first-match, so the two /api entries must stay ABOVE the glob or checkout would render a gallery shell.",
+    "//rewrites": "Still no catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status \u2014 which is what src/app/not-found.tsx emits it for. The /events/** entry below is the ONE deliberate exception and is scoped to that prefix for exactly that reason. It works because Hosting resolves in a fixed order \u2014 redirects, then exact static files, then rewrites \u2014 so /events and /events/some-liturgy are served from disk and never reach it; only a path with no file falls through. Order matters within this array too: it is first-match, so the three /api entries must stay ABOVE the glob or checkout would render a gallery shell. /api/bulletin is the homepage schedule's live read: it follows config/active_bulletin in the announcements project, because the section is baked into static HTML at build time and would otherwise never change until a redeploy.",
     "rewrites": [
       {
         "source": "/api/square/checkout",
@@ -17,6 +17,14 @@
       {
         "source": "/api/square/webhook",
         "function": "squareWebhook"
+      },
+      {
+        "source": "/api/bulletin",
+        "function": "bulletin"
+      },
+      {
+        "source": "/api/live",
+        "function": "live"
       },
       {
         "source": "/events/**",

@@ -17,7 +17,7 @@
  */
 import { initializeApp, getApps, getApp, cert, type App } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { parseBulletin, BulletinShapeError, type AnnouncementsConfig, type Bulletin } from '@spsm/shared';
+import { readActiveBulletin, type AnnouncementsConfig, type Bulletin } from '@spsm/shared';
 
 /** Reused across pages in one build; initializeApp throws on a duplicate name. */
 const APP_NAME = 'announcements-source';
@@ -46,7 +46,18 @@ function sourceApp(serviceAccountJson: string): App {
 }
 
 /**
- * The current bulletin, or null if there isn't a usable one.
+ * The active bulletin, or null if there isn't a usable one.
+ *
+ * "Active" is the announcements app's own word for it: that app writes
+ * `config/active_bulletin` when staff put a bulletin up, and this follows it —
+ * see `readActiveBulletin`, which is in @spsm/shared because the `bulletin`
+ * Cloud Function performs the identical read at request time.
+ *
+ * **What this returns is a first paint, not the answer the reader ends up
+ * with.** The build bakes it into static HTML and the homepage re-checks
+ * `/api/bulletin` on load, so making a different bulletin active does not need
+ * a deploy. This is what shows instantly, and what stays on screen if that
+ * check cannot be made.
  *
  * Returns null rather than throwing for every recoverable case. The bulletin is
  * one section of the homepage; a bad week over there should cost that section,
@@ -84,38 +95,7 @@ export async function getCurrentBulletin(config: AnnouncementsConfig): Promise<B
       ? getFirestore(app, config.databaseId)
       : getFirestore(app);
 
-    const snapshot = await firestore.collection(config.collectionPath).get();
-
-    if (snapshot.empty) {
-      console.warn(
-        `[bulletin] ${config.projectId}/${config.collectionPath} is empty. ` +
-          `Check the collection path in config/integrations.`,
-      );
-      return null;
-    }
-
-    // Documented as a singleton the source overwrites weekly. If that changes,
-    // the newest week is the one to show — sort rather than trust ordering.
-    const parsed = snapshot.docs
-      .map((docSnap) => {
-        try {
-          return parseBulletin(docSnap.data(), {
-            project: config.projectId,
-            collection: config.collectionPath,
-            documentId: docSnap.id,
-          });
-        } catch (error) {
-          if (error instanceof BulletinShapeError) {
-            console.warn(`[bulletin] skipping source document ${docSnap.id}: ${error.message}`);
-            return null;
-          }
-          throw error;
-        }
-      })
-      .filter((b): b is Bulletin => b !== null)
-      .sort((a, b) => b.weekOf.localeCompare(a.weekOf));
-
-    return parsed[0] ?? null;
+    return await readActiveBulletin(firestore, config);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[bulletin] read failed, rendering without it: ${message}`);

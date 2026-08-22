@@ -51,6 +51,17 @@ const THIRD: readonly [number, number] = [4, 3];
 const TALL: readonly [number, number] = [4, 6];
 
 /**
+ * The narrowest box auto-layout will ever draw.
+ *
+ * Load-bearing rather than descriptive: it is how the packer knows a leftover
+ * strip is *unusable*. Fewer than four columns of the twelve is 8% of the width
+ * per column, and nothing in the list above is that narrow, so a gap of one,
+ * two or three columns can never be filled by a later photograph. See
+ * `stretchIntoDeadSpace`.
+ */
+const NARROWEST_SPAN = Math.min(WIDE[0], HALF[0], THIRD[0], TALL[0]);
+
+/**
  * Pick a shape for one photograph from its proportions.
  *
  * Panoramas earn the full width because scaled into a third-column box they
@@ -132,8 +143,9 @@ export function packGallery(items: readonly Placeable[]): PlacedItem[] {
       }
     }
 
-    occupy(placement);
-    placed.push({ id: item.id, placement, auto: true });
+    const stretched = stretchIntoDeadSpace(placement, taken);
+    occupy(stretched);
+    placed.push({ id: item.id, placement: stretched, auto: true });
   }
 
   // Back into the caller's order. The packer needs manual-first; a renderer
@@ -141,6 +153,66 @@ export function packGallery(items: readonly Placeable[]): PlacedItem[] {
   // reader and keyboard tabbing follow.
   const byId = new Map(placed.map((p) => [p.id, p]));
   return items.map((item) => byId.get(item.id)).filter((p): p is PlacedItem => p !== undefined);
+}
+
+/**
+ * Widen a placement into the unusable strip to its right, if there is one.
+ *
+ * ## The hole this closes
+ *
+ * Twelve columns and boxes of 12, 6 and 4 do not always divide. Pin one
+ * photograph six columns wide at the top — which an administrator does by
+ * dragging, and which is the whole point of manual placement — and six columns
+ * are left beside it. A four-column box goes in, and **two columns are then dead
+ * for the height of that box**: nothing in the shape list is narrower than four,
+ * so no later photograph can ever fill them.
+ *
+ * On screen that is a 175-pixel column of empty paper down the side of the
+ * gallery, and it reads as a picture that failed to load rather than as
+ * whitespace. It was the most visible thing wrong with the section after the
+ * spacing was fixed.
+ *
+ * ## Why widening, and not a narrower shape
+ *
+ * Adding a two-column box to the list would fill the gap and would also let
+ * auto-layout put a photograph in a 90-pixel slot, which is not a photograph.
+ * The short list of widths is deliberate — "the failure mode of a photo grid is
+ * a page where every picture is a different size" — and this keeps it: the box is
+ * still one of three widths *plus whatever it takes to reach the edge*, which is
+ * what a masonry layout does and why its right edge is always flush.
+ *
+ * Only ever extends into space that no shape could have used, so it can never
+ * take a slot from a later photograph. Manual placements are reserved before any
+ * auto item is placed, so `taken` already accounts for every pin — this cannot
+ * grow over one.
+ *
+ * Manual placements are not stretched. An administrator who sized a photograph
+ * by hand has said what size it should be.
+ */
+function stretchIntoDeadSpace(
+  placement: GridPlacement,
+  taken: ReadonlySet<string>,
+): GridPlacement {
+  const columnFree = (col: number) => {
+    for (let row = placement.row; row < placement.row + placement.rowSpan; row += 1) {
+      if (taken.has(`${row}:${col}`)) return false;
+    }
+    return true;
+  };
+
+  let spare = 0;
+  while (
+    placement.col + placement.colSpan + spare <= GALLERY_COLUMNS &&
+    columnFree(placement.col + placement.colSpan + spare)
+  ) {
+    spare += 1;
+  }
+
+  // A gap wide enough for a real box is left alone — the next photograph goes
+  // there, which is a better use of it than making this one wider.
+  if (spare === 0 || spare >= NARROWEST_SPAN) return placement;
+
+  return { ...placement, colSpan: placement.colSpan + spare };
 }
 
 /**

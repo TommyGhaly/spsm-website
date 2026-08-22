@@ -58,6 +58,63 @@ export function formatEventWhen(
 }
 
 /**
+ * A gathering's dates, as short as they can honestly be.
+ *
+ *   one day        "July 14, 2027"
+ *   same month     "July 14–18, 2027"
+ *   same year      "July 14 – August 2, 2027"
+ *   otherwise      "December 28, 2027 – January 2, 2028"
+ *
+ * Separate from `formatEventWhen`, which is for a service: that one leads with
+ * the weekday and prints clock times, both of which are right for "come to this
+ * on Sunday" and wrong for "this camp ran for five days three years ago". Asked
+ * to describe a five-day camp it names the first day only, and the fact that it
+ * was five days — the thing somebody looking at an archive wants — disappears.
+ *
+ * The weekday is dropped for the same reason. Nobody needs to know which day of
+ * the week a camp in 2024 started on.
+ */
+export function formatDateSpan(
+  startAt: Timestamped | null | undefined,
+  endAt: Timestamped | null | undefined,
+  timeZone = PARISH_TIME_ZONE,
+): string {
+  const start = toDate(startAt);
+  if (!start) return '';
+
+  const parts = (date: Date) => ({
+    month: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone }).format(date),
+    day: new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone }).format(date),
+    year: new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone }).format(date),
+  });
+
+  const from = parts(start);
+  const end = toDate(endAt);
+
+  // No end date, or an end on the same day. A one-day gathering is the common
+  // case for everything that is not a camp.
+  if (!end) return `${from.month} ${from.day}, ${from.year}`;
+
+  const to = parts(end);
+  if (from.month === to.month && from.day === to.day && from.year === to.year) {
+    return `${from.month} ${from.day}, ${from.year}`;
+  }
+
+  // An en dash, unspaced, for a range within one month — the typographic
+  // convention, and it is what makes "July 14–18" read as one span rather than
+  // as two dates that happen to be adjacent.
+  if (from.month === to.month && from.year === to.year) {
+    return `${from.month} ${from.day}\u2013${to.day}, ${from.year}`;
+  }
+
+  if (from.year === to.year) {
+    return `${from.month} ${from.day} \u2013 ${to.month} ${to.day}, ${from.year}`;
+  }
+
+  return `${from.month} ${from.day}, ${from.year} \u2013 ${to.month} ${to.day}, ${to.year}`;
+}
+
+/**
  * "Morning" / "Afternoon" / "Evening" / "Night", in the parish's zone.
  *
  * For naming a past service, where a clock time is false precision — see
@@ -100,6 +157,43 @@ export function dayKey(
     day: '2-digit',
     timeZone,
   }).format(date);
+}
+
+/**
+ * The inverse of `dayKey`: a civil date from a form back into a `Date`.
+ *
+ * `<input type="date">` hands over `"2026-07-22"` — a calendar day with no zone
+ * attached — and the obvious `new Date(value)` parses that as **midnight UTC**,
+ * which in the parish's zone is eight in the evening on the 21st. So the naive
+ * version stores the day *before* the one somebody typed, for everybody west of
+ * Greenwich, and reads back wrong the moment `dayKey` renders it again.
+ *
+ * Noon, therefore. It keeps the civil date intact for every offset from UTC-11 to
+ * UTC+11 — which is not quite every zone on earth (Kiribati is UTC+14 and would
+ * read the next day) but is every zone the parish's own dates are ever rendered
+ * in, and it has seven hours of margin on the one that matters. The time of day is
+ * not information here — these fields are a span of days on a camp — so there is
+ * nothing lost by pinning it.
+ *
+ * The exception is stated rather than engineered away on purpose. Making this
+ * exact for UTC+14 means resolving the *reader's* offset for the date being
+ * written, which is a different and much larger problem — the reader is not known
+ * at write time — for a case that cannot arise: `dayKey` is called with
+ * `PARISH_TIME_ZONE` everywhere on the site.
+ *
+ * Here rather than beside the form because it is exactly `dayKey` backwards, and
+ * a round trip that lives in two files is a round trip that will stop being one.
+ * `tests/unit/dates.test.ts` asserts they compose.
+ *
+ * @returns null for an empty field, which is a real choice — "this has no fixed
+ *   date" — and has to reach the document as null rather than being ignored.
+ */
+export function fromDayKey(value: string): Date | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}T12:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /**

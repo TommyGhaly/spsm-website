@@ -1,6 +1,7 @@
+'use client';
+
 import type { Bulletin, BulletinEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
-import { PARISH_TIME_ZONE } from '@/lib/dates';
 import { bulletinImageUrl } from './media';
 
 /**
@@ -17,10 +18,12 @@ import { bulletinImageUrl } from './media';
  * "Monday" and "2026-08-17 – 2026-08-21" on multi-day entries. That is a
  * developer's format on a parishioner's page, so dates — and only dates — are
  * formatted here.
+ *
+ * `today` is a prop, not a clock read. See `todayInParish` for why the caller
+ * has to supply it.
  */
-export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
+export function BulletinWeek({ bulletin, today }: { bulletin: Bulletin; today: string }) {
   const daysWithEvents = bulletin.days.filter((day) => day.events.length > 0);
-  const today = todayInParish();
 
   return (
     <>
@@ -50,9 +53,12 @@ export function BulletinWeek({ bulletin }: { bulletin: Bulletin }) {
 
       {/* Multi-day entries — a festival, a retreat — are pulled out of the daily
           list by the parser because repeating them under five consecutive days
-          is how the paper sheet reads, not how a screen should. */}
+          is how the paper sheet reads, not how a screen should.
+
+          `.week-multi` rather than the site's `.grid`, so however many there
+          are, together they span exactly the width of a day card below. */}
       {bulletin.multiDayEvents.length > 0 && (
-        <ul className="grid reveal-stagger" style={{ marginBottom: 'var(--space-lg)' }}>
+        <ul className="week-multi reveal-stagger" style={{ marginBottom: 'var(--space-lg)' }}>
           {bulletin.multiDayEvents.map((event) => {
             const image = bulletinImageUrl(event.image);
             return (
@@ -225,24 +231,4 @@ function parseIsoDate(date: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   const parsed = new Date(`${date}T00:00:00Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-/**
- * Today's date in the parish's own zone, as `YYYY-MM-DD`.
- *
- * **Evaluated at build time**, because this is a static export — so "today" is
- * the day the site was built, not the day it is read. That is accurate for a
- * site rebuilt on publish and drifts otherwise, which is why it only ever adds a
- * highlight: a missing "Today" marker is a non-event, whereas hiding past days
- * based on a stale date would silently empty the schedule.
- */
-function todayInParish(): string {
-  // `en-CA` gives ISO order (YYYY-MM-DD) directly, avoiding a manual reassembly
-  // of the parts.
-  return new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: PARISH_TIME_ZONE,
-  }).format(new Date());
 }

@@ -71,28 +71,113 @@ authorizes nothing; a service-account key would authorize everything.
 
 `ANNOUNCEMENTS_SERVICE_ACCOUNT`. The weekly bulletin lives in a different
 Firebase project, and reaching another project requires its credentials — a
-browser cannot hold those, so this read only happens during `next build`.
+browser cannot hold those, so a browser never does this read.
 
 Consequence worth knowing: **`next build` is no longer runnable from public
 config alone.** Without that key the site still builds, but the bulletin section
 is silently absent and the log says why. Whatever runs your production build
 needs the key too.
 
+**It is needed in two places now, not one.** The build bakes in whichever
+bulletin was active at deploy, and the `bulletin` Cloud Function re-reads the
+source at request time so the homepage stops being as old as the last deploy.
+Same key, second home:
+
+```bash
+npx firebase functions:secrets:set ANNOUNCEMENTS_SERVICE_ACCOUNT
+```
+
+Without it the endpoint answers 503, the page keeps showing the week it was
+built with, and nothing looks wrong. Check it after a deploy.
+
 It is read-only on that project — `npm run verify:scopes` proves it — so a leak
 exposes the parish bulletin, which is already public. Still not a reason to be
 careless: the variable has no `NEXT_PUBLIC_` prefix precisely so Next will not
 inline it into browser code.
 
-## When the bulletin section is missing
+## Which bulletin the homepage shows
+
+**`config/active_bulletin` in the announcements project, and nothing else.**
+
+That document is a single field — `{ id: "318bf22a-…" }`, an id in `bulletins` —
+and the announcements app writes it when staff make a bulletin active. The
+website follows it, so the homepage and the screen in the narthex agree by
+construction.
+
+Nothing about the *dates* is used to decide this, and that is deliberate. The
+`bulletins` collection normally holds the active week plus whichever future week
+somebody has started drafting, so "the newest document" is reliably the draft —
+which is how the homepage once came to be headed "August 24, 2026" on the 20th,
+showing services nobody was holding. And a bulletin is a schedule somebody
+publishes rather than a calendar range: the parish is entitled to leave last
+week's up over a feast, or to put next week's up early, and deriving the week
+from `days[]` would silently overrule that.
+
+If the pointer is missing or names something unusable, the fallback is the most
+recently **published** week — never the newest, for the reason above. If nothing
+has ever been published, the section is absent. See `readActiveBulletin` in
+[`packages/shared/src/bulletinSource.ts`](../packages/shared/src/bulletinSource.ts),
+which is where both the build and the Function get their answer.
+
+## When the bulletin section is missing or stale
 
 ```bash
 npm run bulletin
 ```
 
-It reads `config/integrations` and then the source project, printing both. That
-covers the realistic causes in one shot: config says `enabled: false`, the
-collection path is wrong, the service account is missing or malformed, or the
-source really is empty.
+It reads `config/integrations`, then the pointer, then the source collection,
+printing all three and marking which document is `<-- ON THE SITE`. That covers
+the realistic causes in one shot: config says `enabled: false`, the collection
+path is wrong, the service account is missing or malformed, the pointer names a
+deleted document, or the source really is empty.
+
+That script covers the **build-time** read. If the HTML on disk is right and the
+page is still wrong, the live read is the other half:
+
+```bash
+curl -s https://<host>/api/bulletin | head -c 300
+```
+
+| What comes back | What it means |
+|---|---|
+| `{"bulletin":{...}}` | Working. This is what the page puts on screen. |
+| `{"bulletin":null,"reason":"disabled"}` | `announcements.enabled` is false in `config/integrations`. |
+| `{"bulletin":null,"reason":"nothing-active"}` | No pointer and nothing published, or the collection is empty. |
+| `503` | `ANNOUNCEMENTS_SERVICE_ACCOUNT` is not in Secret Manager. |
+| `502` | The source project could not be read — IAM, or a malformed key. The Function's log names the cause; the response deliberately does not. |
+| `404` | The Hosting rewrite is missing, or you are on `next dev` without the Functions emulator running. |
+
+**Every one of those non-answers leaves the page alone.** The live read only ever
+*replaces* the week on screen — it never removes it. A schedule a few days old
+still tells you when the Liturgy is; an empty band tells you nothing. So a broken
+endpoint shows up as a page that stops updating, not as a page that breaks, which
+is why the `curl` above is worth running rather than trusting your eyes.
+
+### Why the live read finds nothing locally
+
+`npm run dev` proxies `/api/bulletin` to the Functions emulator, and the Functions
+emulator sets `FIRESTORE_EMULATOR_HOST` for its whole process. The Admin SDK
+honours that for *every* app — including the one opened with the announcements
+project's key — so the live read never leaves your machine, no matter what
+credential it holds. It answers `nothing-active`, and the page keeps the week the
+dev server read from the real project. Correct, and worth knowing before you spend
+an afternoon on it.
+
+To exercise the live path locally, copy the pointer and the bulletins into the
+emulator under **the announcements project's own id**, not ours — that is where
+the redirected read looks:
+
+```
+weeklyannouncements-1d046/config/active_bulletin
+weeklyannouncements-1d046/bulletins/<id>
+```
+
+The Functions emulator also needs the key in `functions/.secret.local`
+(gitignored, and excluded from deploys):
+
+```
+ANNOUNCEMENTS_SERVICE_ACCOUNT=<the same one-line JSON as in .env>
+```
 
 ## Emulators
 
@@ -167,6 +252,26 @@ npm run dev:local
 There is no longer any account to create by hand: `dev:local` runs
 `scripts/seed-emulator.mjs` first, which creates six accounts with their role
 claims already set.
+
+### The seeded galleries have real photographs in them
+
+They did not, and it mattered more than it sounds. The seed used to write
+`galleryMedia` documents whose `renditionPath` pointed at objects nobody ever
+uploaded, so every gallery rendered as a lattice of broken-image icons — and the
+whole subject of those pages is the *arrangement* of the pictures. You could not
+tell a packing bug from a missing file.
+
+The seed now uploads the site's own webp images from `apps/website/public/img`
+into the Storage emulator under `galleries/`, reads their real dimensions off
+disk so the packer sees true aspect ratios, and marks one item as a video. No new
+binaries are committed to get this.
+
+The video's own file is generated with `ffmpeg` if you have it. Without it, the
+document is still seeded and its poster frame still renders — which is exactly
+what an approved photograph looks like while its transcode is still running, and
+worth being able to see on purpose.
+
+Re-running the seed is safe and idempotent; it overwrites the same paths.
 
 ### Signing in locally never contacts Microsoft
 

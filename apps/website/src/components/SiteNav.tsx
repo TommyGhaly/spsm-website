@@ -35,6 +35,66 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
   /** The href of the top-level item whose dropdown is showing, if any. */
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
+  /**
+   * Ministries that have been hidden since the last build.
+   *
+   * `programNavChildren` runs in `layout.tsx` **at build time**, which is what
+   * keeps the header at zero Firestore reads per page load. The cost is
+   * staleness, and staleness in one direction is a real problem: a ministry
+   * created after a deploy simply joins the menu at the next build, which is
+   * harmless — but a ministry *unpublished* after a deploy vanishes from
+   * /events immediately and stays in the header, offering the public a link to
+   * something the parish has deliberately hidden.
+   *
+   * So the baked list is treated as a maximum rather than as truth, and it is
+   * checked the moment somebody opens the menu — not on page load. A visitor
+   * who never touches the header still costs nothing, and by the time the panel
+   * is on screen the answer has arrived. Null means "not checked yet", which
+   * renders the baked list: showing a stale entry for a few hundred
+   * milliseconds is better than a menu that flickers empty on every open.
+   */
+  const [publishedHrefs, setPublishedHrefs] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (openMenu === null || publishedHrefs !== null) return;
+    let live = true;
+
+    void (async () => {
+      /*
+       * Dynamic, and it has to be. A static import would put the Firestore SDK
+       * in the chunk that every page loads — the masthead is on all of them —
+       * which is the regression `lib/auth.ts` and `lib/authStore.ts` both exist
+       * to prevent. Reached only on a deliberate interaction.
+       */
+      const [{ getPrograms }, { programHref }] = await Promise.all([
+        import('@/features/programs/data'),
+        import('@/features/programs/route'),
+      ]);
+      const programs = await getPrograms();
+      if (!live) return;
+      // An empty result is ambiguous — a genuinely empty parish or a failed
+      // read — and emptying the menu on a failed read is the worse mistake.
+      if (programs.length === 0) return;
+      setPublishedHrefs(new Set(programs.map((program) => programHref(program.slug))));
+    })();
+
+    return () => {
+      live = false;
+    };
+  }, [openMenu, publishedHrefs]);
+
+  /** The baked children, minus anything hidden since the build. */
+  const visibleChildren = (children: readonly NavChild[] | undefined) => {
+    if (!children) return [];
+    if (publishedHrefs === null) return children;
+    // Only prefixed children are checked: the ministries are the data-driven
+    // part of this menu, and a hardcoded child must never be pruned by a query
+    // that knows nothing about it.
+    return children.filter(
+      (child) => !child.href.startsWith('/events/') || publishedHrefs.has(child.href),
+    );
+  };
+
   /*
    * Closing is delayed; opening is not.
    *
@@ -134,7 +194,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
     <>
       <nav className="nav" aria-label="Main">
         {items.map((item) =>
-          item.children && item.children.length > 0 ? (
+          visibleChildren(item.children).length > 0 ? (
             /*
               No disclosure control beside the word — the menu opens on hover
               and on focus, and nothing else.
@@ -185,7 +245,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                 thing.
               */}
               <ul className="nav__menu" hidden={openMenu !== item.href}>
-                {item.children.map((child) => (
+                {visibleChildren(item.children).map((child) => (
                   <li key={child.href}>
                     <NavTile child={child} current={isCurrent(child.href)} />
                   </li>
@@ -242,9 +302,9 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                   second one to reach Summercamp is a tap for nothing, and five
                   short lines cost little scrolling.
                 */}
-                {item.children && item.children.length > 0 && (
+                {visibleChildren(item.children).length > 0 && (
                   <ul className="nav-panel__sublinks">
-                    {item.children.map((child) => (
+                    {visibleChildren(item.children).map((child) => (
                       <li key={child.href}>
                         <Link
                           href={child.href}

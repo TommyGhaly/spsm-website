@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
 import { getAllEvents, getEvent } from '@/features/events';
 import { GalleryShell, getPrograms } from '@/features/programs';
 import { Prose } from '@/components/Prose';
 import { PageBody } from '@/components/PageBody';
 import { Icon } from '@/components/Icon';
+import { BackLink } from '@/components/BackLink';
 import { formatEventWhen, isoOf } from '@/lib/dates';
 import { storageUrl } from '@/lib/storage';
 
@@ -127,31 +127,58 @@ export default async function EventPage({ params }: { params: Promise<Params> })
           <img src={hero} alt="" />
         </div>
       )}
-      {/*
-        The event's own title block. It stays here rather than using
-        `PageHeader` because an event's name needs its date and location beside
-        it, which that component has no slot for — and because `PageHeader` now
-        renders nothing on screen at all.
-      */}
-      <header className="wrap event-head">
-        <p className="meta">
-          <Link href="/events">← Parish Calendar</Link>
-        </p>
-        <h1>{event.title}</h1>
-        <p className="event-head__when">
-          <time dateTime={isoOf(event.startAt)}>
-            {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
-          </time>
-        </p>
-        {event.location && (
-          <p className="meta">
-            <Icon name="pin" size={14} /> {event.location.name}
-            {event.location.address && ` · ${event.location.address}`}
-          </p>
-        )}
-      </header>
+      <PageBody flush>
+        {/*
+          The event's own title block. It stays here rather than using
+          `PageHeader` because an event's name needs its date and location beside
+          it, which that component has no slot for — and because `PageHeader` now
+          renders nothing on screen at all.
 
-      <PageBody>
+          **Inside `PageBody`, not beside it.** It used to be its own
+          `class="wrap event-head"`, which took `.wrap`'s `margin-inline: auto`
+          and then narrowed `max-width` to the reading measure — centring a 710px
+          title block above a 1152px column of prose, so the back link and the
+          heading sat a quarter of the window to the right of the text under
+          them. One column, one left edge. The gallery pages had the same bug and
+          are fixed the same way; see `.gallery-head`.
+        */}
+        <header className="gallery-head">
+          <BackLink href="/calendar" label="Parish Calendar" />
+
+          <div className="gallery-head__row">
+            <div className="gallery-head__titles">
+              <h1>{event.title}</h1>
+
+              {/*
+                The date, and only the date, in the letterspaced small caps this
+                line uses. The location moved out from beside it: a full range —
+                "Sunday, August 30, 2026, 5:00 PM – Tuesday, September 1, 2026,
+                8:00 PM" — is already sixty characters of capitals, and an address
+                after it made one unreadable line that filled the column. It also
+                carries its own `·` between name and street, which collided with
+                the separators this line draws between facts.
+              */}
+              <p className="gallery-head__facts">
+                <span>
+                  <time dateTime={isoOf(event.startAt)}>
+                    {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
+                  </time>
+                </span>
+              </p>
+
+              {event.location && (
+                <p className="gallery-head__where">
+                  <Icon name="pin" size={16} />
+                  <span>
+                    {event.location.name}
+                    {event.location.address && ` · ${event.location.address}`}
+                  </span>
+                </p>
+              )}
+            </div>
+          </div>
+        </header>
+
         <Prose>{event.body}</Prose>
 
         {/*

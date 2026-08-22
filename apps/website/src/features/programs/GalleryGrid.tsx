@@ -5,36 +5,42 @@ import {
   GALLERY_COLUMNS,
   GALLERY_COLLAPSE_BELOW,
   collapseToColumn,
-  focalPosition,
   packGallery,
   type DocOf,
   type GalleryMedia,
   type Placeable,
+  type SectionCaptionStyle,
 } from '@spsm/shared';
-import { galleryPosterUrl, galleryVideoUrl } from './media';
+import { GalleryFigure } from './GalleryFigure';
 
 /**
- * The gallery, as an administrator arranged it.
+ * The gallery as a composition — the twelve-column canvas.
  *
- * The four integers on each document (`col`, `row`, `colSpan`, `rowSpan`) map
- * straight onto CSS grid lines, which is why they are stored 1-indexed — no
- * arithmetic between Firestore and the stylesheet, and the mobile app reads the
- * same numbers into its own layout system.
+ * One of three displays a section can choose (see `GallerySection`), and the only
+ * one that can hold an arrangement somebody built by hand. The four integers on
+ * each document (`col`, `row`, `colSpan`, `rowSpan`) map straight onto CSS grid
+ * lines, which is why they are stored 1-indexed — no arithmetic between Firestore
+ * and the stylesheet, and the mobile app reads the same numbers into its own
+ * layout system.
  *
  * Rows are a fixed height rather than `auto`. A grid whose rows size to their
  * content cannot honour a `rowSpan`: an item told to be three rows tall would
  * simply be as tall as its own photograph, and every deliberate arrangement
- * would collapse into a jumble. The height is a CSS custom property so a phone
- * can shrink it without this component knowing.
+ * would collapse into a jumble. The height is `--gallery-row-height`, which the
+ * section sets from its scale, so a phone and a large section can both shrink it
+ * without this component knowing.
+ *
+ * What a picture *looks* like is `GalleryFigure`'s business, not this file's.
  */
-
 export function GalleryGrid({
   media,
+  caption,
   onSelect,
 }: {
   media: DocOf<GalleryMedia>[];
-  /** Opens the lightbox. Absent in the presentation, which is its own view. */
-  onSelect?: (index: number) => void;
+  caption: SectionCaptionStyle;
+  /** Opens the lightbox. Absent only where a click has nowhere to go. */
+  onSelect?: ((index: number) => void) | undefined;
 }) {
   const narrow = useNarrowViewport();
 
@@ -69,80 +75,15 @@ export function GalleryGrid({
               gridRow: `${placement.row} / span ${placement.rowSpan}`,
             }}
           >
-            <GalleryItem
+            <GalleryFigure
               item={item}
+              caption={caption}
               onSelect={onSelect ? () => onSelect(media.indexOf(item)) : undefined}
             />
           </li>
         );
       })}
     </ul>
-  );
-}
-
-function GalleryItem({
-  item,
-  onSelect,
-}: {
-  item: DocOf<GalleryMedia>;
-  // `| undefined` spelled out because `exactOptionalPropertyTypes` is on: with
-  // it, an optional property may be *omitted* but may not be *given* undefined,
-  // and the caller passes undefined explicitly for the presentation view.
-  onSelect?: (() => void) | undefined;
-}) {
-  const poster = galleryPosterUrl(item);
-  const isVideo = item.kind === 'video' && galleryVideoUrl(item) !== null;
-
-  /*
-   * Approved, publicly readable, and no file yet.
-   *
-   * Not a defensive branch — it is a state the design creates. Approval and
-   * transcoding are two steps seconds apart, and in between the document is
-   * live with a null `renditionPath`. Saying so beats a broken-image icon,
-   * which reads as a site fault rather than a job still running.
-   */
-  if (poster === null) {
-    return (
-      <div className="gallery-grid__pending" aria-hidden="true">
-        <span>Processing…</span>
-      </div>
-    );
-  }
-
-  const image = (
-    <img
-      src={poster}
-      // The caption is the alt text. An administrator writing one line is
-      // doing double duty, which is the only way alt text on a few hundred
-      // parish photographs ever gets written at all.
-      alt={item.caption}
-      loading="lazy"
-      decoding="async"
-      style={{ objectPosition: focalPosition(item.focal) }}
-    />
-  );
-
-  if (!onSelect) return <figure className="gallery-grid__media">{image}</figure>;
-
-  return (
-    <button type="button" className="gallery-grid__media" onClick={onSelect}>
-      {image}
-      {isVideo && (
-        <span className="gallery-grid__play" aria-hidden="true">
-          ▶
-        </span>
-      )}
-      {/*
-        The caption is already the alt text above, so a screen reader would
-        otherwise hear it twice — once for the image, once for the button. The
-        visible text is hidden from the accessibility tree and the button gets
-        the label instead.
-      */}
-      <span className="visually-hidden">
-        {isVideo ? 'Play video' : 'View photograph'}
-        {item.caption ? `: ${item.caption}` : ''}
-      </span>
-    </button>
   );
 }
 

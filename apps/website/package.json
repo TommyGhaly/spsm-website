@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "//dev:emulated": "The website against an already-running emulator suite, on the usual port. This is what makes the program galleries developable: they read Firestore in the browser, and the real project has no gallery data. Start the emulators first (npm run emulators) and seed them (npm run seed:emulator).",
-    "dev:emulated": "NEXT_PUBLIC_USE_EMULATORS=1 next dev"
+    "dev:emulated": "NEXT_PUBLIC_USE_EMULATORS=1 next dev",
+    "//dev:emulated:second": "The same, alongside a server you already have running. `next dev` refuses a second server for the same output directory, so this one gets its own (.next-emulated, gitignored) and its own port. Use it to compare the real Firestore and the emulators side by side without stopping either.",
+    "dev:emulated:second": "NEXT_DIST_DIR=.next-emulated NEXT_PUBLIC_USE_EMULATORS=1 PORT=3100 next dev"
   },
   "dependencies": {
     "@spsm/shared": "*",

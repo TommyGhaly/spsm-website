@@ -1,11 +1,22 @@
 import type { AuditFields, Publishable, Timestamped } from './common.js';
+import type { GalleryBand, SectionLayout } from './sectionLayout.js';
 
 /**
  * The parish's standing programs, and the photographs the parish takes of them.
  *
- * Three levels — program, event, group — because presentation has to run at all
- * three: "present Day 2", "present Week 1", and "present all of Summercamp" are
- * each something somebody will ask for. See docs/program-galleries.md.
+ * **A tree of arbitrary depth, not three fixed levels.** A program is the root;
+ * beneath it every node is a `ProgramEvent` that may have children, and the
+ * parish decides how deep that goes. Summercamp → Week 1 2026 → Day 1 → The
+ * hike is four levels, and nothing in the model stops a fifth.
+ *
+ * That replaced program → event → inline `groups`, where the third level had no
+ * page of its own and there was no fourth. The reason it had to change is what
+ * every level is *for*: a level summarises everything beneath it. Summercamp
+ * shows pictures drawn from every year of camp; Week 1 2026 shows pictures drawn
+ * from each of its days; Day 1 shows Day 1. Which pictures is an editorial
+ * choice at each level — `featuredMediaIds` — and the automatic fallback spreads
+ * the summary across the children rather than taking the first twenty of one
+ * day. See `summariseNode` in gallery/tree.ts.
  *
  * Deliberately not the same collection as `events`. That one answers *what is
  * coming up* and a Wednesday Liturgy belongs to it; this answers *what we did*
@@ -15,9 +26,9 @@ import type { AuditFields, Publishable, Timestamped } from './common.js';
 /**
  * One standing program — Summercamp, St. Simon for Seniors, and so on.
  *
- * Data rather than a constant, so a superadmin can add the sixth program in
- * 2029 without a developer. The five the parish runs today are seeded, not
- * hardcoded.
+ * The root of a tree. Data rather than a constant, so a superadmin can add the
+ * sixth program in 2029 without a developer. The five the parish runs today are
+ * seeded, not hardcoded.
  */
 export interface Program extends AuditFields, Publishable {
   slug: string;
@@ -31,18 +42,141 @@ export interface Program extends AuditFields, Publishable {
   description: string;
   /** `galleryMedia` id shown on the program's card. Null ⇒ newest approved. */
   coverMediaId: string | null;
+
+  /**
+   * The photographs shown on the program's own page, in this order — the
+   * program's summary of everything beneath it.
+   *
+   * A ministry page used to be prose and a list of links, which is the one page
+   * in this section with no pictures on it — an odd thing for the entrance to a
+   * gallery. These are the pictures it shows.
+   *
+   * **Ids, chosen by hand, and drawn from anywhere under the program.** Not a
+   * flag on the media documents, and that is the requirement rather than an
+   * implementation preference: an administrator picks from every photograph in
+   * every gathering and every subgroup of the ministry, and the *order* they
+   * pick them in is the order the page shows them. A boolean per document
+   * cannot express an order, and a fourth `placement` flag would have made
+   * "which ministry page" ambiguous for a photograph that could only ever
+   * belong to one.
+   *
+   * Empty is the ordinary state and means *summarised automatically* — a
+   * ministry nobody has curated still shows its recent photographs rather than
+   * nothing, drawn evenly from its gatherings rather than all from the newest.
+   * See `summariseNode` in gallery/tree.ts.
+   *
+   * Ids rather than paths, because a rendition path changes when a file is
+   * re-transcoded and an id never does. Ids that no longer resolve are dropped
+   * on read rather than cleaned up on write: a photograph can be rejected or
+   * deleted long after it was featured, and a ministry page must not go blank
+   * because one of six pictures went away.
+   */
+  featuredMediaIds: string[];
+
+  /**
+   * How the ministry page presents those pictures — grid, sideways rail, or
+   * drifting column, at what size, with the title and captions set how.
+   *
+   * Absent on every document written before this existed, which is why nothing
+   * reads it directly: `resolveSectionLayout` fills it in. See
+   * schema/sectionLayout.ts.
+   */
+  sectionLayout?: SectionLayout;
+
+  /**
+   * The other blocks on this page, in the order they appear.
+   *
+   * **Each one carries its own pictures.** A block is a set of photographs and a
+   * way of showing it: the block above (this document's `featuredMediaIds` and
+   * `hiddenMediaIds`) plus these, each with the same pair on itself. A band that
+   * has never been picked for follows the page. See `GalleryBand`.
+   *
+   * Read through `resolveBands`, never directly.
+   */
+  bands?: GalleryBand[];
+
+  /**
+   * Whether this page shows *every* photograph beneath it rather than a selection.
+   *
+   * Three states between this and a block's picked list, and they are exclusive:
+   * the picked list wins, then this, then the automatic summary. See
+   * `pagePictures`.
+   *
+   * It stayed on the page when the picks moved onto the blocks, because of what it
+   * is for: "this camp's page should show all four hundred photographs, not a
+   * summary of them" is a statement about the page, and per-block it was the thing
+   * that let one wheel disagree with the grid above it. It applies to every block
+   * nobody has picked for, and to no block anybody has. It wants a scroll wheel to
+   * be usable: four hundred pictures in a grid is a page nobody reaches the bottom
+   * of.
+   */
+  showAllPictures?: boolean;
+  /**
+   * Photographs taken off *this page* by hand, without deleting them.
+   *
+   * The × on a picture while editing. It is a **hide, not a delete**, and it is a
+   * separate list rather than a rewrite of `featuredMediaIds` for one concrete
+   * reason: a page in "all of them" can be showing two hundred photographs, and
+   * `featuredMediaIds` is capped. Expressing "these two hundred minus one" as a
+   * curated list would silently throw away a hundred and seventy-five of them.
+   *
+   * As its own list it composes with all three modes and changes none of them:
+   * removing a picture from an automatic block leaves it automatic, which is also
+   * far less surprising than a block that quietly stops being automatic because
+   * somebody tidied one photograph off it.
+   *
+   * This pair belongs to the page's **own** blocks — its first one, and the "Also
+   * from here" strip. Those two draw disjoint sets by construction, so one list
+   * serves both. Every other block keeps its own; see `GalleryBand.hidden`.
+   *
+   * The photograph itself is untouched — still approved, still in the parish's
+   * storage, still on the page of the level it is filed under. `pagePictures`
+   * applies this last.
+   */
+  hiddenMediaIds?: string[];
+
   /** Manual order in the programs strip. Lower sorts first. */
   order: number;
 }
 
 /**
- * One occurrence of a program — "Summercamp Week 1 2027".
+ * One node of a program's tree — "Summercamp Week 1 2027", or "Day 1" inside it.
  *
- * This is the thing that gets a page, a gallery, and a submission queue.
+ * This is the thing that gets a page, a gallery, and a submission queue, and it
+ * gets those at *every* depth. "Week 1 2026" and "Day 1" are the same kind of
+ * document; the only difference between them is that one names the other as its
+ * parent.
+ *
+ * The word "gathering" survives in the interface and in what the parish reads on
+ * screen, because that is what a volunteer calls the level they are looking at.
+ * Nothing in the model privileges the first level over the third.
  */
 export interface ProgramEvent extends AuditFields, Publishable {
   programId: string;
-  /** Unique within the program. The last segment of the URL. */
+
+  /**
+   * The node above this one, or `null` for a direct child of the program.
+   *
+   * **The only thing that records the shape of the tree.** There is deliberately
+   * no stored `path` or `depth` beside it, though both would make some reads
+   * shorter: they are derived facts, and a derived fact stored on every
+   * descendant has to be rewritten for all of them when a node moves. That is an
+   * unbounded client-side cascade that can stop halfway, and the half that
+   * survives is a tree that disagrees with itself about where a camp lives.
+   * `parentId` alone cannot be half-right.
+   *
+   * The cost is that resolving `/events/summercamp/2026-week-1/day-1` needs the
+   * program's nodes in memory rather than one lookup per segment. Which is not
+   * really a cost: every page here already reads the whole tree, because a page
+   * that summarises what is beneath it has to know what is beneath it.
+   *
+   * Absent on every document written before the tree existed, which reads as
+   * `undefined` rather than `null` — `parentOf` in gallery/tree.ts normalises
+   * both to "a child of the program".
+   */
+  parentId?: string | null;
+
+  /** Unique among its *siblings*. One segment of the URL, not the whole path. */
   slug: string;
   title: string;
   /** Markdown, shown above the gallery. */
@@ -53,17 +187,100 @@ export interface ProgramEvent extends AuditFields, Publishable {
   timeZone: string;
 
   /**
-   * Named buckets an administrator invents — usually "Day 1"…"Day 3", but
-   * equally "Chapel" or "Talent Show". Ordered, because the presentation walks
-   * them in sequence when the whole event is presented.
+   * Manual position among its siblings. Lower sorts first; 0 means "unset".
    *
-   * Stored inline rather than as a subcollection: there are a handful per
-   * event, they are always read with the event, and a subcollection would cost
-   * a second round trip on every gallery page for no benefit.
+   * Needed because the levels sort differently and both ways are right. Weeks
+   * and years want their dates, newest first, and get that for free from
+   * `startAt`. Days want the order somebody typed them in — "Day 1" before "Day
+   * 10" is not a date, not alphabetical, and not something a machine can infer —
+   * so a number an administrator moves with the arrows in the side menu is the
+   * only thing that can express it.
+   *
+   * `compareNodes` therefore reads this first and falls back to the date, which
+   * means a level nobody has reordered behaves exactly as it did before this
+   * field existed: every sibling has 0, every comparison ties, and the date
+   * decides.
    */
-  groups: ProgramEventGroup[];
+  order?: number;
+
+  /**
+   * The photographs this node's page shows, in this order — its summary of
+   * everything beneath it.
+   *
+   * The same field as `Program.featuredMediaIds` and for the same reason, one
+   * level down and repeatable all the way down. An administrator standing on
+   * "Week 1 2026" picks from every photograph in every day of that week; on
+   * "Day 1" they pick from Day 1.
+   *
+   * Ids rather than a flag per photograph, because the order *is* the content
+   * and a set of booleans cannot hold an order.
+   *
+   * Empty means summarised automatically, which is the ordinary state. For a
+   * node with children that is a spread across the children — see
+   * `summariseNode`. For a leaf it is simply the photographs filed there, which
+   * is the whole gallery and is why the deepest level needs no curation at all
+   * to be worth opening.
+   */
+  featuredMediaIds?: string[];
+
+  /**
+   * Legacy: the inline subgroups this node used to carry, before every level
+   * became a node of its own.
+   *
+   * Kept on the interface, read nowhere in the site. `scripts/migrate-gallery-tree.mjs`
+   * turns each one into a child `ProgramEvent` and re-files its photographs onto
+   * it. Documents that have not been migrated still parse; their groups simply do
+   * not render, and their photographs appear on this node rather than under a
+   * heading.
+   *
+   * @deprecated Use child nodes.
+   */
+  groups?: ProgramEventGroup[];
 
   coverMediaId: string | null;
+
+  /**
+   * How this node's own photograph block is presented. Independent of its
+   * parent's and of each child's — see schema/sectionLayout.ts.
+   */
+  sectionLayout?: SectionLayout;
+
+  /**
+   * The other blocks on this page, in the order they appear.
+   *
+   * The same field as `Program.bands`, one level down and repeatable all the way
+   * down. Each block carries its own pictures; one that has never been picked for
+   * follows the page.
+   *
+   * Read through `resolveBands`, never directly.
+   */
+  bands?: GalleryBand[];
+
+  /** See `Program.showAllPictures`. The same three-way choice at every depth. */
+  showAllPictures?: boolean;
+  /**
+   * Photographs taken off *this page* by hand, without deleting them.
+   *
+   * The × on a picture while editing. It is a **hide, not a delete**, and it is a
+   * separate list rather than a rewrite of `featuredMediaIds` for one concrete
+   * reason: a page in "all of them" can be showing two hundred photographs, and
+   * `featuredMediaIds` is capped. Expressing "these two hundred minus one" as a
+   * curated list would silently throw away a hundred and seventy-five of them.
+   *
+   * As its own list it composes with all three modes and changes none of them:
+   * removing a picture from an automatic block leaves it automatic, which is also
+   * far less surprising than a block that quietly stops being automatic because
+   * somebody tidied one photograph off it.
+   *
+   * This pair belongs to the page's **own** blocks — its first one, and the "Also
+   * from here" strip. Those two draw disjoint sets by construction, so one list
+   * serves both. Every other block keeps its own; see `GalleryBand.hidden`.
+   *
+   * The photograph itself is untouched — still approved, still in the parish's
+   * storage, still on the page of the level it is filed under. `pagePictures`
+   * applies this last.
+   */
+  hiddenMediaIds?: string[];
 
   /**
    * A calendar `events` document, when this occurrence is also something people
@@ -81,11 +298,34 @@ export interface ProgramEvent extends AuditFields, Publishable {
   submissionsOpen: boolean;
 }
 
+/**
+ * Legacy: an inline subgroup of a node.
+ *
+ * The third level, back when there were exactly three and the third had no page.
+ * Migrated to child `ProgramEvent` documents — see the note on
+ * `ProgramEvent.groups`. The type stays so old documents type-check and so the
+ * migration script has something to read.
+ *
+ * @deprecated Use child nodes.
+ */
 export interface ProgramEventGroup {
-  /** Stable id. Media point at this, so renaming a group must not re-file it. */
+  /** Stable id. Media pointed at this, so renaming one must not re-file it. */
   id: string;
   name: string;
   order: number;
+
+  /**
+   * This subsection's own arrangement.
+   *
+   * The reason a layout lives at *every* level rather than only at the top:
+   * "Day 1" and "Talent Show" are not the same kind of set. One is forty
+   * snapshots that want a sideways rail, the other is six posed photographs that
+   * want a composition. Forcing them to share one arrangement makes one of them
+   * wrong, which is the same argument `placement.onPage` and
+   * `placement.slideshow` are two flags for. The migration carries this onto the
+   * child node's own `sectionLayout`.
+   */
+  layout?: SectionLayout;
 }
 
 /**
@@ -100,7 +340,19 @@ export interface GalleryMedia extends AuditFields {
   /** Denormalised from the event so the queues above can filter without a join. */
   programId: string;
   programEventId: string;
-  /** Null until an administrator files it. Submitters choose, admins correct. */
+  /**
+   * Legacy: which inline subgroup of `programEventId` this was filed under.
+   *
+   * Superseded by the tree — filing a photograph now means pointing
+   * `programEventId` at the node it belongs to, at whatever depth that is, and
+   * `setMediaNode` is what writes it. Read nowhere in the site.
+   *
+   * Not dropped from documents by the migration, deliberately: it is the only
+   * record of where a photograph sat before, and it costs nothing to keep. New
+   * submissions write `null`.
+   *
+   * @deprecated File against a node instead.
+   */
   groupId: string | null;
 
   kind: MediaKind;

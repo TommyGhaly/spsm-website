@@ -16,7 +16,12 @@ import { initializeApp as initClient } from 'firebase/app';
 import { getFirestore as getClientFirestore, doc, getDoc } from 'firebase/firestore';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { parseBulletin, parseIntegrationsConfig } from '../packages/shared/dist/index.js';
+import {
+  parseBulletin,
+  parseIntegrationsConfig,
+  activeBulletinId,
+  ANNOUNCEMENTS_ACTIVE_BULLETIN_DOC,
+} from '../packages/shared/dist/index.js';
 
 process.loadEnvFile('.env');
 
@@ -55,7 +60,22 @@ const sourceDb = config.databaseId
 const docs = await sourceDb.collection(config.collectionPath).get();
 console.log(
   `Source ${config.projectId}/${config.databaseId || '(default)'}/${config.collectionPath}: ` +
-    `${docs.size} document(s)\n`,
+    `${docs.size} document(s)`,
+);
+
+/*
+ * Which one the site shows, which is the first thing anybody running this
+ * actually wants to know. The collection normally holds the week being
+ * presented plus a draft of the next one, and until this line existed the
+ * output was two weeks with nothing to say which was which.
+ */
+const pointer = await sourceDb.doc(ANNOUNCEMENTS_ACTIVE_BULLETIN_DOC).get();
+const activeId = pointer.exists ? activeBulletinId(pointer.data()) : null;
+console.log(
+  activeId
+    ? `Active (${ANNOUNCEMENTS_ACTIVE_BULLETIN_DOC}): ${activeId}\n`
+    : `Active: ${ANNOUNCEMENTS_ACTIVE_BULLETIN_DOC} is missing or has no "id" — the ` +
+        `site falls back to the last PUBLISHED week.\n`,
 );
 
 if (docs.empty) {
@@ -72,6 +92,8 @@ for (const snap of docs.docs) {
   const eventCount =
     bulletin.days.reduce((sum, d) => sum + d.events.length, 0) + bulletin.multiDayEvents.length;
 
+  const isActive = snap.id === activeId;
+  console.log(`  ${isActive ? '>>' : '  '} ${snap.id}${isActive ? '   <-- ON THE SITE' : ''}`);
   console.log(`  weekOf        ${bulletin.weekOf}`);
   console.log(`  weekLabel     ${bulletin.weekLabel}`);
   console.log(`  presetName    ${bulletin.presetName ?? '—'}`);

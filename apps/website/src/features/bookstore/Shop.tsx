@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShopProduct } from "./shopData";
 import { CardPayment } from "./CardPayment";
+import { DragRail } from "@/components/DragRail";
 import { Icon } from "@/components/Icon";
 import { Cover } from "./Cover";
 import { money } from "./money";
@@ -476,7 +477,9 @@ export function Shop({
               {alsoBuy.length > 0 && (
                 <div className="addmore">
                   <h3 className="addmore__title">Add another book</h3>
-                  <div className="addmore__viewport scroller">
+                  {/* Draggable and endless, but it does not walk along by
+                      itself — see the note by `.alsoin__strip` in globals.css. */}
+                  <DragRail className="rail--strip" drift={false}>
                     <ul className="addmore__strip">
                       {alsoBuy.map((product) => (
                         <li key={product.slug}>
@@ -505,7 +508,7 @@ export function Shop({
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </DragRail>
                 </div>
               )}
             </div>
@@ -957,7 +960,7 @@ function Detail({
       {others.length > 0 && (
         <div className="alsoin">
           <h3 className="alsoin__title">More from the bookstore</h3>
-          <div className="alsoin__viewport scroller">
+          <DragRail className="rail--strip" drift={false}>
             <ul className="alsoin__strip">
               {others.map((other) => (
                 <li key={other.slug}>
@@ -969,7 +972,7 @@ function Detail({
                 </li>
               ))}
             </ul>
-          </div>
+          </DragRail>
         </div>
       )}
     </Dialog>

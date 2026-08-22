@@ -1,6 +1,6 @@
 'use client';
 
-import { useLiveStatus } from './useLiveStatus';
+import { InheritedLiveState, useLiveStatus, type LiveProbe } from './useLiveStatus';
 
 /**
  * Renders its children only while a liturgy is actually being streamed.
@@ -27,7 +27,7 @@ import { useLiveStatus } from './useLiveStatus';
  * there is a reason for it.
  */
 export function ShowWhenLive({
-  probeUrl,
+  probe,
   children,
 }: {
   /**
@@ -36,8 +36,24 @@ export function ShowWhenLive({
    * used everywhere else here, because wrongly hiding a live liturgy is the one
    * failure this feature must not have.
    */
-  probeUrl: string | null;
+  probe: LiveProbe | null;
   children: React.ReactNode;
 }) {
-  return useLiveStatus(probeUrl) === 'live' ? <>{children}</> : null;
+  /*
+   * `unknown` hides too, for the same reason `checking` does. There is nothing
+   * to put in the frame — the state exists precisely because no video id could
+   * be resolved — so the section would be a heading over an empty box. The
+   * reader who wants to know why is served on `/livestream`, which says so in
+   * words and offers the link out; the homepage stays quiet.
+   */
+  const state = useLiveStatus(probe);
+
+  if (state.status !== 'live') return null;
+
+  /*
+   * Handed down rather than asked again. The section's own `LiveFrame` needs
+   * the video id this call just resolved, and probing a second time would be
+   * two requests per homepage load and two answers that can disagree on screen.
+   */
+  return <InheritedLiveState.Provider value={state}>{children}</InheritedLiveState.Provider>;
 }

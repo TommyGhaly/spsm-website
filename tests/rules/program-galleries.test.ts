@@ -105,9 +105,11 @@ beforeEach(async () => {
 
     for (const [id, open] of [[WEEK_1, true], [WEEK_2, false]] as const) {
       await setDoc(doc(db, 'programEvents', id), {
-        programId: SUMMERCAMP, slug: id, title: id, description: '',
+        // `parentId: null` — a level directly under the program. Every level of
+        // the tree is one of these documents; see schema/programs.ts.
+        programId: SUMMERCAMP, parentId: null, slug: id, title: id, description: '',
         startAt: null, endAt: null, timeZone: 'America/New_York',
-        groups: [], coverMediaId: null, calendarEventId: null,
+        order: 0, featuredMediaIds: [], coverMediaId: null, calendarEventId: null,
         submissionsOpen: open, published: true, publishAt: null,
         createdAt: new Date(), updatedAt: new Date(), updatedBy: null,
       });
@@ -367,7 +369,8 @@ describe('program grants', () => {
     await assertSucceeds(
       addDoc(collection(asProgramLead(env).firestore(), 'programEvents'), {
         programId: SUMMERCAMP, slug: 'week-3-2027', title: 'Week 3', description: '',
-        startAt: null, endAt: null, timeZone: 'America/New_York', groups: [],
+        parentId: null, order: 0, featuredMediaIds: [],
+        startAt: null, endAt: null, timeZone: 'America/New_York',
         coverMediaId: null, calendarEventId: null, submissionsOpen: true,
         published: false, publishAt: null,
         createdAt: new Date(), updatedAt: new Date(), updatedBy: 'lead-1',
@@ -379,7 +382,8 @@ describe('program grants', () => {
     await assertFails(
       addDoc(collection(asProgramLead(env).firestore(), 'programEvents'), {
         programId: SENIORS, slug: 'outing', title: 'Outing', description: '',
-        startAt: null, endAt: null, timeZone: 'America/New_York', groups: [],
+        parentId: null, order: 0, featuredMediaIds: [],
+        startAt: null, endAt: null, timeZone: 'America/New_York',
         coverMediaId: null, calendarEventId: null, submissionsOpen: true,
         published: false, publishAt: null,
         createdAt: new Date(), updatedAt: new Date(), updatedBy: 'lead-1',
@@ -408,10 +412,73 @@ describe('program grants', () => {
     await assertFails(
       addDoc(collection(asWeekVolunteer(env).firestore(), 'programEvents'), {
         programId: SUMMERCAMP, slug: 'week-9', title: 'Week 9', description: '',
-        startAt: null, endAt: null, timeZone: 'America/New_York', groups: [],
+        parentId: null, order: 0, featuredMediaIds: [],
+        startAt: null, endAt: null, timeZone: 'America/New_York',
         coverMediaId: null, calendarEventId: null, submissionsOpen: true,
         published: false, publishAt: null,
         createdAt: new Date(), updatedAt: new Date(), updatedBy: 'vol-1',
+      }),
+    );
+  });
+
+  /*
+   * The tree, at the rules layer.
+   *
+   * A level five deep is the same document as a level one deep, so nothing in
+   * `firestore.rules` counts depth — and these are here to pin that down rather
+   * than to test a new branch. The one thing worth asserting is that `parentId`
+   * buys nobody anything: a grant is a grant on a program or on a document, and
+   * naming a parent inside somebody else's ministry does not reach it.
+   */
+  it('lets a program lead create a level nested inside another', async () => {
+    await assertSucceeds(
+      addDoc(collection(asProgramLead(env).firestore(), 'programEvents'), {
+        programId: SUMMERCAMP, parentId: WEEK_1, slug: 'day-1', title: 'Day 1',
+        description: '',
+        startAt: null, endAt: null, timeZone: 'America/New_York',
+        order: 10, featuredMediaIds: [],
+        coverMediaId: null, calendarEventId: null, submissionsOpen: true,
+        published: false, publishAt: null,
+        createdAt: new Date(), updatedAt: new Date(), updatedBy: 'lead-1',
+      }),
+    );
+  });
+
+  /*
+   * `programId` is the containment that matters, not `parentId`. Pointing a new
+   * level at a parent in a ministry you hold does not let you file it under a
+   * ministry you do not — the create is judged on `programId` alone, which is
+   * what the reads filter on and therefore what decides where the level appears.
+   */
+  it('denies a program lead a level whose programId is not theirs, whatever its parent', async () => {
+    await assertFails(
+      addDoc(collection(asProgramLead(env).firestore(), 'programEvents'), {
+        programId: SENIORS, parentId: WEEK_1, slug: 'day-1', title: 'Day 1',
+        description: '',
+        startAt: null, endAt: null, timeZone: 'America/New_York',
+        order: 10, featuredMediaIds: [],
+        coverMediaId: null, calendarEventId: null, submissionsOpen: true,
+        published: false, publishAt: null,
+        createdAt: new Date(), updatedAt: new Date(), updatedBy: 'lead-1',
+      }),
+    );
+  });
+
+  /** Moving a level within one's own program is an ordinary edit of it. */
+  it('lets an event volunteer move the level they hold', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asWeekVolunteer(env).firestore(), 'programEvents', WEEK_1), {
+        parentId: WEEK_2,
+        order: 20,
+      }),
+    );
+  });
+
+  /** And the pictures a level shows are part of editing it. */
+  it('lets an event volunteer choose the pictures their level shows', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asWeekVolunteer(env).firestore(), 'programEvents', WEEK_1), {
+        featuredMediaIds: ['approved-1'],
       }),
     );
   });

@@ -136,6 +136,84 @@ describe('packGallery', () => {
     expect(canvasRows([])).toBe(0);
   });
 
+  /*
+   * The dead-strip cases. See `stretchIntoDeadSpace`.
+   *
+   * Twelve columns and boxes of 12, 6 and 4 do not always divide, so an
+   * arrangement can leave a strip of one to three columns that no shape can ever
+   * fill — a column of empty paper down the side of the gallery that reads as a
+   * picture which failed to load. These assert the right edge comes out flush.
+   */
+  it('fills the two dead columns beside a six-wide pin', () => {
+    const placed = packGallery([
+      { id: 'pinned', layout: { col: 1, row: 1, colSpan: 6, rowSpan: 4 }, aspect: 1.5 },
+      auto('beside'),
+    ]);
+
+    const beside = placed.find((p) => p.id === 'beside')!.placement;
+    // Four columns wide by shape, stretched to six so it reaches column 12.
+    expect(beside.col).toBe(7);
+    expect(beside.col + beside.colSpan - 1).toBe(GALLERY_COLUMNS);
+    expectNoOverlap(placed);
+  });
+
+  /**
+   * The gap that *is* usable stays for the next photograph. Stretching into it
+   * would trade one hole for one fewer picture per row.
+   *
+   * `null` aspects on purpose: an unknown aspect always takes a four-column box,
+   * where a landscape one would take the half-width box every fourth time — and
+   * a six-wide box beside a four-wide pin leaves two dead columns, which is the
+   * case the test *above* covers. Pinning the shapes is what makes this one
+   * about the usable gap rather than about `shapeFor`'s rhythm.
+   */
+  it('leaves a gap wide enough for a real box alone', () => {
+    const placed = packGallery([
+      { id: 'pinned', layout: { col: 1, row: 1, colSpan: 4, rowSpan: 3 }, aspect: 1 },
+      auto('second', null),
+      auto('third', null),
+    ]);
+
+    const second = placed.find((p) => p.id === 'second')!.placement;
+    const third = placed.find((p) => p.id === 'third')!.placement;
+    // Cols 9–12 are left for `third`, not swallowed by `second`.
+    expect(second).toMatchObject({ col: 5, colSpan: 4 });
+    expect(third).toMatchObject({ row: 1, col: 9, colSpan: 4 });
+    expectNoOverlap(placed);
+  });
+
+  it('never stretches a hand-placed photograph', () => {
+    const pinned = { col: 1, row: 1, colSpan: 4, rowSpan: 2 };
+    const placed = packGallery([{ id: 'pinned', layout: pinned, aspect: 1.5 }]);
+    expect(placed[0]!.placement).toEqual(pinned);
+  });
+
+  /**
+   * A whole gallery of ordinary snapshots divides cleanly into thirds, so
+   * nothing should be stretched at all — this is the case that would catch a
+   * stretch rule that fired when it should not.
+   */
+  it('leaves an evenly dividing gallery untouched', () => {
+    const placed = packGallery(Array.from({ length: 9 }, (_, i) => auto(`p${i}`, 1.4)));
+    const widths = new Set(placed.map((p) => p.placement.colSpan));
+    // Only the shapes `shapeFor` chose: a half every fourth, thirds otherwise.
+    expect([...widths].sort((a, b) => a - b)).toEqual([4, 6]);
+    expectNoOverlap(placed);
+  });
+
+  /** Whatever else it does, it may not push a photograph off the canvas. */
+  it('keeps a stretched item inside the twelve columns', () => {
+    const placed = packGallery([
+      { id: 'p1', layout: { col: 1, row: 1, colSpan: 5, rowSpan: 3 }, aspect: 1 },
+      ...Array.from({ length: 12 }, (_, i) => auto(`a${i}`, i % 4 === 0 ? 0.6 : 1.5)),
+    ]);
+    for (const { placement } of placed) {
+      expect(placement.col).toBeGreaterThanOrEqual(1);
+      expect(placement.col + placement.colSpan - 1).toBeLessThanOrEqual(GALLERY_COLUMNS);
+    }
+    expectNoOverlap(placed);
+  });
+
   /** A hand-edited document, or a drag that ended past the edge. */
   it('corrects an out-of-bounds manual placement rather than trusting it', () => {
     const placed = packGallery([

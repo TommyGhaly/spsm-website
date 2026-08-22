@@ -6,8 +6,10 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
  *
  * Two external projects, with deliberately opposite permissions:
  *
- *   weeklyAnnouncements — READ ONLY. We pull announcements out and mirror them
- *                         into our own `announcements` collection.
+ *   weeklyAnnouncements — READ ONLY. We read the active bulletin through, and do
+ *                         not mirror it: one source of truth, no copy to fall
+ *                         behind, no `syncedAt` to reason about. Used by the
+ *                         `bulletin` Function.
  *   taksis             — WRITE ONLY. We push pending vehicle registrations in.
  *                         We must not be able to read Taksis's data.
  *
@@ -121,8 +123,51 @@ export function externalWrite(
  */
 function openDatabase(app: App, databaseId?: string): Firestore {
   const id = databaseId?.trim();
-  if (!id || id === '(default)') return getFirestore(app);
-  return getFirestore(app, id);
+  return withoutFirestoreEmulator(() =>
+    !id || id === '(default)' ? getFirestore(app) : getFirestore(app, id),
+  );
+}
+
+/**
+ * Build an external Firestore handle with the emulator out of the picture.
+ *
+ * `FIRESTORE_EMULATOR_HOST` is process-wide. The Functions emulator sets it, and
+ * the Admin SDK applies it to *every* Firestore instance the process creates —
+ * including this one, whose entire purpose is to reach a different project over
+ * the network with that project's own key. Nothing errors: the read succeeds
+ * against an empty local database. So `/api/bulletin` answered
+ * `{"bulletin":null,"reason":"nothing-active"}` on every local request while
+ * `npm run bulletin` — a plain Node script, no emulator in its environment —
+ * printed the week perfectly well. The live-refresh path simply could not be
+ * exercised locally, which is the one thing it needed to be.
+ *
+ * **It has to be the variable, not `settings`.** The SDK is explicit that the
+ * environment variable "should always take precedence over any user passed in
+ * settings" and rewrites `host` and `ssl` after merging whatever it is given
+ * (see validateAndApplySettings in @google-cloud/firestore), so passing the real
+ * host through `initializeFirestore` is overwritten and quietly does nothing.
+ * Absent at construction is the only state the SDK honours.
+ *
+ * Restored in a `finally`, and the callback is **synchronous by contract** —
+ * that is what makes this safe rather than a race. The variable is shared with
+ * our own project's default handle, and pointing that at production Firestore
+ * would aim real writes at real data. Node runs this to completion without
+ * yielding, so no other code can observe the gap; an `await` in here would
+ * reintroduce exactly the hazard it is written to avoid.
+ *
+ * Only the first call per app and database constructs anything — `getFirestore`
+ * memoizes — so this runs once and every later call is a cache hit.
+ */
+function withoutFirestoreEmulator(create: () => Firestore): Firestore {
+  const emulator = process.env.FIRESTORE_EMULATOR_HOST;
+  if (!emulator) return create();
+
+  delete process.env.FIRESTORE_EMULATOR_HOST;
+  try {
+    return create();
+  } finally {
+    process.env.FIRESTORE_EMULATOR_HOST = emulator;
+  }
 }
 
 function assertIntent(project: ExternalProject, expected: 'read-only' | 'write-only'): void {

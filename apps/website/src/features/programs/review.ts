@@ -29,7 +29,6 @@
 import {
   collection,
   doc,
-  documentId,
   getDoc,
   getDocs,
   limit,
@@ -42,7 +41,9 @@ import {
 import { getDownloadURL, ref } from 'firebase/storage';
 import {
   COLLECTIONS,
+  buildGalleryTree,
   parseProgramAdmin,
+  trailLabel,
   type DocOf,
   type GalleryMedia,
   type ProgramAdmin,
@@ -154,34 +155,43 @@ function millis(value: GalleryMedia['submittedAt']): number {
 }
 
 /**
- * Attach the occurrence title to each item.
+ * Say where each item was sent from — by its whole trail, not its own name.
  *
- * One `in` query per ten ids rather than one read per item: a queue of a
- * hundred photographs from three camps is three reads this way and a hundred
- * the obvious way. Ten is Firestore's ceiling on `in`.
+ * "Day 1" on its own is useless to a reviewer now that the galleries are a tree:
+ * four camps each have a Day 1, and the one thing this label exists to answer is
+ * *which*. "Summercamp 2026 · Week 1 · Day 1" answers it.
+ *
+ * One query per program rather than an `in` over the level ids, and the change
+ * of shape is what the trail costs. An `in` returns the levels the photographs
+ * name and nothing above them, so there is no ancestry to walk — and chasing
+ * parents would be a query per generation. A queue spans very few programs (a
+ * program lead's spans exactly one), so a query each is cheap and gives the
+ * whole tree to walk in memory.
+ *
+ * The read is the administrator's, unfiltered by `published`: a queue is nearly
+ * always photographs sent to a level that is still a draft, and labelling those
+ * with a bare id would defeat the point.
  */
 async function withEventTitles(media: DocOf<GalleryMedia>[]): Promise<ReviewItem[]> {
-  const ids = [...new Set(media.map((item) => item.programEventId))];
-  const titles = new Map<string, string>();
+  const programIds = [...new Set(media.map((item) => item.programId))];
+  const labels = new Map<string, string>();
 
-  for (let i = 0; i < ids.length; i += 10) {
-    const batch = ids.slice(i, i + 10);
+  for (const programId of programIds) {
     try {
       const snapshot = await getDocs(
-        query(collection(db(), COLLECTIONS.programEvents), where(documentId(), 'in', batch)),
+        query(collection(db(), COLLECTIONS.programEvents), where('programId', '==', programId)),
       );
-      for (const document of snapshot.docs) {
-        titles.set(document.id, (document.data() as ProgramEvent).title);
-      }
+      const tree = buildGalleryTree(snapshot.docs.map(docOf<ProgramEvent>));
+      for (const id of tree.byId.keys()) labels.set(id, trailLabel(tree, id));
     } catch (error) {
-      // A title is a nicety. Losing it must not empty the queue.
-      console.warn('[galleries] could not read occurrence titles:', error);
+      // A label is a nicety. Losing it must not empty the queue.
+      console.warn('[galleries] could not read level names:', error);
     }
   }
 
   return media.map((item) => ({
     media: item,
-    eventTitle: titles.get(item.programEventId) ?? item.programEventId,
+    eventTitle: labels.get(item.programEventId) ?? item.programEventId,
   }));
 }
 
@@ -217,10 +227,16 @@ export async function reviewUrl(media: GalleryMedia): Promise<string | null> {
  * could write `renditionPath` could point an approved document at any object in
  * the bucket, which is the approval gate removed by a different door.
  *
- * `onPage` and `slideshow` default to true and `homepage` to false. That is the
- * common case stated as a default rather than three checkboxes nobody reads —
- * an approved photograph belongs in its own gallery and in the hall screen, and
- * the homepage band is a smaller, editorial choice made deliberately.
+ * `onPage` defaults to true and `homepage` to false: the common case stated as a
+ * default rather than checkboxes nobody reads. An approved photograph belongs in
+ * its own gallery; the homepage band is a smaller, editorial choice made
+ * deliberately.
+ *
+ * `slideshow` is still written true, and it is now inert. Nothing filters on it —
+ * approving a photograph is what puts it in the presentation — but it is a
+ * required field on documents this collection already holds thousands of, so it
+ * is written consistently rather than left absent on the new ones. See
+ * `subtreeSlideshow`.
  */
 export async function approve(mediaId: string, uid: string): Promise<void> {
   await updateDoc(doc(db(), COLLECTIONS.galleryMedia, mediaId), {

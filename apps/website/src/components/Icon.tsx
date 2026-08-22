@@ -36,6 +36,28 @@ const ICONS = {
       <path d="M10 8.5l6 3.5-6 3.5z" />
     </>
   ),
+  /** Stop a self-scrolling rail. See `DragRail`. */
+  pause: (
+    <>
+      <path d="M9.5 6v12" />
+      <path d="M14.5 6v12" />
+    </>
+  ),
+  /**
+   * Start one again. A bare triangle rather than `play`'s enclosed one: this
+   * sits at 14px on a control the size of a full stop, where the ring around
+   * `play` closes up into a blob — and `play` already means the livestream
+   * everywhere else on the site.
+   */
+  resume: (
+    <path
+      d="M9 5.8l9.5 6.2L9 18.2z"
+      // Filled, unlike every other icon here. A 1.6px outline of a shape this
+      // small is a wire drawing; solid, it reads as a triangle.
+      fill="currentColor"
+      stroke="none"
+    />
+  ),
   /** The parish calendar. */
   calendar: (
     <>
@@ -91,6 +113,79 @@ const ICONS = {
   chevron: (
     <>
       <path d="M6 9.5l6 6 6-6" />
+    </>
+  ),
+  /**
+   * Going back up a level — a gallery to its ministry, a ministry to Events.
+   *
+   * Its own glyph rather than `arrow` flipped in CSS, because a transform on an
+   * inline SVG inside a flex row is a thing that has to be re-tuned every time
+   * the label's size changes, and because "back" and "onward" reading as the
+   * same shape at a glance is exactly the confusion this is meant to avoid.
+   */
+  back: (
+    <>
+      <path d="M19.5 12h-15M11 5.5L4.5 12l6.5 6.5" />
+    </>
+  ),
+  /** Leave the lightbox, leave the presentation. */
+  close: (
+    <>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </>
+  ),
+  /** Open one photograph full screen. Four corners pointing outward. */
+  expand: (
+    <>
+      <path d="M9 4.5H4.5V9M15 4.5h4.5V9M15 19.5h4.5V15M9 19.5H4.5V15" />
+    </>
+  ),
+  /** A count of photographs, on a gathering card. */
+  photos: (
+    <>
+      <rect x="3.5" y="6.5" width="14" height="11" rx="1.5" />
+      <path d="M7 6.5V5a1.5 1.5 0 0 1 1.5-1.5h10A1.5 1.5 0 0 1 20 5v10.5" />
+      <path d="M3.5 14l3.5-3 4 3.5 3-2.5 3 3" />
+    </>
+  ),
+  /** A count of clips, beside `photos`. */
+  film: (
+    <>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="M8 5.5v13M16 5.5v13M3.5 12h17" />
+    </>
+  ),
+  /** Step back through a gallery. */
+  prev: (
+    <>
+      <path d="M14.5 5.5L8 12l6.5 6.5" />
+    </>
+  ),
+  /** Step forward through a gallery. */
+  next: (
+    <>
+      <path d="M9.5 5.5L16 12l-6.5 6.5" />
+    </>
+  ),
+  /** Add pictures to a block. Deliberately the same weight as `close`, which is
+      the × that takes one out again — the pair reads as one control either way. */
+  plus: (
+    <>
+      <path d="M12 5.5v13M5.5 12h13" />
+    </>
+  ),
+  /** Chosen — in the admin picture picker. */
+  check: (
+    <>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </>
+  ),
+  /** Start the hall screen. A filled triangle, matching `resume`. */
+  present: (
+    <>
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+      <path d="M10.5 8l4 2.5-4 2.5z" fill="currentColor" stroke="none" />
     </>
   ),
 } as const;
