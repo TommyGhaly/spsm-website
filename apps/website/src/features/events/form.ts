@@ -29,7 +29,7 @@ import {
   type EventAudience,
   type EventCategory,
 } from '@spsm/shared';
-import type { EventDraft } from '@/features/events/admin';
+import type { EventContentDraft } from './admin';
 import { PARISH_TIME_ZONE } from '@/lib/dates';
 
 /* -------------------------------------------------------------------------- */
@@ -63,10 +63,20 @@ export interface FormState {
   tags: string[];
   registrationUrl: string;
 
-  published: boolean;
   /** A Storage path under `events/`, already uploaded. Never a URL. */
   heroImagePath: string | null;
 }
+
+/*
+ * `published` used to live in the state above and does not any more.
+ *
+ * It is not something anybody types — it is what is true of the document, and
+ * with autosave the two cannot be the same field: typing writes `pendingEdit`,
+ * and if `published` rode along in that payload then every keystroke would carry
+ * an opinion about whether the event is on the website. Publishing is an act,
+ * so it is a function on `./admin` and a button, and the editor reads the
+ * document for the answer.
+ */
 
 export const BLANK: FormState = {
   title: '',
@@ -86,7 +96,6 @@ export const BLANK: FormState = {
   audience: 'parish',
   tags: [],
   registrationUrl: '',
-  published: false,
   heroImagePath: null,
 };
 
@@ -140,77 +149,72 @@ export function endInstantOf(form: FormState): Date | null {
 /* Reading a document in, writing a draft out                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The document as the editor's fields, preferring what has been typed but not
+ * yet published.
+ *
+ * `pendingEdit` wins where it exists, and that is the whole point of it: staff
+ * pick up where they left off, while the fields underneath stay whatever the
+ * parish is currently being shown. The fallback is not a nicety — an event
+ * written before `pendingEdit` existed does not have the key at all.
+ */
 export function fromEvent(event: DocOf<Event>): FormState {
-  const zone = event.timeZone || PARISH_TIME_ZONE;
-  const start = toDate(event.startAt);
-  const end = toDate(event.endAt);
+  // Spread rather than branch per field, so a field added to `EventContent`
+  // later cannot be silently read from the wrong one of the two.
+  const content = event.pendingEdit ? { ...event, ...event.pendingEdit } : event;
+
+  const zone = content.timeZone || PARISH_TIME_ZONE;
+  const start = toDate(content.startAt);
+  const end = toDate(content.endAt);
 
   const [date, startTime] = start ? splitWall(instantToWallClock(start, zone)) : ['', ''];
   const [endDay, endTime] = end ? splitWall(instantToWallClock(end, zone)) : ['', ''];
 
   return {
-    title: event.title,
+    title: content.title,
+    // From the document, never from the pending edit: the slug is not editable
+    // and `EventContent` does not carry it.
     slug: event.slug,
-    summary: event.summary,
-    body: event.body,
+    summary: content.summary,
+    body: content.body,
 
     date,
-    startTime: event.allDay ? '' : startTime,
+    startTime: content.allDay ? '' : startTime,
     // Blank when it ends on the day it started, which is nearly always. The
     // field it feeds is hidden until there is something in it, so an event
     // being edited does not sprout a second date input it did not need.
     endDate: endDay && endDay !== date ? endDay : '',
-    endTime: event.allDay ? '' : endTime,
-    allDay: event.allDay,
+    endTime: content.allDay ? '' : endTime,
+    allDay: content.allDay,
     timeZone: zone,
 
-    locationName: event.location?.name ?? '',
-    locationAddress: event.location?.address ?? '',
-    meetingUrl: event.location?.meetingUrl ?? '',
+    locationName: content.location?.name ?? '',
+    locationAddress: content.location?.address ?? '',
+    meetingUrl: content.location?.meetingUrl ?? '',
 
-    category: event.category,
-    audience: event.audience,
-    tags: [...event.tags],
-    registrationUrl: event.registration?.externalUrl ?? '',
+    category: content.category,
+    audience: content.audience,
+    tags: [...content.tags],
+    registrationUrl: content.registration?.externalUrl ?? '',
 
-    published: event.published,
-    heroImagePath: event.heroImagePath ?? null,
+    heroImagePath: content.heroImagePath ?? null,
   };
 }
 
 /**
- * A copy of an event, ready to be saved as a new one.
+ * The form as the thing `./admin` writes, or **null when it does not name a
+ * moment in time**.
  *
- * Here because it is the parish's most common act of authorship: the festival,
- * the camp and the classes come round every year with the same description and
- * a different date. Without it that is a re-type; with it, it is a date.
- *
- * The date is deliberately *cleared* rather than moved a year on. A blank date
- * is a field somebody has to fill; a plausible wrong date is a field somebody
- * skips.
+ * Null rather than a throw, because the caller is autosave. A date field is
+ * empty for a keystroke or two while somebody retypes it, and an exception on
+ * every one of those would turn an ordinary correction into an error banner. The
+ * honest answer is "there is nothing to save yet", and the bar says so.
  */
-export function duplicateOf(form: FormState): FormState {
-  return {
-    ...form,
-    title: `${form.title} (copy)`,
-    slug: '',
-    date: '',
-    endDate: '',
-    // Published is never inherited. A copy is a draft until somebody says
-    // otherwise, or duplicating an event puts a half-finished one on the site.
-    published: false,
-    // The photograph belongs to the original's Storage path. Sharing it would
-    // mean clearing one event's picture deletes the other's.
-    heroImagePath: null,
-  };
-}
-
-export function toDraft(form: FormState): EventDraft {
+export function toContentDraft(form: FormState): EventContentDraft | null {
   const startAt = startInstantOf(form);
-  if (!startAt) throw new Error('The start date and time are not valid.');
+  if (!startAt) return null;
 
   return {
-    slug: form.slug,
     title: form.title.trim(),
     summary: form.summary.trim(),
     body: form.body.trim(),
@@ -228,7 +232,6 @@ export function toDraft(form: FormState): EventDraft {
     category: form.category,
     audience: form.audience,
     tags: form.tags.map((tag) => tag.trim()).filter(Boolean),
-    published: form.published,
     registrationUrl: form.registrationUrl.trim() || null,
     heroImagePath: form.heroImagePath,
   };
@@ -350,9 +353,27 @@ export function problemsOf(form: FormState): Problem[] {
   return found;
 }
 
-/** The subset that actually stops a save, given whether this is going public. */
-export function blockingProblems(form: FormState): Problem[] {
-  return problemsOf(form).filter((problem) => form.published || !problem.publishOnly);
+/**
+ * Everything that must be true before this event may go on the website.
+ *
+ * All of them, `publishOnly` included — that flag's whole meaning is "needed to
+ * publish, not to save", and this is the one caller for which it is needed.
+ */
+export function publishProblems(form: FormState): Problem[] {
+  return problemsOf(form);
+}
+
+/**
+ * The problems worth showing while somebody is still typing.
+ *
+ * Not the `publishOnly` ones. "Write the description" is true of a draft and is
+ * not a mistake, and marking an empty field red the moment an editor opens is
+ * how a form teaches people to ignore red. These are the entries that are
+ * actually *wrong* — an end before a start, a link that is not a link — and
+ * saying so immediately is the only time it is useful.
+ */
+export function liveProblems(form: FormState): Problem[] {
+  return problemsOf(form).filter((problem) => !problem.publishOnly);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -393,26 +414,3 @@ export const AUDIENCE_OPTIONS = EVENT_AUDIENCES.map((value) => ({
   value,
   label: AUDIENCE_LABELS[value],
 }));
-
-/**
- * Which fold a field lives in, so a problem can open the section it is in
- * before trying to focus the input.
- *
- * A collapsed section's inputs are not in the document, and `.focus()` on
- * nothing is a save button that reports two problems and then appears to do
- * nothing about them.
- */
-export type SectionId = 'essentials' | 'photograph' | 'more' | 'address';
-
-export const SECTION_OF: Record<FieldKey, SectionId> = {
-  title: 'essentials',
-  summary: 'essentials',
-  body: 'essentials',
-  date: 'essentials',
-  startTime: 'essentials',
-  endTime: 'essentials',
-  endDate: 'essentials',
-  meetingUrl: 'more',
-  registrationUrl: 'more',
-  slug: 'address',
-};
