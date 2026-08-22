@@ -14,17 +14,22 @@ import { usingEmulators } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 
 /**
- * Sign-in and the role check for everything under /admin and /servants.
+ * Sign-in and the role check in front of /servants.
  *
  * This is a convenience, not a security boundary, and the distinction is worth
- * being blunt about: /admin is a static export, so every byte of this file is
+ * being blunt about: the site is a static export, so every byte of this file is
  * public and anyone can read what it checks for. Hiding the form stops an
  * honest person wandering in. `firestore.rules` is what stops a dishonest one —
  * a member who edits this check out of their own browser still cannot write an
  * event, because the rules read the token, not this component.
  *
- * The client boundary lives here rather than in the layout so the layout stays
- * a server component and `firebase/auth` never reaches a public page.
+ * It lives in components/ rather than beside a route because it used to wrap
+ * two: /servants and an /admin section, deleted because a second event editor
+ * alongside the in-place one on the page itself was a standing source of
+ * confusion about which was authoritative. Editing now happens where the
+ * content is — see features/events/EventArticle.tsx and the galleries' edit
+ * mode — and this gate is what /servants still needs, since an embedded
+ * calendar URL is a bearer credential and cannot be shown to just anyone.
  */
 
 type State =
@@ -38,7 +43,7 @@ type State =
 export function AdminGate({
   children,
   requires = 'staff',
-  area = 'admin area',
+  area = 'this page',
 }: {
   children: React.ReactNode;
   requires?: Role;
