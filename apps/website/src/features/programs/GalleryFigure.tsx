@@ -3,6 +3,7 @@
 import { focalPosition, type DocOf, type GalleryMedia, type SectionCaptionStyle } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { galleryPosterUrl, galleryVideoUrl } from './media';
+import { AutoClip } from './AutoClip';
 import { useEditMode } from './editMode';
 
 /**
@@ -48,7 +49,8 @@ export function GalleryFigure({
   const selected = selecting && edit.isSelected({ kind: 'media', id: item.id });
 
   const poster = galleryPosterUrl(item);
-  const isVideo = item.kind === 'video' && galleryVideoUrl(item) !== null;
+  const clip = item.kind === 'video' ? galleryVideoUrl(item) : null;
+  const isVideo = clip !== null;
 
   /*
    * Approved, publicly readable, and no file yet.
@@ -58,7 +60,7 @@ export function GalleryFigure({
    * live with a null `renditionPath`. Saying so beats a broken-image icon,
    * which reads as a site fault rather than a job still running.
    */
-  if (poster === null) {
+  if (poster === null && clip === null) {
     return (
       <div className="gallery-figure gallery-figure--pending" aria-hidden="true">
         <span>Processing…</span>
@@ -66,7 +68,21 @@ export function GalleryFigure({
     );
   }
 
-  const image = (
+  /*
+   * A clip plays here rather than showing its poster frame.
+   *
+   * It is still the same box, the same crop and the same focal point — from the
+   * arrangement's point of view nothing has changed, which is what keeps a wheel
+   * of mixed photographs and clips looking like one row of pictures. What it
+   * cannot carry is alt text: `<video>` has no such attribute, so the caption is
+   * announced by the button's own hidden label instead, further down.
+   */
+  // The `null` arm is unreachable — the guard above returned for it — but a
+  // photograph's `src` has to be a string, and `poster!` would be a claim the
+  // compiler cannot check if that guard is ever loosened.
+  const image = clip ? (
+    <AutoClip src={clip} poster={poster} style={{ objectPosition: focalPosition(item.focal) }} />
+  ) : poster === null ? null : (
     <img
       src={poster}
       // The caption is the alt text, in every caption mode including `hidden` —
@@ -132,10 +148,10 @@ export function GalleryFigure({
         hover and focus only, for the same reason the caption is.
       */}
       <span className="gallery-figure__open" aria-hidden="true">
-        <Icon name={isVideo ? 'play' : 'expand'} size={18} />
+        <Icon name="expand" size={18} />
       </span>
       <span className="visually-hidden">
-        {selecting ? 'Select photograph' : isVideo ? 'Play video' : 'View photograph'}
+        {selecting ? 'Select photograph' : isVideo ? 'Open video' : 'View photograph'}
         {item.caption ? `: ${item.caption}` : ''}
       </span>
     </button>

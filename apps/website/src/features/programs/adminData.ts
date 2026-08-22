@@ -166,6 +166,8 @@ export async function updateProgram(
   patch: Partial<Omit<ProgramDraft, never>> & {
     coverMediaId?: string | null;
     featuredMediaIds?: string[];
+    /** What the ministry's parts are called. Null ⇒ the default. */
+    childLabel?: string | null;
   },
   uid: string | null,
 ): Promise<void> {
@@ -224,6 +226,8 @@ export interface ProgramEventDraft {
   endAt: Date | null;
   submissionsOpen: boolean;
   published: boolean;
+  /** What the parts inside this level are called. Null ⇒ the default. */
+  childLabel?: string | null;
 }
 
 /**
@@ -717,6 +721,47 @@ export async function setPageShowsAll(
 
   await updateDoc(reference, {
     showAllPictures: showAll,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/**
+ * Whether this page draws its own photographs at all.
+ *
+ * The Delete on the page's *first* block, and the way back in the "Add another
+ * block" row. A band is deleted out of the `bands` array; this block is not in
+ * that array — it is the document's own `sectionLayout` plus its
+ * `featuredMediaIds` — so there is nothing to remove and the removal has to be
+ * stated as a fact about the page.
+ *
+ * ## Nothing is destroyed, which is why the bin needs no confirmation
+ *
+ * `featuredMediaIds`, `hiddenMediaIds` and `sectionLayout` are all left exactly
+ * as they were. Every photograph is still approved, still in storage, and still on
+ * the page of whatever level it is filed under. Switching this back restores the
+ * block with the same pictures in the same arrangement — which is the whole reason
+ * it is a flag rather than a script that empties three fields.
+ *
+ * ## It governs "Also from here" too
+ *
+ * Not a second flag, and not an oversight. That strip is *defined* as what the
+ * blocks above left out, so with the page's own block gone it would show
+ * everything filed on the level — one Delete would make more pictures appear than
+ * there were before. See `Program.hidePagePictures`.
+ */
+export async function setPagePicturesHidden(
+  target: SectionTarget,
+  hidden: boolean,
+  uid: string | null,
+): Promise<void> {
+  const reference =
+    target.kind === 'program'
+      ? doc(db(), COLLECTIONS.programs, target.programId)
+      : doc(db(), COLLECTIONS.programEvents, target.programEventId);
+
+  await updateDoc(reference, {
+    hidePagePictures: hidden,
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   });

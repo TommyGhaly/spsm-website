@@ -168,7 +168,7 @@ console.log(`${existing} already there, ${created} to create.`);
 if (created > 0 && !write) {
   console.log('Dry run. Re-run with --write to apply.');
 } else if (created > 0) {
-  console.log('Created. All five are unpublished — publish each one from /admin once it has a gallery.');
+  console.log('Created. All five are unpublished — publish each one from its own page, in edit mode, once it has a gallery.');
 }
 
 process.exitCode = exitCode;

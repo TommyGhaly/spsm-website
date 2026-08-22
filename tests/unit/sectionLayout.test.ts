@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  SECTION_WIDTHS,
   defaultBand,
   defaultSectionLayout,
   driftsFor,
+  layoutForLook,
+  nearestSectionWidth,
   resolveBands,
   resolveSectionLayout,
+  sectionWidthFraction,
+  stepSectionWidth,
   titlePlacementFor,
 } from '@spsm/shared';
 
@@ -36,12 +41,16 @@ describe('resolveSectionLayout', () => {
     expect(layout.display).toBe('grid');
     expect(layout.title.placement).toBe('above');
     expect(layout.caption.placement).toBe('over');
+    // Every block on every gallery page predates this field. Anything but `full`
+    // here narrows all of them on deploy.
+    expect(layout.width).toBe('full');
   });
 
   it('keeps what it recognises', () => {
     const layout = resolveSectionLayout({
       display: 'column',
       scale: 'full',
+      width: 'half',
       drift: false,
       title: { scale: 'display', placement: 'beside', align: 'end' },
       caption: { scale: 'medium', placement: 'below', align: 'center' },
@@ -50,6 +59,7 @@ describe('resolveSectionLayout', () => {
     expect(layout).toEqual({
       display: 'column',
       scale: 'full',
+      width: 'half',
       drift: false,
       title: { scale: 'display', placement: 'beside', align: 'end' },
       caption: { scale: 'medium', placement: 'below', align: 'center' },
@@ -81,6 +91,8 @@ describe('resolveSectionLayout', () => {
   it('replaces a value it does not know', () => {
     expect(resolveSectionLayout({ display: 'carousel' }).display).toBe('grid');
     expect(resolveSectionLayout({ scale: 'enormous' }).scale).toBe('medium');
+    expect(resolveSectionLayout({ width: '40%' }).width).toBe('full');
+    expect(resolveSectionLayout({ width: 0.5 }).width).toBe('full');
     expect(resolveSectionLayout({ title: { align: 'justify' } }).title.align).toBe('start');
   });
 
@@ -115,6 +127,104 @@ describe('resolveSectionLayout', () => {
     expect(a.title).not.toBe(b.title);
     a.title.scale = 'display';
     expect(b.title.scale).toBe('small');
+  });
+});
+
+/**
+ * How wide a block is, and where a drag on its edge lands.
+ *
+ * The arithmetic is small and the consequence is not: this runs on every
+ * `pointermove` of a resize, and a sign error or an off-by-one in the ladder is a
+ * handle that jumps the wrong way under somebody's finger. It is in shared rather
+ * than in the handle precisely so it can be tested without a pointer — and so the
+ * mobile app's editor snaps to the same four places.
+ */
+describe('nearestSectionWidth', () => {
+  /** Each name asked for exactly is the name that comes back. */
+  it('returns each width for its own fraction', () => {
+    for (const width of SECTION_WIDTHS) {
+      expect(nearestSectionWidth(sectionWidthFraction(width))).toBe(width);
+    }
+  });
+
+  it('snaps to the nearer of the two it lies between', () => {
+    // Between a third (0.333) and a half (0.5).
+    expect(nearestSectionWidth(0.36)).toBe('third');
+    expect(nearestSectionWidth(0.47)).toBe('half');
+    // Between a half and two thirds (0.667).
+    expect(nearestSectionWidth(0.55)).toBe('half');
+    expect(nearestSectionWidth(0.64)).toBe('two-thirds');
+    // Between two thirds and full.
+    expect(nearestSectionWidth(0.72)).toBe('two-thirds');
+    expect(nearestSectionWidth(0.95)).toBe('full');
+  });
+
+  /**
+   * A drag past either end of the page. Both are ordinary — a pointer leaves the
+   * window, or crosses back over the block's own left edge — so neither may be an
+   * error, and both have to land on the width at that end.
+   */
+  it('clamps a drag that leaves the page', () => {
+    expect(nearestSectionWidth(-3)).toBe('third');
+    expect(nearestSectionWidth(0)).toBe('third');
+    expect(nearestSectionWidth(4)).toBe('full');
+  });
+
+  /**
+   * A container that measured zero divides by zero, which is what a block does
+   * on the very first frame after a route change. `NaN` must not produce
+   * `undefined` as a class name.
+   */
+  it('falls back to full width for a measurement that is not a number', () => {
+    expect(nearestSectionWidth(Number.NaN)).toBe('full');
+    expect(nearestSectionWidth(Number.POSITIVE_INFINITY)).toBe('full');
+  });
+
+  /** Exactly between two stops goes to the wider one. See the note on the function. */
+  it('breaks a tie towards the wider width', () => {
+    const between = (sectionWidthFraction('half') + sectionWidthFraction('third')) / 2;
+    expect(nearestSectionWidth(between)).toBe('half');
+  });
+});
+
+describe('stepSectionWidth', () => {
+  /**
+   * The keyboard's route to the same setting, and the direction is the thing to
+   * get right: the vocabulary is ordered widest-first, so "wider" walks *back*
+   * along it.
+   */
+  it('steps wider and narrower', () => {
+    expect(stepSectionWidth('third', 1)).toBe('half');
+    expect(stepSectionWidth('half', 1)).toBe('two-thirds');
+    expect(stepSectionWidth('two-thirds', 1)).toBe('full');
+    expect(stepSectionWidth('full', -1)).toBe('two-thirds');
+    expect(stepSectionWidth('half', -1)).toBe('third');
+  });
+
+  /** Stops rather than wrapping: a width that jumps from a third to the whole page
+      because somebody held an arrow key is not a control anybody trusts. */
+  it('stops at each end', () => {
+    expect(stepSectionWidth('full', 1)).toBe('full');
+    expect(stepSectionWidth('third', -1)).toBe('third');
+  });
+});
+
+/**
+ * Changing a block's shape must not change its width.
+ *
+ * `layoutForLook` writes every field of the layout — that is deliberate, because a
+ * partial nested write to Firestore replaces rather than merges — which means it
+ * is also the one function that can silently reset a setting it forgot about. The
+ * width is the newest field and therefore the likeliest to be forgotten.
+ */
+describe('layoutForLook', () => {
+  it('carries the width through a change of shape', () => {
+    expect(layoutForLook('column', 'large', 'half').width).toBe('half');
+    expect(layoutForLook('grid', 'small', 'third').width).toBe('third');
+  });
+
+  it('is full width when the caller has no width to pass', () => {
+    expect(layoutForLook('rail', 'large').width).toBe('full');
   });
 });
 

@@ -441,6 +441,40 @@ never a pixel value. Two reasons:
 counts in row heights, a rail in tile height, a column in frame height. The four
 names are the contract; the numbers are per display, in globals.css.
 
+### `width`: how blocks come to share a row
+
+`scale` is the size of the *pictures*. `width` is the size of the *block*, and it
+is the only reason two blocks can sit beside each other. Tommy asked for it as
+"a grid next to a vertical scroll wheel", which was not expressible: every block
+took the whole measure, so a page of blocks was a stack and nothing else.
+
+Four names — `full`, `two-thirds`, `half`, `third` — over a twelve-column page
+grid, `.blocks` in globals.css. Nothing pairs two blocks and there is no row
+object: they flow into the columns in their own order and a pair that fits shares
+a row. Auto-placement never runs backwards, so the order blocks are written in is
+the order they appear in, and one that does not fit starts a new row.
+
+Below 700px — `GALLERY_COLLAPSE_BELOW`, the same line the canvas inside a block
+collapses on — every block is full width. A third of a phone is about 110px,
+which is narrower than one legible photograph.
+
+`full` is the default, so adding the field changed no existing page.
+
+#### The control is the block's own edge
+
+Not a row of preset buttons in the block bar, at Tommy's direction. The bar
+already carries seven controls, and four more would have made the width the
+loudest thing about a block while being the thing you set once — so it is a
+handle on the right edge that snaps to the four positions as it travels, the same
+argument that made *moving* a block a drag rather than a pair of buttons.
+
+The snapping is `nearestSectionWidth`, in shared rather than in the handle, so the
+mobile app's own editor lands on exactly the same four places. A drag has no
+keyboard, so the handle is a focusable `role="slider"` and takes ← and → as well.
+
+**Built:** `SECTION_WIDTHS` in `schema/sectionLayout.ts`, the handle in
+`BlockFrame`, `.blocks` and `.block__resize` in globals.css.
+
 ### Nothing reads the raw field
 
 Every collection here predates this, seeds write partial documents, and a
@@ -717,7 +751,8 @@ per block on a page that can carry four. That was the bulk of "wayyyy too many
 settings".
 
 It has two rows and seven chips: **Shape** (Grid, Sideways wheel, Upright wheel)
-and **Size** (Small, Medium, Large, Full).
+and **Size** (Small, Medium, Large, Full). A block's *width* is deliberately not
+a third row — it is the handle on the block's own edge; see above.
 
 The typography is set by the shape, one house style each:
 

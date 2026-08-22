@@ -1,13 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getAllEvents, getEvent } from '@/features/events';
+import { EventArticle, getAllEvents, getEvent, plainEvent } from '@/features/events';
 import { GalleryShell, getPrograms } from '@/features/programs';
-import { Prose } from '@/components/Prose';
-import { PageBody } from '@/components/PageBody';
-import { Icon } from '@/components/Icon';
-import { BackLink } from '@/components/BackLink';
-import { formatEventWhen, isoOf } from '@/lib/dates';
-import { storageUrl } from '@/lib/storage';
 
 type Params = { slug: string };
 
@@ -100,101 +94,18 @@ export default async function EventPage({ params }: { params: Promise<Params> })
   if (!event && process.env.NODE_ENV === 'development') return <GalleryShell />;
   if (!event) notFound();
 
-  const registration = event.registration;
-
   /*
-   * Null covers three cases that all have to render the same way: no photograph
-   * was ever chosen, the bucket is unconfigured, and the document names an
-   * object that has since been deleted. The page simply opens with its title
-   * instead — a hero that half-loads is worse than none.
+   * Everything below the fold is now one client component.
+   *
+   * Not for interactivity's sake — the page a visitor sees is identical, and it
+   * is still prerendered into static HTML by this server component. It is so
+   * that staff can edit the event **on the page itself**, at Tommy's direction:
+   * *"i don't even want an admin page i'm talking about the edit in place on the
+   * page."* See `EventArticle`, which holds the whole argument.
+   *
+   * `plainEvent` is required rather than tidy. The event's timestamps arrive from
+   * the Firestore SDK as `Timestamp` instances, and React refuses to serialise
+   * one across the server/client boundary.
    */
-  const hero = storageUrl(event.heroImagePath);
-
-  return (
-    <article>
-      {hero && (
-        /*
-          Above the title, full-bleed, because a photograph indented into the
-          text column reads as an illustration of the first paragraph rather than
-          as the event's own picture.
-
-          A plain `img` rather than `next/image`: `output: 'export'` has no
-          optimiser at runtime, and the source is a Storage URL on a host this
-          build would have to be told about in `remotePatterns` — for a single
-          image per page, with the size cap enforced at upload instead.
-        */
-        <div className="event-hero">
-          <img src={hero} alt="" />
-        </div>
-      )}
-      <PageBody flush>
-        {/*
-          The event's own title block. It stays here rather than using
-          `PageHeader` because an event's name needs its date and location beside
-          it, which that component has no slot for — and because `PageHeader` now
-          renders nothing on screen at all.
-
-          **Inside `PageBody`, not beside it.** It used to be its own
-          `class="wrap event-head"`, which took `.wrap`'s `margin-inline: auto`
-          and then narrowed `max-width` to the reading measure — centring a 710px
-          title block above a 1152px column of prose, so the back link and the
-          heading sat a quarter of the window to the right of the text under
-          them. One column, one left edge. The gallery pages had the same bug and
-          are fixed the same way; see `.gallery-head`.
-        */}
-        <header className="gallery-head">
-          <BackLink href="/calendar" label="Parish Calendar" />
-
-          <div className="gallery-head__row">
-            <div className="gallery-head__titles">
-              <h1>{event.title}</h1>
-
-              {/*
-                The date, and only the date, in the letterspaced small caps this
-                line uses. The location moved out from beside it: a full range —
-                "Sunday, August 30, 2026, 5:00 PM – Tuesday, September 1, 2026,
-                8:00 PM" — is already sixty characters of capitals, and an address
-                after it made one unreadable line that filled the column. It also
-                carries its own `·` between name and street, which collided with
-                the separators this line draws between facts.
-              */}
-              <p className="gallery-head__facts">
-                <span>
-                  <time dateTime={isoOf(event.startAt)}>
-                    {formatEventWhen(event.startAt, event.endAt, event.allDay, event.timeZone)}
-                  </time>
-                </span>
-              </p>
-
-              {event.location && (
-                <p className="gallery-head__where">
-                  <Icon name="pin" size={16} />
-                  <span>
-                    {event.location.name}
-                    {event.location.address && ` · ${event.location.address}`}
-                  </span>
-                </p>
-              )}
-            </div>
-          </div>
-        </header>
-
-        <Prose>{event.body}</Prose>
-
-        {/*
-          Only `externalUrl` is rendered. `registration.formId` points at the
-          `forms` collection, which has security rules but no schema and no
-          `/forms/[slug]` route yet — linking to it would send a parishioner
-          straight to a 404. Restore the branch when that route exists.
-        */}
-        {registration?.externalUrl && (
-          <p>
-            <a className="button" href={registration.externalUrl} rel="noopener noreferrer">
-              Register for this event
-            </a>
-          </p>
-        )}
-      </PageBody>
-    </article>
-  );
+  return <EventArticle event={plainEvent(event)} />;
 }

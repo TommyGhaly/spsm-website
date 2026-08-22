@@ -221,6 +221,27 @@ svg {
   margin-top: 0;
 }
 
+/*
+ * A page allowed to be wider than the shell. The galleries, and only them.
+ *
+ * `.wrap` caps at `--shell-width` — 80rem, a measure for pages made of
+ * sentences. A wall of photographs is not that: on a 1,512px laptop the cap put
+ * a 1,200px grid in the middle of the window with 156px of empty paper either
+ * side, and the bigger the screen the worse it read, which is the opposite of
+ * what a screen full of pictures should do.
+ *
+ * `min()` rather than a bare width so it stays fluid below the ceiling and does
+ * not overflow a narrow window. The ceiling exists because photographs on an
+ * ultrawide monitor with no cap at all become a single unreadable band — 112rem
+ * is about four columns of the gallery grid, which is where it stops improving.
+ *
+ * The gutter is deliberately left alone. Losing the cap is what buys the width;
+ * pictures touching the bezel is a different look and not the one asked for.
+ */
+.page-body--wide {
+  max-width: min(112rem, 100%);
+}
+
 /* Narrower than `.wrap`, for reading. A 72rem-wide paragraph is unreadable; the
    measure is what keeps a line of prose to roughly twelve words. */
 .prose {
@@ -6864,26 +6885,15 @@ main {
   justify-content: space-between;
 }
 
-/* ---- admin ------------------------------------------------------------
-   Staff-only screens. Behind auth, never indexed, and deliberately plainer
-   than the public site: this is a tool, and the parish's typography is for
-   parishioners. Kept in this stylesheet rather than a module because the
-   whole site is one hand-written sheet and one exception is worse than none. */
+/* ---- the signed-in bar -------------------------------------------------
+   All that is left of the admin styles: `AdminGate` renders this strip
+   above /servants to say who you are signed in as. The `.admin` wrapper
+   and `.admin-nav` went with the /admin section.
 
-.admin {
-  --admin-gap: var(--space-lg, 1.5rem);
-  padding-block: var(--space-lg, 1.5rem);
-}
-
-.admin-nav {
-  display: flex;
-  gap: var(--space-md, 1.25rem);
-  padding-block: var(--space-sm, 0.75rem);
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
-  margin-bottom: var(--admin-gap);
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-}
+   `margin-bottom` below was `var(--admin-gap)` with no fallback, and
+   `--admin-gap` was defined on `.admin` — a wrapper this bar never had on
+   /servants, so the declaration was already invalid there and the margin
+   was silently 0. The literal is the 1.5rem it was meant to be. */
 
 .admin-bar {
   display: flex;
@@ -6892,962 +6902,1106 @@ main {
   gap: var(--space-md, 1rem);
   flex-wrap: wrap;
   padding: var(--space-sm, 0.5rem) var(--space-sm, 0.75rem);
-  margin-bottom: var(--admin-gap);
+  margin-bottom: var(--space-lg, 1.5rem);
   background: var(--color-accent-soft, #f6d8d0);
   border-radius: var(--radius-sm, 4px);
 }
 
 /* ---------------------------------------------------------------------------
- * The events editor.
+ * Editing an event on its own page.
  *
- * Written from scratch alongside `app/admin/events/`, replacing `.admin-split`,
- * `.admin-list`, `.admin-item` and `.hero-field`, which were deleted with the
- * screen that used them. Nothing else in the app referenced them.
+ * Rewritten from nothing, at Tommy's direction. The version this replaces had
+ * the right rule — "pressing Edit must move the page as little as possible" —
+ * and was defeated by a measurement: its fields ran the full width of the window,
+ * 1200px on a laptop, while the page they edit is a 68ch reading column. The
+ * editor and the page therefore shared no geometry at all, and everything else
+ * followed from that. A title in a 1216x120 grey box. A photograph chooser 95px
+ * tall standing in for a 418px banner. A label above every word that already
+ * labelled itself.
  *
- * The one thing to keep in mind while editing anything below: **a misspelled
- * custom property falls through to its fallback and looks like a design choice**
- * rather than a mistake. Every `var()` here carries a literal, and the names are
- * the ones defined at the top of this sheet.
+ * Two rules here, and every declaration below serves one of them.
+ *
+ *  1. **The editing surface is the page's own column.** Nothing in this block
+ *     sets a width — the header and `.ee-sheet` sit inside the same `PageBody`
+ *     the read-only page uses and inherit its measure. That absence is the
+ *     point, so please do not add one.
+ *  2. **A control standing in for text is the size of that text.** The inputs
+ *     inherit `font` rather than setting one, so the title's box *is* the `h1`,
+ *     because it is inside the `h1`. The affordance arrives on hover and focus
+ *     instead of being a permanent box.
+ *
+ * The only fixed furniture is one bar, and it owns the whole bottom edge. What
+ * it replaced was two: `.event-bar` at `z-index: 110` and the generic
+ * `.edit-toggle` at 120, overlapping 46px apart in the same corner, with the
+ * publish switch at the far left underneath the dev-server badge.
  * ------------------------------------------------------------------------ */
 
-.ev-admin {
-  display: grid;
-  gap: var(--admin-gap, 1.5rem);
-  align-items: start;
+/* Room for the bar. On the article, not on `body`: `.is-editing` on `body` is
+   the galleries' class and carries a right-hand gutter for a properties column
+   this page does not have. */
+.ee {
+  padding-bottom: 7rem;
 }
 
-/* Side by side at 60rem, which is where a 23rem rail leaves a form column wide
-   enough to put two date fields on one line. Below that they stack, and staff
-   do use this on a phone — someone adds an event from the church hall. */
-@media (min-width: 60rem) {
-  .ev-admin {
-    grid-template-columns: minmax(17rem, 23rem) minmax(0, 1fr);
-  }
+/* ---- the photograph ------------------------------------------------------ */
 
-  /* `top` clears the masthead, which is `position: sticky` at 0 with a z-index
-     of 50 (see `.masthead`). Anything less and the first month heading slides
-     under the parish's own name. */
-  .ev-admin__list {
-    position: sticky;
-    top: 5.5rem;
-  }
+/*
+ * The band is the same height whether or not there is a photograph, and that is
+ * the decision that changed.
+ *
+ * `min(56.25vw, 38vh)` is copied from `.event-hero` deliberately rather than
+ * shared through a custom property, because the two are the same number for two
+ * different reasons: there it is a 16:9 crop capped so it cannot swallow a
+ * laptop, here it is "whatever that is". If the public hero changes shape this
+ * has to be changed to match, and a shared token would hide the fact that
+ * somebody has to think about it.
+ */
+.ee-hero {
+  position: relative;
+  width: 100%;
+  height: min(56.25vw, 38vh);
+  overflow: hidden;
+  background: var(--color-paper-sunken, #eeddd7);
 }
 
-/* ---- the rail ---------------------------------------------------------- */
-
-.ev-list {
-  display: grid;
-  gap: var(--space-md, 1rem);
+.ee-hero__shot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The public page's crop, for the same reason it has one: there is no focal
+     point on `Event`, and in a wide crop of a parish photograph the people are
+     reliably in the upper half. */
+  object-position: 50% 40%;
 }
 
-.ev-list__top {
+/* A button filling the band, so the whole area is the target rather than a link
+   in the middle of a large inert rectangle. */
+.ee-hero__empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm, 0.75rem);
-  flex-wrap: wrap;
-}
-
-.ev-list__top h1 {
-  margin: 0;
-  font-size: var(--type-heading, 1.5rem);
-}
-
-.ev-search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs, 0.45rem);
-  padding-inline: var(--space-sm, 0.7rem);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-full, 999px);
-  color: var(--color-ink-faint, #6f5f5a);
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.ev-search:focus-within {
-  border-color: var(--color-accent, #992a21);
-  box-shadow: 0 0 0 3px var(--color-accent-soft, #f6d8d0);
-}
-
-.ev-search input {
-  flex: 1 1 auto;
-  min-width: 0;
+  justify-content: center;
+  gap: var(--space-xs, 0.35rem);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-md, 1rem);
+  /* Inset rather than on the edge: a dashed line along a full-bleed band reads
+     as a border on the page itself. */
+  outline: 2px dashed color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  outline-offset: -12px;
   border: 0;
   background: transparent;
-  /* 1rem, not smaller: iOS Safari zooms the whole page when a focused input's
-     text is under 16px, and the jump reads as a bug. */
-  font: inherit;
   font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-body, 1rem);
-  color: var(--color-ink, #1c1614);
-  padding-block: var(--space-sm, 0.5rem);
-  /* The engine's own clear button, suppressed — there is one beside it that
-     matches the rest of the screen. */
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.ev-search input:focus-visible {
-  outline: none;
-}
-
-.ev-search input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.ev-search > button {
-  flex: 0 0 auto;
-  display: inline-flex;
-  border: 0;
-  background: transparent;
-  color: var(--color-ink-faint, #6f5f5a);
-  padding: 0.2rem;
+  color: var(--color-ink-soft, #4b413e);
+  text-align: center;
   cursor: pointer;
-  border-radius: var(--radius-full, 999px);
 }
 
-.ev-search > button:hover {
-  color: var(--color-accent, #992a21);
+.ee-hero__empty:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 10%, transparent);
+  outline-color: var(--color-gold, #b08d43);
 }
 
-.ev-list__scopes {
+.ee-hero__empty svg {
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink-faint, #6f5f5a));
+}
+
+.ee-hero__empty strong {
+  font-size: var(--type-subheading, 1.125rem);
+  color: var(--color-ink, #1c1614);
+}
+
+.ee-hero__empty small {
+  max-width: 34ch;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* Over the photograph, not beside it. A full-bleed band has no gutter to put a
+   column of buttons in. */
+.ee-hero__tools {
+  position: absolute;
+  top: var(--space-sm, 0.75rem);
+  right: var(--space-sm, 0.75rem);
+  display: flex;
   gap: var(--space-xs, 0.35rem);
 }
 
-.ev-list__scopes .chip {
-  padding: 0.25rem var(--space-sm, 0.6rem);
-  font-size: var(--type-micro, 0.8125rem);
-}
-
-.ev-list__jump {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: var(--color-accent, #992a21);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-/*
- * The scroller is the months, not the rail.
- *
- * With the whole rail scrolling, the search box and the four tabs went off the
- * top the moment anybody looked past the first month — which is the one time
- * they are wanted. `overscroll-behavior` keeps a flick at the end of the list
- * from carrying on into the page behind it.
- */
-.ev-list__months {
-  display: grid;
-  gap: var(--space-md, 1rem);
-}
-
-@media (min-width: 60rem) {
-  .ev-list__months {
-    max-height: calc(100vh - 18rem);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    /* Room for the focus ring on the last row, which a flush edge clips. */
-    padding: 2px;
-    margin: -2px;
-  }
-}
-
-.ev-list__month h2 {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0 0 var(--space-xs, 0.35rem);
-  padding-block: 0.2rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.75rem);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide, 0.07em);
-  text-transform: uppercase;
-  color: var(--color-ink-faint, #6f5f5a);
-  background: var(--color-paper, #f6e8e3);
-}
-
-.ev-list__month ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.ev-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-sm, 0.65rem);
-  text-align: left;
-  padding: var(--space-xs, 0.4rem) var(--space-sm, 0.55rem);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md, 6px);
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
-}
-
-.ev-row:hover {
-  background: var(--color-paper-raised, #fdf7f4);
-  border-color: var(--color-rule, #e0cac3);
-}
-
-.ev-row--on {
-  background: var(--color-paper-raised, #fdf7f4);
-  border-color: var(--color-accent, #992a21);
-  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
-}
-
-.ev-row__date {
-  display: grid;
-  justify-items: center;
-  gap: 0;
-  width: 2.5rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  line-height: 1.05;
-}
-
-.ev-row__date em {
-  font-style: normal;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide, 0.06em);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-row__date b {
-  font-size: 1.2rem;
-  font-weight: 600;
-  /* Tabular, so a column of 1st, 11th and 30th lines up. */
-  font-variant-numeric: tabular-nums;
-  color: var(--color-ink, #1c1614);
-}
-
-.ev-row__body {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-/* Both lines clip rather than wrap. A rail row is a glance, and a three-line
-   row makes the list of them stop looking like a list. */
-.ev-row__body strong,
-.ev-row__meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ev-row__body strong {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  font-weight: 600;
-  color: var(--color-ink, #1c1614);
-}
-
-.ev-row__meta {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-/* Only drafts are marked. Published is the normal state, and a badge on every
-   row is a badge on nothing. */
-.ev-row__draft {
-  flex: 0 0 auto;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide, 0.06em);
-  text-transform: uppercase;
-  color: var(--color-accent, #992a21);
-  border: 1px solid var(--color-accent, #992a21);
-  border-radius: var(--radius-sm, 3px);
-  padding: 0.05rem 0.3rem;
-}
-
-/* ---- the editor ------------------------------------------------------- */
-
-.ev-editor {
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 6px);
-  /* No `overflow` of any kind. `.ev-bar` below is `position: sticky`, and a
-     clipping ancestor silently turns that back into a static footer at the
-     bottom of a 2,000px form — which is exactly what this replaced. */
-}
-
-.ev-editor__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-md, 1rem);
-  flex-wrap: wrap;
-  padding: var(--space-md, 1rem) var(--space-lg, 1.5rem);
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
-}
-
-.ev-editor__head h2 {
-  margin: 0;
-  font-size: var(--type-subheading, 1.125rem);
-}
-
-.ev-editor__where {
-  margin: 0.15rem 0 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-editor__where code {
-  font-size: inherit;
-}
-
-.ev-editor__tools {
-  display: flex;
-  gap: var(--space-xs, 0.4rem);
-  flex-wrap: wrap;
-}
-
-.ev-editor > .notice {
-  margin: var(--space-md, 1rem) var(--space-lg, 1.5rem) 0;
-}
-
-.ev-editor__body {
-  display: grid;
-  gap: var(--space-lg, 1.5rem);
-  padding: var(--space-lg, 1.5rem);
-  /* The form is read one field at a time, so it is capped at a comfortable
-     measure rather than stretched across a 1600px screen. */
-  max-width: 46rem;
-}
-
-/* ---- a field ---------------------------------------------------------- */
-
-.ev-field {
-  display: grid;
-  gap: var(--space-xs, 0.3rem);
-  flex: 1 1 12rem;
-  min-width: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-}
-
-.ev-field__label {
-  color: var(--color-ink-soft, #4b413e);
-  font-weight: 600;
-}
-
-.ev-field__must {
-  color: var(--color-accent, #992a21);
-  text-decoration: none;
-  border: 0;
-  margin-left: 0.15rem;
-}
-
-.ev-field input,
-.ev-field select,
-.ev-field textarea {
-  font: inherit;
-  font-size: var(--type-body, 1rem);
-  color: var(--color-ink, #1c1614);
-  background: var(--color-paper, #f6e8e3);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-sm, 4px);
-  padding: var(--space-sm, 0.55rem) var(--space-sm, 0.7rem);
-  width: 100%;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.ev-field textarea {
-  resize: vertical;
-  line-height: var(--leading-normal, 1.55);
-}
-
-.ev-field input:focus-visible,
-.ev-field select:focus-visible,
-.ev-field textarea:focus-visible {
-  outline: none;
-  border-color: var(--color-accent, #992a21);
-  box-shadow: 0 0 0 3px var(--color-accent-soft, #f6d8d0);
-}
-
-/* Read-only, not disabled — the web address is shown, and becomes editable the
-   moment it is focused. A disabled input cannot be focused, so it could not. */
-.ev-field input[readonly] {
-  background: var(--color-paper-sunken, #eeddd7);
-  color: var(--color-ink-soft, #4b413e);
-}
-
-/* The event's name, which is the one field on the form that is also a heading. */
-.ev-input--big {
-  font-size: 1.2rem !important;
-  font-weight: 600;
-}
-
-.ev-field__hint {
-  color: var(--color-ink-faint, #6f5f5a);
-  font-size: var(--type-micro, 0.8125rem);
-}
-
-.ev-field__hint code {
-  font-size: 0.95em;
-}
-
-.ev-field--bad input,
-.ev-field--bad select,
-.ev-field--bad textarea {
-  border-color: var(--color-accent, #992a21);
-  background: color-mix(in srgb, var(--color-accent, #992a21) 4%, var(--color-paper, #f6e8e3));
-}
-
-.ev-field__error {
-  color: var(--color-accent, #992a21);
-  font-size: var(--type-micro, 0.8125rem);
-  font-weight: 600;
-}
-
-.ev-cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md, 1rem);
-}
-
-/* ---- a fold ----------------------------------------------------------- */
-
-.ev-fold {
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 6px);
-  background: var(--color-paper, #f6e8e3);
-}
-
-.ev-fold--open {
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 35%, var(--color-rule, #e0cac3));
-}
-
-.ev-fold__head {
-  margin: 0;
-  font-size: inherit;
-}
-
-.ev-fold__toggle {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: var(--space-sm, 0.6rem);
-  padding: var(--space-sm, 0.6rem) var(--space-md, 0.85rem);
-  border: 0;
-  background: transparent;
-  border-radius: var(--radius-md, 6px);
-  font: inherit;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  text-align: left;
-  color: var(--color-ink, #1c1614);
-  cursor: pointer;
-}
-
-.ev-fold__title {
-  font-size: var(--type-small, 0.9375rem);
-  font-weight: 600;
-  flex: 0 0 auto;
-}
-
-/* The value a closed fold holds, which is the reason the short version is more
-   informative than the long one and not merely smaller. */
-.ev-fold__value {
-  margin-left: auto;
-  text-align: right;
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ev-fold__chevron {
-  flex: 0 0 auto;
-  color: var(--color-ink-faint, #6f5f5a);
-  transition: transform 160ms ease;
-}
-
-.ev-fold--open .ev-fold__chevron {
-  transform: rotate(180deg);
-}
-
-.ev-fold__body {
-  display: grid;
-  gap: var(--space-md, 1rem);
-  padding: var(--space-md, 1rem) var(--space-md, 0.85rem);
-  border-top: 1px solid var(--color-rule, #e0cac3);
-}
-
-.ev-fold__body > .note {
-  margin: 0;
-}
-
-/* ---- a choice on one line --------------------------------------------- */
-
-.ev-segmented {
+.ee-hero__tool {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--color-paper-sunken, #eeddd7);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-full, 999px);
-  justify-self: start;
-}
-
-.ev-segmented button {
-  border: 0;
-  background: transparent;
-  font: inherit;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: var(--color-ink-soft, #4b413e);
-  padding: 0.3rem 0.85rem;
-  border-radius: var(--radius-full, 999px);
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
-}
-
-.ev-segmented button:hover {
-  color: var(--color-ink, #1c1614);
-}
-
-.ev-segmented__on {
-  background: var(--color-paper-raised, #fdf7f4);
-  color: var(--color-ink, #1c1614) !important;
-  font-weight: 600;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent);
-}
-
-/*
- * Published, filled.
- *
- * The neutral highlight above is right for a preference and wrong for the one
- * switch on this screen with a public consequence: with it, Draft selected and
- * Published selected look the same amount of chosen.
- */
-.ev-publish--live .ev-segmented__on {
-  background: var(--color-accent, #992a21);
-  color: var(--color-ink-inverse, #f9efec) !important;
-}
-
-/* ---- tags ------------------------------------------------------------- */
-
-.ev-tags {
-  display: grid;
-  gap: var(--space-xs, 0.4rem);
-}
-
-.ev-tags__box {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.3rem 0.4rem;
-  min-height: 2.6rem;
-  background: var(--color-paper, #f6e8e3);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-sm, 4px);
-  cursor: text;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.ev-tags__box:focus-within {
-  border-color: var(--color-accent, #992a21);
-  box-shadow: 0 0 0 3px var(--color-accent-soft, #f6d8d0);
-}
-
-.ev-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0.1rem 0.15rem 0.1rem 0.5rem;
-  background: var(--color-accent-soft, #f6d8d0);
+  padding: 0.35rem var(--space-sm, 0.6rem);
+  border: 0;
   border-radius: var(--radius-full, 999px);
+  /* Its own dark ground rather than a translucent one. A photograph can be any
+     colour, and a control that is legible over the sky and invisible over the
+     church wall is a control that works by luck. */
+  background: color-mix(in srgb, var(--color-deep, #481010) 82%, transparent);
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink, #1c1614);
-}
-
-.ev-tag button {
-  display: inline-flex;
-  border: 0;
-  background: transparent;
-  color: var(--color-ink-soft, #4b413e);
-  padding: 0.2rem;
-  border-radius: var(--radius-full, 999px);
+  font-weight: 600;
+  color: var(--color-ink-inverse, #fff);
   cursor: pointer;
 }
 
-.ev-tag button:hover {
+.ee-hero__tool:hover:not([disabled]) {
+  background: var(--color-deep, #481010);
+}
+
+.ee-hero--over .ee-hero__empty,
+.ee-hero--over .ee-hero__shot {
+  opacity: 0.4;
+}
+
+.ee-hero__drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  outline: 3px solid var(--color-gold, #b08d43);
+  outline-offset: -10px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  pointer-events: none;
+}
+
+.ee-hero__bad {
+  position: absolute;
+  left: var(--space-gutter, 1.5rem);
+  bottom: var(--space-sm, 0.75rem);
+  margin: 0;
+  padding: 0.4rem var(--space-sm, 0.7rem);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-accent, #992a21);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink-inverse, #fff);
+}
+
+/* ---- text that edits itself ---------------------------------------------- */
+
+/*
+ * An input with no type of its own.
+ *
+ * `font: inherit` is not enough on its own — `letter-spacing` and `color` are
+ * not part of the `font` shorthand, and the display face here is letterspaced,
+ * so without them the title's input is the right size in the wrong rhythm.
+ *
+ * `width: 100%` with `min-width: 0`, because an `input` carries an intrinsic
+ * width of roughly twenty characters that a percentage alone does not beat
+ * inside a flex or grid parent. That intrinsic width has pushed this project's
+ * admin 93px off a phone once already.
+ *
+ * The negative margin cancels the padding, so a word inside one of these sits
+ * exactly where the same word sits when read. Without it every editable line
+ * shifts a few pixels right the moment Edit is pressed.
+ */
+.ee-plain {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0.06em 0.3em;
+  margin: -0.06em -0.3em;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: inherit;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  /*
+   * The one permanent mark of an editable thing: a hairline under it, drawn as a
+   * background so it costs no height and cannot shift the line it is under.
+   * A border here would push the date line 1px down and the whole header with it.
+   */
+  background-image: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent) 1px,
+    transparent 1px
+  );
+}
+
+.ee-plain::placeholder {
+  color: var(--color-ink-faint, #6f5f5a);
+  opacity: 0.75;
+  font-style: italic;
+}
+
+.ee-plain:hover {
+  background-color: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+}
+
+.ee-plain:focus-visible,
+.ee-plain:focus {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+  background-color: var(--color-paper-raised, #fdf7f4);
+  background-image: none;
+}
+
+/* The title. `.gallery-head h1` already sets the family, the size, the margin
+   and the tight leading — this only has to stop `text-wrap: balance` from
+   fighting an input, which cannot wrap at all. */
+.ee-title {
+  text-wrap: normal;
+}
+
+/* ---- when ---------------------------------------------------------------- */
+
+/*
+ * The date line: the small-caps line the public page prints, as a button.
+ *
+ * `.gallery-head__facts`'s treatment restated rather than borrowed, because this
+ * is a `<p>` containing a button rather than a row of spans, and inheriting the
+ * flex rules from that class would put the caret on its own line.
+ */
+.ee-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs, 0.3rem) var(--space-sm, 0.5rem);
+  margin: 0;
+}
+
+.ee-when__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.3rem var(--space-sm, 0.55rem);
+  margin-inline-start: -0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.03em);
+  text-transform: uppercase;
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  text-align: start;
+}
+
+.ee-when__trigger:hover,
+.ee-when__trigger.is-open {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 20%, transparent);
+  color: var(--color-ink, #1c1614);
+}
+
+.ee-when__trigger svg {
+  flex: none;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink-faint, #6f5f5a));
+}
+
+.ee-when__text {
+  min-width: 0;
+}
+
+/* The shared `chevron` glyph points down, which is what a closed disclosure
+   wants — so no rotation here, unlike the fold below, whose closed state points
+   right. */
+.ee-when__caret {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* The one state where a date line has to shout. */
+.ee-when__trigger--bad {
+  border-color: var(--color-accent, #992a21);
+  background: var(--color-accent-soft, #f6d8d0);
   color: var(--color-accent-strong, #731d16);
 }
 
-/* Two classes, so this beats `.ev-field input` above whatever the source order
-   ends up being. Its border and padding belong to the box around it. */
-.ev-field .ev-tags__input {
-  flex: 1 1 6rem;
-  min-width: 6rem;
-  width: auto;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 0.25rem;
-  font-size: var(--type-body, 1rem);
-}
-
-.ev-field .ev-tags__input:focus-visible {
-  outline: none;
-  border: 0;
-  box-shadow: none;
-}
-
-.ev-tags__suggest {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
+.ee-when__error {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-tags__pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  border: 1px dashed var(--color-rule, #e0cac3);
-  background: transparent;
-  border-radius: var(--radius-full, 999px);
-  padding: 0.1rem 0.45rem;
-  font: inherit;
-  color: var(--color-ink-soft, #4b413e);
-  cursor: pointer;
-}
-
-.ev-tags__pick:hover {
-  border-style: solid;
-  border-color: var(--color-accent, #992a21);
+  font-weight: 600;
   color: var(--color-accent, #992a21);
 }
 
-/* ---- when ------------------------------------------------------------- */
+/* ---- where --------------------------------------------------------------- */
 
-.ev-when {
-  display: grid;
-  gap: var(--space-md, 1rem);
-}
-
-.ev-when__switches {
+/* `.gallery-head__where`'s treatment, with inputs in it. Sentence case and a
+   size up from the date line, for the same reason that class gives: letterspaced
+   capitals are wrong for an address somebody may need to read out. */
+.ee-where {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md, 1.25rem);
-}
-
-.ev-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
+  align-items: baseline;
+  gap: var(--space-xs, 0.4rem);
+  margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-soft, #4b413e);
-  cursor: pointer;
 }
 
-.ev-check input {
-  width: auto;
-  margin: 0;
-  accent-color: var(--color-accent, #992a21);
+.ee-where > svg {
+  flex: none;
+  transform: translateY(0.15em);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 80%, var(--color-ink-faint, #6f5f5a));
 }
 
-.ev-check:has(input:disabled) {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.ev-durations {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.ev-durations__label {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.75rem);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide, 0.06em);
-  text-transform: uppercase;
+.ee-where__sep {
+  flex: none;
   color: var(--color-ink-faint, #6f5f5a);
-  margin-right: 0.15rem;
-}
-
-.ev-durations .chip {
-  padding: 0.2rem 0.6rem;
-  font-size: var(--type-micro, 0.8125rem);
-}
-
-.ev-durations__clear {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin-left: 0.25rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 /*
- * The sentence the parish will read, rendered by the same function the public
- * calendar calls. A time-zone mistake shows up here as the wrong words, at the
- * moment it is made.
+ * On a phone the name and the address share about 150px each, which truncates
+ * both. The address goes to its own line and the separator goes entirely — it
+ * is punctuation between two things on one line, and there is no longer one
+ * line.
+ *
+ * `grid` rather than `flex-wrap`, because wrapping would leave the pin icon
+ * stranded on a row of its own the moment the name is long.
  */
-.ev-echo {
+@media (max-width: 34rem) {
+  .ee-where {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-xs, 0.3rem) var(--space-xs, 0.4rem);
+  }
+
+  .ee-where__sep {
+    display: none;
+  }
+
+  /* The address, under the name, indented past the pin. */
+  .ee-where > .ee-plain:last-child {
+    grid-column: 2;
+  }
+}
+
+/* ---- the sheet: things the page does not show ---------------------------- */
+
+/*
+ * Below the header's rule, and named as a sheet rather than a form.
+ *
+ * Everything here is either not visible on the page at all — the calendar
+ * summary, the category — or is a paragraph too long to edit in place. The gap
+ * is `--space-lg` rather than the `--space-xl` `.page-body` gives its children,
+ * because these are one thing with parts rather than sections.
+ */
+.ee-sheet {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  padding: var(--space-sm, 0.55rem) var(--space-md, 0.8rem);
-  background: var(--color-paper-sunken, #eeddd7);
-  border-left: 2px solid var(--color-gold, #b08d43);
-  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  flex-direction: column;
+  gap: var(--space-lg, 1.75rem);
+}
+
+/*
+ * `max-width` on the ones directly in the sheet, not on every group: these are
+ * single fields holding a sentence, and a 1200px-wide box for a 200-character
+ * summary invites somebody to write 1200px of it. Groups nested inside `.ee-cols`
+ * are sized by their column and must not be capped, or two of them stop being
+ * halves of a row.
+ */
+.ee-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.35rem);
+  min-width: 0;
+}
+
+.ee-sheet > .ee-group {
+  max-width: var(--measure, 68ch);
+}
+
+.ee-group__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.03em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-group input,
+.ee-group select,
+.ee-group textarea,
+.ee-when-panel input,
+.ee-when-panel select {
+  width: 100%;
+  /* Without this a `type="date"` input's intrinsic width wins inside a grid
+     column and pushes the row wider than the page. */
+  min-width: 0;
+  padding: var(--space-sm, 0.55rem) var(--space-sm, 0.7rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink, #1c1614);
 }
 
-.ev-echo svg {
-  flex: 0 0 auto;
-  color: var(--color-ink-faint, #6f5f5a);
+.ee-group input:focus-visible,
+.ee-group select:focus-visible,
+.ee-group textarea:focus-visible,
+.ee-when-panel input:focus-visible,
+.ee-when-panel select:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+  border-color: var(--color-accent, #992a21);
 }
 
-.ev-echo em {
-  font-style: normal;
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-echo--empty {
-  border-left-color: var(--color-rule, #e0cac3);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-when__zone-link {
-  justify-self: start;
-  border: 0;
-  background: transparent;
-  padding: 0;
+.ee-group__hint {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
-  text-decoration: underline;
-  cursor: pointer;
 }
 
-.ev-when__zone-link:hover {
+.ee-group__error {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
   color: var(--color-accent, #992a21);
 }
 
-/* ---- the photograph --------------------------------------------------- */
+.ee-group--bad input,
+.ee-group--bad select,
+.ee-group--bad textarea {
+  border-color: var(--color-accent, #992a21);
+}
 
-.ev-drop {
+/* `minmax(0, 1fr)` rather than `1fr`. A bare `1fr` is `minmax(auto, 1fr)`, and
+   `auto` on a column holding a date input means the column cannot shrink below
+   that input's intrinsic width — which is how the old admin ended up 93px wider
+   than a phone with nothing on the page overflowing. */
+.ee-cols {
   display: grid;
-  justify-items: center;
-  gap: 0.2rem;
-  width: 100%;
-  padding: var(--space-lg, 1.5rem);
-  border: 1.5px dashed var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 6px);
-  background: var(--color-paper, #f6e8e3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-md, 1rem);
+}
+
+@media (min-width: 40rem) {
+  .ee-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- the description ----------------------------------------------------- */
+
+/*
+ * Capped here rather than on the textarea alone, so the label and the formatting
+ * buttons sit over the field instead of at the two ends of the whole column —
+ * `.ee-body__head` is a `space-between` row, so its width is the field's width or
+ * the buttons end up 500px to the right of the thing they format.
+ */
+.ee-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.35rem);
+  max-width: var(--measure, 68ch);
+}
+
+.ee-body__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.ee-body__tools {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.ee-body__tool {
+  min-width: 1.9rem;
+  padding: 0.15rem 0.4rem;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 700;
   color: var(--color-ink-soft, #4b413e);
   cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
-.ev-drop:hover:not([disabled]),
-.ev-drop--over {
+.ee-body__tool:hover {
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-accent-strong, #731d16);
+}
+
+/*
+ * The description in the body face and at the body measure — the same font and
+ * the same line length `.prose` will render it at.
+ *
+ * Both halves are the point, and the measure was wrong here first. The editing
+ * column is the page's own container, which is 1200px wide on a laptop; the
+ * *prose* inside it is capped at `--measure`, about 670px. So a textarea that
+ * filled the column was 1200px of Georgia being typed into and 670px of Georgia
+ * being read — every line break somebody arranges while writing lands somewhere
+ * else on the page. Which is the same class of mistake, at a smaller scale, as the
+ * 1200px-wide form this editor replaced.
+ */
+.ee-body__text {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-sm, 0.7rem) var(--space-md, 0.9rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-body, 1.0625rem);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-ink, #1c1614);
+  /* The field grows to its contents from JS, so it must never also scroll —
+     a scrollbar here would mean the height is wrong. */
+  overflow: hidden;
+  resize: none;
+}
+
+.ee-body__text:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
   border-color: var(--color-accent, #992a21);
-  border-style: solid;
-  background: color-mix(in srgb, var(--color-accent, #992a21) 5%, var(--color-paper, #f6e8e3));
 }
 
-.ev-drop[disabled] {
-  cursor: default;
+.ee-body--bad .ee-body__text {
+  border-color: var(--color-accent, #992a21);
+}
+
+/* ---- the fold ------------------------------------------------------------ */
+
+.ee-fold {
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.ee-fold__head {
+  margin: 0;
+  font: inherit;
+}
+
+.ee-fold__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  width: 100%;
+  padding: var(--space-md, 0.9rem) 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+  text-align: start;
+}
+
+.ee-fold__title {
+  font-weight: 600;
+  flex: none;
+}
+
+/* The answer, so somebody who came to check the category never opens the fold.
+   `min-width: 0` with an ellipsis rather than wrapping: this is a summary, and a
+   summary that becomes three lines has stopped being one. */
+.ee-fold__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-micro, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.ev-drop svg {
+/* Points right when closed, down when open. The glyph itself points down, so
+   the closed state is the rotated one — the opposite way round from what the
+   naming suggests, which is why it is spelled out. */
+.ee-fold__chevron {
+  flex: none;
+  color: var(--color-ink-faint, #6f5f5a);
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+
+.ee-fold--open .ee-fold__chevron {
+  transform: rotate(0deg);
+}
+
+.ee-fold__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 1.25rem);
+  padding-bottom: var(--space-lg, 1.5rem);
+}
+
+.ee-slug {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.ev-drop strong {
+.ee-slug code {
+  font-size: 0.95em;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ---- small controls ------------------------------------------------------ */
+
+.ee-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.ee-seg button {
+  padding: 0.35rem var(--space-md, 0.9rem);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ee-seg__on {
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #1c1614);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
+}
+
+/* A drawn checkbox. The browser's own is the one control on this page that
+   cannot be made to match anything else on it. */
+.ee-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.45rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+/* Hidden from sight, not from the accessibility tree or the keyboard: this is
+   still the real control, and `display: none` would take it out of the tab
+   order and stop it being labelled. */
+.ee-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ee-check__box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: 4px;
+  background: var(--color-paper-raised, #fdf7f4);
+  color: transparent;
+}
+
+.ee-check--on {
+  color: var(--color-ink, #1c1614);
+}
+
+.ee-check--on .ee-check__box {
+  border-color: var(--color-accent, #992a21);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fff);
+}
+
+.ee-check input:focus-visible + .ee-check__box {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+}
+
+.ee-chip {
+  padding: 0.25rem var(--space-sm, 0.6rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+.ee-chip:hover:not([disabled]) {
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-accent-strong, #731d16);
+}
+
+.ee-chip[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ee-chip--quiet {
+  border-style: dashed;
+}
+
+/* ---- tags ---------------------------------------------------------------- */
+
+.ee-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs, 0.35rem);
+  padding: 0.35rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  cursor: text;
+}
+
+.ee-tags:focus-within {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+  border-color: var(--color-accent, #992a21);
+}
+
+.ee-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.35rem 0.2rem var(--space-sm, 0.55rem);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent-soft, #f6d8d0);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-accent-strong, #731d16);
+}
+
+.ee-tag button {
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ee-tag button:hover {
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fff);
+}
+
+/* Two selectors, so this beats `.ee-group input` above whatever the source
+   order turns out to be. */
+.ee-group .ee-tags__input,
+.ee-tags .ee-tags__input {
+  flex: 1 1 8rem;
+  width: auto;
+  min-width: 6rem;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  background: transparent;
   font-size: var(--type-small, 0.9375rem);
 }
 
-.ev-drop small {
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
+.ee-group .ee-tags__input:focus-visible,
+.ee-tags .ee-tags__input:focus-visible {
+  outline: 0;
+  border: 0;
 }
 
-/* A thumbnail beside its controls rather than above them: the preview only has
-   to be big enough to confirm the right file was chosen. */
-.ev-hero {
+/* ---- the when panel ------------------------------------------------------ */
+
+.ee-when-panel {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  flex-direction: column;
   gap: var(--space-md, 1rem);
 }
-
-.ev-hero__shot {
-  flex: 0 0 auto;
-  width: 200px;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--color-paper-sunken, #eeddd7);
-}
-
-/* `min-width` rather than a bare `flex: 1`: without a floor the side column
-   collapses to its longest word once the preview has taken its 200px. */
-.ev-hero__aside {
-  flex: 1 1 14rem;
-  min-width: 14rem;
-  display: grid;
-  gap: var(--space-sm, 0.5rem);
-  justify-items: start;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.ev-hero__aside p {
-  margin: 0;
-}
-
-.ev-hero__buttons {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.ev-hero__bad {
-  margin: var(--space-xs, 0.35rem) 0 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  font-weight: 600;
-  color: var(--color-accent, #992a21);
-}
-
-/* ---- the bar that is always on the screen ----------------------------- */
 
 /*
- * Save, the publish switch and whatever is still missing, stuck to the bottom
- * of the viewport for as long as the form is taller than it.
+ * The sentence, printed by the same function the calendar calls.
  *
- * This is the single biggest change from the screen it replaces, where all three
- * were 2,000 pixels down and nobody could see any of them while typing.
+ * The only honest check on a time-zone conversion: not the offset, but the words
+ * a parishioner will read. It is here as well as on the trigger because the
+ * panel usually covers the trigger.
  */
-.ev-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-md, 1rem);
-  padding: var(--space-sm, 0.65rem) var(--space-lg, 1.5rem);
-  border-top: 1px solid var(--color-rule, #e0cac3);
-  border-radius: 0 0 var(--radius-md, 6px) var(--radius-md, 6px);
+.ee-echo {
+  margin: 0;
+  padding: var(--space-sm, 0.6rem) var(--space-md, 0.8rem);
+  border-radius: var(--radius-sm, 4px);
   background: var(--color-paper-sunken, #eeddd7);
-  box-shadow: 0 -8px 20px color-mix(in srgb, var(--color-ink, #1c1614) 7%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
 }
 
-.ev-bar__state {
-  flex: 1 1 10rem;
-  min-width: 0;
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
+.ee-echo em {
+  font-style: normal;
+  font-weight: 400;
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.ev-bar__problems {
-  display: inline-flex;
+.ee-echo--empty {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-durations {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-xs, 0.35rem);
+}
+
+.ee-durations__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.03em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-when-panel__switches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.4rem);
+}
+
+/* A link, not a select. Almost every event is in the parish's own zone, and a
+   zone picker above the times is a decision offered to everybody in order to
+   serve the one festival that is in Cairo. */
+.ee-when-panel__zone {
+  align-self: start;
+  padding: 0;
   border: 0;
   background: transparent;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
-  color: var(--color-accent, #992a21);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
   text-decoration: underline;
+  text-decoration-style: dotted;
   cursor: pointer;
 }
 
-.ev-bar__saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--color-ink-soft, #4b413e);
+.ee-when-panel__zone:hover {
+  color: var(--color-accent, #992a21);
 }
 
-.ev-bar__save {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
+/* ---- the bar ------------------------------------------------------------- */
 
-/* ---- the two questions asked in place --------------------------------- */
-
-.ev-guard {
-  margin-bottom: var(--space-md, 1rem);
-}
-
-.ev-confirm {
-  margin-bottom: var(--space-md, 1rem);
-}
-
-.ev-guard__buttons,
-.ev-confirm__buttons {
+/*
+ * One bar, the whole width, and it owns Done.
+ *
+ * Fixed because an event's description can be a screen and a half, and a control
+ * at the bottom of that is a control you scroll to find. `z-index` above the
+ * masthead's, below the popover's, so a menu opened from the bar draws over it.
+ */
+.ee-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 120;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-sm, 0.5rem);
-  margin-top: var(--space-sm, 0.75rem);
-}
-
-/* ---- nothing open ----------------------------------------------------- */
-
-.ev-empty {
-  display: grid;
-  gap: var(--space-md, 1rem);
-  justify-items: start;
-  padding: var(--space-xl, 2.5rem) var(--space-lg, 1.5rem);
-  border: 1px dashed var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 6px);
+  align-items: center;
+  gap: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  padding: var(--space-sm, 0.7rem) var(--space-gutter, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
   background: var(--color-paper-raised, #fdf7f4);
-  max-width: var(--measure, 62ch);
+  box-shadow: 0 -6px 24px color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
 }
 
-.ev-empty h2 {
+/*
+ * `.ee-state`, `.ee-state__dot`, `.ee-state--live` and `.ee-state__pending` were
+ * here and are gone with the publish step: a dot and the words "On the website"
+ * or "Draft — not on the website", plus "· unpublished changes" in accent red.
+ * An event has no state to report any more. What is left in the bar is the
+ * autosave status, the ellipsis and Done.
+ */
+
+/* `flex: 1` so the actions are pushed to the far end and the status has the
+   whole middle to say something in. `min-width: 0` so a long error message
+   ellipsizes rather than pushing Publish off the bar. */
+.ee-bar__status {
+  flex: 1 1 6rem;
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
-.ev-empty p {
-  margin: 0;
+.ee-bar__status--ok {
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 75%, var(--color-ink, #1c1614));
+}
+
+.ee-bar__status--warn {
   color: var(--color-ink-soft, #4b413e);
+}
+
+.ee-bar__status--bad {
+  font-weight: 600;
+  color: var(--color-accent, #992a21);
+}
+
+.ee-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  margin-inline-start: auto;
+}
+
+.ee-bar__more {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1;
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+.ee-bar__more:hover,
+.ee-bar__more.is-open {
+  border-color: var(--color-ink-faint, #6f5f5a);
+  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * What the event has not got round to writing yet — a summary, a description.
+ *
+ * The whole width, on its own line under the row: `flex-basis: 100%` rather than
+ * a separate element outside the bar, so the bar's own background covers it.
+ *
+ * **Not red**, which is the change from the `.ee-bar__blocker` it replaces. That
+ * one was accent red because it explained a disabled Publish button — a refusal.
+ * Nothing is refused now; an event with no description yet is the ordinary state
+ * of a new one, and red for the ordinary state is how a bar becomes wallpaper.
+ */
+.ee-bar__missing {
+  flex: 1 0 100%;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the ellipsis menu --------------------------------------------------- */
+
+.ee-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 15rem;
+}
+
+.ee-menu button {
+  display: flex;
+  align-items: start;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-sm, 0.6rem) var(--space-md, 0.9rem);
+  border: 0;
+  background: transparent;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+  text-align: start;
+}
+
+.ee-menu button + button {
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.ee-menu button:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.ee-menu button > svg {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-menu button > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ee-menu strong {
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+}
+
+.ee-menu small {
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-menu__danger strong {
+  color: var(--color-accent, #992a21);
+}
+
+.ee-menu__danger:hover {
+  background: var(--color-accent-soft, #f6d8d0);
+}
+
+/* ---------------------------------------------------------------------------
+ * The anchored panel, shared.
+ *
+ * Used by the events editor's date line and ellipsis menu, and by the gallery
+ * blocks. It is in `components/Popover` rather than in either feature because
+ * both halves of the same request needed it: an in-place editor cannot keep
+ * putting its controls in a fixed panel, and the alternative to a fixed panel is
+ * this.
+ *
+ * `position: fixed` with coordinates measured off the trigger, in a portal on
+ * `document.body`. Both are forced rather than preferred — the triggers sit
+ * inside headers and scrolling rails with `overflow` set, and a panel positioned
+ * inside those trees is clipped exactly when it is taller than the row it hangs
+ * from.
+ * ------------------------------------------------------------------------ */
+.popover {
+  position: fixed;
+  /* Above the editor's bar, which is 120, and above the masthead. Nothing in
+     this project goes higher; a panel that opens behind the thing that opened it
+     is the one failure mode worth spending a stacking context on. */
+  z-index: 200;
+  width: max-content;
+  /* Never wider than the window, and never wider than is readable. */
+  max-width: min(30rem, calc(100vw - 24px));
+  overflow: auto;
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-lg, 0 16px 48px rgba(0, 0, 0, 0.18));
+}
+
+/* A menu supplies its own padding on each row, so the panel gives none. */
+.popover:has(.ee-menu) {
+  padding: 0;
+  overflow: hidden;
 }
 
 /* Breeze serves a fixed 700x800 grid, so the 16:9 video ratio above would crop
@@ -8318,7 +8472,7 @@ main {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
-.program-card__cover img {
+.program-card__cover :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
@@ -8416,9 +8570,11 @@ main {
 }
 
 
-/* `top: 100%` of the masthead, so the band starts exactly where the bar ends —
-   no gap for the pointer to cross on its way down, which would fire mouseleave
-   and shut the menu just as somebody reached for it. */
+/* Set 6px below the bar rather than flush against it, so the panel reads as a
+   thing hanging off the masthead and not as a second bar. That 6px is a strip
+   of nothing between the word and the tiles, and a pointer crossing it leaves
+   the group and starts the close timer — see the bridge on `::after` below,
+   which is what makes the gap visual only. */
 /*
  * The Events menu: five names in a panel, and nothing else.
  *
@@ -8480,6 +8636,36 @@ main {
   background: var(--color-paper-raised, #fdf7f4);
   border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
   border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+/*
+ * The bridge over the gap. Invisible, and the reason the menu survives the trip
+ * down to it.
+ *
+ * The panel sits 6px below the word that opens it, and those 6px belong to the
+ * masthead: a pointer travelling from "Events" to a tile leaves `.nav__group`
+ * there, which fires mouseleave and starts the close timer. The timer is
+ * generous enough to cover the crossing, but it should not have to — a menu
+ * that depends on how fast you move is a menu that will shut on somebody.
+ *
+ * A pseudo-element is hit-tested as its originating element, so this strip is
+ * part of `.nav__menu` as far as the pointer and React are concerned, and the
+ * trigger and the panel become one continuous hover target. It spans the full
+ * width of the panel, not the width of the word, because the panel is 18rem and
+ * the word is 65px: the natural path to the first or last tile is a diagonal
+ * that leaves the word's column almost immediately.
+ *
+ * Exactly 6px tall, and no taller: the nav links either side end where this
+ * begins, and an over-generous bridge would sit over their bottom edge and eat
+ * clicks meant for Calendar or Forms.
+ */
+.nav__menu::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
 }
 
 /*
@@ -9020,13 +9206,13 @@ main {
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
-.program-rail .program-card__cover img {
+.program-rail .program-card__cover :is(img, video) {
   transition: transform 400ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 /* The photograph moves, the frame does not — the classic reason a card feels
    alive rather than merely animated. `overflow: hidden` on the card contains it. */
-.program-rail .program-card:hover .program-card__cover img {
+.program-rail .program-card:hover .program-card__cover :is(img, video) {
   transform: scale(1.045);
 }
 
@@ -9049,13 +9235,13 @@ main {
 
 @media (prefers-reduced-motion: reduce) {
   .program-rail .program-card,
-  .program-rail .program-card__cover img {
+  .program-rail .program-card__cover :is(img, video) {
     transition: none;
   }
   .program-rail .program-card:hover {
     transform: none;
   }
-  .program-rail .program-card:hover .program-card__cover img {
+  .program-rail .program-card:hover .program-card__cover :is(img, video) {
     transform: none;
   }
 }
@@ -9590,7 +9776,7 @@ main {
 }
 
 /* The photograph is the only thing that moves. */
-.program-rail .program-card:hover .program-card__cover img {
+.program-rail .program-card:hover .program-card__cover :is(img, video) {
   transform: scale(1.03);
 }
 
@@ -9917,7 +10103,7 @@ main {
  *
  * Stacked, all of them, with opacity deciding which is seen — see `ProgramCover`
  * for why that beats swapping one element's `src`. The specificity is deliberate:
- * `.program-rail .program-card__cover img` above sets a transform transition for
+ * `.program-rail .program-card__cover :is(img, video)` above sets a transform transition for
  * the hover zoom, and a rule that set only `opacity` would replace it and lose
  * the zoom. Both properties, in one declaration, at a weight that wins.
  */
@@ -10549,6 +10735,23 @@ main {
   gap: var(--space-md, 1rem) var(--space-lg, 1.5rem);
 }
 
+/*
+ * Room for the side menu, so the head's action is not underneath it.
+ *
+ * The menu is fixed in the top-right corner (see `.shelf--reading`) and this row
+ * puts "Present this" in the same corner, so on the first screen the one covered
+ * the other. Reserving the width here moves the button left rather than moving
+ * the menu somewhere it was not asked to be.
+ *
+ * Only from 60rem up: below that the menu is a narrow strip and the row has
+ * already wrapped to two lines, so there is nothing to collide with.
+ */
+@media (min-width: 60rem) {
+  .gallery--side-menu .gallery-head__row {
+    padding-right: 3rem;
+  }
+}
+
 .gallery-head__titles {
   display: flex;
   flex-direction: column;
@@ -10797,7 +11000,7 @@ main {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
-.gathering-card__cover img {
+.gathering-card__cover :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
@@ -10805,13 +11008,13 @@ main {
   transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.gathering-card:hover .gathering-card__cover img {
+.gathering-card:hover .gathering-card__cover :is(img, video) {
   transform: scale(1.04);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gathering-card__cover img,
-  .gathering-card:hover .gathering-card__cover img {
+  .gathering-card__cover :is(img, video),
+  .gathering-card:hover .gathering-card__cover :is(img, video) {
     transform: none;
     transition: none;
   }
@@ -11047,92 +11250,256 @@ main {
  * See features/programs/MediaPicker.tsx. Small tiles on purpose: the job here is
  * "find that photograph among two hundred", which is a scanning task, and a grid
  * of large previews makes it a scrolling task instead.
+ *
+ * ## It is the whole screen now
+ *
+ * It used to be a grid inside a panel inside a disclosure row inside a strip
+ * across the foot of the window. That gave it about 90px thumbnails and put its
+ * level filters in a wrapped mat of chips above them — and choosing from "every
+ * approved photograph in every day of every week" was done three tiles at a time.
+ * Tommy's word for it was confusing.
+ *
+ * Needing that width was also *why* the properties panel was docked along the
+ * bottom. Giving the picker its own screen is what freed the panel to become
+ * something that sits beside what it describes; see `.inspector-float`.
  * ------------------------------------------------------------------------ */
 .picker {
-  margin-top: var(--space-md, 1.25rem);
-  padding-top: var(--space-md, 1.25rem);
-  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
-}
-
-/*
- * The same picker, opened on a block instead of in the properties panel.
- *
- * A card under the block's footer rather than a rule across the panel's width,
- * because on the page it has a whole article either side of it and needs its own
- * edge to read as attached to the block above rather than as the next section of
- * the page. Dashed and gold, matching the footer and "add a block" — the parish
- * site's mark for a thing only an administrator can see.
- */
-.block .picker {
-  margin-top: -1px;
-  padding: var(--space-md, 1rem);
-  border: 1px dashed color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
-  border-radius: 0 0 var(--radius-md, 8px) var(--radius-md, 8px);
-  background: color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 32%, transparent);
+  position: fixed;
+  inset: 0;
+  /* Above everything, including `.popover` at 200 — this is modal, and a panel
+     drawn over it would be a panel with no way to reach it. */
+  z-index: 300;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--color-paper, #f6e8e3);
 }
 
 .picker__head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md, 1rem);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem) var(--space-lg, 1.5rem);
+  padding: var(--space-md, 1rem) var(--space-gutter, 1.5rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.picker__title {
+  flex: none;
+}
+
+.picker__kind {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 88%, var(--color-ink, #1c1614));
 }
 
 .picker__head h3 {
   margin: 0;
 }
 
+/* `min-width: 0` with `flex: 1` so the sentence takes the middle and wraps there,
+   rather than pushing Done off the end of the row. */
 .picker__hint {
-  margin: var(--space-xs, 0.35rem) 0 var(--space-md, 1rem);
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-soft, #4b413e);
 }
 
-.picker__filters {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm, 0.5rem);
-  margin-bottom: var(--space-md, 1.25rem);
+.picker__done {
+  flex: none;
+  margin-inline-start: auto;
 }
 
 /*
- * The scroll area. See the note at its call site: unbounded, this panel grew to
- * several screens on a ministry with a real archive and pushed the rest of the
- * page out of reach.
+ * Folders down the side, pictures beside them.
  *
- * `overscroll-behavior` so reaching the bottom of the list does not then start
- * scrolling the page — which on a trackpad turns "look at the last row" into
- * "lose your place entirely".
+ * `minmax(0, 1fr)` on the grid column, and `min-height: 0` on the row above, are
+ * both what let the two panes scroll independently instead of the whole overlay
+ * growing past the bottom of the window.
  */
-.picker__sections {
-  max-height: min(60vh, 34rem);
+.picker__body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+}
+
+/*
+ * The levels, as a list of places rather than a mat of chips.
+ *
+ * This is the change that matters most in the picker. As chips they were a
+ * paragraph of similar-looking phrases — "Week 1 2026 · Day 1", "Week 1 2026 ·
+ * Day 2" — wrapped over four lines, and picking one reflowed the rest. As a
+ * column they hold still, and each can carry its own count, so "where are the
+ * photographs actually filed" is answerable at a glance rather than by reading.
+ */
+.picker__folders {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* Room for the scrollbar, so it never sits on top of a tile's edge. */
-  padding-right: var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.6rem);
+  border-right: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.picker__folder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.5rem) var(--space-sm, 0.7rem);
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  text-align: start;
+}
+
+/* The trail wraps rather than truncating. It is the only thing distinguishing one
+   camp's "Day 1" from another's, so an ellipsis could cut off the part that
+   answers the question. */
+.picker__folder > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.picker__folder > b {
+  flex: none;
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker__folder:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink, #1c1614);
+}
+
+.picker__folder.is-on {
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fff);
+  font-weight: 600;
+}
+
+.picker__folder.is-on > b {
+  color: color-mix(in srgb, var(--color-ink-inverse, #fff) 75%, transparent);
+}
+
+/* At the foot of the folders, ruled off — the same kind of question as a level,
+   so the same place. `margin-top: auto` pins it to the bottom of a short list and
+   lets it follow a long one. */
+.picker__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.35rem);
+  margin-top: auto;
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+/*
+ * The pictures. Its own scroll area, so the folders stay put.
+ *
+ * `overscroll-behavior` so reaching the bottom of the list does not then start
+ * scrolling anything behind — which on a trackpad turns "look at the last row"
+ * into "lose your place entirely".
+ */
+.picker__sections {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-md, 1rem) var(--space-gutter, 1.5rem);
 }
 
 .picker__gathering + .picker__gathering {
   margin-top: var(--space-lg, 1.5rem);
 }
 
+/*
+ * The level's name, stuck to the top of its own run of pictures.
+ *
+ * A ministry with ten years behind it scrolls for a long time in here, and
+ * without this the only thing saying which day you are looking at has already
+ * gone past. `background` is required rather than tidy: a sticky heading with a
+ * transparent one has photographs sliding underneath the words.
+ */
 .picker__gathering h4 {
+  position: sticky;
+  top: calc(var(--space-md, 1rem) * -1);
+  z-index: 1;
   margin: 0 0 var(--space-xs, 0.35rem);
+  padding: var(--space-xs, 0.35rem) 0;
+  background: var(--color-paper, #f6e8e3);
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
 }
 
-.picker__group + .picker__group {
-  margin-top: var(--space-md, 1rem);
-}
+/*
+ * Below 52rem the folders go above the pictures as a scrolling row.
+ *
+ * A 16rem column and a grid of 6.5rem tiles do not both fit on a tablet, and the
+ * one that has to give is the folders: they are how you narrow the list, and the
+ * list is what you came for.
+ */
+@media (max-width: 52rem) {
+  .picker__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
 
-.picker__group-name {
-  margin: 0 0 var(--space-xs, 0.35rem);
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  letter-spacing: var(--tracking-wide, 0.03em);
-  text-transform: uppercase;
-  color: var(--color-ink-faint, #6f5f5a);
+  .picker__folders {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-xs, 0.35rem);
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-rule, #e0cac3);
+  }
+
+  .picker__folder {
+    flex: none;
+    border-radius: var(--radius-full, 999px);
+    white-space: nowrap;
+  }
+
+  /*
+   * First in the row, and pinned there.
+   *
+   * `margin-top: auto` put it at the end of a column, which in a horizontal row
+   * means *past* every folder — on a camp with seven levels the kind filter was
+   * off the right-hand edge with nothing to say it was there. `order: -1` brings
+   * it to the front and `position: sticky` keeps it in view while the folders
+   * scroll under it.
+   *
+   * `background` is required, not decorative: a sticky element with a transparent
+   * one has folder pills sliding visibly underneath the chips.
+   */
+  .picker__kinds {
+    order: -1;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    flex: none;
+    margin-top: 0;
+    padding: 0 var(--space-sm, 0.6rem) 0 0;
+    border-top: 0;
+    border-right: 1px solid var(--color-rule, #e0cac3);
+    background: var(--color-paper-raised, #fdf7f4);
+  }
 }
 
 /*
@@ -11716,6 +12083,28 @@ main {
   align-items: start;
 }
 
+/*
+ * `title: beside` on a block with **no title**, which is how the sideways wheel
+ * stopped scrolling.
+ *
+ * The first track is `minmax(min-content, 14rem)`, sized that way so a long
+ * single word like "Photographs" cannot be clipped. When the block has no title
+ * element, the pictures land in that track instead — and the min-content width of
+ * a strip of twenty photographs is about 9,300px. `minmax()` resolves to its
+ * minimum when the minimum exceeds the maximum, so the track became 9,315px, the
+ * second track collapsed to 0, and `.rail`'s `overflow: hidden` had nothing left
+ * to clip because the box it clips *is* the thing that grew. The rail was no
+ * longer a scroller; it was a strip running seven screens off the side of the
+ * page.
+ *
+ * One track when there is no title. `:has()` is the whole fix — where it is
+ * unsupported the declaration never applies and the old behaviour returns, which
+ * is the right way for this to degrade.
+ */
+.gallery-band--title-beside:not(:has([class*='gallery-title--'])) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .gallery-band--title-beside > [class*='gallery-title--'] {
   /* The grid gap is the space now; a bottom margin would double it. */
   margin-bottom: 0;
@@ -11959,8 +12348,14 @@ span.gallery-figure__frame {
  * In a rail the tile's height is fixed and its width is not, so the image sizes
  * itself and the tile follows. In a grid the cell is fixed in both directions,
  * so the image fills it and crops. `object-position` is the focal point in both.
+ *
+ * `video` alongside `img` because a clip now plays in the cell instead of showing
+ * its poster frame — see AutoClip.tsx. It is the same picture as far as the
+ * arrangement is concerned, so it has to be sized by the same rule; a selector
+ * that named only `img` left every clip at its intrinsic size, overflowing the
+ * cell.
  */
-.gallery-figure__frame img {
+.gallery-figure__frame :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
@@ -11968,13 +12363,13 @@ span.gallery-figure__frame {
   transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.gallery-figure__frame:hover img {
+.gallery-figure__frame:hover :is(img, video) {
   transform: scale(1.03);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gallery-figure__frame img,
-  .gallery-figure__frame:hover img {
+  .gallery-figure__frame :is(img, video),
+  .gallery-figure__frame:hover :is(img, video) {
     transition: none;
     transform: none;
   }
@@ -12542,16 +12937,16 @@ span.gallery-figure__frame {
  * height the parish could set from Firestore would be a setting nobody wants and
  * one more thing that can be wrong.
  */
-:root {
-  /*
-   * A third of the screen, capped, with a floor.
-   *
-   * `min()` so it does not become absurd on a tall monitor, and `min-height` on
-   * the panel itself so it stays usable on a short laptop — a third of 600px is
-   * 200px, which is less than one picture-picker row.
-   */
-  --inspector-height: min(34vh, 24rem);
-}
+/*
+ * `--inspector-height` used to be declared here, at `min(34vh, 24rem)`, and three
+ * other fixed things measured their `bottom` off it.
+ *
+ * It is gone because the panel it sized is gone. The properties panel is no longer
+ * a strip across the foot of the window — it appears beside whatever was clicked
+ * and is not there at all when nothing is selected. So there is no reserved band
+ * to clear, and everything that used to add this to its own offset now simply sits
+ * in the corner. See `.inspector-float` below.
+ */
 
 /* ---- the toggle --------------------------------------------------------- */
 
@@ -12584,34 +12979,38 @@ span.gallery-figure__frame {
 }
 
 /*
- * Up out from under the panel, and left out from under the shelf.
+ * Left, out from under the shelf, which is fixed in the same corner while editing.
  *
- * Both are fixed at the same height on the right while editing, so without the
- * shift the toggle sits under the shelf's handle — which is how you get a button
- * that cannot be pressed.
+ * It used to be lifted by the height of the properties band as well. There is no
+ * band any more, so the corner is the corner.
  */
 .is-editing .edit-toggle {
   right: auto;
   left: var(--space-lg, 1.5rem);
-  bottom: calc(var(--inspector-height, min(34vh, 24rem)) + var(--space-sm, 0.5rem));
+  bottom: var(--space-lg, 1.5rem);
 }
 
 /* ---- the page, while editing -------------------------------------------- */
 
 /*
- * Room for the panel, made at the foot of the page.
+ * Room for the fixed controls in the corners, and nothing more.
  *
- * Enough that the last block on a page can still be scrolled clear of the panel.
- * It does not stop the panel covering the middle of a long page — a fixed strip
- * always will — which is exactly why it is a third of the screen and not a half.
+ * This was `calc(--inspector-height + --space-lg)` — about 290px on a laptop —
+ * because a panel was docked across the foot of the window and the last block on
+ * the page had to be scrollable clear of it. Both of the panel's arrangements cost
+ * the page something: a right-hand column took a third of the width, which on a
+ * full-bleed rail is the part running off the edge and therefore the part being
+ * judged; the bottom strip took a third of the height instead.
  *
- * What this buys, and the reason the panel moved: **the page keeps its full
- * width.** The old right-hand column took a third of the horizontal space, and on
- * a full-bleed rail that is the part running off the edge, which is the part being
- * judged. Nothing needs narrowing now.
+ * Neither is reserved now. What is left is enough to clear the fixed controls in
+ * the corners — and it has to clear *both* of the stacked ones on the left, not
+ * just the lower. The Done button ends 60px up and the "This page" pill 108px, so
+ * `--space-xxl` (80px) left the pill sitting over whatever the page's last row
+ * was; on a short gallery that was one of the "add a block" buttons, which is a
+ * control you cannot press.
  */
 .is-editing {
-  padding-bottom: calc(var(--inspector-height, min(34vh, 24rem)) + var(--space-lg, 1.5rem));
+  padding-bottom: 8.5rem;
 }
 
 /* ---- selectable things -------------------------------------------------- */
@@ -12686,57 +13085,119 @@ span.gallery-figure__frame {
   outline-color: var(--color-accent, #992a21);
 }
 
-/* ---- the properties column --------------------------------------------- */
+/* ---- the properties panel ------------------------------------------------ */
 
 /*
- * Docked along the bottom, a third of the screen, at Tommy's direction.
+ * Beside the thing it is about, and not there at all when nothing is selected.
  *
- * It was a 22rem column on the right. Two things are better down here and one is
- * worse, which is worth having written down.
+ * ## The two arrangements this replaced, and what was wrong with both
  *
- * Better: **the picture pickers get width.** They are grids of thumbnails with a
- * row of filter chips over them, and 22rem gave them three tiles across and wrapped
- * every chip onto its own line. Across the bottom they get the whole viewport.
- * Better again: **the page keeps its width.** A full-bleed rail is the thing this
- * section is mostly made of, and taking a third of the horizontal space away from
- * one is taking away the part that runs off the edge — which is the bit being
- * judged.
+ * First a 22rem column down the right. That took a third of the horizontal space,
+ * and a full-bleed rail is what this section is mostly made of — taking a third of
+ * the width from one takes away the part that runs off the edge, which is the part
+ * being judged.
  *
- * Worse: it covers the bottom third of the page, and the page cannot be padded out
- * of the way the same honest manner a side column could — `padding-bottom` works,
- * but a fixed strip over the foot of a long page still hides whatever you scrolled
- * to. That is the trade, and it is why the panel is a third and not a half.
+ * Then a strip across the foot of the window, a third of the screen tall. That
+ * gave the page its width back and the picture pickers room, and cost the height
+ * instead: **272px of a 1280x800 laptop, 34% of the viewport**, present for as
+ * long as edit mode was on. With a gallery block 396px tall it left room for about
+ * one block, and its default contents were five paragraphs explaining what the
+ * controls on the page do.
+ *
+ * Both were the same mistake pointing in different directions: reserving permanent
+ * screen for controls that are wanted intermittently.
+ *
+ * ## What makes "beside it" workable now
+ *
+ * The reason the panel needed width was the picture picker — a grid of thumbnails
+ * with a row of filter chips over it, which at 22rem was three tiles across with
+ * every chip on its own line. The picker takes the whole screen now (see
+ * `.picker`), so the panel no longer has to be big enough to hold the biggest
+ * thing that was ever put in it. What is left is a caption, a crop, a few dates:
+ * things that fit next to what they describe.
+ *
+ * `max-height` is set inline from the measured room below or above the anchor, so
+ * a long panel scrolls rather than running off the window.
  */
-.inspector {
+.inspector-float {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 130;
-  height: var(--inspector-height, min(34vh, 24rem));
-  min-height: 13rem;
-  /*
-   * Head across the top, then list and controls side by side.
-   *
-   * `grid-template-rows: auto 1fr` with `min-height: 0` on the second is what lets
-   * the panes scroll instead of the panel growing — the classic flex/grid overflow
-   * trap, and on a panel whose whole point is a fixed height it is the difference
-   * between a scrolling pane and a picker pushed off the bottom of the screen.
-   */
-  display: grid;
-  grid-template-rows: auto 1fr;
+  /* Above the shelf at 131 and the block bars, below `.popover` at 200 — a menu
+     opened from inside this panel must draw over it. */
+  z-index: 140;
+  width: max-content;
+  max-width: min(26rem, calc(100vw - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
   background: var(--color-paper-raised, #fdf7f4);
-  border-top: 1px solid var(--color-rule, #e0cac3);
-  box-shadow: 0 -8px 24px color-mix(in srgb, var(--color-deep, #3a1310) 12%, transparent);
+  box-shadow: var(--shadow-lg, 0 16px 48px rgba(0, 0, 0, 0.18));
 }
 
 /*
- * The panel's second row: whatever the selection put there.
+ * The pill that opens the page's own settings.
+ *
+ * The page as a whole is the selection you get for free on pressing Edit — it was
+ * not clicked, so there is nothing for a panel to sit beside. It gets a control of
+ * its own instead, which is also the honest shape for it: it is the one panel
+ * somebody goes looking for rather than arrives at.
+ *
+ * Bottom left, stacked above the Done button, both clear of the shelf on the right.
+ */
+.inspector-pill {
+  position: fixed;
+  left: var(--space-lg, 1.5rem);
+  bottom: calc(var(--space-lg, 1.5rem) + 3rem);
+  z-index: 132;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: var(--space-sm, 0.55rem) var(--space-md, 1rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.12));
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+.inspector-pill:hover,
+.inspector-pill.is-open {
+  border-color: var(--color-gold, #b08d43);
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+/*
+ * The panel's own body, in either home: anchored beside a selection, or inside the
+ * corner pill's popover.
+ *
+ * No height and no `position` of its own — the container decides. That is the
+ * whole difference from the version this replaces, which was itself the fixed
+ * band.
+ */
+.inspector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: inherit;
+}
+
+/* The pill's popover supplies the padding for everything else it holds; this panel
+   brings its own, so it opts out. */
+.popover:has(.inspector) {
+  padding: 0;
+  overflow: hidden;
+  max-width: min(34rem, calc(100vw - 24px));
+}
+
+/*
+ * Whatever the selection put here.
  *
  * `min-height: 0` is the load-bearing line. Without it a grid row sized `1fr`
- * still refuses to shrink below its content, so a picture picker inside would push
- * the panel past the bottom of the screen instead of scrolling — which on a panel
- * whose entire premise is a fixed height is the difference between working and not.
+ * refuses to shrink below its content, so a long list inside would push the panel
+ * past the bottom of the screen instead of scrolling.
  *
  * `display: grid` so a `DisclosureGroup` (itself a two-column grid) fills the row
  * rather than sitting at its natural height at the top of it.
@@ -12748,14 +13209,108 @@ span.gallery-figure__frame {
 }
 
 /*
- * A single-section panel — a level selected from the shelf, a ministry on /events —
- * has no list and no detail pane, just a body. It scrolls itself.
+ * A single-section panel — a photograph, a level from the shelf, a ministry on
+ * /events — has no list and no detail pane, just a body. It scrolls itself.
  */
 .inspector__content > .inspector__body {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-md, 1rem);
+}
+
+/* The close, which the docked band never needed: it could not be in the way, and
+   this can. Only on the anchored panel — the pill's popover closes itself. */
+.inspector__close {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-inline-start: var(--space-xs, 0.35rem);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-ink-faint, #6f5f5a);
+  cursor: pointer;
+}
+
+.inspector__close:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink, #1c1614);
+}
+
+/* ---- the panel at panel width ------------------------------------------- */
+
+/*
+ * Everything below is the same contents laid out for a box beside a photograph
+ * rather than for a strip across the window.
+ *
+ * The rules it overrides were all correct for a panel roughly 1280px wide, and
+ * all wrong at 416: a head that put the kind, the title, the save state and the
+ * close on one baseline row, and a `DisclosureGroup` whose list took 13–18rem of
+ * a two-column grid — which at this width left the *contents* of the open row
+ * about 80px to draw a caption field in.
+ *
+ * Scoped to `.inspector-float` and to the pill's popover rather than replacing
+ * the originals, because `/events`'s ministry rail still opens the same panel
+ * with a lot more in it.
+ */
+.inspector-float .inspector__head {
+  /* Kind above, title below, state and close on the end. `wrap` with a
+     full-width title is what gets the name onto its own line without a second
+     wrapper element. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.6rem) var(--space-sm, 0.7rem);
+}
+
+.inspector-float .inspector__kind {
+  flex: 1 0 auto;
+}
+
+.inspector-float .inspector__head h2 {
+  /* Its own line, and allowed to wrap: a photograph's name is whatever somebody
+     typed, and an ellipsis on the only thing identifying it is worse than two
+     lines. */
+  flex: 1 0 100%;
+  order: 3;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-snug, 1.3);
+}
+
+.inspector-float .inspector__state,
+.popover .inspector__state {
+  /* `margin-left: auto` on a wrapping row pushes this to the end of the *first*
+     line, beside the kind, which is where it belongs. */
+  flex: none;
+}
+
+/*
+ * The list and the open row's controls, stacked rather than side by side.
+ *
+ * `max-height` on the list rather than letting it scroll the whole panel: the
+ * rows are how you get from one setting to another, so they have to stay reachable
+ * while the controls below them are being used.
+ */
+.inspector-float .disclosures,
+.popover .disclosures {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.inspector-float .disclosures__list,
+.popover .disclosures__list {
+  max-height: 40vh;
+  padding: var(--space-xs, 0.35rem) 0;
+  border-right: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 70%, transparent);
+}
+
+/* The two-up grid of hints in the idle state has no room for two columns here. */
+.inspector-float .disclosures__idle,
+.popover .disclosures__idle {
+  max-width: none;
 }
 
 /* ---- list on the left, controls beside it ------------------------------- */
@@ -12809,36 +13364,15 @@ span.gallery-figure__frame {
  * ones on the page. Every gesture in this section is now on the thing it acts on,
  * and this is the one place that can say so out loud.
  */
+/* One line, where there used to be a five-item manual for the glyphs on the page.
+   The glyphs have words now; see `.block__bar`. */
 .disclosures__idle {
   max-width: 34rem;
+  margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   line-height: var(--leading-snug, 1.35);
-  color: var(--color-ink-soft, #4b413e);
-}
-
-.disclosures__idle p {
-  margin: 0 0 var(--space-sm, 0.6rem);
-}
-
-.disclosures__idle ul {
-  display: grid;
-  /* Two up where there is room, which on a panel this wide there usually is —
-     four one-line hints down a column wastes the width the panel moved here for. */
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.3rem var(--space-lg, 1.5rem);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.disclosures__idle li {
-  padding-left: 0.9rem;
-  text-indent: -0.9rem;
-}
-
-.disclosures__idle strong {
-  color: var(--color-ink, #1c1614);
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 .inspector__head {
@@ -13123,10 +13657,9 @@ span.gallery-figure__frame {
  * work. Moving a block is a *gesture*, and no arrangement of a settings list makes
  * a gesture out of a button labelled "Move up the page".
  *
- * So the toolbar sits over the block's own top-right corner. Over, not beside:
- * a bar in the flow would push every block down by its height the moment edit mode
- * came on, and the premise of editing in place is that the page does not move when
- * you start.
+ * So the three things you do to a block are on the block — in one bar under it,
+ * every control an icon and a word. See `.block__bar` below for why that bar is in
+ * the flow rather than floating over the corner, which is what it used to do.
  */
 .block {
   position: relative;
@@ -13142,29 +13675,288 @@ span.gallery-figure__frame {
   filter: drop-shadow(0 12px 24px rgb(44 31 27 / 0.28));
 }
 
-.block__tools {
-  position: absolute;
-  top: var(--space-sm, 0.6rem);
-  right: var(--space-sm, 0.6rem);
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-full, 999px);
-  /* Over photographs, so it needs its own ground rather than the paper's. */
-  background: color-mix(in srgb, var(--color-paper-raised, #fdf7f4) 94%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-deep, #3a1310) 18%, transparent);
-  /* Drawn only while editing; `.is-editing` is on `body`. */
-  opacity: 0;
-  pointer-events: none;
+/* -------------------------------------------------------------------------- */
+/* The page's blocks, in twelve columns                                        */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Why the blocks have a container at all.
+ *
+ * They were children of `.page-body`, each the full measure, so a page of blocks
+ * was a stack and nothing else was expressible. A width — see `SECTION_WIDTHS` —
+ * needs something to be a width *of*, and this is it: twelve columns, blocks
+ * flowing into them in their own order, and a pair that fits sharing a row. A
+ * grid beside an upright wheel is the case that was asked for and the case this
+ * is here to make possible.
+ *
+ * Twelve for the reason the canvas inside a block is twelve: halves, thirds and
+ * quarters all land on a whole column.
+ *
+ * **The row gap replaces `.page-body > * + *`.** That rule owned the space
+ * between blocks and now sees only the container, so the same `--space-xl` is
+ * restated here or every block on every gallery page closes up. The column gap is
+ * deliberately smaller: two blocks side by side are one arrangement, and the
+ * distance that reads as "these are related" is not the distance that separates
+ * one section of a page from the next.
+ */
+.blocks {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  /* `minmax(0, 1fr)` above rather than `1fr`: a track's automatic minimum is its
+     content, so a rail's own scroll width would become its column's minimum and a
+     half-width block would quietly grow past the page. */
+  column-gap: var(--space-lg, 1.5rem);
+  row-gap: var(--space-xl, 2.5rem);
+  /* Otherwise a short block stretches to the height of the tall one beside it and
+     its photographs sit in a box of empty paper. */
+  align-items: start;
 }
 
-.is-editing .block__tools {
-  opacity: 1;
-  pointer-events: auto;
+/*
+ * Full width until a width class says otherwise, and full width again on a phone.
+ *
+ * The widths are written *inside* a `min-width` query rather than being undone by
+ * a `max-width` one, so there is no specificity race and no `!important`. Below
+ * 700px — `GALLERY_COLLAPSE_BELOW`, the same line the canvas inside a block
+ * collapses on — a third of the page is about 110px, which is narrower than one
+ * legible photograph. So the whole arrangement stacks, in the order it was built.
+ */
+.block {
+  grid-column: span 12;
+  /* A grid child's automatic minimum is its content, so one wide photograph in a
+     third-width block would push the block past its columns. */
+  min-width: 0;
+}
+
+@media (min-width: 43.75em) {
+  .block--w-two-thirds {
+    grid-column: span 8;
+  }
+
+  .block--w-half {
+    grid-column: span 6;
+  }
+
+  .block--w-third {
+    grid-column: span 4;
+  }
+}
+
+/* The Add row is one of the container's children, so it has to say it wants the
+   whole width — and drop its own vertical margin, which would be added to the
+   grid's row gap rather than collapsing into it. */
+.blocks > .addblock {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The width handle                                                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A block's width is set by pulling its right edge, and the edge is the control.
+ *
+ * On the block rather than in the bar, at Tommy's direction, and the bar is the
+ * argument for it: it already carries seven controls, and four width presets
+ * would have made the width the loudest thing about a block while being the thing
+ * you set once. It is also the honest gesture — the same reason moving a block is
+ * a drag and not a pair of buttons.
+ *
+ * It snaps to four positions as it travels; see `nearestSectionWidth`, which is in
+ * shared so the mobile app's editor snaps to exactly the same places.
+ */
+.block__body {
+  /* What the handle is positioned against. Deliberately the pictures and not the
+     whole block: over `.block` the handle would run down past the bar and sit on
+     top of the Delete button at its right end. */
+  position: relative;
+}
+
+.block__resize {
+  /* Hidden by default and shown in the query below, which is the same 700px the
+     widths themselves appear at. A handle that sets a width on a page where every
+     block is full width is a control that does nothing. */
+  display: none;
+}
+
+@media (min-width: 43.75em) {
+  .block__resize {
+    position: absolute;
+    inset-block: 0;
+    /*
+     * Entirely *outside* the block, not straddling its edge.
+     *
+     * It began half-in, which reads better and behaves worse: the grab strip is as
+     * tall as the block, and while editing the first block is a canvas thousands of
+     * pixels high — so eight pixels of every photograph down the right-hand column
+     * became a resize zone instead of somewhere to grab a picture. `right: -1rem`
+     * with a `1rem` width puts its left edge exactly on the block's right edge.
+     *
+     * It fits: the column gap is `--space-lg`, and the last column has the page's
+     * own 40px of padding beside it. Nothing overflows.
+     */
+    right: -1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    cursor: ew-resize;
+    /* Without this a touch drag scrolls the page instead of moving the handle —
+       the browser claims the gesture before the first `pointermove` arrives. */
+    touch-action: none;
+  }
+
+  /* The visible mark: a short bar, not the full height of the block. A hairline
+     down the whole side of a gallery reads as a border somebody left on. */
+  .block__resize::before {
+    content: '';
+    width: 3px;
+    height: min(100%, 3.5rem);
+    border-radius: var(--radius-full, 999px);
+    background: color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+    transition: background-color 120ms ease;
+  }
+
+  .block__resize:hover::before,
+  .block__resize:focus-visible::before,
+  .block.is-sizing .block__resize::before {
+    background: var(--color-gold, #b08d43);
+  }
+
+  .block__resize:focus-visible {
+    outline: 2px solid var(--color-gold, #b08d43);
+    outline-offset: 2px;
+    border-radius: var(--radius-full, 999px);
+  }
+
+  /*
+   * What it is currently set to, in words.
+   *
+   * Only while it is being used. "Full width" printed on the edge of every block
+   * of every gallery is furniture, and the handle is its own affordance — but a
+   * drag that snaps needs to say where it has landed, or the four stops are four
+   * unexplained jumps.
+   */
+  .block__width {
+    position: absolute;
+    right: calc(100% + var(--space-xs, 0.4rem));
+    padding: 0.15rem var(--space-xs, 0.45rem);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-ink, #1c1614);
+    color: var(--color-paper, #f6e8e3);
+    font-family: var(--font-ui, system-ui, sans-serif);
+    font-size: var(--type-micro, 0.8125rem);
+    white-space: nowrap;
+    opacity: 0;
+    /* Not `visibility`: the readout must never eat a pointer aimed at the
+       photograph behind it, in either state. */
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+
+  .block__resize:hover .block__width,
+  .block__resize:focus-visible .block__width,
+  .block.is-sizing .block__width {
+    opacity: 1;
+  }
+
+  /* While a width drag is live, so it is obvious which block the numbers belong
+     to. No transition on the width itself — the block should be where the pointer
+     is, not easing towards it. */
+  .block.is-sizing .block__body {
+    outline: 1px dashed color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+    outline-offset: var(--space-xs, 0.4rem);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* One bar per block, while editing                                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Move it, reshape it, add to it, delete it — in one row, under the block, with a
+ * word on every control.
+ *
+ * ## What this replaced
+ *
+ * `.block__tools`, a pill of three unlabelled glyph groups floating over the
+ * block's top-right corner, plus `.block__foot`, a second row underneath holding
+ * the labelled Add button. The reasoning for the split was that a *gesture*
+ * belongs on the thing it moves and only *words* need to be in the flow. It is
+ * not wrong, and it lost to something simpler: Tommy could not read the glyphs.
+ * Three 10px marks in a corner are unreadable wherever they are.
+ *
+ * So: one bar, always visible while editing, every control an icon and a word.
+ * The floating pill is gone entirely, which also gives back the corner of every
+ * block — the one part of a photograph it was guaranteed to cover.
+ *
+ * The page still moves down by one row per block when editing starts. That was
+ * already true of `.block__foot`, and it is the accepted cost of controls that
+ * announce themselves.
+ */
+.block__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  margin-top: var(--space-sm, 0.6rem);
+  padding: var(--space-xs, 0.35rem) var(--space-sm, 0.5rem);
+  border: 1px dashed color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 32%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+/* Squares off the bottom corners under an open picker, so the bar and the picker
+   read as one card rather than two stacked boxes. */
+.block__bar.is-open {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-color: transparent;
+}
+
+/*
+ * Every control in the bar is the same shape: icon, then word.
+ *
+ * One selector list rather than a class per control, because the *only* thing
+ * that differs between Move, a shape, Add and Delete is which colours they take
+ * when active — and four near-identical rules is how they drift apart.
+ */
+.block__bar > .block__grip,
+.block__bar .block__shape,
+.block__bar .block__add,
+.block__bar .block__auto,
+.block__bar .block__remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem var(--space-sm, 0.55rem);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* `b` rather than a class: it is the word on a control, there is exactly one per
+   control, and it is the thing that hides on a narrow screen. */
+.block__bar b {
+  font-weight: 600;
+}
+
+.block__bar > .block__grip:hover,
+.block__bar .block__shape:hover:not(:disabled),
+.block__bar .block__add:hover:not(:disabled),
+.block__bar .block__auto:hover:not(:disabled),
+.block__bar > .block__grip:focus-visible,
+.block__bar .block__shape:focus-visible {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #1c1614);
 }
 
 /*
@@ -13173,125 +13965,109 @@ span.gallery-figure__frame {
  * scroll, which on a block taller than the viewport steals the gesture exactly
  * when somebody is dragging towards an edge.
  */
-.block__grip {
-  display: grid;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: var(--radius-full, 999px);
-  color: var(--color-ink-faint, #6f5f5a);
+.block__bar > .block__grip {
   cursor: grab;
   touch-action: none;
-}
-
-.block__grip:hover,
-.block__grip:focus-visible {
-  background: var(--color-paper-sunken, #eeddd7);
-  color: var(--color-ink, #1c1614);
 }
 
 .block.is-moving .block__grip {
   cursor: grabbing;
 }
 
+/* The three shapes as one group, ruled off from the rest of the bar so that
+   "which of these three is on" is a question about a set and not about the row. */
 .block__shapes {
   display: flex;
   gap: 0.1rem;
-  padding: 0 0.15rem;
-  border-left: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 80%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 80%, transparent);
+  padding: 0 0.25rem;
+  border-left: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 90%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 90%, transparent);
 }
 
-.block__shape {
-  display: grid;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm, 4px);
-  background: none;
-  cursor: pointer;
-}
-
-.block__shape:hover:not(:disabled) {
-  background: var(--color-paper-sunken, #eeddd7);
-}
-
-.block__shape.is-on {
+.block__bar .block__shape.is-on {
+  border-color: var(--color-accent, #992a21);
   background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fff);
 }
 
-.block__remove {
-  display: grid;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-full, 999px);
-  background: none;
+/* The primary action of the bar, and the one Tommy asked for by name. Gold rather
+   than accent red: red in this palette is for destroying things, and the bin is
+   in the same row. */
+.block__bar .block__add {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #1c1614);
+  font-weight: 600;
+}
+
+.block__bar .block__auto {
+  border-style: dashed;
+  border-color: var(--color-rule, #e0cac3);
+}
+
+.block__bar .block__remove {
   color: var(--color-ink-faint, #6f5f5a);
-  cursor: pointer;
 }
 
-.block__remove:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-accent, #992a21) 14%, transparent);
+.block__bar .block__remove:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 12%, transparent);
   color: var(--color-accent, #992a21);
 }
 
-/* -------------------------------------------------------------------------- */
-/* The footer under a block, while editing                                     */
-/* -------------------------------------------------------------------------- */
-
-/*
- * What the block is showing, a button to add to it, and a way back to automatic.
- *
- * In the flow rather than floating like `.block__tools`, and the split is
- * deliberate. The toolbar is three gestures on the *block* — move it, reshape it,
- * throw it away — all icons, all fitting in a pill over one corner. This is one
- * sentence about its *contents* with a labelled button, and Tommy asked for the
- * button by name: *"for each section I want an add button that lets the admin pick
- * from all subsections."* A labelled button is the whole point; an icon in the
- * corner would be the thing he could not find.
- *
- * The cost is that starting to edit pushes the page down by one row per block. That
- * is worth paying here and was not for the toolbar, because the toolbar is a
- * gesture you already know is there and this is a control that has to announce
- * itself.
- */
-.block__foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-sm, 0.6rem);
-  margin-top: var(--space-sm, 0.6rem);
-  padding: var(--space-xs, 0.4rem) var(--space-sm, 0.7rem);
-  border: 1px dashed color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
-  border-radius: var(--radius-md, 8px);
-  background: color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 32%, transparent);
-}
-
-.block__foot.is-open {
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-color: transparent;
+.block__bar [disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /*
- * The count, in the middle, pushing "Back to automatic" to the far end.
+ * The count, pushing Delete to the far end.
  *
- * `margin-right: auto` rather than a spacer: the third control is absent until the
- * block has been touched, and a flex gap between two items and three should not
- * change where the second one sits.
+ * `margin-right: auto` rather than a spacer: the controls either side of it come
+ * and go — a first block has no grip and no bin — and a flex gap between three
+ * items and five should not change where the count sits.
  */
 .block__count {
   margin: 0 auto 0 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   letter-spacing: var(--tracking-wide, 0.03em);
   text-transform: uppercase;
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * Below 40rem the words go and the icons stay.
+ *
+ * Six labelled controls in a row is three lines of wrapped bar on a phone, which
+ * is worse than the glyphs this replaced. The words are hidden rather than
+ * removed, so `title` and the accessible names — which every control here has —
+ * still answer "what is this".
+ *
+ * The exception is Add: it is the control somebody is looking for rather than one
+ * they recognise, so it keeps its words at every width and the row wraps around
+ * it if it must.
+ */
+@media (max-width: 40rem) {
+  .block__bar > .block__grip b,
+  .block__bar .block__shape b,
+  .block__bar .block__remove b {
+    /* `position: absolute` off-screen rather than `display: none`, so the word
+       is still the control's accessible name for a screen reader that would
+       otherwise be handed a bare glyph. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .block__count {
+    /* Its own line, since the row is now mostly icons and the sentence would
+       otherwise be the thing that wraps. */
+    flex: 1 0 100%;
+    margin: 0;
+  }
 }
 
 /*
@@ -13543,6 +14319,29 @@ span.gallery-figure__frame {
 
 .addblock__button .block__glyph span {
   color: var(--color-gold, #b08d43);
+}
+
+/*
+ * Putting the page's own pictures back, after the bin on the first block.
+ *
+ * Filled rather than outlined, and first in the row, because it is the one entry
+ * here that *restores* something instead of making something new — and somebody
+ * looking for it has just pressed a bin a few pixels above and wants to undo it.
+ * Its own row, so it does not read as a fourth shape to add.
+ */
+.addblock__button--restore {
+  border-color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 18%, var(--color-paper-raised, #fdf7f4));
+  font-weight: 600;
+  margin-bottom: var(--space-sm, 0.6rem);
+}
+
+.addblock__button--restore:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-paper-raised, #fdf7f4));
+}
+
+.addblock__button--restore svg {
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink, #1c1614));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -13930,7 +14729,7 @@ span.gallery-figure__frame {
 .shelf {
   position: fixed;
   right: var(--space-lg, 1.5rem);
-  bottom: calc(var(--inspector-height, min(34vh, 24rem)) + var(--space-sm, 0.5rem));
+  bottom: var(--space-lg, 1.5rem);
   z-index: 131;
   width: min(22rem, calc(100vw - var(--space-lg, 1.5rem) * 2));
   display: flex;
@@ -14050,12 +14849,387 @@ span.gallery-figure__frame {
   object-fit: cover;
 }
 
+/*
+ * The cross-fade, for the read-only shelf's cycling tiles.
+ *
+ * All the pictures are stacked by the rule above; these two decide which is
+ * seen. `z-index` on the current one so the picture arriving always fades in
+ * *over* the one leaving — without it the stacking is DOM order, and the step
+ * from the last picture back to the first blends differently from the other four.
+ * The same one line, for the same reason, as on `.program-card__shot`.
+ *
+ * 500ms against `SHELF_CYCLE_MS`'s 3200. A fade longer than the hold never
+ * settles on a single picture; change one and check the other.
+ */
+.shelf__shot {
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+
+.shelf__shot.is-current {
+  opacity: 1;
+  z-index: 1;
+}
+
+/* A single cover does not cycle, and a tile holding one should not sit invisible
+   waiting for a class that will never arrive. */
+.shelf__tile .shelf__shot:only-of-type {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The cycle is switched off in JS; this covers the fade itself, so the one
+     picture that is shown is shown outright. */
+  .shelf__shot {
+    transition: none;
+  }
+}
+
+/*
+ * A visitor's shelf sits in the corner, not a third of the way up the page.
+ *
+ * `.shelf` used to be lifted by the height of the properties band so an
+ * administrator's shelf cleared it, which left a *visitor's* menu floating over
+ * the middle of the photographs with nothing under it — a layout fault rather
+ * than a menu. There is no band any more and both sit in the corner, so this
+ * section is now only about which corner. Given a ground and a shadow, it reads
+ * as what it is: something over the page.
+ *
+ * Capped and scrollable because a camp with fifteen weeks in it would otherwise
+ * run off the top of the window, taking its handle with it.
+ */
+/*
+ * A visitor's menu sits in the **top** right corner, at Tommy's direction.
+ *
+ * `.shelf`'s own `bottom` puts an administrator's shelf in the bottom corner.
+ * A visitor reads from the top one first. `top: 7rem` is
+ * the same offset the sticky block titles use — enough to clear the masthead,
+ * which is `position: sticky` at 0.
+ *
+ * `bottom: auto` is required, not tidy: leaving the inherited `bottom` in place
+ * alongside a `top` pins both edges and stretches the menu down the whole window.
+ */
+/*
+ * Hidden until the cursor comes to the right edge.
+ *
+ * Tommy: *"I want them to only come up if the cursor goes to the right but I
+ * still want some indication that they are there when the cursor is not there."*
+ * So: a small vertical tab flush to the edge, always there, carrying the word
+ * and the count — and the albums themselves off-screen beside it until the tab
+ * is reached.
+ *
+ * The container is only as wide as the tab. That is what makes "goes to the
+ * right" literal: the body is `position: absolute`, so it contributes no width,
+ * and there is no invisible hover region lying over the photographs waiting to
+ * be tripped. The whole trigger is the tab.
+ *
+ * `:focus-within` alongside `:hover` because a tab key has no cursor. Without it
+ * the menu would be reachable by keyboard and never visible while being used.
+ */
+.shelf--reading {
+  top: 7rem;
+  bottom: auto;
+  /* Flush to the edge — the tab is the thing at the edge now, not the tiles. */
+  right: 0;
+  width: auto;
+  max-height: calc(100vh - 9rem);
+  gap: 0;
+  align-items: flex-end;
+}
+
+/*
+ * The tab, reading downwards.
+ *
+ * Vertical so it costs about 26px of the window's width instead of 13rem of it.
+ * `vertical-rl` puts the text top-to-bottom on the right-hand edge, which is the
+ * direction that reads naturally on that side.
+ */
+.shelf--reading .shelf__legend {
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: var(--space-sm, 0.6rem) 0.35rem;
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-right: 0;
+  border-radius: var(--radius-sm, 4px) 0 0 var(--radius-sm, 4px);
+  cursor: default;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.shelf--reading:hover .shelf__legend,
+.shelf--reading:focus-within .shelf__legend {
+  color: var(--color-ink, #1c1614);
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-rule, #e0cac3));
+}
+
+.shelf--reading .shelf__count {
+  writing-mode: horizontal-tb;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.625rem;
+}
+
+/*
+ * The albums, parked off the right of the window.
+ *
+ * **Not `visibility: hidden`, and that is the whole subtlety.** `visibility`
+ * makes a subtree unfocusable and drops it out of the accessibility tree, which
+ * breaks this design in two ways at once: `:focus-within` can never fire —
+ * nothing inside can take focus, so the reveal below is unreachable by keyboard —
+ * and a screen reader loses the navigation entirely rather than merely not seeing
+ * it. Caught by trying to focus a tile and finding that nothing happened.
+ *
+ * `opacity` and a transform instead. The albums stay in the tree, stay
+ * focusable, and tabbing to one is what opens the menu for somebody with no
+ * cursor. `pointer-events: none` is still needed so an invisible strip cannot
+ * answer a click meant for the photograph behind it.
+ */
+.shelf--reading .shelf__body {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  /*
+   * The 0.4rem between the albums and the tab is padding on this box, not a
+   * margin. Drawn as a margin it was 6px of page: the cursor left the tab, hit
+   * neither the tab nor the panel, `:hover` dropped, and the menu slid away
+   * mid-reach. There is no timer behind this menu to forgive that — the reveal
+   * is `:hover` and nothing else, so the hover target has to be continuous.
+   * The extra 0.4rem of width keeps the tiles the size they were.
+   */
+  margin-right: 0;
+  padding-right: 0.4rem;
+  width: calc(min(13rem, calc(100vw - 4rem)) + 0.4rem);
+  transform: translateX(calc(100% + 2.5rem));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms ease;
+}
+
+.shelf--reading:hover .shelf__body,
+.shelf--reading:focus-within .shelf__body {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/*
+ * The corridor: the room to walk from the tab to the albums.
+ *
+ * The tab is as tall as the words "Albums 3" set sideways — around 100px — and
+ * the panel is as tall as the albums in it, which for one album is 44px. They
+ * are aligned at the top, so the bottom half of the tab has nothing beside it.
+ * A visitor who reaches the tab low down and then moves left towards a tile is
+ * moving diagonally across page, not across menu: `:hover` is lost on the first
+ * pixel and the menu is gone before the cursor arrives. That is the whole of
+ * the "it closes before I can click it" report, and it is geometry rather than
+ * timing — there is no delay to lengthen here, because the reveal is a CSS
+ * `:hover` with no state behind it.
+ *
+ * So while the menu is open, the rectangle that encloses the tab and the panel
+ * counts as the menu. Hovering a pseudo-element is hovering the element it
+ * belongs to, so this keeps `.shelf--reading:hover` true across the whole of
+ * that box, whatever line the cursor takes.
+ *
+ * Inert until the tab is reached, and that is the point of the `pointer-events`
+ * pair rather than a permanently live strip. Tommy asked for a menu that comes
+ * up "only if the cursor goes to the right" — a 13rem invisible region lying
+ * over the photographs and waiting to be tripped is the thing that design is
+ * against. This exists only once you are already in the menu.
+ *
+ * The cost, while open, is that the page underneath the corridor cannot be
+ * clicked — and it is the right cost: the only way to click there is to have
+ * the cursor there, which is exactly when this has to be holding the menu open.
+ */
+.shelf--reading::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(-1 * (min(13rem, calc(100vw - 4rem)) + 0.4rem));
+  pointer-events: none;
+}
+
+.shelf--reading:hover::before,
+.shelf--reading:focus-within::before {
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf--reading .shelf__body {
+    transition: none;
+  }
+}
+
+/*
+ * No panel: no ground, no border, no shadow.
+ *
+ * The framed card was right for something that opened over the page and had to
+ * separate itself from it. Nothing opens now — this is always here — and a
+ * permanent floating card in the corner of a gallery is exactly the "getting in
+ * the way" it was called. The tiles carry their own edges; between them there is
+ * page.
+ */
+.shelf--reading .shelf__body {
+  /*
+   * `order: -1` on `.shelf__body` puts the list *above* the handle, which is
+   * right for the administrator's shelf: that one is anchored to the bottom of
+   * the window, so its control belongs at the bottom and the list grows up out of
+   * it. This one is anchored to the top, and the same rule put the label
+   * underneath the albums it labels.
+   */
+  order: 0;
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: none;
+  border: 0;
+  /* Right-hand padding only — it is the bridge to the tab, set above. */
+  padding: 0 0.4rem 0 0;
+  box-shadow: none;
+}
+
+/*
+ * On a phone the menu drops below the back link rather than over it.
+ *
+ * At 375px a 13rem strip in the top-right corner lands on "← Events". There is
+ * no width to share up there, so it takes the next line down instead — still the
+ * top-right corner, just under the one control that was already there.
+ */
+/*
+ * On a phone it stops floating.
+ *
+ * A 13rem strip pinned to the top-right corner of a 375px screen lands on the
+ * title, and there is no offset that fixes it — move it down and it covers the
+ * photographs instead. So below 40rem it returns to the document, where it sits
+ * under the name of the thing it lists, as a row rather than a column.
+ *
+ * The administrator's shelf is deliberately not included: it stays fixed at
+ * every width, because it has to clear a properties panel that is also fixed.
+ */
+@media (max-width: 40rem) {
+  .shelf--reading {
+    position: static;
+    width: auto;
+    max-height: none;
+    align-items: stretch;
+    gap: var(--space-xs, 0.35rem);
+  }
+
+  /* Back to a plain heading: there is no right edge to hide against in the
+     flow, and a vertical tab in a document is just sideways text. */
+  .shelf--reading .shelf__legend {
+    writing-mode: horizontal-tb;
+    padding: 0;
+    background: none;
+    border: 0;
+  }
+
+  /* No tab to walk from, so nothing to bridge and no corridor to lie over the
+     page — both would be positioned against a shelf that is no longer fixed. */
+  .shelf--reading::before {
+    content: none;
+  }
+
+  /* Always open, and back in the flow. */
+  .shelf--reading .shelf__body {
+    position: static;
+    margin-right: 0;
+    padding-right: 0;
+    width: auto;
+    transform: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Side by side and scrolling sideways, so five albums do not become five rows
+     of page between the title and the first photograph. */
+  .shelf--reading .shelf__tiles {
+    flex-direction: row;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: 0.2rem;
+  }
+
+  .shelf--reading .shelf__tiles > li {
+    flex: 0 0 11rem;
+  }
+}
+
+/* The label the handle used to be. A line, not a control. */
+.shelf__legend {
+  margin: 0;
+  padding-right: 0.15rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.07em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * A visitor's tile is taller than an administrator's.
+ *
+ * The 2.6rem strip is right for a list being *managed* — the name is the thing
+ * and the cover is a hint. Here it is the way into the gallery, and the same
+ * borrowing from the Events menu that makes it work at all depends on the
+ * photograph having enough height to be a photograph.
+ */
+/*
+ * Shorter than before, and quieter.
+ *
+ * 3.6rem was sized to give the photograph presence when this was a panel you
+ * opened. Permanently on screen it wants the opposite — enough picture to tell
+ * one album from another and no more.
+ */
+.shelf--reading .shelf__tile {
+  min-height: 2.75rem;
+  align-items: flex-end;
+  padding: 0.35rem 0.5rem;
+  /* An anchor now, not a button. */
+  text-decoration: none;
+  /* The tiles are the only edges left, so they are drawn faintly rather than at
+     full rule strength — subtle is the whole instruction here. */
+  border-color: color-mix(in srgb, var(--color-rule, #e0cac3) 60%, transparent);
+  opacity: 0.82;
+  transition: opacity 150ms ease, border-color 150ms ease;
+}
+
+.shelf--reading .shelf__tile:hover,
+.shelf--reading .shelf__tile:focus-visible {
+  opacity: 1;
+  border-color: var(--color-accent, #992a21);
+}
+
+.shelf--reading .shelf__name {
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+.shelf--reading .shelf__note {
+  font-size: 0.6875rem;
+}
+
 /* The scrim, so light type holds on a bright photograph. Same treatment and the
    same reasoning as the nav tiles. */
 .shelf__tile.has-cover::after {
   content: '';
   position: absolute;
   inset: 0;
+  /*
+   * Above the pictures, including the `z-index: 1` the cycling one takes. Without
+   * this the photograph currently showing paints *over* the scrim and over the
+   * name — a caught-in-review bug, and one that only appears on the tile that
+   * happens to be mid-cycle, so it would have looked intermittent.
+   */
+  z-index: 2;
   background: linear-gradient(to top, rgba(50, 14, 11, 0.68) 0%, rgba(50, 14, 11, 0.42) 100%);
 }
 
@@ -14073,6 +15247,8 @@ span.gallery-figure__frame {
 
 .shelf__name {
   position: relative;
+  /* Above the scrim, which is above the pictures. */
+  z-index: 3;
   flex: 1;
   font-size: var(--type-small, 0.9375rem);
   font-weight: 600;
@@ -14081,6 +15257,7 @@ span.gallery-figure__frame {
 
 .shelf__note {
   position: relative;
+  z-index: 3;
   font-size: var(--type-micro, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
@@ -14430,4 +15607,209 @@ span.gallery-figure__frame {
 /* Not a link while editing, so it must not claim to be one. */
 .is-editing .program-card__slot .program-card {
   cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+ * Events and drafts — /staff/events.
+ *
+ * The list, not an editor. It exists because two things cannot be done on an
+ * event's own page: making one that has no page yet, and opening a draft the
+ * static export never emitted. See features/events/StaffEvents.tsx.
+ *
+ * Deliberately plain. Everything here is a way *to* the editor, and a list that
+ * competes for attention with the thing it leads to is a list somebody has to
+ * read twice.
+ * ------------------------------------------------------------------------ */
+.staff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+}
+
+.staff-head h1 {
+  margin-bottom: var(--space-xs, 0.35rem);
+}
+
+.staff-head__note {
+  max-width: var(--measure, 68ch);
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.staff-head .button {
+  /* Holds the button to its own height in an `align-items: start` row, so it
+     lines up with the heading rather than stretching to the note's height. */
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.staff-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0 0 var(--space-xs, 0.35rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.03em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.staff-group__count {
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-sunken, #eeddd7);
+  letter-spacing: 0;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.staff-group__hint {
+  margin: 0 0 var(--space-sm, 0.6rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.staff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-paper-raised, #fdf7f4);
+  overflow: hidden;
+}
+
+.staff-list > li + li {
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.staff-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  padding-inline-end: var(--space-md, 0.9rem);
+}
+
+/*
+ * The row is the button, and the whole row.
+ *
+ * `flex: 1` so the target is the width of the list rather than the width of the
+ * words — a list where you have to hit the title is a list that is annoying on a
+ * phone and unusable for anyone with a tremor.
+ */
+.staff-row {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  padding: var(--space-md, 0.9rem);
+  border: 0;
+  background: transparent;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+  text-align: start;
+}
+
+.staff-row:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.staff-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+}
+
+.staff-row__when {
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  white-space: nowrap;
+}
+
+/* Rotated, because the glyph points down and this one means "onward". */
+.staff-row__go {
+  display: grid;
+  place-items: center;
+  color: var(--color-ink-faint, #6f5f5a);
+  transform: rotate(-90deg);
+}
+
+.staff-row__view {
+  flex: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  white-space: nowrap;
+}
+
+/* On a phone the date and the link would squeeze the name to nothing. The date
+   moves under the name; the link goes, since the row still opens the editor and
+   the page is one press further on. */
+@media (max-width: 34rem) {
+  .staff-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .staff-row__name {
+    white-space: normal;
+  }
+
+  .staff-row__when {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .staff-row__go {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .staff-row__view {
+    display: none;
+  }
+}
+
+/* ---- making one ---------------------------------------------------------- */
+
+.staff-new {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-lg, 1.5rem);
+  /* Gold rather than the ordinary rule, so the thing that has just appeared is
+     visibly the thing that has just appeared. */
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.staff-new h2 {
+  margin: 0;
+}
+
+.staff-new__note {
+  max-width: var(--measure, 68ch);
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.staff-new__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.5rem);
 }

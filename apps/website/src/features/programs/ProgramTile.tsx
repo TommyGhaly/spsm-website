@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { focalPosition, type DocOf, type GalleryMedia, type Program } from '@spsm/shared';
+import { AutoClip } from './AutoClip';
 import { captionOf } from './caption';
 import { galleryPathUrl } from './media';
 import { programHref } from './route';
@@ -124,32 +125,59 @@ function ProgramCover({ shots, shot }: { shots: DocOf<GalleryMedia>[]; shot: num
   // between two while the rail's counter climbs past them.
   const current = shot % usable.length;
 
+  const fail = (id: string) =>
+    setBroken((was) => {
+      const next = new Set(was);
+      next.add(id);
+      return next;
+    });
+
   return (
     <span className="program-card__cover">
-      {usable.map((item, index) => (
-        <img
-          key={item.id}
-          className={`program-card__shot${index === current ? ' is-current' : ''}`}
-          src={galleryPathUrl(item.renditionPath)}
-          // Empty: the card's own name is right beside it, and a screen reader
-          // announcing a photograph caption and then the program name reads as
-          // two separate links. It is doubly right here — the plate is now
-          // several photographs, and naming them all would be a paragraph.
-          alt=""
-          // The first is what the plate shows before any cycling; the rest can
-          // arrive at their leisure.
-          loading={index === 0 ? 'eager' : 'lazy'}
-          decoding="async"
-          onError={() =>
-            setBroken((was) => {
-              const next = new Set(was);
-              next.add(item.id);
-              return next;
-            })
-          }
-          style={{ objectPosition: focalPosition(item.focal) }}
-        />
-      ))}
+      {usable.map((item, index) => {
+        const shot = `program-card__shot${index === current ? ' is-current' : ''}`;
+
+        /*
+         * A featured clip plays on the plate rather than being skipped.
+         *
+         * It used to be skipped by accident, which is worse than either: a video
+         * document's `renditionPath` is the mp4 itself, so the filter above
+         * accepted it, an `<img>` was pointed at a video file, the load failed
+         * and `onError` quietly moved it to `broken`. A ministry that had chosen
+         * three clips showed an empty plate and nothing said why.
+         */
+        if (item.kind === 'video') {
+          return (
+            <AutoClip
+              key={item.id}
+              className={shot}
+              src={galleryPathUrl(item.renditionPath)}
+              poster={item.posterPath ? galleryPathUrl(item.posterPath) : null}
+              style={{ objectPosition: focalPosition(item.focal) }}
+              onError={() => fail(item.id)}
+            />
+          );
+        }
+
+        return (
+          <img
+            key={item.id}
+            className={shot}
+            src={galleryPathUrl(item.renditionPath)}
+            // Empty: the card's own name is right beside it, and a screen reader
+            // announcing a photograph caption and then the program name reads as
+            // two separate links. It is doubly right here — the plate is now
+            // several photographs, and naming them all would be a paragraph.
+            alt=""
+            // The first is what the plate shows before any cycling; the rest can
+            // arrive at their leisure.
+            loading={index === 0 ? 'eager' : 'lazy'}
+            decoding="async"
+            onError={() => fail(item.id)}
+            style={{ objectPosition: focalPosition(item.focal) }}
+          />
+        );
+      })}
     </span>
   );
 }

@@ -1,8 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GALLERY_DISPLAYS, GALLERY_DISPLAY_NAMES, type GalleryDisplay } from '@spsm/shared';
+import {
+  GALLERY_DISPLAYS,
+  GALLERY_DISPLAY_NAMES,
+  SECTION_WIDTH_COLUMNS,
+  SECTION_WIDTH_NAMES,
+  nearestSectionWidth,
+  stepSectionWidth,
+  type GalleryDisplay,
+  type SectionWidth,
+} from '@spsm/shared';
 import { Icon } from '@/components/Icon';
+import { useEditMode } from './editMode';
 
 /**
  * The controls for one block of photographs, **on the block**.
@@ -44,31 +54,67 @@ import { Icon } from '@/components/Icon';
  * height depends on its shape and on how many photographs are in it, and both
  * change while somebody is editing.
  *
- * The first block cannot move or be deleted, and it draws neither control. It is
- * the page's own block, stored in `sectionLayout` rather than in `bands`, and the
- * page always has one. Drawing a disabled grip and a disabled bin on it would be
- * two controls that exist to say no.
+ * The first block cannot move, and draws no grip. It is the page's own block,
+ * stored in `sectionLayout` rather than in `bands`, so it has no position in an
+ * order to change; a disabled grip on it would be a control that exists to say no.
  *
- * ## The footer, which is about the pictures rather than the block
+ * It **can** be deleted, which it could not until Tommy asked to be able to remove
+ * every section of pictures and leave a page empty. Its bin does not splice an
+ * array — there is no array — it writes `hidePagePictures` on the page, and takes
+ * the "Also from here" strip with it. `removeTitle` is how it says so.
  *
- * Tommy: *"for each section I want an add button that lets the admin pick from all
- * subsections."* So under each block, while editing: what it is showing, a button
- * to add to it, and — once somebody has touched it — a way back to automatic.
+ * ## One bar, with words on everything
  *
- * Under rather than in the corner toolbar, and the split is the point. The toolbar
- * is three gestures on the *block* (move it, reshape it, throw it away), all of
- * them icons. The footer is one sentence about its *contents* with a labelled
- * button, which needs words and would not fit in a pill over the top-right corner
- * next to five other things.
+ * There used to be two controls per block: a pill of unlabelled glyphs floating
+ * over the top-right corner, and a footer below with the labelled Add button.
+ * Tommy's verdict was that the block controls were hard to find and read, which
+ * is what a row of three 10px glyphs is however well placed — so they are now one
+ * bar under the block and everything in it is an icon *and* a word.
+ *
+ * The Add button was asked for by name — *"for each section I want an add button
+ * that lets the admin pick from all subsections"* — and it is why the bar is in
+ * the flow rather than floating: a labelled button is the whole difference between
+ * "add pictures" being findable and not, and words over photographs are
+ * unreadable at any opacity.
+ *
+ * The cost is one row per block when editing starts. The footer was already
+ * costing that; what is gained back is the corner of every block, which was the
+ * one part of a photograph the floating pill was guaranteed to cover.
+ *
+ * ## Nothing at all for a visitor
+ *
+ * The bar used to render for everyone. Not *styled* for everyone — actually
+ * rendered, grip and Delete and all, on every published gallery page, because
+ * this component took no view on edit mode and nothing in the stylesheet hid it.
+ * It reads the mode itself now and returns the block bare, which is the rule the
+ * rest of the section already follows: `EditToggle` "renders nothing at all for a
+ * visitor. Not hidden with CSS: absent."
+ *
+ * ## The width is a drag, not a menu
+ *
+ * A block's width — see `SECTION_WIDTHS` — is set by pulling the handle on its
+ * right edge, and it snaps to four positions as it goes. Tommy asked for the
+ * edge over a row of preset buttons, and the bar is the argument for it: it
+ * already carries seven controls, and four more would have made the width the
+ * loudest thing about a block while being the thing you set once.
+ *
+ * A drag has no keyboard, so the handle takes arrow keys as well. Same reason the
+ * grip above is a focusable `role="button"` rather than a bare span.
  */
 export function BlockFrame({
   children,
   display,
   onShape,
+  width,
+  onWidth,
   /** Absent on the page's own first block, which cannot move. */
   onMove,
-  /** Absent on the page's own first block, which cannot be deleted. */
   onRemove,
+  /**
+   * What the bin says it will do. The page's own block overrides it, because
+   * "remove this block" is not what removing that one means.
+   */
+  removeTitle = 'Remove this block',
   label,
   busy = false,
   pictures,
@@ -77,8 +123,12 @@ export function BlockFrame({
   children: React.ReactNode;
   display: GalleryDisplay;
   onShape: (next: GalleryDisplay) => void;
+  /** How much of the page this block takes. Drawn by the handle on its edge. */
+  width: SectionWidth;
+  onWidth: (next: SectionWidth) => void;
   onMove?: ((delta: -1 | 1) => void) | undefined;
   onRemove?: (() => void) | undefined;
+  removeTitle?: string;
   /** What this block is, for the controls' accessible names. */
   label: string;
   busy?: boolean;
@@ -103,7 +153,10 @@ export function BlockFrame({
   /** The open picker, drawn under the footer. Nothing when it is closed. */
   picker?: React.ReactNode;
 }) {
+  const edit = useEditMode();
   const frame = useRef<HTMLDivElement | null>(null);
+  /** The pictures without the bar, which is what the width handle spans. */
+  const body = useRef<HTMLDivElement | null>(null);
   /**
    * The drag in flight: where it began, and how far the pointer has travelled.
    *
@@ -171,28 +224,170 @@ export function BlockFrame({
 
   const offset = drag?.offset ?? null;
 
+  /**
+   * The width drag in flight.
+   *
+   * `left` and `page` are measured **once, at pointerdown**, and deliberately not
+   * re-read as the pointer moves. The block resizes under the hand — that is the
+   * whole point of the preview — and in a grid that can pull it up onto the row
+   * above, moving the very left edge the fraction is measured from. Re-measuring
+   * would make the block fight the pointer.
+   *
+   * `width` is the snapped candidate, which is what the block draws while the
+   * drag is live. Nothing is written until the pointer comes up.
+   */
+  const [sizing, setSizing] = useState<{ left: number; page: number; width: SectionWidth } | null>(
+    null,
+  );
+
+  const startResize = useCallback(
+    (event: React.PointerEvent) => {
+      // Otherwise the pointer starts a text selection across the block, and on a
+      // touch screen the page scrolls instead of the handle moving.
+      event.preventDefault();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        /* a synthetic pointer; the window listeners below still work */
+      }
+
+      const box = body.current?.getBoundingClientRect();
+      /*
+       * The page's twelve columns, not the block's own box: the fraction being
+       * asked for is a share of the *page*, and a block that is already a third
+       * wide would otherwise measure every drag against a third of the room.
+       *
+       * Falling back to the block's own width when there is no parent to measure
+       * — which is only ever a test renderer — keeps the handle working rather
+       * than dividing by zero.
+       */
+      const page = frame.current?.parentElement?.getBoundingClientRect().width ?? box?.width ?? 0;
+      setSizing({ left: box?.left ?? 0, page, width });
+    },
+    [width],
+  );
+
+  useEffect(() => {
+    if (sizing === null) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const asked = nearestSectionWidth((event.clientX - sizing.left) / sizing.page);
+      // Only when the *snapped* value changes, so the listeners below are not
+      // rebuilt on every pixel of a drag that is still inside one step.
+      setSizing((was) => (was === null || was.width === asked ? was : { ...was, width: asked }));
+    };
+
+    const onUp = () => {
+      const landed = sizing.width;
+      setSizing(null);
+      if (landed !== width) onWidth(landed);
+    };
+
+    // On `window` for the reason the move drag's are: a drag that ends outside
+    // the window would otherwise never see its `pointerup`, leaving the block
+    // stuck at a width nobody chose.
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [sizing, width, onWidth]);
+
+  /** What the block draws: the candidate while a drag is live, the saved one otherwise. */
+  const shown = sizing?.width ?? width;
+
+  /*
+   * A visitor gets the block and nothing else — no bar, no handle, no grip.
+   *
+   * Returned before any of the controls rather than hidden with CSS, because
+   * every one of them is a button that writes to Firestore. See the note at the
+   * top: this rendered for everyone until it read the mode.
+   */
+  if (!edit.on) {
+    return (
+      <div className={`block block--w-${shown}`}>
+        <div className="block__body">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`block${offset !== null ? ' is-moving' : ''}`}
+      className={`block block--w-${shown}${offset !== null ? ' is-moving' : ''}${
+        sizing !== null ? ' is-sizing' : ''
+      }`}
       ref={frame}
       style={offset !== null ? { transform: `translate3d(0, ${offset}px, 0)` } : undefined}
     >
-      {children}
+      <div className="block__body" ref={body}>
+        {children}
+
+        {/*
+          The width, on the edge that sets it.
+
+          A `slider` rather than a button, because that is what it is: four
+          discrete stops, announced by name. `aria-valuenow` counts columns of
+          twelve so the numbers a screen reader reads out are the same twelve the
+          page is built from, and `aria-valuetext` is what actually gets spoken.
+
+          The readout is drawn only while dragging or focused — see
+          `.block__width`. A permanent label saying "Full width" on every block of
+          every gallery is furniture, and the handle itself is the affordance.
+        */}
+        <span
+          className="block__resize"
+          role="slider"
+          tabIndex={0}
+          aria-label={`Width of ${label}`}
+          aria-valuemin={SECTION_WIDTH_COLUMNS.third}
+          aria-valuemax={SECTION_WIDTH_COLUMNS.full}
+          aria-valuenow={SECTION_WIDTH_COLUMNS[shown]}
+          aria-valuetext={SECTION_WIDTH_NAMES[shown]}
+          title="Drag to set how much of the page this block takes"
+          onPointerDown={startResize}
+          onKeyDown={(key) => {
+            const step = key.key === 'ArrowLeft' ? -1 : key.key === 'ArrowRight' ? 1 : null;
+            if (step === null) return;
+            key.preventDefault();
+            const next = stepSectionWidth(width, step);
+            if (next !== width) onWidth(next);
+          }}
+        >
+          <span className="block__width">{SECTION_WIDTH_NAMES[shown]}</span>
+        </span>
+      </div>
 
       {/*
-        The toolbar, over the top-right corner of the block.
+        One bar per block, under it, with words on everything.
 
-        Over rather than beside: a bar in the flow would move every block down by
-        its height the moment edit mode came on, and the whole premise of editing
-        in place is that the page does not move when you start.
+        ## What this replaced, and why the floating pill went
+        
+        There were two controls per block: a pill of unlabelled glyphs floating
+        over the top-right corner of the photographs, and a footer in the flow
+        below with the labelled Add button in it. The split had a rationale —
+        gestures over the block, contents underneath — and Tommy's verdict on the
+        result was that the block controls were "hard to find or read", which is
+        what a row of three 10px glyphs is however well placed.
+
+        So they are one bar and everything in it says what it does. That costs the
+        page one row per block when editing starts, which the footer was already
+        costing; and it gains back the corner of every block, which was the one
+        part of a photograph the pill was guaranteed to cover.
+
+        Words are hidden below 40rem — see `.block__bar` — where the bar would
+        otherwise wrap to three lines. `title` and `aria-label` carry them there.
       */}
-      <div className="block__tools">
+      <div className={`block__bar${picker ? ' is-open' : ''}`}>
         {onMove && (
           <span
             className="block__grip"
             role="button"
             tabIndex={0}
             aria-label={`Move ${label}`}
+            title="Drag to move this block up or down"
             onPointerDown={start}
             /*
               A keyboard route to the same thing, because a drag has none. This is
@@ -211,13 +406,15 @@ export function BlockFrame({
             }}
           >
             <Icon name="expand" size={13} />
+            <b>Move</b>
           </span>
         )}
 
         {/*
-          The shape, as three small buttons rather than a row of named chips in a
-          panel. It is the one *setting* a block has, it has three values, and all
-          three fit in the space the two gestures already needed.
+          The shape, named. Three buttons rather than a select, because the whole
+          list fits on one line and a `<select>` with three options hides two of
+          them — and each keeps its glyph, because the glyph is the part that says
+          what "upright wheel" actually looks like.
         */}
         <span className="block__shapes" role="group" aria-label={`Shape of ${label}`}>
           {GALLERY_DISPLAYS.map((option) => (
@@ -226,7 +423,6 @@ export function BlockFrame({
               type="button"
               className={`block__shape${display === option ? ' is-on' : ''}`}
               aria-pressed={display === option}
-              aria-label={GALLERY_DISPLAY_NAMES[option]}
               title={GALLERY_DISPLAY_NAMES[option]}
               disabled={busy}
               onClick={() => onShape(option)}
@@ -236,16 +432,61 @@ export function BlockFrame({
                 <span />
                 <span />
               </span>
+              <b>{GALLERY_DISPLAY_NAMES[option]}</b>
             </button>
           ))}
         </span>
+
+        {pictures && (
+          <>
+            <button
+              type="button"
+              className="block__add"
+              disabled={busy}
+              onClick={pictures.onAdd}
+            >
+              <Icon name="plus" size={13} />
+              <b>Add pictures</b>
+            </button>
+
+            {/*
+              What it is showing, in words, because the two states look identical
+              on screen. A block of twelve photographs that follows the page and a
+              block of the same twelve somebody picked behave differently the
+              moment a thirteenth is approved, and this line is the only place
+              that difference is visible.
+
+              Empty is checked first, because a block added a second ago is empty
+              *and* picked — `picks: []` — and "0 picked" is a worse thing to say
+              about it than "nothing here yet".
+            */}
+            <p className="block__count">
+              {pictures.count === 0
+                ? 'nothing here yet'
+                : pictures.picked
+                  ? `${pictures.count} picked`
+                  : `${pictures.count} chosen for you`}
+            </p>
+
+            {pictures.onAutomatic && (
+              <button
+                type="button"
+                className="block__auto"
+                disabled={busy}
+                onClick={pictures.onAutomatic}
+                title="Show whatever this level holds, and keep up to date on its own"
+              >
+                Back to automatic
+              </button>
+            )}
+          </>
+        )}
 
         {onRemove && (
           <button
             type="button"
             className="block__remove"
-            aria-label={`Remove ${label}`}
-            title="Remove this block"
+            title={removeTitle}
             disabled={busy}
             /*
               No confirmation, and this is the one place a bin needs none: a block
@@ -255,66 +496,10 @@ export function BlockFrame({
             onClick={onRemove}
           >
             <Icon name="close" size={13} />
+            <b>Delete</b>
           </button>
         )}
       </div>
-
-      {/*
-        In the flow, unlike the toolbar — it is words, and words over photographs
-        are unreadable at any opacity. It appears and disappears with edit mode, so
-        the page does shift by its height when editing starts; that is a cost worth
-        paying here where it was not for the toolbar, because a labelled button is
-        the whole difference between "add pictures" being findable and not.
-      */}
-      {pictures && (
-        // `is-open` squares off the bottom corners under an open picker, so the
-        // footer and the picker read as one card rather than two stacked boxes.
-        <div className={`block__foot${picker ? ' is-open' : ''}`}>
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            disabled={busy}
-            onClick={pictures.onAdd}
-          >
-            <Icon name="plus" size={14} /> Add pictures
-          </button>
-
-          {/*
-            What it is showing, in words, because the two states look identical on
-            screen. A block of twelve photographs that follows the page and a block
-            of the same twelve somebody picked behave differently the moment a new
-            photograph is approved, and this line is the only place that difference
-            is visible.
-          */}
-          {/*
-            Empty is checked first, because a block added a second ago is empty *and*
-            picked — `picks: []` — and "0 picked" is a worse thing to say about it
-            than "nothing here yet". The distinction the two other wordings draw
-            still matters: twelve photographs somebody chose and twelve the page
-            chose look identical on screen and behave differently the moment a
-            thirteenth is approved.
-          */}
-          <p className="block__count">
-            {pictures.count === 0
-              ? 'nothing here yet'
-              : pictures.picked
-                ? `${pictures.count} picked`
-                : `${pictures.count} chosen for you`}
-          </p>
-
-          {pictures.onAutomatic && (
-            <button
-              type="button"
-              className="button button--quiet button--small"
-              disabled={busy}
-              onClick={pictures.onAutomatic}
-              title="Show whatever this level holds, and keep up to date on its own"
-            >
-              Back to automatic
-            </button>
-          )}
-        </div>
-      )}
 
       {picker}
     </div>

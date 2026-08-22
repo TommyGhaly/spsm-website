@@ -582,7 +582,14 @@ const nodes = [
 
   // Week 1 takes submissions; week 2 does not, so the closed-form path is
   // reachable without editing anything.
-  ['week-1-2027', 'sc-2027', 'Week 1', 0, true, GRID_LAYOUT],
+  /*
+   * Week 1 is the side-by-side fixture: a half-width grid with a half-width
+   * upright wheel beside it, which is the arrangement `SectionLayout.width` was
+   * added for. Seeded rather than left to be dragged, because the two widths
+   * sharing a row is the thing worth being able to look at locally without
+   * signing in.
+   */
+  ['week-1-2027', 'sc-2027', 'Week 1', 0, true, { ...GRID_LAYOUT, width: 'half' }],
   ['day-1', 'week-1-2027', 'Day 1', 10, true, GRID_LAYOUT],
   ['day-2', 'week-1-2027', 'Day 2', 20, true, RAIL_LAYOUT],
   // The fifth level. Its parent summarises it, and its parent's parent
@@ -621,6 +628,10 @@ for (const [id, parentId, title, order, submissionsOpen, sectionLayout] of nodes
      * the hike inside Day 2 — which is the combination worth seeing locally,
      * because a capped grid and an uncapped wheel of the same set is exactly what
      * the two together are for.
+     *
+     * An **upright** wheel at half width, so it lands beside the half-width grid
+     * above rather than under it. That pairing is what `width` exists for, and a
+     * seed that never produces it means nobody sees the case until they drag one.
      */
     ...(id === 'week-1-2027'
       ? {
@@ -629,8 +640,9 @@ for (const [id, parentId, title, order, submissionsOpen, sectionLayout] of nodes
               id: 'band-everything',
               title: 'The same photographs, turning',
               layout: {
-                display: 'rail',
+                display: 'column',
                 scale: 'large',
+                width: 'half',
                 drift: true,
                 title: { scale: 'small', placement: 'above', align: 'start' },
                 caption: { scale: 'small', placement: 'hidden', align: 'start' },

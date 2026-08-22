@@ -170,11 +170,20 @@ export function GallerySection({
         `drift={false}` still leaves the strip draggable — see `DragRail` — which
         is the point of `SectionLayout.drift` being stored rather than inferred: a
         set of six that a reader should pull through themselves is a real choice.
+
+        `speed={90}` rather than the shared 75, at Tommy's direction. A gallery
+        tile is a photograph at whatever shape it was taken in, not a fixed
+        plate, so a strip of them is longer than the clergy row the default was
+        set against and 75 left it reading as barely moving. It is a nudge, not
+        the threefold jump `/events`' plates needed — see `ProgramDirectory`,
+        which is the other rail with an opinion about this. The clergy row and
+        the shop's strips keep the default.
       */
       <DragRail
         axis={layout.display === 'column' ? 'y' : 'x'}
         className={`rail--gallery rail--gallery-${layout.display}`}
         drift={drifts}
+        speed={90}
         frozen={frozen}
       >
         <ul className={`gallery-strip gallery-strip--${layout.display}`}>

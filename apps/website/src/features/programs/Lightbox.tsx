@@ -31,11 +31,19 @@ import { galleryPosterUrl, galleryVideoUrl } from './media';
  *
  * ## Video
  *
- * Plays with the browser's own controls, and starts by itself. Muted is not
- * needed: this only ever opens from a click, which is the gesture autoplay
- * policies want, so a clip of the talent show has its sound. It is paused and
- * unloaded when the slide changes — a `<video>` left in the DOM keeps
- * downloading and keeps playing behind whatever replaced it.
+ * Plays with the browser's own controls, and always starts by itself — sound
+ * first, silently if that is refused.
+ *
+ * The claim this used to make, that a click is gesture enough for sound, is only
+ * true in Chrome. Safari counts the gesture against the handler that received it
+ * and not against a `<video>` mounted by the render afterwards, and iOS refuses
+ * a stepped-to clip outright: `autoPlay` alone left the viewer sitting on a
+ * poster frame with no explanation. So the play is attempted with sound and, if
+ * the promise rejects, retried muted — a silent clip that is running beats a
+ * clip that is not, and the controls are right there to unmute it.
+ *
+ * It is paused and unloaded when the slide changes — a `<video>` left in the DOM
+ * keeps downloading and keeps playing behind whatever replaced it.
  */
 export function Lightbox({
   media,
@@ -49,6 +57,8 @@ export function Lightbox({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDivElement | null>(null);
+  /** The clip on the current slide, so the play attempt below can reach it. */
+  const player = useRef<HTMLVideoElement | null>(null);
   /** Where a swipe began, so `touchend` can tell a swipe from a tap. */
   const swipeFrom = useRef<number | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -177,6 +187,24 @@ export function Lightbox({
    * and `<link rel=preload>` in the head is how you reach it without rendering
    * anything.
    */
+  /*
+   * Start the clip on this slide, with sound where the browser allows it.
+   *
+   * Keyed on `item?.id` rather than on the element: the video is remounted per
+   * slide (see the `key` below), so this runs once per clip, after the new
+   * element exists.
+   */
+  useEffect(() => {
+    const node = player.current;
+    if (!node) return;
+    node.muted = false;
+    node.play().catch(() => {
+      // Refused for having sound. Mute and take what we can get.
+      node.muted = true;
+      return node.play().catch(() => undefined);
+    });
+  }, [item?.id]);
+
   const neighbours = count > 1 ? [(index + 1) % count, (index - 1 + count) % count] : [];
 
   if (!item) return null;
@@ -276,6 +304,7 @@ export function Lightbox({
           */
           <video
             key={item.id}
+            ref={player}
             className="lightbox__media"
             src={video}
             {...(poster ? { poster } : {})}

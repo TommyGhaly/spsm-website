@@ -2,17 +2,17 @@ import type { MetadataRoute } from 'next';
 import { SITE_ORIGIN } from './layout';
 
 /**
- * Crawling is allowed everywhere except the staff tooling.
+ * Crawling is allowed everywhere except the routes reached by tapping a tag.
  *
- * `/admin` carries `noindex` in its own metadata too. Both are worth having and
- * neither is a security control: the pages are static files that anyone can
- * fetch, and everything behind them is gated by `firestore.rules`. This is
- * about keeping a sign-in page out of search results, which is a support
- * question nobody needs, not about hiding anything.
+ * `/parking`, `/prayer`, and `/welcome` are excluded because each is reached by
+ * tapping an NFC tag, and a search result for one is only ever a wrong turn
+ * into a page that assumes you are already standing there.
  *
- * `/parking`, `/prayer`, and `/welcome` are excluded for a different reason —
- * each is reached by tapping an NFC tag, and a search result for one is only
- * ever a wrong turn into a page that assumes you are already standing there.
+ * `/admin` used to head this list. The section is gone — editing happens on the
+ * pages themselves now — and `/servants`, the one page still behind sign-in,
+ * carries `noindex` in its own metadata rather than a line here. Neither is a
+ * security control either way: the pages are static files anyone can fetch, and
+ * everything behind them is gated by `firestore.rules`.
  *
  * `/parking` and `/prayer` are now also linked from `/forms`, which is in the
  * nav, and they stay disallowed anyway. Browsing to a form from a page that
@@ -28,7 +28,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/admin/', '/parking', '/prayer', '/welcome'],
+      disallow: ['/parking', '/prayer', '/welcome'],
     },
     sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     host: SITE_ORIGIN,

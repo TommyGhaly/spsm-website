@@ -22,7 +22,7 @@
  * behind a gate that has already paid for the SDK, and they need the full user
  * object rather than the four fields kept here.
  */
-import { hasRole, type Role, type SpsmClaims } from '@spsm/shared';
+import { type SpsmClaims } from '@spsm/shared';
 import { hasSessionHint, setSessionHint } from './authHint';
 
 /**
@@ -353,7 +353,3 @@ export async function signOut(): Promise<void> {
   }
 }
 
-/** Whether this state can reach a role-gated area. Used for the Admin link. */
-export function canReach(current: AuthState, atLeast: Role): boolean {
-  return current.kind === 'signed-in' && hasRole(current.claims, atLeast);
-}

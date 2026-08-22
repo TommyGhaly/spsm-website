@@ -20,9 +20,14 @@
     },
     {
       "name": "website-emulated-3100",
-      "url": "http://localhost:3100",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emulated:second"
+      ],
       "port": 3100
     }
   ],
-  "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. The only way to see /admin \u2014 the real project grants no role to a browser here."
+  "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. The only way to see the edit-in-place controls \u2014 the real project grants no role to a browser here."
 }

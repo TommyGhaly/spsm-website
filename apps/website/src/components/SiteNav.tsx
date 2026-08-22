@@ -102,7 +102,17 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
    * people do that on a diagonal that clips the edge of both. Closing the
    * instant the pointer leaves makes the menu snap shut just as somebody
    * reaches for it — the single most common way a hover menu feels broken.
-   * A short grace period costs nothing and fixes it.
+   * A grace period costs nothing and fixes it.
+   *
+   * The geometry is handled in CSS — `.nav__menu::after` bridges the 6px gap
+   * so the trigger and the panel are one hover target — and this is the second
+   * half of the same repair: the delay is what covers a pointer that leaves the
+   * menu sideways and comes back, or one that pauses mid-journey. 220ms was
+   * measured against a pointer that moves like a demonstration; the people who
+   * use this site move a mouse deliberately, and the menu was shutting on them
+   * before they reached the ministry they wanted. Long enough to forgive a
+   * wandering hand, short enough that a menu you have genuinely left does not
+   * hang about behind you.
    */
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,7 +130,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
 
   const closeSoon = () => {
     cancelClose();
-    closeTimer.current = setTimeout(() => setOpenMenu(null), 220);
+    closeTimer.current = setTimeout(() => setOpenMenu(null), 450);
   };
 
   // A timer outliving the component would call setState on an unmounted tree.

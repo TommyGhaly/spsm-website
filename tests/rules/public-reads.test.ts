@@ -61,11 +61,10 @@ beforeEach(async () => {
       publishAt: new Date('2026-01-01T00:00:00Z'),
       order: 30,
     });
+    // No `published` and no `publishAt`: events do not have them any more.
     await setDoc(doc(db, 'events', 'festival'), {
       slug: 'festival',
       title: 'Parish festival',
-      published: true,
-      publishAt: null,
       startAt: new Date('2026-09-01T16:00:00Z'),
       category: 'festival',
     });
@@ -100,11 +99,24 @@ describe('anonymous list queries the site actually issues', () => {
     );
   });
 
-  it('allows the upcoming-events query', async () => {
+  /*
+   * Unfiltered, which is the query `data.ts` now issues.
+   *
+   * This asked for `where('published','==',true)` and would still pass, because
+   * Firestore judges a list by what the rule allows and the rule allows
+   * everything here. The point of changing it is that it now tests the query the
+   * build actually makes — and it is the one that would have failed had the read
+   * rule been left as `isPublished(resource.data) || hasRole('staff')` when the
+   * field went away.
+   */
+  it('allows the unfiltered events query the build issues', async () => {
     const db = asAnon(env).firestore();
-    await assertSucceeds(
-      getDocs(query(collection(db, 'events'), where('published', '==', true))),
-    );
+    await assertSucceeds(getDocs(collection(db, 'events')));
+  });
+
+  it('lets an anonymous reader fetch one event', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(getDoc(doc(db, 'events', 'festival')));
   });
 
   it('allows the announcements query', async () => {

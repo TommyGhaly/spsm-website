@@ -164,9 +164,12 @@ export async function getProgramEvents(programId: string): Promise<DocOf<Program
  * to find out where it lives. One `getDoc`, on a page that has already made
  * three.
  *
- * Null is ordinary rather than exceptional: the event may have been unpublished
- * or deleted since it was linked, and a gallery must not stop rendering because
- * the calendar moved on. The link simply disappears.
+ * Null is ordinary rather than exceptional: the event may have been deleted since
+ * it was linked, and a gallery must not stop rendering because the calendar moved
+ * on. The link simply disappears.
+ *
+ * There used to be a `published` check here as well. Events have no published
+ * state now — one exists or it does not — so existence is the whole test.
  */
 export async function getLinkedCalendarEvent(eventId: string): Promise<DocOf<Event> | null> {
   return readOrEmpty(
@@ -174,8 +177,7 @@ export async function getLinkedCalendarEvent(eventId: string): Promise<DocOf<Eve
     async () => {
       const snapshot = await getDoc(doc(db(), COLLECTIONS.events, eventId));
       if (!snapshot.exists()) return null;
-      const event = { id: snapshot.id, ...(snapshot.data() as Event) };
-      return event.published ? event : null;
+      return { id: snapshot.id, ...(snapshot.data() as Event) };
     },
     null,
   );
