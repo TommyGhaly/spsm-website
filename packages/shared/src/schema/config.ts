@@ -31,6 +31,9 @@ export const CONFIG_DOC_INTEGRATIONS = 'integrations';
 /** Document id of the parish details document. */
 export const CONFIG_DOC_PARISH = 'parish';
 
+/** Document id of the `/events` page's own settings. */
+export const CONFIG_DOC_EVENTS = 'events';
+
 export interface IntegrationsConfig {
   announcements: AnnouncementsConfig;
   livestream: LivestreamConfig;
@@ -457,6 +460,101 @@ export function formatAddress(address: ParishConfig['address']): string {
   const street = [address.line1, address.line2].filter(Boolean).join(', ');
   const region = [address.city, address.state].filter(Boolean).join(', ');
   return [street, region, address.postalCode].filter(Boolean).join(' · ');
+}
+
+/* -------------------------------------------------------------------------- */
+/* The /events page                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Settings that belong to the `/events` page itself rather than to any one
+ * ministry on it.
+ *
+ * A document rather than a field on the five programs, because these are answers
+ * the *parish* gives once. "Which ministry is the current one" is not a property
+ * of Summercamp — it is a property of this moment, and next month it is a
+ * different ministry.
+ *
+ * `config` is world-readable and admin-writable (see firestore.rules), which is
+ * the right pair here: the page that reads this is public, and only a superadmin
+ * may set it — the same person who already holds `canManagePrograms` and is the
+ * only one the `/events` editing controls appear for.
+ */
+export interface EventsPageConfig {
+  /**
+   * The section of `/events` the parish is pointing at right now: a `programs`
+   * document id, or `null` for none.
+   *
+   * The same *kind* of setting as an event's `heroImagePath` — one chosen thing,
+   * on the page, stored where every surface can read it. What reads it is what
+   * makes it worth a field rather than a convention:
+   *
+   *  - **the NFC tags, next.** A tag by the door means "the thing happening now",
+   *    and the tag itself cannot be reprogrammed every week. It points at a
+   *    route; the route reads this; the parish changes it here.
+   *  - **the forms behind those tags**, which have to file what they collect
+   *    somewhere. A photograph submitted from a tap belongs to the section the
+   *    parish has named, not to whichever page the form happened to open on.
+   *
+   * Not a display setting. Nothing on the public page is arranged differently
+   * because of it, and nothing should be: a visitor reading `/events` sees the
+   * ministries in the parish's order either way.
+   *
+   * ## A ministry, not a level inside one
+   *
+   * This held a `{ programId, programEventId }` pair for about an hour, so that
+   * it could name Week 1 2026 or Day 3 of it. Narrowed to a program at Tommy's
+   * direction, and the narrower field is the better one for what reads it: a tag
+   * screwed to a wall wants an answer that stays true for a season, and "Day 3"
+   * is stale by Thursday. The parish sets Summercamp once in June.
+   *
+   * It is also the id that is already a URL — `programs` documents are keyed by
+   * their slug (see `createProgram`), so this value is `/events/<mainSection>`
+   * without a lookup, which is exactly what a tag has to turn it into.
+   *
+   * If a level ever needs naming, that is a second field rather than a wider one:
+   * a pointer that *may* be a program or *may* be a level is one every reader has
+   * to branch on, and the reason to widen it will come with its own answer about
+   * what happens when the level is deleted mid-week.
+   *
+   * ## A stale pointer is expected, not an error
+   *
+   * The ministry this names can be deleted at any time, by somebody who has never
+   * seen this setting. Every reader therefore resolves it against the collection
+   * and treats "does not resolve" as "not set" — the rule `defaultSubmissionNode`
+   * already states for `Program.prioritySubmissionNodeId`, for the same reason: a
+   * form that refuses to send because a ministry was removed is worse than a form
+   * that files where it stands.
+   */
+  mainSection: string | null;
+}
+
+/**
+ * Nothing chosen.
+ *
+ * Blank rather than a guess — "the first ministry" would be a plausible default
+ * and a wrong one, because the whole value of this field is that a person picked
+ * it. Every consumer has a defined behaviour for null already (fall back to the
+ * page it is on), so an unset setting costs a preselection and never a feature.
+ */
+export const DEFAULT_EVENTS_PAGE_CONFIG: EventsPageConfig = {
+  mainSection: null,
+};
+
+/**
+ * Coerce whatever is in `config/events` into a usable setting.
+ *
+ * The empty string is *not* preserved here, unlike most fields read through
+ * `str` — a blank pointer and a missing one both mean nothing is chosen, and
+ * carrying two spellings of that would put the same `|| null` in every reader.
+ *
+ * Not checked against the `programs` collection, which this cannot see. A
+ * pointer at a deleted ministry is a real state every reader tolerates; see the
+ * field's note.
+ */
+export function parseEventsPageConfig(raw: unknown): EventsPageConfig {
+  const doc = asRecord(raw);
+  return { mainSection: str(doc?.['mainSection']) || null };
 }
 
 function isPlatform(value: string | null): value is LivestreamPlatform {

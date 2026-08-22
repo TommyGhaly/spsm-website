@@ -29,7 +29,7 @@ import {
   COLLECTIONS,
   DEFAULT_FOCAL,
   type MediaKind,
-  type ProgramEvent,
+  type Program,
 } from '@spsm/shared';
 import { db, storage } from '@/lib/firebase';
 
@@ -102,6 +102,14 @@ function submissionPath(programEventId: string, file: File): string {
  * against the occurrence's own `programId`, so a wrong value is a refusal, and
  * reading it once for a batch of forty photographs rather than forty times is
  * the difference between one document read and forty.
+ *
+ * `event` is now **the level the submitter chose**, which need not be the level
+ * whose page they are standing on. Nothing here changes for that — the rule
+ * already accepted any level in the program, because it checks the `programId`
+ * against the target's own rather than against the page — but it is worth saying
+ * out loud, because the level in a submission is now a stranger's opinion about
+ * where a photograph belongs rather than a fact about where the form was. The
+ * queue is what turns it into a fact.
  */
 export async function submitOne(
   file: File,
@@ -123,8 +131,8 @@ export async function submitOne(
   await addDoc(collection(db(), COLLECTIONS.galleryMedia), {
     programId: event.programId,
     programEventId: event.id,
-    // Filed by an administrator, not by the submitter. Somebody sending
-    // photographs has no idea the parish calls the second afternoon "Day 2".
+    // Legacy, and null forever: the third level is a `programEvents` document of
+    // its own now, so "which subgroup" is answered by `programEventId` above.
     groupId: null,
 
     kind,
@@ -167,17 +175,26 @@ export async function submitOne(
 }
 
 /**
- * Whether this occurrence is still collecting, read fresh at submit time.
+ * Whether this ministry is still collecting, read fresh at submit time.
  *
- * The page's copy of the event may be minutes old, and `submissionsOpen` is the
- * flag a program lead flips when a camp is finished. The rule checks it against
- * the live document, so a stale `true` here means the upload succeeds and the
- * document write then fails — the file is stored, the submission is lost, and
- * the message says "permission denied". Re-reading first turns that into a
- * sentence, at the cost of one document read per batch.
+ * The page's copy of the program may be minutes old, and `submissionsOpen` is
+ * the flag a program lead turns off when the parish has finished collecting. The
+ * rule checks it against the live document, so a stale `true` here means the
+ * upload succeeds and the document write then fails — the file is stored, the
+ * submission is lost, and the message says "permission denied". Re-reading first
+ * turns that into a sentence, at the cost of one document read per batch.
+ *
+ * The **program**, not the level. It was the level, and it moved up with the
+ * flag; see `Program.submissionsOpen` for why. The practical effect here is that
+ * one read covers a batch however many levels the submitter files it across.
+ *
+ * Absent means open, matching `firestore.rules` exactly. A default that
+ * disagreed with the rule would be the worse of the two failures in either
+ * direction: `false` here hides a form the rules would have accepted, and
+ * `false` there refuses a form this one offered.
  */
-export async function submissionsAreOpen(programEventId: string): Promise<boolean> {
-  const snapshot = await getDoc(doc(db(), COLLECTIONS.programEvents, programEventId));
+export async function programAcceptsSubmissions(programId: string): Promise<boolean> {
+  const snapshot = await getDoc(doc(db(), COLLECTIONS.programs, programId));
   if (!snapshot.exists()) return false;
-  return (snapshot.data() as ProgramEvent).submissionsOpen === true;
+  return (snapshot.data() as Program).submissionsOpen !== false;
 }

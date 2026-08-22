@@ -172,6 +172,20 @@ export interface DragRailOptions {
    * A touch reader gets the drift and the page keeps its scroll.
    */
   axis?: 'x' | 'y';
+  /**
+   * Run the drift backwards along the axis.
+   *
+   * The whole of the direction setting, and it is one sign. Increasing the scroll
+   * offset carries the pictures *toward* the start of the axis — leftward on `'x'`,
+   * upward on `'y'` — which is what both wheels have always done and what
+   * `DEFAULT_SPIN` records. Negating it carries them the other way.
+   *
+   * Only the automatic drift is reversed. A hand still drags the strip whichever
+   * way it is pulled, and the wrap is symmetric, so nothing else on either axis has
+   * to know about this. See `spinFor` in the section schema for where the value
+   * comes from.
+   */
+  reverse?: boolean;
 }
 
 export interface DragRail {
@@ -188,7 +202,14 @@ export interface DragRail {
 }
 
 export function useDragRail(options: DragRailOptions = {}): DragRail {
-  const { frozen = false, speed = SPEED, drift = true, loop = false, axis = 'x' } = options;
+  const {
+    frozen = false,
+    speed = SPEED,
+    drift = true,
+    loop = false,
+    axis = 'x',
+    reverse = false,
+  } = options;
   const a = AXES[axis];
 
   const ref = useRef<HTMLDivElement | null>(null);
@@ -233,8 +254,14 @@ export function useDragRail(options: DragRailOptions = {}): DragRail {
    */
   const driftAllowed = useRef(false);
   const looping = useRef(false);
+  /*
+   * Signed, so the ramp below needs no knowledge of the direction. Kept in the ref
+   * rather than applied at the call site because the fling and the hand read the
+   * same ref and must *not* be reversed — only the drift has a direction of its
+   * own.
+   */
   const speedRef = useRef(speed);
-  speedRef.current = speed;
+  speedRef.current = reverse ? -speed : speed;
 
   /*
    * There is no reader-facing pause. There was — a small button in the corner,

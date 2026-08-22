@@ -260,6 +260,31 @@ function explain(error: unknown, what: string): string {
   ) {
     return `You do not have permission to ${what}. Ministry editing is granted per ministry — being staff is not enough on its own.`;
   }
+
+  /*
+   * The document has been deleted underneath this panel.
+   *
+   * A real report, not a hypothetical: two people had /events open, one removed a
+   * ministry, and the other's toggle produced
+   *
+   *   NOT_FOUND: no entity to update: app: "dev~spsm-database"
+   *   path < Element { type: "programs" name: "probe-ministry" } >
+   *
+   * — a Datastore internal, naming a slug the reader had never typed. It is also
+   * the ordinary consequence of a stale tab, because this page holds its list in
+   * state and only re-reads when something it did succeeds.
+   *
+   * Both codes are matched. The client SDK raises `not-found`; the emulator's
+   * REST layer says `NOT_FOUND` in the message and sometimes carries no code at
+   * all.
+   */
+  if (
+    (typeof code === 'string' && code.includes('not-found')) ||
+    /NOT_FOUND|no entity to update/i.test(message)
+  ) {
+    return 'This ministry is not there any more — somebody has removed it since this page was loaded. Reload to see the current list.';
+  }
+
   return message || `Could not ${what}.`;
 }
 
@@ -341,7 +366,7 @@ export function ProgramDetails({
             updateProgram(program.id, { childLabel: childLabel.trim() || null }, null),
           )
         }
-        note={`Plural, as it appears over a list — "${DEFAULT_CHILD_LABEL}", "Years", "Weeks". Leave it empty for "${DEFAULT_CHILD_LABEL}".`}
+        note={`What the things one level inside this are called, over their list — "Years", "Weeks". Each of those sets its own in turn. Empty means "${DEFAULT_CHILD_LABEL}".`}
       />
 
       <Toggle
@@ -408,6 +433,23 @@ export function LevelDetails({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /**
+   * Whether the date switch is on, while it is on but empty.
+   *
+   * `null` is "nobody has touched it", which is the ordinary case, and then the
+   * document answers: a level with either date set is dated. The draft only ever
+   * matters for the gap between switching on and typing a date — without it the
+   * switch would spring back the instant it was pressed, because the document
+   * still has no dates to prove it on.
+   *
+   * Keyed to the node so that selecting a different level does not inherit the
+   * previous one's revealed-but-empty state.
+   */
+  const [datedDraft, setDatedDraft] = useState<{ id: string; on: boolean } | null>(null);
+  const dated =
+    datedDraft !== null && datedDraft.id === node.id
+      ? datedDraft.on
+      : node.startAt !== null || node.endAt !== null;
 
   async function write(what: string, patch: Parameters<typeof updateProgramEvent>[1]) {
     setBusy(true);
@@ -451,31 +493,57 @@ export function LevelDetails({
         span prints on the card. A week with no dates is a week that shows up in
         an arbitrary place in its year with no clue when it was.
 
-        Both optional. "Day 1" of a camp genuinely has no useful date of its own —
-        it is ordered by hand, which is what `order` is for — and a standing class
-        has none either.
+        ## Behind a switch, because most levels have no date
+
+        Both fields were always optional and "no date" was always expressible — by
+        leaving two date inputs empty. Tommy: *"Not every subsection has a date
+        assigned to it that should be toggled on and off if the admin feels it's
+        necessary."* Which is the same set of documents and a different control: two
+        empty inputs *look* like two things you have not filled in yet, so a day of
+        a camp and a week whose dates nobody has got round to are indistinguishable.
+        A switch that is off says the level has no date and means it.
+
+        Turning it off clears both in one write — the point is to say "this has no
+        date", and leaving a stale `startAt` behind while the switch reads off would
+        be the panel stating something the document contradicts.
       */}
-      <div className="inspector__dates">
-        <DateField
-          label="From"
-          value={node.startAt}
-          timeZone={timeZone}
-          busy={busy}
-          onCommit={(startAt) => void write('set the date', { startAt })}
-        />
-        <DateField
-          label="To"
-          value={node.endAt}
-          timeZone={timeZone}
-          busy={busy}
-          onCommit={(endAt) => void write('set the date', { endAt })}
-        />
-      </div>
-      <p className="inspector__note">
-        Leave both empty for something with no fixed date — a day of a camp, or a
-        standing class. Undated levels sort after dated ones, in the order you put
-        them in.
-      </p>
+      <Toggle
+        checked={dated}
+        disabled={busy}
+        label="It has a date"
+        hint="Off for a day of a camp or a standing class. Undated levels sort after dated ones, in the order you put them in."
+        onChange={(on) => {
+          setDatedDraft({ id: node.id, on });
+          /*
+            Only the clearing is a write. Switching *on* has nothing to save yet —
+            there is no date until one is typed — so it reveals the fields and waits.
+            That is why `dated` reads the draft first: the document cannot answer
+            "is this switch on" for a level whose dates are still empty.
+          */
+          if (!on && (node.startAt !== null || node.endAt !== null)) {
+            void write('clear the dates', { startAt: null, endAt: null });
+          }
+        }}
+      />
+
+      {dated && (
+        <div className="inspector__dates">
+          <DateField
+            label="From"
+            value={node.startAt}
+            timeZone={timeZone}
+            busy={busy}
+            onCommit={(startAt) => void write('set the date', { startAt })}
+          />
+          <DateField
+            label="To"
+            value={node.endAt}
+            timeZone={timeZone}
+            busy={busy}
+            onCommit={(endAt) => void write('set the date', { endAt })}
+          />
+        </div>
+      )}
 
       {/*
         What the parts *inside this one* are called — the weeks of a year, the
@@ -492,7 +560,7 @@ export function LevelDetails({
         onCommit={(childLabel) =>
           void write('rename the parts of this', { childLabel: childLabel.trim() || null })
         }
-        note={`Plural — "Weeks", "Days", "${DEFAULT_CHILD_LABEL}". Leave it empty for "${DEFAULT_CHILD_LABEL}".`}
+        note={`What the things one level inside *this* are called — not what this one is. A year says "Weeks"; each week then says "Days" for itself. Empty means "${DEFAULT_CHILD_LABEL}".`}
       />
 
       <Toggle
@@ -507,19 +575,20 @@ export function LevelDetails({
         }
       />
 
-      {/* The flag that decides whether the public upload form renders at all,
-          and which the rules re-check on every single submission. */}
-      <Toggle
-        checked={node.submissionsOpen}
-        disabled={busy}
-        onChange={(submissionsOpen) => void write('change who may send photographs', { submissionsOpen })}
-        label="Accepting photographs"
-        hint={
-          node.submissionsOpen
-            ? 'Parishioners see an upload form here. Everything they send waits for your approval.'
-            : 'The upload form is hidden. Photographs already approved stay where they are.'
-        }
-      />
+      {/*
+        There was an "Accepting photographs" toggle here, per level.
+
+        It is gone rather than moved, and the distinction matters: whether the
+        parish is collecting is now one flag on the *ministry*
+        (`Program.submissionsOpen`), set from the approval queue on the ministry
+        page beside the priority section — which is the other half of the same
+        decision. A level's own `submissionsOpen` is read by nothing and checked by
+        no rule.
+
+        Leaving the toggle here pointing at the dead field would have been the
+        worst of the three options: a switch that saves, reports success, and
+        changes nothing at all.
+      */}
 
       {error && <p className="inline-editor__error">{error}</p>}
 

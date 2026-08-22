@@ -161,14 +161,69 @@ have to hold on their own:
 | Approval gate | nothing leaves `submissions/` without an administrator |
 | Rate limit | per App Check token, in the submit Function |
 
-**A submitter cannot read back what they uploaded.** `allow read: if false` on
-`submissions/`, deliberately: a public-readable quarantine folder is an open
-file host, and the approval gate would be decorative.
+**A submitter cannot read back what they uploaded.** `submissions/` is
+`allow read: if hasRole('staff')` — not `if false`, which is what this said and
+what the rule was until the queue needed to show a thumbnail. The property that
+matters is unchanged, because a submitter is not staff: a public-readable
+quarantine folder is an open file host, and the approval gate would be
+decorative. The consequence of the narrower rule is that a reviewer whose role
+is below `staff` sees "no preview" on every row and decides from the filename.
 
 Uploads are transcoded on approval, not on upload — an unapproved file should
 cost nothing but the bytes it sits on. iPhone photographs arrive as HEIC, which
 no browser can display, so transcoding is not an optimisation; it is the
 difference between a gallery that renders and one that does not.
+
+### Who chooses the level, and who decides
+
+**A sender picks the level; an administrator decides it.** The form appears on
+every page of a ministry, including the ministry's own, and offers the whole tree
+in one picker — a parishioner on the Week 1 page may well be holding photographs
+of Day 3, and the form filing those under Week 1 meant an administrator moved
+every one of them by hand. What arrives is a stranger's opinion, and the queue
+re-files whatever it likes before approving.
+
+Two controls shape that, both on the ministry page, beside the queue:
+
+| Control | Field | What it does |
+|---|---|---|
+| Photographs go to | `Program.prioritySubmissionNodeId` | Preselects a level for every upload from anywhere in the ministry. Set it to today's session during camp week and an evening's uploads arrive already filed. |
+| Collecting photographs | `Program.submissionsOpen` | One flag for the whole tree. Off hides the form everywhere under the ministry; the queue stays, because pending items still need decisions. |
+
+`submissionsOpen` was a flag per **level** and moved up deliberately. Per level it
+turned the picker into a list with holes in it that nobody on the public side
+could see the reason for. The cost, stated plainly: there is no longer a way to
+close last year's camp while this year's collects. `ProgramEvent.submissionsOpen`
+survives on old documents and is read by nothing.
+
+Absence of `submissionsOpen` means **open**, in `firestore.rules` and in the
+client alike. That is the one place in those rules where a missing field permits:
+every program document written before the field existed has no value for it, and
+reading absence as closed would refuse every upload the parish receives while
+passing `rules:check` clean.
+
+### The queue lives on the ministry page
+
+Not on a screen of its own — there is no `/admin`, and this section is edited in
+place. That placement is also what makes the query legal for a volunteer rather
+than only for a superadmin. `firestore.rules` allows a read when the document is
+approved **or** the reader administers its program, and Firestore judges a list by
+what it *could* return: an unfiltered pending query is provable only by
+`hasRole('admin')`, so a program lead was refused the whole query rather than
+given a slice of it. `where('programId','==',…)` is what the rule can prove for
+both. The trade is that nobody sees one queue across every ministry; somebody who
+runs three programs visits three pages.
+
+**Approving** writes the decision and the filing in one update, so the Function
+copies the bytes to the destination rather than to the level the sender guessed.
+**Refusing deletes** — the files, then the document, with nothing kept. There is
+no rejected record to reverse, which is a deliberate choice over the earlier
+`status: 'rejected'`: a standing list of the photographs the parish turned down is
+a list of judgements about parishioners' families that nobody asked to keep. The
+file deletes are given a six-second budget and the document goes regardless,
+because `deleteObject` against an unreachable bucket retries for two minutes and
+the part that matters must not wait on the part that has a lifecycle rule behind
+it.
 
 ## 5. Permission is per program, with a per-event override
 
@@ -190,9 +245,11 @@ This is a third axis, alongside `role` and `screenAdmin`. It is not folded into
 `screenAdmin.events`, because that flag means *the parish calendar* and handing
 someone Summercamp photographs must not hand them the Liturgy schedule.
 
-## 6. Presentation is a kiosk, and it is a collage
+## 6. Presentation is a kiosk, and there are three of them
 
-**Built:** `features/programs/Presentation.tsx`.
+**Built:** `features/programs/Presentation.tsx` (the shell), `PresentColumns.tsx`,
+`PresentSlide.tsx`, `PresentNotebook.tsx` (the styles), `PresentParts.tsx` (what
+they share).
 
 Started on a laptop in the hall and left alone for an evening. Every decision
 follows from that sentence: it starts by itself, it never ends, a file that fails
@@ -206,14 +263,41 @@ restarted unattended.
 
 | URL | What it shows |
 |---|---|
-| `/events/summercamp?present=all` | every camp in the ministry |
-| `/events/summercamp/2026?present=all` | that year |
-| `/events/summercamp/2026/week-1/day-2?present=all` | that day, and the hike inside it |
+| `/events/summercamp?present=columns` | every camp in the ministry, as drifting columns |
+| `/events/summercamp/2026?present=slide` | that year, one photograph at a time |
+| `/events/summercamp/2026/week-1/day-2?present=notebook&pace=brisk` | that day and the hike inside it, as a sliding page, faster than usual |
 
-The query used to name a subgroup — `?present=day-2` — because the third level had
-no URL of its own to be presented from. Every level has one now, so all the query
-still says is *that* the page is being presented. An old kiosk bookmark carrying a
-subgroup id still works: it presents the level in its path rather than failing.
+### Three styles, because a wall and a table are different rooms
+
+There was one — the columns — and Tommy asked for three. Each is its own file
+because each is a different idea about what a screen of photographs is *for*:
+
+| Style | For | Movement |
+|---|---|---|
+| `columns` | a wall, unattended, all evening | several columns drift, neighbours against each other |
+| `slide` | one picture at a time, somebody at the keyboard | a timer, and arrows/click/space/`PageDown` |
+| `notebook` | a page of prints read across | the whole page slides left, with vertical wheels turning in it |
+
+`columns` is the default and stays the default: it is the one that can be started
+and walked away from.
+
+**The style is the value of `?present`**, not a second parameter — there is no
+such thing as a style with no presentation, so one parameter cannot contradict
+itself. Every older value still works and shows the columns: `?present=all` and
+`?present=day-2` are on printed sheets around the parish, and the worst thing this
+could do with a URL it understands is refuse to start.
+
+**Pace is `?pace=`, one of `slow | steady | brisk | fast`**, and it is *one
+number* handed to whichever style is drawing — each multiplies its own speeds by
+it. `steady` is exactly 1 and writes no parameter, so a URL from before the
+setting existed behaves exactly as it did. The on-screen control is `−` / name /
+`+` rather than four labelled buttons, because what somebody wants is not "brisk",
+it is *a bit quicker than this*.
+
+Keyboard, for a projector laptop with no mouse near it: `Esc` leaves, `f` fills
+the screen, `s` cycles the style, `↑`/`↓` change the pace. Left and right belong
+to the slide, for moving through the photographs — the axis that means "through
+the set" and the axis that means "how fast" are deliberately different axes.
 
 **Everything approved in the subtree appears**, at Tommy's direction. There was a
 `placement.slideshow` flag and it is no longer read — the field is still on the
@@ -228,48 +312,194 @@ screen wanting everything needs no second flag to say so. What the flag actually
 bought was a third thing to remember to tick, and its ordinary failure was a camp
 approved on Saturday and a blank screen in the hall on Sunday.
 
-### It is not a slideshow, and that is the point
+### The columns are not a slideshow, and that is why they are the default
 
 The first version was one photograph at a time, held for eight seconds,
 cross-fading. Two things were wrong with it and they are worth writing down,
-because "just show the next picture" is the obvious design and it is the bad one:
+because "just show the next picture" is the obvious design:
 
 - **Nothing was happening.** For seven of every eight seconds the screen was
   still. On a wall, that reads as a screensaver.
 - **`object-fit: contain` put every picture in a void.** The screen is 16:9 and
   almost no photograph is, so each one floated in bands of empty ground.
 
-It is now **several columns of photographs filling the screen, drifting
+The columns are **several columns of photographs filling the screen, drifting
 continuously, with neighbouring columns moving in opposite directions.** Each tile
 is the shape of its own picture, so filling the tile crops nothing — the box and
-the photograph agree. There is no slide, no timer and no index, which also
-removed the entire class of bug where the advance timer and a video disagreed
-about whose turn it was.
+the photograph agree.
 
 Each column is a `DragRail axis="y"` — the same component a `column` section uses
 on a public page. The endless loop, the sub-pixel drift accumulation, the
 tab-away clamp and the `prefers-reduced-motion` opt-out are all subtle and all
 already solved there. A negative `speed` is all "drift the other way" takes.
 
-**Video autoplays, loops, and is muted.** Muted is not a compromise: an
-unattended page has no user gesture behind it, so an unmuted clip is *refused*
-and the tile sits on its poster frame. The lightbox, which only ever opens from a
-click, does have sound.
+### Nothing in the columns or the notebook is ever cropped
 
-Two things worth knowing before changing it:
+At Tommy's direction: *"keep the dimensions original for all the photos and
+videos… for the columns the width is set in stone but the height can be adjusted
+to ensure the entire picture is shown."*
 
+**The picture sizes its box, not the other way round.** Each caller says which
+axis the layout owns and the other follows the file — `fit="width"` for a column
+tile or a wheel tile, `fit="height"` for a notebook print, where the composition
+sets a height in vh and the width follows. `object-fit` is `contain` and should
+never have anything to do: the box *is* the picture's shape.
+
+The mechanism is one CSS value, on the picture rather than on the box around it:
+
+```
+aspect-ratio: auto 1600 / 1030;
+```
+
+`auto` first means *use the file's own ratio once the browser knows it, and this
+one until then* — so the stored `width`/`height` on the `galleryMedia` document
+are load-time scaffolding that keeps a lane the right height before anything has
+arrived, and never the shape anything is finally drawn at.
+
+That is the third arrangement in this spot and the first with no wrong case. The
+original slideshow used `contain` inside a 16:9 screen, so every photograph
+floated in bands of empty ground. The columns then used `cover` inside a box shaped
+from the *document's* numbers — right whenever those numbers were right, and
+silently cropping the top and bottom off any portrait whose dimensions had never
+been recorded, since `3 / 2` was the fallback.
+
+One consequence worth knowing: a notebook print is `width: max-content`, not
+`width: auto`. An absolutely positioned box with `auto` is shrink-to-fit, which
+clamps to the space between its `left` and the region's right edge — so a print at
+`left: 64%` would be squeezed into the last third of its region instead of
+overflowing it, which is both the wrong shape and the opposite of how these
+regions are meant to overlap.
+
+An item with no file at all now draws **nothing**, where it used to draw a grey
+3:2 box. A box sized by its picture cannot be sized without one, and an approved
+photograph with neither a rendition nor a poster is a broken record — the place to
+notice that is the gallery page, not the wall.
+
+### The slide had to answer for both of those faults to come back
+
+It is back because Tommy asked for it back, as one of three:
+
+- **The empty ground** is now a blurred, darkened copy of *the same photograph*,
+  filling the screen behind the picture. Nothing floats in black, and the colour
+  behind each picture is its own.
+- **Nothing happening** is answered by it not being the only style. A screen left
+  alone all evening should be the columns.
+
+Two things in it are decisions rather than details:
+
+- **There is no cross-fade.** A fade needs the incoming picture to start
+  transparent, so anywhere the animation timeline does not advance the screen
+  shows the *previous* photograph forever while the counter and the timer march
+  on. That is not hypothetical — it is what this repo's own preview pane does,
+  where `document.getAnimations()` reports the fade "running" with `currentTime`
+  stuck at zero. It cuts instead, with the outgoing photograph left drawn
+  underneath so the cut never flashes bare ground while a large image decodes.
+- **The timer is not gated on `prefers-reduced-motion`.** Everywhere else on this
+  site that setting stops movement outright, because a rail that sits still is
+  still a readable rail. A slide that does not advance is one photograph, forever.
+  The creeping progress line goes; the advance stays.
+
+A clip is not cut off at eight seconds — it plays to its end and then advances,
+`ended` being the signal. The guard timer is set from the clip's own `duration`
+the moment metadata arrives, and only a clip that reported nothing at all falls
+back to a flat 30 seconds. That is the distinction that keeps it from being the
+old bug, where a second clock raced the video.
+
+### The notebook: two motions, and one clock
+
+*"An actual collage that slides left with overlapping pictures with vertical
+scroll wheels that slide with the rest of the pictures just as if I am reading
+someone's notebook"* — and then, on seeing the first attempt: *"I just want it to
+be more full, I don't want it to be a single line of pictures to follow, I want it
+to really take up the screen."*
+
+Both sentences are requirements. The second one is why **a pile is a region, not a
+row**: the first version flowed each pile with flexbox, two or three prints
+cascading down and to the right, and it read as one line of photographs crossing
+the screen — which is what it was. A row places things along one axis; a notebook
+page is two-dimensional. A pile is now a full-height region whose prints are
+placed absolutely, `top` down the screen and `left` across the region, each print's
+width coming from its own aspect ratio. Every pile covers the top, middle and
+bottom of the wall, and prints deliberately overflow their region and are laid over
+by the next cluster.
+
+The arrangement is a **fixed table of seven compositions**, not a randomiser.
+Randomness is wrong twice here: a random layout differs between the rail's copies
+(see below), and it re-rolls on every resize, so plugging in a projector would deal
+the whole wall again.
+
+**The wheels are not nested `DragRail`s, and they cannot be.** A horizontal rail
+renders its children more than once — that is what makes its loop seamless: when
+the first copy has travelled out of view the second is *pixel-for-pixel* where the
+first started. Put an independently scrolling rail inside the copies and that stops
+being true, and every wrap jerks every wheel on screen to a different photograph.
+So the wheels are driven from one module-level clock shared by every copy: a
+wheel's offset is a pure function of (distance travelled × its speed) folded into
+its measured height, and identical markup at identical speed gives an identical
+transform in every copy. Nothing is synchronised because nothing has separate
+state to synchronise.
+
+That clock **accumulates distance rather than reading the wall clock**, which is
+what makes the pace control usable: were the offset `elapsed × speed`, pressing
+"faster" would change where every wheel *has already got to* and the whole wall
+would jump. Scaling the clock moves only the rate.
+
+Two layout traps in it, both found by measuring rather than by looking:
+
+- **The `height: 100%` chain has to be definite the whole way down.**
+  `.rail__track` is a flex row with an auto height and `.rail__copy` stretches to
+  the tallest item in the line, so a wheel asking for `100% + 8vh` of it came out
+  **14,646px tall** instead of 778 — `overflow: hidden` had nothing to clip and the
+  reel repeated itself to cover a frame the size of a building. `.rail--notebook`
+  now pins the track and the copy.
+- **A region's width is in `vw`, not measured from its contents**, so the page's
+  total width does not change as the photographs arrive and the rail's loop
+  measures the same number before and after.
+
+### Everything else
+
+- **Video autoplays, loops, and is muted.** Muted is not a compromise: an
+  unattended page has no user gesture behind it, so an unmuted clip is *refused*
+  and the tile sits on its poster frame. The lightbox, which only ever opens from
+  a click, does have sound. The slide is the exception to "loops" — it must not,
+  or `ended` never fires.
+- **The notebook is not offered below 700px.** Its whole effect is prints
+  overlapping across a page wider than the screen; on a phone there is room for
+  one print and its neighbours' corners. A narrow screen is not offered it rather
+  than being offered it and given the columns — but a URL that asks for it anyway
+  still presents, in the columns, because a kiosk bookmark opened on somebody's
+  phone should show the photographs.
+- **How much room the chrome needs is measured, not calculated.** The slide's
+  caption sits above the chrome, and the chrome is one row on a laptop and three
+  on a phone where the controls wrap. Two rounds of arithmetic in a media query
+  both landed the caption resting exactly on the top of the style buttons; a
+  `ResizeObserver` publishes `--present-chrome` instead.
 - **It reads the query without `useSearchParams`.** That hook suspends, and under
   `output: 'export'` a suspending hook opts the whole route out of prerendering.
-  `isPresenting` in `route.ts` reads `location.search` instead, and is
-  unit-tested for it.
+  `isPresenting`, `presentationStyle` and `presentationPace` in `route.ts` read
+  `location.search` instead, and are unit-tested for it.
 - **Real fullscreen needs a gesture.** `requestFullscreen` is refused outside a
   user gesture, so an unattended kiosk cannot ask for it on load. It fills the
   viewport regardless — the browser's own chrome is all that remains — and a
   button, or `f`, asks for the rest.
+- **The name in the corner is this level, not the road to it.** It was
+  `trailLabel` — every ancestor joined, "Summercamp · 2026 · Week 1 · Day 2".
+  On a page that is a breadcrumb and correct; in the corner of a projector it is a
+  line that grows with the depth of the tree and whose useful word is at the far
+  end. It is `level.node.title` now, or the program's name at the top.
+- **Two undo-on-unmount pairs are their own effects, with no dependencies**, and
+  the same bug was found twice. The scroll lock reads the page's overflow on the
+  way in and writes it back on the way out; `exitFullscreen()` releases the screen
+  on the way out. Both lived in the keyboard effect, which was harmless until the
+  switcher and the pace control gave that effect `drawn` and `shiftPace` to depend
+  on — after which **every press of a style or a speed ran both cleanups**: the
+  gallery behind the presentation was left permanently unable to scroll, and a
+  projector in the hall dropped out of full screen the moment anybody adjusted
+  anything. An undo that belongs to unmounting must depend on nothing.
 
-Leaving drops the query with `history.replaceState` rather than navigating: the
-gallery behind it is already mounted, and a route change would re-run every
-Firestore read to show a page that is already in memory.
+Leaving drops `present` *and* `pace` with `history.replaceState` rather than
+navigating: the gallery behind it is already mounted, and a route change would
+re-run every Firestore read to show a page that is already in memory.
 
 ## 7. A photograph opens
 
@@ -348,9 +578,15 @@ for only a few of its own.
 
 A card saying "Week 1 2026 — 4 parts · 214 photographs" counts the whole subtree.
 The per-document count it replaced said "0 photographs" about that same week and
-read as an empty camp. So does the cover: an administrator may choose one from
-anywhere beneath, and the automatic one is found the same way — which is what
-makes a cover possible at all for a week that has no photographs of its own.
+read as an empty camp. So do the pictures: a card cycles through the first few
+photographs from anywhere beneath it, which is what gives a week with no
+photographs of its own — only days with photographs in them — anything to show.
+
+Nothing about that is chosen. There used to be a `coverMediaId` per level and a
+"Picture on its card" chooser in the panel for it, in two places; both are gone.
+The pick only decided which picture the cycle opened on, and a card cross-fades
+every few seconds, so its whole effect was which photograph happened to be up
+when the page first drew.
 
 ### Two reads per page, whatever the depth
 
@@ -450,9 +686,9 @@ took the whole measure, so a page of blocks was a stack and nothing else.
 
 Four names — `full`, `two-thirds`, `half`, `third` — over a twelve-column page
 grid, `.blocks` in globals.css. Nothing pairs two blocks and there is no row
-object: they flow into the columns in their own order and a pair that fits shares
-a row. Auto-placement never runs backwards, so the order blocks are written in is
-the order they appear in, and one that does not fit starts a new row.
+object: a width is all any block declares, and where it lands falls out of the
+widths on the page. How it lands changed once since — see "The page packs like the
+grid inside a block" below, which is what decides it now.
 
 Below 700px — `GALLERY_COLLAPSE_BELOW`, the same line the canvas inside a block
 collapses on — every block is full width. A third of a phone is about 110px,
@@ -474,6 +710,109 @@ keyboard, so the handle is a focusable `role="slider"` and takes ← and → as 
 
 **Built:** `SECTION_WIDTHS` in `schema/sectionLayout.ts`, the handle in
 `BlockFrame`, `.blocks` and `.block__resize` in globals.css.
+
+#### Dragging a block beside its neighbour
+
+A new block is full width and lands under whatever is already there, which is what
+Tommy asked for — *"in that case it should go under, but if it is dragged to the
+same area as the grid the grid should adjust its width."* So the arrangement is
+made by the gesture, not guessed at when the block is created.
+
+The move drag has always been up and down; a block dragged up into the **right
+half** of the block above now docks beside it instead of swapping with it. Which
+of the two a drag means is decided by where it ends, and the grip's position makes
+that unambiguous: it sits at the left end of the bar, so a straight pull upwards
+ends in the left half and moves. A dock needs 24px of travel as well, or *pressing*
+the grip on a block that already stands beside a taller one would rearrange both.
+
+`dockWidths` is what the widths become. The neighbour gives up as little as it can:
+a full block becomes two-thirds and the arriving one takes a third, rather than the
+pair splitting the row down the middle — somebody who wants halves has a handle on
+each edge and can say so. Where even the narrowest neighbour leaves less than a
+third free, there is no answer and the drag falls back to being an ordinary move.
+
+#### The page packs like the grid inside a block
+
+> I want the entire sections to work the same way as the grid — where if there is
+> room to fit them in a given place it can go there, it doesn't have to be set in
+> stone and reserve more space than necessary
+
+CSS auto-placement cannot do that. It never runs backwards: a block that did not
+fit the current row started a new one *under the page* rather than under its
+neighbour, and the columns beside a tall block stayed empty for its whole height.
+A ministry page with a tall grid and two short wheels reserved three rows of the
+page for two rows of content.
+
+So the blocks are packed the same way the photographs inside one are —
+`packBlocks` beside `packGallery` in `gallery/layout.ts`, the same first-fit scan
+on the same twelve columns. Each block takes the first place it fits, top to
+bottom and left to right, which is what puts a wheel beside a grid and a second
+wheel under the first without anything being told to. It also means a later block
+can appear *above* an earlier one when there is a hole it fits; that is the point,
+and it is the same bargain the photograph canvas already makes. Reading order is
+the document's — only position comes from the packer.
+
+There was briefly a narrower version of this, `placeBlocks`, which grouped runs of
+equal-width blocks into a `.blocks__stack` wrapper. The packer does everything it
+did and does not need the widths to match, so it is gone.
+
+**Heights are measured, and that is the only part that is not pure.** A
+photograph's shape comes from its proportions, which are on the document; a
+block's comes from what is inside it. `useBlockPacking` measures each child,
+rounds up to a row unit and hands the numbers over. Three things make the loop
+safe and are worth not undoing:
+
+- **`align-items: start`**, so a block is its own height inside whatever row band
+  it is given. Without it, placing a block changes what was measured.
+- **The row unit is owned by JavaScript**, in rem, and written onto the element as
+  `--blocks-row` in pixels. Read the other way round, `getComputedStyle` hands
+  back a custom property as the token it was written as — `0.5rem` parses as
+  `0.5`, and the page comes out twenty times too tall.
+- **The gap between blocks is a margin on each block, not `row-gap`.** A row gap
+  applies between every implicit row, so a block two hundred units tall would
+  carry a hundred and ninety-nine of them. Rolled into each block's row span, the
+  error is at most one unit.
+
+Below `GALLERY_COLLAPSE_BELOW` none of it runs: one column, nothing to pack. That
+test is `matchMedia`, not `window.innerWidth` — `innerWidth` counts the scrollbar
+and reports the window rather than the layout viewport under device emulation,
+which is how the first version shipped a twelve-column arrangement crushed into a
+phone.
+
+**No JavaScript, no packing**, and that is deliberate rather than unfortunate: the
+static HTML carries the flowing layout, which is a correct page — the same one
+every gallery had before this — and the packer improves it on hydration.
+
+**Built:** `packBlocks` in `gallery/layout.ts`, `useBlockPacking` in
+`programs/packing.ts`, `place` on `BlockFrame`, `.blocks--packed` in globals.css.
+
+### A wheel's length is its other edge
+
+`width` is how much of the page a block takes, and for a sideways wheel that is its
+length. An upright wheel's length is how *tall* it is, and that had no control on
+the block at all: the size ladder lived in the properties panel, wired only to the
+page's own first block, so a wheel somebody added could not be resized. Tommy: *"I
+should be able to adjust the length of the vertical scroll wheel the same way I can
+do so with the horizontal one."*
+
+So a wheel has a second handle, on its bottom edge, snapping to the same four
+`SECTION_SCALES` the panel offered. Wheels only — a grid's height is however many
+photographs are in it, and a handle pointing at a number it does not control is a
+control that lies. Unlike the width handle it works below 700px too: every block is
+full width down there, but a wheel is exactly as tall on a phone as on a laptop.
+
+Two things are worth knowing about how it is built. The ladder — `WHEEL_HEIGHT_REM`
+— is the stylesheet's four numbers written a second time, because a handle that
+snapped by distance travelled rather than to where the pointer is would not follow
+the edge being dragged. And the drag reports twice: `live` while it is moving, so
+the *parent* redraws the block at the candidate size, and once more on release,
+which is the only call that writes. A wheel's height is drawn by the block's
+contents, which `BlockFrame` does not own, so unlike the width there is no class it
+can put on itself to preview the drag.
+
+**Built:** `WHEEL_HEIGHT_REM`, `wheelHeight` and `nearestSectionScale` in
+`schema/sectionLayout.ts`, the handle in `BlockFrame`, `.block__resize--tall` in
+globals.css.
 
 ### Nothing reads the raw field
 
@@ -1022,3 +1361,52 @@ The captions are the largest remaining gap and they are not a code one: a
 photograph with no caption is one a screen reader announces as nothing at all, and
 the field is the alt text as well as the visible line. The editor now opens on it
 for every photograph selected, which is as far as software can push it.
+
+## 10. The main section: one pointer, for the tags that come next
+
+`config/events.mainSection` names **one ministry** — a `programs` document id, or
+null — and nothing on the public page looks different for it. It is set from the
+properties column on `/events` with nothing selected, which until now drew no
+panel at all: every other control there belongs to a ministry, and this one
+belongs to the parish.
+
+It is stored for what reads it next rather than for what reads it today:
+
+- **The NFC tags.** A tag by the door means "the thing happening now" and cannot
+  be reprogrammed every week. It points at a route, the route reads this, and the
+  parish changes it here.
+- **The forms behind those tags**, which have to file what they collect
+  somewhere. A photograph sent from a tap belongs to the section the parish
+  named, not to whichever page the form happened to open on.
+
+Three things about the shape:
+
+**A `config` document, not a field on the five programs.** "Which ministry is the
+current one" is not a property of Summercamp — next month the answer is a
+different ministry. `config` is world-readable and admin-writable already (see
+`firestore.rules`), which is the pair this needs: the pages that read it are
+public, and only a superadmin can set it, the same person the `/events` editing
+controls appear for at all.
+
+**A ministry, not a level inside one.** This was built to name any level of any
+tree — Week 1 2026, or Day 3 of it — stored as a `{ programId, programEventId }`
+pair and chosen from a depth-indented `<select>` of the whole parish. Narrowed
+within the hour, at Tommy's direction, and the narrower field is the better one
+for what reads it: a tag screwed to a wall wants an answer that stays true for a
+season, and "Day 3" is stale by Thursday. The id is also already a URL —
+`programs` documents are keyed by their slug — so a tag turns this value into
+`/events/<mainSection>` without a lookup.
+
+If a level ever needs naming, that is a **second field rather than a wider one**.
+A pointer that may be a program or may be a level is one every reader has to
+branch on, and the reason to widen it will arrive with its own answer about what
+happens when the level is deleted mid-week.
+
+**A stale pointer reads as "not set", never as an error.** The ministry named
+here can be removed at any time by somebody who has never opened this panel — the
+same tolerance `defaultSubmissionNode` states for `prioritySubmissionNodeId`, and
+for the same reason: a form that refuses to send because a ministry was deleted is
+worse than a form that files where it stands. The editor is the one place that
+does *not* silently fall back, because there it is the thing being edited: the
+select shows the dead id and says it no longer exists, rather than showing "None"
+about a document that says otherwise.

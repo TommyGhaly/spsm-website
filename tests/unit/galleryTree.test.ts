@@ -7,7 +7,9 @@ import {
   buildGalleryTree,
   childrenOf,
   compareNodes,
+  defaultSubmissionNode,
   descendantsOf,
+  flattenGalleryTree,
   nodeSummary,
   resolveTrail,
   subtreeIds,
@@ -41,7 +43,6 @@ interface Node extends GalleryTreeNode {
   title: string;
   order?: number;
   featuredMediaIds?: readonly string[];
-  coverMediaId?: string | null;
 }
 
 function node(id: string, parentId: string | null, extra: Partial<Node> = {}): Node {
@@ -211,6 +212,117 @@ describe('subtreeIds', () => {
 
 /* -------------------------------------------------------------------------- */
 /* The summaries — the point of the whole file                                 */
+/* -------------------------------------------------------------------------- */
+
+describe('flattenGalleryTree', () => {
+  const tree = buildGalleryTree(TREE);
+
+  /*
+   * The list a `<select>` is built from — the upload form's "which part of this
+   * ministry is your photograph of", and the queue's "file it under".
+   *
+   * Worth testing for the reason the rest of this file is: nothing here fails
+   * loudly. A wrong depth renders a picker that is merely badly indented, and a
+   * missing row is a level a parishioner simply cannot choose — with no error,
+   * no gap, and nothing to report.
+   */
+  it('lists every level, in reading order', () => {
+    expect(flattenGalleryTree(tree).map(({ node: one }) => one.id)).toEqual([
+      '2027',
+      'week-1',
+      'day-1',
+      'day-2',
+      'the-hike',
+      'week-2',
+      'chapel',
+    ]);
+  });
+
+  it('counts depth from the program, not from the deepest branch', () => {
+    const depths = new Map(flattenGalleryTree(tree).map(({ node: one, depth }) => [one.id, depth]));
+    expect(depths.get('2027')).toBe(0);
+    expect(depths.get('week-1')).toBe(1);
+    expect(depths.get('day-2')).toBe(2);
+    expect(depths.get('the-hike')).toBe(3);
+    // A sibling branch is shallower again. A depth carried down from the last
+    // row rather than from the parent would make this 4.
+    expect(depths.get('week-2')).toBe(1);
+    expect(depths.get('chapel')).toBe(2);
+  });
+
+  it('is empty for a ministry with no levels yet', () => {
+    expect(flattenGalleryTree(buildGalleryTree([]))).toEqual([]);
+  });
+
+  /*
+   * One mis-set `parentId` is all a cycle takes, and this list is built in a
+   * visitor's browser on a public page. Terminating matters more than what it
+   * returns.
+   */
+  it('terminates on a cycle', () => {
+    const cyclic = buildGalleryTree([
+      node('a', 'b'),
+      node('b', 'a'),
+      node('free', null),
+    ]);
+    const rows = flattenGalleryTree(cyclic);
+    expect(rows.map(({ node: one }) => one.id)).toContain('free');
+    // Every node once, whatever the cycle did to the shape.
+    expect(new Set(rows.map(({ node: one }) => one.id)).size).toBe(rows.length);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe('defaultSubmissionNode', () => {
+  const tree = buildGalleryTree(TREE);
+
+  /*
+   * Which level a parishioner's photograph lands in when they do not choose one.
+   *
+   * Every branch of this produces a form that looks entirely correct. Get it
+   * wrong and forty photographs of Day 3 are filed under Week 2, or under the
+   * first level in the ministry, and the only symptom is an administrator moving
+   * them all by hand — which is the work the priority section exists to remove.
+   */
+  it('prefers the parish\'s priority section over the page being looked at', () => {
+    expect(defaultSubmissionNode(tree, 'day-2', 'week-2')).toBe('day-2');
+  });
+
+  it('falls back to the page when no priority is set', () => {
+    expect(defaultSubmissionNode(tree, null, 'week-2')).toBe('week-2');
+    expect(defaultSubmissionNode(tree, undefined, 'the-hike')).toBe('the-hike');
+  });
+
+  /*
+   * The case this function exists for. A level can be deleted long after it was
+   * made the priority, and the id is deliberately not cleaned up on delete — so a
+   * stale one has to cost a preselection and nothing else. Returning it would
+   * file every upload against a document that is gone, which `firestore.rules`
+   * refuses with `permission-denied` on a form that looks fine.
+   */
+  it('ignores a priority section that no longer exists', () => {
+    expect(defaultSubmissionNode(tree, 'deleted-last-year', 'week-2')).toBe('week-2');
+    expect(defaultSubmissionNode(tree, 'deleted-last-year', null)).toBe('2027');
+  });
+
+  it('falls back to the first level on a ministry page with no priority', () => {
+    expect(defaultSubmissionNode(tree, null, null)).toBe('2027');
+  });
+
+  /* Same reasoning as a stale priority: a page id is no more trustworthy. */
+  it('ignores a page id that is not in the tree', () => {
+    expect(defaultSubmissionNode(tree, null, 'not-a-level')).toBe('2027');
+  });
+
+  it('is null for a ministry with no levels at all', () => {
+    expect(defaultSubmissionNode(buildGalleryTree([]), null, null)).toBeNull();
+    // Including when a priority is set to something that cannot resolve, which
+    // is what a ministry looks like the moment its last level is deleted.
+    expect(defaultSubmissionNode(buildGalleryTree([]), 'day-2', null)).toBeNull();
+  });
+});
+
 /* -------------------------------------------------------------------------- */
 
 describe('nodeSummary', () => {
@@ -401,12 +513,17 @@ describe('summariseChildren', () => {
     expect(summaries.get('week-1')?.cover?.id).toBe('deep');
   });
 
-  it('honours a chosen cover over the automatic one', () => {
-    const chosen = buildGalleryTree(
-      TREE.map((one) => (one.id === 'week-1' ? { ...one, coverMediaId: 'second' } : one)),
-    );
+  /**
+   * The card's picture is not chosen any more — `coverMediaId` and both of its
+   * panel controls are gone, because a card cross-fades and the pick only decided
+   * which lap it opened on. So the cover is the first page-cleared photograph in
+   * filing order, and the cycle carries the rest behind it.
+   */
+  it('takes the first picture in filing order, and cycles the rest', () => {
     const media = [shot('first', 'day-1'), shot('second', 'day-2')];
-    expect(summariseChildren(chosen, '2027', media).get('week-1')?.cover?.id).toBe('second');
+    const summary = summariseChildren(tree, '2027', media).get('week-1');
+    expect(summary?.cover?.id).toBe('first');
+    expect(summary?.covers.map((one) => one.id)).toEqual(['first', 'second']);
   });
 
   /**

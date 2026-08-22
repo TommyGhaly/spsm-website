@@ -13,12 +13,16 @@
 import { doc, getDoc } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  CONFIG_DOC_EVENTS,
   CONFIG_DOC_INTEGRATIONS,
   CONFIG_DOC_PARISH,
+  DEFAULT_EVENTS_PAGE_CONFIG,
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
+  parseEventsPageConfig,
   parseIntegrationsConfig,
   parseParishConfig,
+  type EventsPageConfig,
   type IntegrationsConfig,
   type ParishConfig,
 } from '@spsm/shared';
@@ -83,5 +87,40 @@ export async function getParishConfig(): Promise<ParishConfig> {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[config] could not read parish details: ${message}`);
     return DEFAULT_PARISH_CONFIG;
+  }
+}
+
+/**
+ * The `/events` page's own settings — today, which section the parish is
+ * pointing at.
+ *
+ * ## Read in the browser, unlike the two above
+ *
+ * Those run at build time, on a page that is exported as HTML. This one runs on
+ * the client: `/events` is client-rendered so that a ministry created after the
+ * last deploy appears without one (see ProgramDirectory), and the setting is
+ * changed from that same page — a value baked into the export would go stale the
+ * moment somebody set it. It lives here rather than in features/programs because
+ * the NFC routes will read it too, and they are not part of the galleries.
+ *
+ * **A missing document is the ordinary state and says nothing on the log.** The
+ * other two readers warn, because a site with no parish address or no
+ * integrations is misconfigured. Nothing is wrong with a parish that has never
+ * named a section: `config/events` does not exist until the first time one is
+ * chosen, so a warning here would fire on every visit to a perfectly correct
+ * site.
+ */
+export async function getEventsPageConfig(): Promise<EventsPageConfig> {
+  if (!isConfigured()) return DEFAULT_EVENTS_PAGE_CONFIG;
+
+  try {
+    const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_EVENTS));
+    return snapshot.exists()
+      ? parseEventsPageConfig(snapshot.data())
+      : DEFAULT_EVENTS_PAGE_CONFIG;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[config] could not read the events page settings: ${message}`);
+    return DEFAULT_EVENTS_PAGE_CONFIG;
   }
 }

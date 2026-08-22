@@ -70,8 +70,29 @@ export type GalleryDisplay = (typeof GALLERY_DISPLAYS)[number];
  * `full` is meaningful for a rail and a column only — a grid at `full` would be
  * one picture per screen, which is what the presentation is for.
  */
-export const SECTION_SCALES = ['small', 'medium', 'large', 'full'] as const;
+export const SECTION_SCALES = ['small', 'medium', 'large', 'full', 'fit'] as const;
 export type SectionScale = (typeof SECTION_SCALES)[number];
+
+/**
+ * `fit` is the upright wheel's answer to "as tall as the pictures themselves".
+ *
+ * Tommy asked for a column whose height went *"as far as the height of the
+ * pictures themselves"*, then: *"make it slightly smaller"*. Both halves matter.
+ * A frame exactly as tall as one photograph is a wheel with nothing to drift
+ * into — the next picture starts precisely where the frame ends, so there is
+ * never a second one in view and no cue that the wheel goes anywhere. A frame at
+ * `FIT_SHARE` of one picture always shows a sliver of the next, which is the
+ * whole of what makes it read as a wheel rather than as a photograph.
+ *
+ * Unlike the other four this is not a number in the stylesheet: it depends on the
+ * pictures, so it is computed where they are known and written to `--rail-height`
+ * inline. `WHEEL_HEIGHT_REM` still carries a value for it, used before the first
+ * measurement lands so the block does not jump.
+ *
+ * Meaningless on a `rail`, whose height *is* its tile height — `scalesFor` does
+ * not offer it there.
+ */
+export const FIT_SHARE = 0.88;
 
 /**
  * How much of the page's width one block takes.
@@ -184,6 +205,321 @@ export function stepSectionWidth(width: SectionWidth, delta: -1 | 1): SectionWid
   return SECTION_WIDTHS[Math.min(Math.max(next, 0), SECTION_WIDTHS.length - 1)] ?? width;
 }
 
+/**
+ * How many of the page's columns are free once these blocks have flowed.
+ *
+ * **Flow, not the layout the page draws.** What it draws comes from `packBlocks`,
+ * which measures each block and drops it into the first place it fits, wherever
+ * that is. This is the narrower question the *docking drag* asks — "is there a
+ * place beside this block, going along its row" — and it is deliberately
+ * width-only: it has to answer before anything has been measured, and the mobile
+ * app's editor has to answer it the same way from the same four names.
+ *
+ * Blocks fill a row in their own order and one that does not fit starts a new one,
+ * which is the conservative reading of the two: where this says there is room, the
+ * packer will certainly find it.
+ */
+export function roomAfter(widths: readonly SectionWidth[]): number {
+  let room = SECTION_COLUMNS;
+  for (const width of widths) {
+    const columns = SECTION_WIDTH_COLUMNS[width];
+    room = columns > room ? SECTION_COLUMNS - columns : room - columns;
+  }
+  return room;
+}
+
+/** The widest block that fits in `room` columns, or null when nothing does. */
+export function widestWithin(room: number): SectionWidth | null {
+  // Widest-first, so the first match is the answer.
+  return SECTION_WIDTHS.find((width) => SECTION_WIDTH_COLUMNS[width] <= room) ?? null;
+}
+
+/**
+ * The two widths that put a block **beside the one before it**.
+ *
+ * ## What this is for
+ *
+ * Adding a block leaves it full width, so it lands under whatever is already
+ * there. Tommy: *"in that case it should go under but if it is dragged to the same
+ * area as the grid the grid should adjust its width."* So the arrangement is made
+ * by the gesture rather than guessed at when the block is created — dragging a
+ * wheel up alongside a grid is what asks for the pair, and this is the answer to
+ * "what widths do those two have to have".
+ *
+ * ## The neighbour gives up as little as it can
+ *
+ * `at` is the dragged block; everything before it has already flowed. If that
+ * leaves four columns or more the dragged block takes them and **nothing else on
+ * the page changes** — a two-thirds grid keeps its two thirds and gets a third
+ * beside it.
+ *
+ * Only when there is no room does the neighbour move, and then by the smallest
+ * step that opens a place: full becomes two-thirds and the wheel takes a third,
+ * rather than the pair splitting the row down the middle. Two reasons for the
+ * stingy version over the tidy one. The first is that it is the one thing the
+ * gesture asked for — somebody who wanted halves has a handle on each block's edge
+ * and can say so. The second is that it is the same rule at every width, so a
+ * two-thirds grid on a row with a third narrows to a third and the row ends up
+ * three across, which is a page nobody would have got from a rule that only knew
+ * how to halve.
+ *
+ * Null when even the narrowest neighbour leaves less than a third free — two
+ * halves, say. There is no arrangement of *those two blocks* that fits a third,
+ * and the alternative is moving something the drag never touched. The drag falls
+ * back to being an ordinary move.
+ *
+ * @param widths every block on the page, in the order it is laid out.
+ * @param at     the dragged block. It docks against `at - 1`, which is the block
+ *               it is under; there is no docking against something further away,
+ *               because the gesture is "put this next to that" and `that` is what
+ *               the pointer is over.
+ */
+export function dockWidths(
+  widths: readonly SectionWidth[],
+  at: number,
+): { neighbour: SectionWidth | null; dragged: SectionWidth } | null {
+  if (at < 1 || at >= widths.length) return null;
+
+  const before = widths.slice(0, at);
+  const fits = widestWithin(roomAfter(before));
+  if (fits) return { neighbour: null, dragged: fits };
+
+  // Widest-first, so the first candidate that opens a place is the smallest
+  // change to the neighbour that could have opened one.
+  const now = SECTION_WIDTHS.indexOf(widths[at - 1] as SectionWidth);
+  for (const neighbour of SECTION_WIDTHS.slice(now + 1)) {
+    const room = roomAfter([...before.slice(0, at - 1), neighbour]);
+    const dragged = widestWithin(room);
+    if (dragged) return { neighbour, dragged };
+  }
+
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Which way a wheel goes                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The direction a wheel travels on its own.
+ *
+ * Tommy: *"for all of the scroll wheels I want there to be a setting for which
+ * direction it spins left right up down. U pick horizontal or vertical then the
+ * direction in the settings."* Which is exactly the split: the **axis** is already
+ * the display — `rail` is horizontal, `column` is upright — and this is the second
+ * half, the way it goes along that axis.
+ *
+ * Four names rather than a `reverse: boolean`, because the stored value should say
+ * what it means. `reverse: true` on a column is unreadable in a Firestore console
+ * and unreadable in the mobile app; `'down'` is neither. The cost is that the pair
+ * can disagree — a `column` that says `'left'` — and `resolveSectionLayout` settles
+ * that on read rather than refusing it on write, the same way `titlePlacementFor`
+ * settles a grid whose title was set to sit `over` the pictures.
+ */
+export const WHEEL_SPINS = ['left', 'right', 'up', 'down'] as const;
+export type WheelSpin = (typeof WHEEL_SPINS)[number];
+
+/** The two that mean anything on each axis. */
+export const SPINS_FOR_DISPLAY: Record<WheelDisplay, readonly WheelSpin[]> = {
+  rail: ['left', 'right'],
+  column: ['up', 'down'],
+};
+
+/**
+ * The way each axis went before this field existed, so adding it to a document
+ * changes nothing.
+ *
+ * A sideways wheel ran `left` — the track translating toward negative x, which
+ * reads as the pictures marching leftward — and a column ran `up`.
+ */
+export const DEFAULT_SPIN: Record<WheelDisplay, WheelSpin> = {
+  rail: 'left',
+  column: 'up',
+};
+
+/**
+ * The spin this layout actually travels in.
+ *
+ * A grid has nowhere to go, so it is asked about the axis it would have if it
+ * became a wheel — which keeps the control's value alive across a switch to grid
+ * and back, for the reason given on `titlePlacementFor`.
+ */
+export function spinFor(layout: SectionLayout): WheelSpin {
+  const display: WheelDisplay = layout.display === 'grid' ? 'rail' : layout.display;
+  return SPINS_FOR_DISPLAY[display].includes(layout.spin)
+    ? layout.spin
+    : DEFAULT_SPIN[display];
+}
+
+/** Whether the spin runs backwards along its axis — what the animation needs. */
+export function spinReversed(spin: WheelSpin): boolean {
+  return spin === 'right' || spin === 'down';
+}
+
+/* -------------------------------------------------------------------------- */
+/* How a tile is shaped                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether a wheel's pictures keep their own shape.
+ *
+ *  - `natural` — each tile is the photograph's own aspect ratio. A sideways wheel
+ *                fixes the height and the width follows; an upright one fixes the
+ *                width and the height follows. Portraits and panoramas stay
+ *                portraits and panoramas. **The default, and what the wheels have
+ *                always done** — see `.gallery-strip--rail > li`.
+ *  - `uniform`  — every tile is the same size and the photograph is cropped to it
+ *                around its focal point. The wheel reads as an even ribbon, which
+ *                is what a set of near-identical snapshots wants.
+ *
+ * A name and not a ratio: `uniform` means "square to the axis" — the tile is as
+ * wide as it is tall — and a parish that wants 4:5 wants a different thing than
+ * this control is for.
+ */
+export const SECTION_FITS = ['natural', 'uniform'] as const;
+export type SectionFit = (typeof SECTION_FITS)[number];
+
+/* -------------------------------------------------------------------------- */
+/* How tall a wheel is                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** The two displays that are a wheel. A grid's height is its contents. */
+export type WheelDisplay = Exclude<GalleryDisplay, 'grid'>;
+
+/** Whether this display has a height of its own to set. */
+export function isWheel(display: GalleryDisplay): display is WheelDisplay {
+  return display !== 'grid';
+}
+
+/**
+ * The scale ladder in rem, so a drag can snap to the height it is pointing at.
+ *
+ * **These are the same four numbers the stylesheet draws** —
+ * `.gallery-band--rail.gallery-band--scale-*` sets `--rail-tile` and the
+ * `--column` rules set `--rail-height`. Two copies of four numbers, and the
+ * alternative was worse in both directions: a handle that snapped by distance
+ * travelled rather than to where the pointer is would not follow the edge being
+ * dragged, and moving the ladder into inline styles would put a wheel's whole
+ * appearance in JavaScript for the benefit of one control. The stylesheet says so
+ * beside its own copy.
+ *
+ * A rail counts in tile height and a column in frame height, which is why this is
+ * per display and not one ladder — the same reason `SECTION_SCALES` is a name
+ * rather than a number.
+ */
+export const WHEEL_HEIGHT_REM: Record<WheelDisplay, Record<SectionScale, number>> = {
+  rail: { small: 9, medium: 13, large: 18, full: 34, fit: 18 },
+  column: { small: 20, medium: 30, large: 42, full: 54, fit: 34 },
+};
+
+/** The scales worth offering for this display. `fit` is the column's alone. */
+export function scalesFor(display: GalleryDisplay): readonly SectionScale[] {
+  return display === 'column'
+    ? SECTION_SCALES
+    : SECTION_SCALES.filter((one) => one !== 'fit');
+}
+
+/**
+ * How tall one picture draws in a column this wide, and therefore how tall the
+ * frame should be to show it and a hint of the next.
+ *
+ * `aspect` is width ÷ height, the photograph's own. A portrait gives a tall frame
+ * and a panorama a short one, which is the point: the frame follows the pictures
+ * rather than the pictures being cropped to the frame.
+ *
+ * Returns `null` when there is nothing to measure from — no width yet, or a
+ * document with no dimensions — and every caller then falls back to the rem in
+ * `WHEEL_HEIGHT_REM`.
+ */
+export function fitWheelHeight(width: number, aspect: number): number | null {
+  if (!Number.isFinite(width) || width <= 0) return null;
+  if (!Number.isFinite(aspect) || aspect <= 0) return null;
+  return (width / aspect) * FIT_SHARE;
+}
+
+/**
+ * The share of the window `full` takes before the cap in `WHEEL_HEIGHT_REM`
+ * applies — `min(62vh, 34rem)` and `min(82vh, 54rem)`, the same two the
+ * stylesheet writes.
+ */
+export const WHEEL_FULL_VIEWPORT: Record<WheelDisplay, number> = {
+  rail: 0.62,
+  column: 0.82,
+};
+
+/** What the browser is measuring in: one rem, and the height of the window. */
+export type Viewport = { rem: number; height: number };
+
+/** How tall a wheel of this shape and size actually draws, in pixels. */
+export function wheelHeight(
+  display: WheelDisplay,
+  scale: SectionScale,
+  view: Viewport,
+): number {
+  const capped = WHEEL_HEIGHT_REM[display][scale] * view.rem;
+  return scale === 'full'
+    ? Math.min(WHEEL_FULL_VIEWPORT[display] * view.height, capped)
+    : capped;
+}
+
+/**
+ * The size a height drag has landed on.
+ *
+ * The same contract as `nearestSectionWidth`, and for the same reason: every
+ * input produces one of the four, because a pointer dragged above the top of the
+ * block or off the bottom of the window is an ordinary thing and not an error.
+ */
+export function nearestSectionScale(
+  height: number,
+  display: WheelDisplay,
+  view: Viewport,
+): SectionScale {
+  if (!Number.isFinite(height)) return 'large';
+
+  let best: SectionScale = 'large';
+  let smallest = Number.POSITIVE_INFINITY;
+  for (const scale of SECTION_SCALE_LADDER) {
+    const gap = Math.abs(wheelHeight(display, scale, view) - height);
+    if (gap < smallest) {
+      smallest = gap;
+      best = scale;
+    }
+  }
+  return best;
+}
+
+/**
+ * The four the drag handle and the keyboard move between, smallest to largest.
+ *
+ * `SECTION_SCALES` is the *menu*; this is the **ladder**, and they stopped being
+ * the same list when `fit` arrived. `fit` is not a size — it is where the size
+ * comes from — so it has no place on a rung: its height depends on the pictures,
+ * which means its position between `large` and `full` changes with the contents,
+ * and a drag that snapped to it would land somewhere different on two blocks
+ * dragged to the same pixel. Worse, a keyboard step past `full` would leave a
+ * block whose height no longer answered to the arrow keys at all.
+ *
+ * So `fit` is chosen from the list and never stepped onto. Dragging a `fit`
+ * column's edge steps it back onto the fixed ladder, which is the honest
+ * behaviour: a drag is a request for a particular height.
+ */
+export const SECTION_SCALE_LADDER = ['small', 'medium', 'large', 'full'] as const;
+
+/** One step taller or shorter, stopping at each end. The keyboard's route in. */
+export function stepSectionScale(scale: SectionScale, delta: -1 | 1): SectionScale {
+  // The ladder runs smallest to largest, so a step taller is a step along it.
+  const index = SECTION_SCALE_LADDER.indexOf(scale as (typeof SECTION_SCALE_LADDER)[number]);
+  // Off the ladder entirely — a `fit` column. A step taller means "the tallest
+  // fixed size", a step shorter "the one below it": either way it rejoins the
+  // ladder rather than doing nothing.
+  if (index === -1) return delta === 1 ? 'full' : 'large';
+  const next = index + delta;
+  return (
+    SECTION_SCALE_LADDER[Math.min(Math.max(next, 0), SECTION_SCALE_LADDER.length - 1)] ??
+    scale
+  );
+}
+
 /** The type scale a section's title is set at. */
 export const TEXT_SCALES = ['small', 'medium', 'large', 'display'] as const;
 export type TextScale = (typeof TEXT_SCALES)[number];
@@ -255,6 +591,16 @@ export interface SectionLayout {
    * is not this flag's business — see `useDragRail`.
    */
   drift: boolean;
+  /**
+   * Which way it goes along its axis. Settled against the display on read — see
+   * `spinFor` — so a value left over from the other axis is not lost.
+   */
+  spin: WheelSpin;
+  /**
+   * Whether the pictures keep their own shape or are cropped to a common one.
+   * Ignored by `grid`, whose tiles are sized by the canvas. See `SECTION_FITS`.
+   */
+  fit: SectionFit;
   title: SectionTitleStyle;
   caption: SectionCaptionStyle;
 }
@@ -278,6 +624,10 @@ export function defaultSectionLayout(): SectionLayout {
     scale: 'medium',
     width: 'full',
     drift: true,
+    /* The two directions the wheels already went before either field existed, so
+       a document gaining them renders exactly as it did. */
+    spin: 'left',
+    fit: 'natural',
     title: { scale: 'small', placement: 'above', align: 'start' },
     caption: { scale: 'small', placement: 'over', align: 'start' },
   };
@@ -315,6 +665,8 @@ export function resolveSectionLayout(value: unknown): SectionLayout {
     // `!== false` rather than `=== true`: absent means default, and the default
     // is on. Only an explicit `false` switches the drift off.
     drift: source['drift'] === undefined ? fallback.drift : source['drift'] !== false,
+    spin: oneOf(source['spin'], WHEEL_SPINS, fallback.spin),
+    fit: oneOf(source['fit'], SECTION_FITS, fallback.fit),
     title: {
       scale: oneOf(title['scale'], TEXT_SCALES, fallback.title.scale),
       placement: oneOf(title['placement'], TITLE_PLACEMENTS, fallback.title.placement),
@@ -322,7 +674,11 @@ export function resolveSectionLayout(value: unknown): SectionLayout {
     },
     caption: {
       scale: oneOf(caption['scale'], TEXT_SCALES, fallback.caption.scale),
-      placement: oneOf(caption['placement'], CAPTION_PLACEMENTS, fallback.caption.placement),
+      placement: oneOf(
+        caption['placement'],
+        CAPTION_PLACEMENTS,
+        fallback.caption.placement,
+      ),
       align: oneOf(caption['align'], TEXT_ALIGNS, fallback.caption.align),
     },
   };
@@ -447,7 +803,13 @@ export interface GalleryBand {
  * button, which is the part that stops it reading as a fault.
  */
 export function defaultBand(id: string, display: GalleryDisplay): GalleryBand {
-  return { id, title: '', layout: layoutForLook(display, 'large'), picks: [], hidden: [] };
+  return {
+    id,
+    title: '',
+    layout: layoutForLook(display, 'large'),
+    picks: [],
+    hidden: [],
+  };
 }
 
 /**
@@ -543,18 +905,45 @@ export function layoutForLook(
    * full width and its caller has no width to pass.
    */
   width: SectionWidth = 'full',
+  /**
+   * Whether the pictures' captions are drawn, carried through for the same
+   * reason `scale` and `width` are parameters rather than reset here.
+   *
+   * The default is the house style: **on for a grid, off for a wheel.** A grid is
+   * a composition somebody arranged and a caption belongs to the picture in it; a
+   * wheel of twenty photographs from one afternoon with a line of text on every
+   * tile is a page of subtitles.
+   *
+   * It is a parameter because that default is a *starting point* and was being
+   * treated as a rule: switching a block's shape rebuilt its whole layout, so
+   * turning captions on for a wheel and then trying it as a grid silently threw
+   * the choice away. Tommy asked for the control — *"I want the ability to show vs
+   * hide captions for the scroll wheels"* — and a control whose value evaporates
+   * when you change something else is not one.
+   */
+  caption: CaptionPlacement = display === 'grid' ? 'over' : 'hidden',
+  /**
+   * The spin and the tile shape, carried through for exactly the reason `caption`
+   * is: they are choices about the wheel, and changing a block from a sideways
+   * wheel to an upright one is changing one thing, not resetting the block.
+   *
+   * A spin from the other axis is kept rather than corrected. It is meaningless
+   * until the display swings back, and `spinFor` supplies the axis default in the
+   * meantime — the same trade `titlePlacementFor` makes, so switching there and
+   * back does not cost the setting.
+   */
+  spin: WheelSpin = DEFAULT_SPIN[display === 'grid' ? 'rail' : display],
+  fit: SectionFit = 'natural',
 ): SectionLayout {
   return {
     display,
     scale,
     width,
     drift: true,
+    spin,
+    fit,
     title: { scale: 'small', placement: 'above', align: 'start' },
-    caption: {
-      scale: 'small',
-      placement: display === 'grid' ? 'over' : 'hidden',
-      align: 'start',
-    },
+    caption: { scale: 'small', placement: caption, align: 'start' },
   };
 }
 
@@ -605,6 +994,26 @@ export const SECTION_SCALE_NAMES: Record<SectionScale, string> = {
   medium: 'Medium',
   large: 'Large',
   full: 'Full',
+  /* Named for what it does, not for the mechanism: the frame ends up the height of
+     one photograph less a sliver. "Fit" alone reads as a CSS keyword. */
+  fit: 'One picture',
+};
+
+/*
+ * Said as a direction of travel, not as a side. "Leftward" is where the pictures
+ * are going; "Left" beside "Right" in a row of two reads as an alignment control,
+ * which is what the title and caption rows above it actually are.
+ */
+export const WHEEL_SPIN_NAMES: Record<WheelSpin, string> = {
+  left: 'Leftward',
+  right: 'Rightward',
+  up: 'Upward',
+  down: 'Downward',
+};
+
+export const SECTION_FIT_NAMES: Record<SectionFit, string> = {
+  natural: 'Their own shape',
+  uniform: 'All the same',
 };
 
 /** Whether this display moves by itself, given what was asked for. */

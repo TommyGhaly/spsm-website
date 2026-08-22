@@ -174,6 +174,38 @@ const ICONS = {
       <path d="M12 5.5v13M5.5 12h13" />
     </>
   ),
+  /**
+   * Delete a photograph from the parish for good.
+   *
+   * A bin, deliberately **not** the ×. The × on a picture means "take it off this
+   * page, the photograph stays" everywhere else in the editor — see
+   * `PictureStrip` — and the one screen where a press really does destroy the
+   * file cannot wear the same mark as the one where nothing is lost.
+   */
+  trash: (
+    <>
+      <path d="M4 6.5h16M9.5 6.5V4.5h5v2" />
+      <path d="M6.5 6.5l.9 12.6a1.6 1.6 0 0 0 1.6 1.4h6a1.6 1.6 0 0 0 1.6-1.4l.9-12.6" />
+      <path d="M10 10.5v6.5M14 10.5v6.5" />
+    </>
+  ),
+  /**
+   * This can be picked up and carried. Two columns of dots, the usual mark.
+   *
+   * Filled circles rather than the file's usual stroked paths: these are drawn at
+   * 13–15px, and six zero-length round-capped strokes at `strokeWidth: 1.6` come
+   * out about a pixel across — present in the DOM and invisible on the screen.
+   */
+  grip: (
+    <g fill="currentColor" stroke="none">
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </g>
+  ),
   /** Chosen — in the admin picture picker. */
   check: (
     <>

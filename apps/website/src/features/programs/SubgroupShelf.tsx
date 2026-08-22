@@ -70,6 +70,7 @@ export function SubgroupShelf({
   legend,
   items,
   onAdd,
+  inline = false,
   addLabel,
   empty,
   busy = false,
@@ -79,6 +80,17 @@ export function SubgroupShelf({
   legend: string;
   items: readonly ShelfItem[];
   onAdd: (name: string) => void;
+  /**
+   * Rendered inside the editing column rather than floating in a corner.
+   *
+   * Two things follow, and both are why this is a prop rather than CSS. The body
+   * is `{open && …}`, so hiding the handle in a stylesheet would leave a shelf
+   * that can never be opened; and in the column this list *is* the navigation —
+   * a list you must open each time you move between two albums costs a click per
+   * move, where the floating shelf was a shortcut the page's own cards already
+   * duplicated.
+   */
+  inline?: boolean;
   addLabel: string;
   empty: string;
   busy?: boolean;
@@ -97,7 +109,7 @@ export function SubgroupShelf({
    * carry.
    */
   const [expanded, setOpen] = useState(false);
-  const open = readOnly || expanded;
+  const open = readOnly || inline || expanded;
   const [adding, setAdding] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -125,7 +137,11 @@ export function SubgroupShelf({
 
   return (
     <div
-      className={`shelf${open ? ' is-open' : ''}${readOnly ? ' shelf--reading' : ''}`}
+      className={
+        `subshelf${open ? ' is-open' : ''}` +
+        (readOnly ? ' subshelf--reading' : '') +
+        (inline ? ' subshelf--inline' : '')
+      }
     >
       {/*
         A visitor gets no toggle at all.
@@ -139,7 +155,7 @@ export function SubgroupShelf({
         The label stays, as a line of small caps rather than a button. Without it
         two tiles in a corner are two pictures with no explanation.
       */}
-      {readOnly ? (
+      {readOnly || inline ? (
         /*
           The tab. What is visible when the cursor is anywhere else.
           
@@ -147,34 +163,34 @@ export function SubgroupShelf({
           on screen saying the albums exist — "Albums 3" is an invitation and
           "Albums" alone is a heading over nothing.
         */
-        <p className="shelf__legend">
+        <p className="subshelf__legend">
           {legend}
-          <span className="shelf__count">{items.length}</span>
+          <span className="subshelf__count">{items.length}</span>
         </p>
       ) : (
         <button
           type="button"
-          className="shelf__handle"
+          className="subshelf__handle"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
           <Icon name={open ? 'close' : 'expand'} size={14} />
           <span>{legend}</span>
-          <span className="shelf__count">{items.length}</span>
+          <span className="subshelf__count">{items.length}</span>
         </button>
       )}
 
       {open && (
-        <div className="shelf__body">
-          {items.length === 0 && <p className="shelf__empty">{empty}</p>}
+        <div className="subshelf__body">
+          {items.length === 0 && <p className="subshelf__empty">{empty}</p>}
 
           {items.length > 0 && (
-            <ul className="shelf__tiles">
+            <ul className="subshelf__tiles">
               {items.map((item, index) => (
                 <li key={item.id}>
                   {renaming?.id === item.id ? (
                     <form
-                      className="shelf__rename"
+                      className="subshelf__rename"
                       onSubmit={(submit) => {
                         submit.preventDefault();
                         const name = renaming.name.trim();
@@ -212,10 +228,10 @@ export function SubgroupShelf({
                       <Tile item={item} shot={shot} readOnly={readOnly} />
 
                       {!readOnly && (
-                      <span className="shelf__actions">
+                      <span className="subshelf__actions">
                         <button
                           type="button"
-                          className="shelf__action"
+                          className="subshelf__action"
                           disabled={index === 0 || busy}
                           aria-label={`Move ${item.label} earlier`}
                           onClick={() => item.onMove(-1)}
@@ -224,7 +240,7 @@ export function SubgroupShelf({
                         </button>
                         <button
                           type="button"
-                          className="shelf__action"
+                          className="subshelf__action"
                           disabled={index === items.length - 1 || busy}
                           aria-label={`Move ${item.label} later`}
                           onClick={() => item.onMove(1)}
@@ -233,15 +249,20 @@ export function SubgroupShelf({
                         </button>
                         <button
                           type="button"
-                          className="shelf__action"
+                          className="subshelf__action"
                           aria-label={`Rename ${item.label}`}
+                          /* A `title` as well as the label. The glyph is `expand`,
+                             which means "open this bigger" everywhere else on the
+                             site and is the closest thing the set has to a pencil —
+                             so the tooltip is doing the work the icon cannot. */
+                          title={`Rename ${item.label}`}
                           onClick={() => setRenaming({ id: item.id, name: item.label })}
                         >
                           <Icon name="expand" size={12} />
                         </button>
                         <button
                           type="button"
-                          className="shelf__action shelf__action--danger"
+                          className="subshelf__action subshelf__action--danger"
                           aria-label={`Remove ${item.label}`}
                           onClick={() =>
                             setConfirming(confirming === item.id ? null : item.id)
@@ -255,7 +276,7 @@ export function SubgroupShelf({
                   )}
 
                   {confirming === item.id && (
-                    <p className="shelf__confirm">
+                    <p className="subshelf__confirm">
                       {item.removeWarning}{' '}
                       <button
                         type="button"
@@ -284,7 +305,7 @@ export function SubgroupShelf({
 
           {!readOnly && (
           <form
-            className="shelf__add"
+            className="subshelf__add"
             onSubmit={(submit) => {
               submit.preventDefault();
               const name = adding.trim();
@@ -338,7 +359,7 @@ function Tile({
   const shots = item.coverPaths ?? (item.coverPath ? [item.coverPath] : []);
   const current = shots.length > 0 ? shot % shots.length : 0;
 
-  const className = `shelf__tile${item.selected ? ' is-selected' : ''}${
+  const className = `subshelf__tile${item.selected ? ' is-selected' : ''}${
     shots.length > 0 ? ' has-cover' : ''
   }`;
 
@@ -347,7 +368,7 @@ function Tile({
       {shots.map((path, index) => (
         <img
           key={path}
-          className={`shelf__shot${index === current ? ' is-current' : ''}`}
+          className={`subshelf__shot${index === current ? ' is-current' : ''}`}
           src={galleryPathUrl(path)}
           alt=""
           aria-hidden="true"
@@ -357,8 +378,8 @@ function Tile({
           decoding="async"
         />
       ))}
-      <span className="shelf__name">{item.label}</span>
-      {item.note && <span className="shelf__note">{item.note}</span>}
+      <span className="subshelf__name">{item.label}</span>
+      {item.note && <span className="subshelf__note">{item.note}</span>}
     </>
   );
 

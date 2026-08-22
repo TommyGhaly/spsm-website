@@ -68,14 +68,13 @@ export interface FormState {
 }
 
 /*
- * `published` used to live in the state above and does not any more.
+ * There is no `published` in the state above, and no `published` on the document
+ * either.
  *
- * It is not something anybody types — it is what is true of the document, and
- * with autosave the two cannot be the same field: typing writes `pendingEdit`,
- * and if `published` rode along in that payload then every keystroke would carry
- * an opinion about whether the event is on the website. Publishing is an act,
- * so it is a function on `./admin` and a button, and the editor reads the
- * document for the answer.
+ * It briefly left this state and stayed on the document, on the reasoning that
+ * publishing was an act rather than a field somebody types. The act is gone too:
+ * an event is on the website because it exists. Nothing here decides whether it
+ * is visible, which is why this list is only the words and the dates.
  */
 
 export const BLANK: FormState = {
@@ -335,7 +334,10 @@ export function problemsOf(form: FormState): Problem[] {
   if (!form.summary.trim()) {
     found.push({
       field: 'summary',
-      message: 'Write the one-line summary — it is what the calendar shows.',
+      // A noun phrase, not a sentence: these are only ever read after "Still to
+      // write:" in the bar, never on a field, so an imperative there reads as a
+      // second instruction after the first one.
+      message: 'the one line the calendar shows',
       optional: true,
     });
   }
@@ -343,7 +345,7 @@ export function problemsOf(form: FormState): Problem[] {
   if (!form.body.trim()) {
     found.push({
       field: 'body',
-      message: 'This event has no description yet.',
+      message: 'a description',
       optional: true,
     });
   }

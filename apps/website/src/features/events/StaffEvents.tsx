@@ -114,7 +114,7 @@ function TheList({ onOpen }: { onOpen: (id: string) => void }) {
     <PageBody flush>
       <header className="staff-head">
         <div>
-          <h1>Events and drafts</h1>
+          <h1>Parish events</h1>
           <p className="staff-head__note">
             Everything in the parish calendar. An event is edited on its own page; this
             is where you make one, and where a new one lives until the site is next
@@ -167,7 +167,7 @@ function TheList({ onOpen }: { onOpen: (id: string) => void }) {
  *
  * No longer takes a title or a hint. It took both when there were three of these
  * on the page, one per publish state; there is one now, and a heading over the
- * only list on a screen called "Events and drafts" is a label for a thing that
+ * only list on a screen called "Parish events" is a label for a thing that
  * needs no labelling.
  */
 function Group({
@@ -285,7 +285,7 @@ function EditOne({ id, onClose }: { id: string; onClose: () => void }) {
          Done takes us back to it. */
       onSaved={() => undefined}
       onDone={onClose}
-      back={{ href: '/staff/events', label: 'Events and drafts' }}
+      back={{ href: '/staff/events', label: 'Parish events' }}
     />
   );
 }

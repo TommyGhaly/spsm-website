@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  packBlocks,
   packGallery,
   collapseToColumn,
   canvasRows,
@@ -287,5 +288,126 @@ describe('canvasRows', () => {
       { id: 'deep', layout: { col: 1, row: 8, colSpan: 4, rowSpan: 3 }, aspect: 1 },
     ]);
     expect(canvasRows(placed)).toBe(10);
+  });
+});
+
+/**
+ * Packing the *blocks* a page is made of, which is the same first-fit scan on a
+ * different unit.
+ *
+ * The interesting cases are all "does a later block find the hole an earlier one
+ * left", because the thing this replaced — CSS auto-placement — never could. Every
+ * one of these was a row of empty paper on a real page.
+ */
+
+describe('packBlocks', () => {
+  /** Two that fit across, in order. Nothing clever required. */
+  it('fills a row left to right', () => {
+    expect(
+      packBlocks([
+        { columns: 8, rows: 10 },
+        { columns: 4, rows: 10 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 9, row: 1 },
+    ]);
+  });
+
+  /*
+   * The case Tommy described. A tall grid with two short wheels: the first wheel
+   * goes beside it, and the second goes **under the first**, still beside the
+   * grid. Auto-placement put it under the *page*, three hundred rows down, with
+   * the whole right-hand column left empty above it.
+   */
+  it('drops a block under its neighbour rather than under the page', () => {
+    expect(
+      packBlocks([
+        { columns: 8, rows: 100 },
+        { columns: 4, rows: 40 },
+        { columns: 4, rows: 40 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 9, row: 1 },
+      { col: 9, row: 41 },
+    ]);
+  });
+
+  /*
+   * And it does not need them to be the same width to do it. A half slots in
+   * beside a third, and a third goes under the half — three blocks of three
+   * different widths sharing two rows of the page.
+   */
+  it('fits whatever is narrow enough, whatever its neighbours are', () => {
+    expect(
+      packBlocks([
+        { columns: 4, rows: 60 },
+        { columns: 6, rows: 20 },
+        { columns: 6, rows: 20 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 5, row: 1 },
+      { col: 5, row: 21 },
+    ]);
+  });
+
+  /*
+   * A full-width block is a floor: nothing fits beside it, and nothing that comes
+   * after it can climb above it either, because its row band spans every column.
+   */
+  it('lets nothing past a full-width block', () => {
+    expect(
+      packBlocks([
+        { columns: 12, rows: 30 },
+        { columns: 4, rows: 5 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 1, row: 31 },
+    ]);
+  });
+
+  /*
+   * The hole under a *short* block is real room, and a later block takes it. This
+   * is the one that reads as reordering — the third block appears above the
+   * second on screen — and it is what was asked for: "if there is room to fit
+   * them in a given place it can go there".
+   */
+  it('backfills the space under a short block', () => {
+    expect(
+      packBlocks([
+        { columns: 6, rows: 10 },
+        { columns: 6, rows: 90 },
+        { columns: 6, rows: 30 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 7, row: 1 },
+      { col: 1, row: 11 },
+    ]);
+  });
+
+  /*
+   * Nonsense in, a layout out. A block measured before its pictures have been laid
+   * out has no height, and a zero-height block would be a hole every later block
+   * could be placed *inside* — so it takes a row, and a block wider than the page
+   * is cut down to it rather than being placed off the edge.
+   */
+  it('has an answer for a block with no height and one too wide', () => {
+    expect(
+      packBlocks([
+        { columns: 40, rows: 0 },
+        { columns: 4, rows: 4 },
+      ]),
+    ).toEqual([
+      { col: 1, row: 1 },
+      { col: 1, row: 2 },
+    ]);
+  });
+
+  it('places nothing when there is nothing', () => {
+    expect(packBlocks([])).toEqual([]);
   });
 });

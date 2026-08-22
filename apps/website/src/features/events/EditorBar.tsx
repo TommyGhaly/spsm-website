@@ -134,10 +134,10 @@ export function EditorBar({
 
       {missing.length > 0 && (
         <p className="ee-bar__missing">
-          {/* Joined into one sentence rather than listed. Two items is the most
-              there can be, and a two-line bar for two short clauses is a bar
-              taller than the thing it is about. */}
-          Still to write: {missing.join(' ')}
+          {/* One sentence rather than a list. Two items is the most there can
+              be, and a two-line bar for two short phrases is a bar taller than
+              the thing it is about. */}
+          Still to write: {missing.join(' and ')}.
         </p>
       )}
     </div>

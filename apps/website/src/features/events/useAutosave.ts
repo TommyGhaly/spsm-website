@@ -60,12 +60,16 @@ export interface Autosave<T> {
   /**
    * Declare this value already written, without writing it.
    *
-   * Publishing needs it. `publishEvent` sends the form's content *and* clears
-   * `pendingEdit` in one write, so afterwards the document is up to date — but
-   * this hook still believes the last thing it wrote was the value before the
-   * publish. Without being told, the armed timer fires and recreates a pending
-   * edit identical to what was just published, and the editor claims there are
-   * unpublished changes forever.
+   * The initial read needs it. This hook seeds "what has been written" from the
+   * value it is first handed, which for an event page is built from the *baked*
+   * copy in the exported HTML — possibly days old. The editor then replaces the
+   * form with what Firestore actually holds, and unless this hook is told, it
+   * sees a form that differs from its record, concludes somebody typed, and
+   * writes back exactly what it just read.
+   *
+   * It was added for publishing, which had the same shape of problem and no
+   * longer exists. This is the caller that remains, and it is the load-bearing
+   * one: without it every edit session opens by writing.
    *
    * Cancels the timer as well as recording the value, which is the half that is
    * easy to forget and is the actual bug.

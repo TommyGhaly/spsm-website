@@ -50,11 +50,13 @@ export function HeaderAuth({ variant = 'bar' }: { variant?: 'bar' | 'panel' }) {
  *
  * ## Why the events entry is here and not on a page
  *
- * Creating an event and opening a draft are the two things the in-place editor
- * cannot do, and the reason is structural rather than an omission: a new event
- * has no page to be in place on, and a draft is not exported so it has no page
- * either. They lived at `/admin/events` until that section was deleted, and they
- * have had nowhere since.
+ * Creating an event is the one thing the in-place editor cannot do, and the
+ * reason is structural rather than an omission: a new event has no page to be in
+ * place on until the next build enumerates its slug. It lived at `/admin/events`
+ * until that section was deleted, and had nowhere after.
+ *
+ * Opening a *draft* was the other reason this entry exists and no longer is —
+ * events have no draft state; see `EventEditor`.
  *
  * This menu is the one staff-only surface in the whole site that is not any
  * particular page, which makes it the only honest place for them. Tommy ruled
@@ -71,7 +73,7 @@ const DESTINATIONS: {
   roles?: Role;
 }[] = [
   { href: '/servants', label: 'Servants schedule', icon: <CalendarGlyph /> },
-  { href: '/staff/events', label: 'Events and drafts', icon: <PlusGlyph />, roles: 'staff' },
+  { href: '/staff/events', label: 'Parish events', icon: <PlusGlyph />, roles: 'staff' },
 ];
 
 /** The rows this person may see. */

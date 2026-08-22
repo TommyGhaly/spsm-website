@@ -121,6 +121,148 @@ export function programEventHref(programSlug: string, trail: readonly string[]):
 }
 
 /**
+ * How a presentation is drawn.
+ *
+ * Three, because a hall screen and a laptop on a table in the narthex are not
+ * the same room and the parish asked for both:
+ *
+ * - `columns` — the drifting columns that fill the screen. The default, and what
+ *   the presentation was before there was a choice.
+ * - `slide` — one photograph at a time, whole, advancing itself and advanceable
+ *   by hand. The thing the columns replaced, kept because "one picture, large,
+ *   and I say when" is a real request and not a regression.
+ * - `notebook` — the photographs overlapping and tilted, the whole plane sliding
+ *   leftward, with vertical strips travelling along with it.
+ *
+ * The *value* of `?present` rather than a second parameter, because the two can
+ * never disagree that way: there is no such thing as a style with no
+ * presentation, and `?present=notebook` is a URL somebody can read out loud over
+ * the phone to whoever is standing at the laptop in the hall.
+ */
+export const PRESENTATION_STYLES = ['columns', 'slide', 'notebook'] as const;
+
+export type PresentationStyle = (typeof PRESENTATION_STYLES)[number];
+
+/** What each style is called on the switcher. */
+export const PRESENTATION_STYLE_NAMES: Record<PresentationStyle, string> = {
+  columns: 'Columns',
+  slide: 'Slide',
+  notebook: 'Notebook',
+};
+
+/**
+ * What a URL with no usable style in it gets.
+ *
+ * `columns` because it is what every existing kiosk bookmark is already
+ * showing — see `presentationStyle` for the two older values that land here.
+ */
+export const DEFAULT_PRESENTATION_STYLE: PresentationStyle = 'columns';
+
+function isPresentationStyle(value: string | null): value is PresentationStyle {
+  return value !== null && (PRESENTATION_STYLES as readonly string[]).includes(value);
+}
+
+/**
+ * Which style a URL asks for.
+ *
+ * **Anything it does not recognise is the default, silently.** That is the whole
+ * backwards-compatibility story and it is deliberate: the parameter used to mean
+ * *what* to present rather than *how* — `?present=all`, and before that
+ * `?present=day-2` — so every bookmark and printed URL in the parish carries a
+ * value that is not a style. Refusing them would break a working kiosk; treating
+ * them as "the way it has always looked" is exactly right, because it is.
+ *
+ * @param search `location.search`, with or without its leading `?`.
+ */
+export function presentationStyle(search: string): PresentationStyle {
+  const value = new URLSearchParams(search).get('present');
+  return isPresentationStyle(value) ? value : DEFAULT_PRESENTATION_STYLE;
+}
+
+/**
+ * How fast a presentation moves.
+ *
+ * Named steps rather than a number in the URL, and the reason is the same one
+ * that makes the style a name: `?pace=brisk` is something somebody reads out
+ * over the phone to whoever is at the laptop in the hall, and `?pace=137` is a
+ * number a stranger can type that the parish then has to be defended against.
+ * Four steps because two is not a setting and eight is a dial nobody turns.
+ *
+ * The names are the contract; `PACE_FACTORS` holds the numbers, and every style
+ * multiplies its own speeds by one of them — so "brisk" means the same thing to
+ * the drifting columns, the sliding plane and the eight-second slide, without any
+ * of the three agreeing on a pixel rate.
+ */
+export const PRESENTATION_PACES = ['slow', 'steady', 'brisk', 'fast'] as const;
+
+export type PresentationPace = (typeof PRESENTATION_PACES)[number];
+
+/** What each pace is called on the control. */
+export const PRESENTATION_PACE_NAMES: Record<PresentationPace, string> = {
+  slow: 'Slow',
+  steady: 'Steady',
+  brisk: 'Brisk',
+  fast: 'Fast',
+};
+
+/**
+ * What each pace multiplies a style's own speeds by.
+ *
+ * `steady` is exactly 1, and that is load-bearing: it is what every screen in
+ * the parish was doing before there was a setting, so a URL with no `pace` in it
+ * has to behave identically to one from last month. The others are spaced by
+ * roughly a factor of 1.6 rather than evenly, because motion is judged
+ * proportionally — 0.5 to 1 is the same *felt* step as 1.6 to 2.5.
+ */
+export const PACE_FACTORS: Record<PresentationPace, number> = {
+  slow: 0.5,
+  steady: 1,
+  brisk: 1.6,
+  fast: 2.5,
+};
+
+/** What a URL with no usable pace in it gets: what it has always done. */
+export const DEFAULT_PRESENTATION_PACE: PresentationPace = 'steady';
+
+function isPresentationPace(value: string | null): value is PresentationPace {
+  return value !== null && (PRESENTATION_PACES as readonly string[]).includes(value);
+}
+
+/**
+ * Which pace a URL asks for.
+ *
+ * Anything unrecognised — and that includes no parameter at all, which is the
+ * common case — is `steady`. Same reasoning as `presentationStyle`: a screen in
+ * a hall should never refuse to start over a query string.
+ *
+ * @param search `location.search`, with or without its leading `?`.
+ */
+export function presentationPace(search: string): PresentationPace {
+  const value = new URLSearchParams(search).get('pace');
+  return isPresentationPace(value) ? value : DEFAULT_PRESENTATION_PACE;
+}
+
+/**
+ * The same page, moving at another pace.
+ *
+ * Drops the parameter entirely at the default rather than writing `pace=steady`.
+ * The URLs the parish keeps are the ones somebody chose something in — a bookmark
+ * carrying `?pace=steady` says a decision was made where none was, and it is the
+ * URL that gets pasted into the bulletin.
+ */
+export function withPresentationPace(
+  pathname: string,
+  search: string,
+  pace: PresentationPace,
+): string {
+  const params = new URLSearchParams(search);
+  if (pace === DEFAULT_PRESENTATION_PACE) params.delete('pace');
+  else params.set('pace', pace);
+  const rest = params.toString();
+  return rest ? `${pathname}?${rest}` : pathname;
+}
+
+/**
  * The presentation, at whichever level was asked for.
  *
  * A query parameter rather than a path segment, deliberately: a kiosk in the
@@ -132,10 +274,15 @@ export function programEventHref(programSlug: string, trail: readonly string[]):
  * There is no longer a level *inside* the query. It used to carry a subgroup id
  * — `?present=day-2` — because the third level had no URL of its own to be
  * presented from. Every level has one now, so "present this" is always "present
- * everything beneath the page I am on", and the level is the path.
+ * everything beneath the page I am on", and the level is the path. What the
+ * value carries instead is the style; see `PRESENTATION_STYLES`.
  */
-export function presentHref(programSlug: string, trail: readonly string[] = []): string {
-  const params = new URLSearchParams({ present: 'all' });
+export function presentHref(
+  programSlug: string,
+  trail: readonly string[] = [],
+  style: PresentationStyle = DEFAULT_PRESENTATION_STYLE,
+): string {
+  const params = new URLSearchParams({ present: style });
   return `${programEventHref(programSlug, trail)}?${params.toString()}`;
 }
 
@@ -154,6 +301,10 @@ export function presentHref(programSlug: string, trail: readonly string[] = []):
  * well. The old subgroup ids still parse for the same reason: an old kiosk
  * bookmark presents the level in its path rather than failing.
  *
+ * Note that this is *whether*, not *how*: a value that is not a style still
+ * presents, in the default one. Asking both questions of one parameter is what
+ * keeps a mistyped style from dropping a visitor onto the ordinary page.
+ *
  * @param search `location.search`, with or without its leading `?`.
  * @returns true when this page is to be presented rather than read.
  */
@@ -165,10 +316,41 @@ export function isPresenting(search: string): boolean {
   return new URLSearchParams(search).has('present');
 }
 
-/** Where "leave the presentation" goes: this page, without the query. */
+/**
+ * The same page, presented in another style.
+ *
+ * Built here rather than in the component so that the switcher is one
+ * `history.replaceState` away from being right: the style is in the URL, so
+ * whatever is on the screen can be bookmarked, and a kiosk restarted overnight
+ * comes back in the style somebody chose rather than in the default.
+ *
+ * `replaceState` and not a navigation, for the reason `withoutPresent` is used
+ * that way too — the gallery behind the presentation is already fetched and
+ * mounted, and a route change would read every document again to draw a screen
+ * that is already in memory.
+ */
+export function withPresentationStyle(
+  pathname: string,
+  search: string,
+  style: PresentationStyle,
+): string {
+  const params = new URLSearchParams(search);
+  params.set('present', style);
+  return `${pathname}?${params.toString()}`;
+}
+
+/**
+ * Where "leave the presentation" goes: this page, without the query.
+ *
+ * `pace` goes with `present`, because it only ever meant anything to the
+ * presentation — leaving it behind would put `?pace=brisk` on an ordinary gallery
+ * page, where it describes nothing and would be carried into every link somebody
+ * copies from there. Anything else in the query is somebody else's and stays.
+ */
 export function withoutPresent(pathname: string, search: string): string {
   const params = new URLSearchParams(search);
   params.delete('present');
+  params.delete('pace');
   const rest = params.toString();
   return rest ? `${pathname}?${rest}` : pathname;
 }

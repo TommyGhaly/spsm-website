@@ -264,9 +264,83 @@ describe('anonymous submission', () => {
     );
   });
 
-  it('refuses a submission to an event that has closed submissions', async () => {
+  /*
+   * Whether the parish is collecting is one flag on the *ministry* now, and
+   * these four are the whole of that change at the rules layer.
+   *
+   * It used to be a flag per level, and there was a test here asserting that a
+   * submission to Week 2 — which the fixture closes — was refused. The opposite
+   * is now correct, and it is a deliberate loss rather than a regression: the
+   * upload form offers a visitor every level in the ministry, and a flag per
+   * level made that picker a list with holes in it that nobody on the public side
+   * could see the reason for. See `Program.submissionsOpen`.
+   */
+  it('accepts a submission to a level whose own submissionsOpen is false', async () => {
+    await assertSucceeds(
+      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
+        programEventId: WEEK_2,
+        sourcePath: `submissions/${WEEK_2}/abc.heic`,
+      })),
+    );
+  });
+
+  it('refuses every submission while the ministry is not collecting', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'programs', SUMMERCAMP), { submissionsOpen: false });
+    });
+
+    const db = asAnon(env).firestore();
+    // Both levels, to make it unambiguous that the ministry's flag is what
+    // decided it rather than anything on the level.
+    await assertFails(addDoc(collection(db, 'galleryMedia'), media()));
     await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({ programEventId: WEEK_2 })),
+      addDoc(collection(db, 'galleryMedia'), media({
+        programEventId: WEEK_2,
+        sourcePath: `submissions/${WEEK_2}/abc.heic`,
+      })),
+    );
+  });
+
+  /*
+   * The default, asserted rather than assumed.
+   *
+   * Neither program fixture carries `submissionsOpen`, which is exactly the
+   * state of every program document the parish wrote before the field existed.
+   * The rule reads absence as open, and `Program.submissionsOpen` says the same
+   * in prose — if either changes, this test is what notices. A default of
+   * `false` would deny every real upload while passing `rules:check` clean.
+   */
+  it('accepts a submission when the ministry has no submissionsOpen field at all', async () => {
+    await assertSucceeds(addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media()));
+  });
+
+  /*
+   * A level whose ministry is gone.
+   *
+   * Not a hypothetical: deleting a program is refused while any level remains
+   * (`deleteProgram`), but that check is client-side and the rules allow the
+   * delete, so an orphaned level is one console click away. Both `get()`s in the
+   * rule are guarded by an `exists()` for this case — an unguarded `get()` on a
+   * missing document fails the whole evaluation, which denies, but denies for a
+   * reason that takes an afternoon to find.
+   */
+  it('refuses a submission to a level whose program no longer exists', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'programEvents', 'orphan-level'), {
+        programId: 'ghost-program', parentId: null, slug: 'orphan', title: 'Orphan',
+        description: '', startAt: null, endAt: null, timeZone: 'America/New_York',
+        order: 0, featuredMediaIds: [], coverMediaId: null, calendarEventId: null,
+        published: true, publishAt: null,
+        createdAt: new Date(), updatedAt: new Date(), updatedBy: null,
+      });
+    });
+
+    await assertFails(
+      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
+        programId: 'ghost-program',
+        programEventId: 'orphan-level',
+        sourcePath: 'submissions/orphan-level/abc.heic',
+      })),
     );
   });
 

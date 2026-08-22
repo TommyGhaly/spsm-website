@@ -438,42 +438,48 @@ export function programTileMedia(
 }
 
 /**
- * The one picture that stands for a program, on its tile in the rail on /events.
+ * Something — anything — for a tile whose cycle came out empty.
  *
- * Two bugs' worth of care in three lines.
+ * Not a "cover". It used to be one: `Program.coverMediaId` was a picture an
+ * administrator chose in the panel, and this honoured it. That field is gone,
+ * because the tile it was supposed to speak for stopped reading it the moment the
+ * tile started cycling — `programTileMedia` takes `featuredMediaIds` in the order
+ * they were chosen, and this was reached only when that returned nothing. So the
+ * control offered a second answer to a question the featured set had already
+ * answered, and the answer was discarded. A *level's* card is the one that honours
+ * its pick, by opening on it; see `summariseChildren`.
  *
- * `coverMediaId` is honoured, which it was not: the field has existed since the
- * schema was written, with a note saying that honouring it "lands with the admin
- * screen". The admin screen now exists — the ministry page has a *Choose the
- * tile picture* control that writes this field — so a reader that ignored it
- * would make that control do nothing at all, which is worse than not offering
- * it.
+ * What is left is the fallback, which is worth keeping on its own terms: it can
+ * find a picture where `programTileMedia` finds none, because it does not ask for
+ * `placement.homepage` or `placement.onPage` — only for a photograph with a file.
+ * A ministry whose photographs are all approved but none cleared for a page draws
+ * one of them rather than a blank plate.
  *
- * And the automatic fallback needs a *file*, not merely an approved document.
- * The previous version asked for one item and used it, so a program whose
- * earliest-ordered photograph was approved-but-not-yet-transcoded showed the
- * blank ground of a program with no photographs — with a dozen behind it. There
- * is no "Processing…" state on a tile to fall back on.
+ * The `hasRenderableFile` guard is the other half, and the one that bit: asking
+ * for one approved document and using it showed the blank ground of a program with
+ * no photographs — with a dozen behind it — whenever the earliest was
+ * approved-but-not-yet-transcoded. There is no "Processing…" state on a tile.
  *
  * @param media a handful from the program, in `order`, not the whole archive.
  */
-export function pickProgramCover(
-  program: Pick<Program, 'coverMediaId'>,
+export function programFallbackShot(
   media: readonly DocOf<GalleryMedia>[],
 ): DocOf<GalleryMedia> | undefined {
-  const chosen = program.coverMediaId
-    ? media.find((item) => item.id === program.coverMediaId)
-    : undefined;
-  if (chosen && hasRenderableFile(chosen)) return chosen;
   return media.find((item) => item.kind === 'photo' && hasRenderableFile(item));
 }
 
 /**
- * How many items the rail reads per program to find a cover.
+ * How many items the rail reads per program to fill an uncurated tile.
  *
- * More than one, because the first may be mid-transcode and because the
- * administrator's chosen cover is not necessarily the earliest — but nowhere
- * near the archive, because this runs once per program on the section's front
- * page. Twelve is enough to get past a batch that is still processing.
+ * More than one, because the first may be mid-transcode — but nowhere near the
+ * archive, because this runs once per program on the section's front page. Twelve
+ * is enough to get past a batch that is still processing and more than the five a
+ * tile cycles.
+ *
+ * It used to need slack for a second reason as well: an administrator's chosen
+ * cover was not necessarily the earliest, so the window had to be wide enough to
+ * contain it. `Program.coverMediaId` is gone — see `programFallbackShot` — and a
+ * ministry that *is* curated no longer uses this window at all; it gets the same
+ * read its own page does, because a featured id can point anywhere under it.
  */
 export const COVER_WINDOW = 12;

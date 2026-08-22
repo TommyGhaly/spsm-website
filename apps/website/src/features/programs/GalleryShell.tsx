@@ -8,7 +8,11 @@ import {
   SECTION_SCALE_NAMES,
   childrenOf,
   descendantsOf,
+  SECTION_COLUMNS,
+  SECTION_WIDTH_COLUMNS,
+  dockWidths,
   layoutForLook,
+  spinFor,
   pagePictures,
   resolveBands,
   resolveSectionLayout,
@@ -24,6 +28,7 @@ import {
   type MediaPlacement,
   type NodeSummary,
   type SectionLayout,
+  type SectionWidth,
   type Event,
   type GalleryMedia,
   type Program,
@@ -33,6 +38,7 @@ import { Prose } from '@/components/Prose';
 import { PageBody } from '@/components/PageBody';
 import { BackLink } from '@/components/BackLink';
 import { Icon } from '@/components/Icon';
+import { Grow, Plain } from '@/components/Inline';
 import { formatDateSpan, formatEventWhen } from '@/lib/dates';
 import {
   getGalleryLevel,
@@ -41,32 +47,49 @@ import {
   type GalleryLevel,
 } from './data';
 import {
+  DEFAULT_PRESENTATION_PACE,
+  DEFAULT_PRESENTATION_STYLE,
   isPresenting,
   parseGalleryPath,
+  presentationPace,
+  presentationStyle,
   programEventHref,
   presentHref,
+  withPresentationPace,
+  withPresentationStyle,
   withoutPresent,
   type GalleryRoute,
+  type PresentationPace,
+  type PresentationStyle,
 } from './route';
 import { AutoClip } from './AutoClip';
 import { GallerySection } from './GallerySection';
 import { Lightbox } from './Lightbox';
 import { Presentation } from './Presentation';
 import { MediaPicker } from './MediaPicker';
+import { PictureManager } from './PictureManager';
 import { SectionDesigner } from './SectionDesigner';
+import { useBlockPacking, type BlockPlacement } from './packing';
 import { MediaProperties } from './MediaProperties';
 import { Disclosure, DisclosureGroup } from './Disclosure';
-import { SubgroupShelf, shelfCover, shelfCovers, shelfNote, type ShelfItem } from './SubgroupShelf';
+import {
+  SubgroupShelf,
+  shelfCover,
+  shelfCovers,
+  shelfNote,
+  type ShelfItem,
+} from './SubgroupShelf';
 import { BlockFrame as Block } from './BlockFrame';
 import { Inspector } from './Inspector';
 import { BodyEditingClass, EditModeProvider, EditToggle, useEditMode } from './editMode';
 import { togglePick } from './pick';
 import { SubmitPhotos } from './SubmitPhotos';
+import { SubmissionQueue } from './SubmissionQueue';
 /*
- * `setCaption` lives in ./review because the caption used to be written there
- * first, when a photograph was approved in the queue at /admin/galleries. That
- * queue is gone and the properties column is now the only thing that writes a
- * caption — see the note at the top of ./review.
+ * `setCaption` lives in ./review, beside the approval queue that also writes it.
+ * The properties column and the queue are the two places a caption is written,
+ * and they write the same field the same way — see the note at the top of
+ * ./review.
  */
 import { setCaption } from './review';
 import {
@@ -82,16 +105,15 @@ import {
   listProgramEventsForAdmin,
   moveProgramEvent,
   renameProgramEvent,
+  updateProgramEvent,
   moveMediaWithin,
   setMediaFocal,
   setMediaLayout,
   setMediaNode,
   setMediaPlacement,
   reorderMedia,
-  setNodeCover,
   setNodeFeatured,
   setHiddenPictures,
-  setProgramCover,
   setProgramEventParent,
   setProgramFeatured,
   setSectionLayout,
@@ -181,6 +203,18 @@ export function GalleryShell() {
   const [present, setPresent] = useState(false);
 
   /**
+   * Which of the three presentation styles the URL asks for.
+   *
+   * Beside `present` and read the same way, because it is the same parameter —
+   * `?present=notebook` says both *that* the page is presented and *how*. See
+   * `PRESENTATION_STYLES` in route.ts for why one parameter carries both.
+   */
+  const [style, setStyle] = useState<PresentationStyle>(DEFAULT_PRESENTATION_STYLE);
+
+  /** How fast it moves, from `?pace=`. Beside the style for the same reasons. */
+  const [pace, setPace] = useState<PresentationPace>(DEFAULT_PRESENTATION_PACE);
+
+  /**
    * Bumped to re-run the fetch below.
    *
    * The view is handed its documents as props, so a write it cannot draw
@@ -217,6 +251,8 @@ export function GalleryShell() {
   useEffect(() => {
     setRoute(parseGalleryPath(pathname));
     setPresent(isPresenting(window.location.search));
+    setStyle(presentationStyle(window.location.search));
+    setPace(presentationPace(window.location.search));
   }, [pathname]);
 
   /**
@@ -228,6 +264,34 @@ export function GalleryShell() {
    * is already in memory. It also keeps `Esc` off the back button — somebody who
    * opened a kiosk URL directly has nothing behind it to go back to.
    */
+  /**
+   * Another style, without a navigation.
+   *
+   * `replaceState` for the same reason leaving does it that way: the gallery
+   * behind the presentation is already fetched and mounted, and a route change
+   * would unmount this shell and read every document again to draw a screen that
+   * is already in memory. Writing the URL is not decoration — it is what makes
+   * the choice survive the kiosk being restarted overnight.
+   */
+  const choosePresentationStyle = useCallback((next: PresentationStyle) => {
+    window.history.replaceState(
+      null,
+      '',
+      withPresentationStyle(window.location.pathname, window.location.search, next),
+    );
+    setStyle(next);
+  }, []);
+
+  /** The same, for the speed. See `withPresentationPace` for the default's URL. */
+  const choosePresentationPace = useCallback((next: PresentationPace) => {
+    window.history.replaceState(
+      null,
+      '',
+      withPresentationPace(window.location.pathname, window.location.search, next),
+    );
+    setPace(next);
+  }, []);
+
   const leavePresentation = useCallback(() => {
     window.history.replaceState(
       null,
@@ -321,10 +385,27 @@ export function GalleryShell() {
    */
   if (present) {
     const slides = subtreeSlideshow(level.tree, level.node?.id ?? null, level.media);
-    const label = level.node
-      ? `${program.name} · ${trailLabel(level.tree, level.node.id)}`
-      : program.name;
-    return <Presentation media={slides} label={label} onExit={leavePresentation} />;
+    /*
+     * The name of what is being presented — **this level, not the road to it.**
+     *
+     * It was `trailLabel`, which is every ancestor joined: "Summercamp · 2026 ·
+     * Week 1 · Day 2". On a page that is a breadcrumb and correct; in the corner
+     * of a projector it is a line of text that grows with the depth of the tree
+     * and whose useful word is at the far end of it. The parish knows which camp
+     * it is standing in.
+     */
+    const label = level.node?.title ?? program.name;
+    return (
+      <Presentation
+        media={slides}
+        label={label}
+        style={style}
+        pace={pace}
+        onStyle={choosePresentationStyle}
+        onPace={choosePresentationPace}
+        onExit={leavePresentation}
+      />
+    );
   }
 
   /*
@@ -354,7 +435,13 @@ export function GalleryShell() {
  * itself against the *viewport*, so narrowing it needs a selector above the
  * article. `body` is the only element that is reliably above everything.
  */
-function EditablePage({ programId, children }: { programId: string; children: React.ReactNode }) {
+function EditablePage({
+  programId,
+  children,
+}: {
+  programId: string;
+  children: React.ReactNode;
+}) {
   const admin = useProgramAdmin();
   return (
     <EditModeProvider allowed={admin.canEditProgram(programId)}>
@@ -439,7 +526,8 @@ function LevelView({
    * empty array that fell back to the document's would silently refuse that.
    */
   const [featured, setFeatured] = useState<string[] | null>(null);
-  const [cover, setCover] = useState<string | null | undefined>(undefined);
+  /** Whether the all-pictures manager is open. Ministry page only. */
+  const [managing, setManaging] = useState(false);
   /** "All of them", held locally so the page redraws the instant it is switched. */
   const [allPictures, setAllPictures] = useState<boolean | null>(null);
   /**
@@ -491,7 +579,6 @@ function LevelView({
    */
   useEffect(() => {
     setFeatured(null);
-    setCover(undefined);
     setAllPictures(null);
     setPageHidden(null);
     setPicturesOffDraft(null);
@@ -514,10 +601,12 @@ function LevelView({
    *
    * Written out rather than `node?.x ?? program.x`, which is what these were and
    * which was wrong in a way that only showed up once the panel started stating
-   * its own values back. `??` treats a *deliberate* null as absent: a week whose
-   * `coverMediaId` is null — every week, until somebody picks one — fell through
-   * to the ministry's cover, so the panel said "chosen" about a picture nobody
-   * had chosen for it, and the picker opened with the ministry's tile ticked.
+   * its own values back. `??` treats a *deliberate* null as absent, so a level
+   * whose field was null — which is most of them, most of the time — read the
+   * ministry's value and the panel said "chosen" about something nobody had
+   * chosen for it. (The clearest case was the card-cover chooser, which opened
+   * with the ministry's tile ticked; both of those are gone now, and the fault
+   * they exposed is not.)
    *
    * The same shape bit `featuredMediaIds` harder: an empty array is not nullish,
    * so a level created today was fine, but a document written before the field
@@ -528,9 +617,6 @@ function LevelView({
    */
   const fromDocument = node === null ? program.featuredMediaIds : node.featuredMediaIds;
   const chosen = featured ?? (Array.isArray(fromDocument) ? fromDocument : []);
-  const coverOnDocument = node === null ? program.coverMediaId : node.coverMediaId;
-  const chosenCover = cover === undefined ? coverOnDocument : cover;
-
   /**
    * Whether an *untouched* block on this page draws everything or a selection.
    *
@@ -540,7 +626,8 @@ function LevelView({
    * loud, because a switch that silently does nothing is worse than one that is not
    * offered.
    */
-  const showAll = allPictures ?? (node === null ? program.showAllPictures : node.showAllPictures);
+  const showAll =
+    allPictures ?? (node === null ? program.showAllPictures : node.showAllPictures);
 
   /**
    * Whether this page draws its own photographs at all.
@@ -674,6 +761,14 @@ function LevelView({
     [node, program.bands],
   );
 
+  /**
+   * The twelve-column grid the blocks are children of, for the packer to measure.
+   *
+   * A ref rather than a query, because there is one of these per level view and a
+   * selector would find the wrong one on a page that has navigated.
+   */
+  const blockGrid = useRef<HTMLDivElement | null>(null);
+
   /** Which write target this page's own fields and bands belong to. */
   const target: SectionTarget = useMemo(
     () =>
@@ -716,6 +811,90 @@ function LevelView({
       }),
     [bands, bandSets, drafts, tree, nodeId, media, showAll],
   );
+
+  /**
+   * What each block on this page is drawing, keyed the way `pickerFor` is keyed.
+   *
+   * Built from the resolved sets rather than from the stored picks, because the
+   * question the picker's mark answers is "is this photograph on the screen in
+   * front of me" — and an automatic block draws plenty it has never picked.
+   */
+  const shownByBlock = useMemo(() => {
+    const map = new Map<string, readonly string[]>();
+    if (!picturesOff) map.set('summary', pictures.map((one) => one.id));
+    for (const block of bandBlocks) {
+      map.set(block.band.id, block.media.map((one) => one.id));
+    }
+    return map;
+  }, [picturesOff, pictures, bandBlocks]);
+
+  /**
+   * Every block's width, in the order the page lays them out.
+   *
+   * The page's own block first when it is drawn at all, then the bands. This is
+   * the list `dockWidths` flows to work out what is left on a row, so it has to be
+   * the same order the twelve columns fill in — which is document order, because
+   * CSS auto-placement never runs backwards.
+   */
+  const blockWidths = useMemo(
+    () => [
+      ...(picturesOff ? [] : [summaryLayout.width]),
+      ...bandBlocks.map((block) => block.layout.width),
+    ],
+    [picturesOff, summaryLayout.width, bandBlocks],
+  );
+
+  /** Where a band sits among all of them — the page's own block shifts it by one. */
+  const blockIndexOf = (index: number) => (picturesOff ? 0 : 1) + index;
+
+  /**
+   * Put a band beside the block before it, narrowing that one if it has to.
+   *
+   * What the drag on the grip does when it ends in the right-hand side of the
+   * block above. Tommy: *"if it is dragged to the same area as the grid the grid
+   * should adjust its width."*
+   *
+   * Two writes at most, and the neighbour goes first: it is the one that makes
+   * room, and a refetch landing between them would rather show a page that has room
+   * for a block than one with a block in a space that is not there yet. Both are
+   * drafted before either is sent, so the pair moves in one frame on screen
+   * whatever the round trips do.
+   */
+  const dockBand = (index: number) => {
+    const plan = dockWidths(blockWidths, blockIndexOf(index));
+    const dragged = bandBlocks[index];
+    if (!plan || !dragged) return;
+
+    const sized = { ...dragged.layout, width: plan.dragged };
+    // The neighbour is the block before it: another band, or the page's own — which
+    // is the one case where the write is a section rather than a band.
+    const asBand = blockIndexOf(index) - 1 - (picturesOff ? 0 : 1);
+    const neighbour = asBand >= 0 ? bandBlocks[asBand] : null;
+    const narrowed =
+      plan.neighbour === null
+        ? null
+        : {
+            ...(neighbour ? neighbour.layout : summaryLayout),
+            width: plan.neighbour,
+          };
+    const neighbourKey = neighbour ? neighbour.band.id : 'summary';
+
+    setDrafts((was) => ({
+      ...was,
+      ...(narrowed ? { [neighbourKey]: narrowed } : {}),
+      [dragged.band.id]: sized,
+    }));
+
+    void write(async () => {
+      if (narrowed) {
+        if (neighbour)
+          await updateBand(target, neighbour.band.id, { layout: narrowed }, admin.uid);
+        else await setSectionLayout(target, narrowed, admin.uid);
+      }
+      await updateBand(target, dragged.band.id, { layout: sized }, admin.uid);
+      refresh();
+    });
+  };
 
   /**
    * One flat list behind the lightbox, and the offset each block starts at.
@@ -780,6 +959,66 @@ function LevelView({
     }
   }, []);
 
+  /**
+   * A level's name and description, typed on its own card.
+   *
+   * ## Why the card draws from a local overlay
+   *
+   * The cards come from `tree`, which the *shell* fetched — so unlike a section's
+   * arrangement there is no local copy for this view to redraw from, and waiting
+   * for a refetch per keystroke would make the caret jump. So keystrokes land in
+   * `levelEdits` and the card reads that first; the write is debounced behind it,
+   * and the refetch on the way out reconciles.
+   *
+   * Same shape as `bandSets` above, and the same reason: *"pressing × on a picture
+   * and watching it sit there for half a second is the exact complaint this whole
+   * panel has been rebuilt four times over."* A name is no different.
+   *
+   * One timer per level, so editing two cards does not have the second cancel the
+   * first one's write.
+   */
+  const [levelEdits, setLevelEdits] = useState<
+    Record<string, { title?: string; description?: string }>
+  >({});
+  const levelTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const editLevel = useCallback(
+    (id: string, patch: { title?: string; description?: string }) => {
+      setLevelEdits((was) => ({ ...was, [id]: { ...was[id], ...patch } }));
+
+      const running = levelTimers.current[id];
+      if (running) clearTimeout(running);
+      levelTimers.current[id] = setTimeout(() => {
+        /*
+         * `renameProgramEvent` for a title rather than `updateProgramEvent`,
+         * because it is the one that refuses an empty one — a level with no name
+         * is a card with nothing to click and a crumb trail with a gap in it.
+         * An empty box is a state somebody passes through while retyping, so it
+         * is simply not written; the field keeps showing what they typed.
+         */
+        void write(async () => {
+          if (patch.title !== undefined && patch.title.trim()) {
+            await renameProgramEvent(id, patch.title, admin.uid);
+          }
+          if (patch.description !== undefined) {
+            await updateProgramEvent(id, { description: patch.description }, admin.uid);
+          }
+        });
+      }, 800);
+    },
+    [write, admin.uid],
+  );
+
+  /* Dropped rather than flushed on the way out, for the reason `ProgramDirectory`
+     gives: the usual cause of unmounting is the level having just been removed,
+     and a flush would land on a document that no longer exists. */
+  useEffect(
+    () => () => {
+      for (const timer of Object.values(levelTimers.current)) clearTimeout(timer);
+    },
+    [],
+  );
+
   /*
    * Write behind the redraw, not in the click handler.
    *
@@ -832,7 +1071,9 @@ function LevelView({
       const stamp = JSON.stringify(set);
       if (bandsWritten.current[id] === stamp) continue;
       bandsWritten.current[id] = stamp;
-      void write(() => updateBand(target, id, { picks: set.picks, hidden: set.hidden }, admin.uid));
+      void write(() =>
+        updateBand(target, id, { picks: set.picks, hidden: set.hidden }, admin.uid),
+      );
     }
   }, [bandSets, target, admin.uid, write]);
 
@@ -845,21 +1086,14 @@ function LevelView({
     if (allPictures === null) return;
     void write(() =>
       setPageShowsAll(
-        nodeId === null ? { kind: 'program', programId: program.id } : { kind: 'node', programEventId: nodeId },
+        nodeId === null
+          ? { kind: 'program', programId: program.id }
+          : { kind: 'node', programEventId: nodeId },
         allPictures,
         admin.uid,
       ),
     );
   }, [allPictures, nodeId, program.id, admin.uid, write]);
-
-  useEffect(() => {
-    if (cover === undefined) return;
-    void write(() =>
-      nodeId === null
-        ? setProgramCover(program.id, cover, admin.uid)
-        : setNodeCover(nodeId, cover, admin.uid),
-    );
-  }, [cover, nodeId, program.id, admin.uid, write]);
 
   /**
    * Placing one photograph.
@@ -873,7 +1107,9 @@ function LevelView({
     (mediaId: string, layout: GridPlacement | null) => {
       setSaving(true);
       void setMediaLayout(mediaId, layout, admin.uid)
-        .catch((error) => console.error('[programs] could not place the photograph:', error))
+        .catch((error) =>
+          console.error('[programs] could not place the photograph:', error),
+        )
         .finally(() => setSaving(false));
     },
     [admin.uid],
@@ -930,14 +1166,22 @@ function LevelView({
          */
         setFeatured(
           (wasPicks) =>
-            change({ picks: wasPicks ?? [...seed], hidden: [] }).picks?.slice(0, MAX_FEATURED) ?? [],
+            change({ picks: wasPicks ?? [...seed], hidden: [] }).picks?.slice(
+              0,
+              MAX_FEATURED,
+            ) ?? [],
         );
-        setPageHidden((wasHidden) => change({ picks: [], hidden: wasHidden ?? [...hidden] }).hidden);
+        setPageHidden(
+          (wasHidden) => change({ picks: [], hidden: wasHidden ?? [...hidden] }).hidden,
+        );
         return;
       }
       setBandSets((was) => {
         const band = bands.find((one) => one.id === key);
-        const current = was[key] ?? { picks: band?.picks ?? null, hidden: band?.hidden ?? [] };
+        const current = was[key] ?? {
+          picks: band?.picks ?? null,
+          hidden: band?.hidden ?? [],
+        };
         // The seed stands in only where there is no list at all. A block that is
         // deliberately empty starts from empty, which is what "add a block, then
         // add pictures to it" has to do.
@@ -947,7 +1191,10 @@ function LevelView({
         });
         return {
           ...was,
-          [key]: { picks: next.picks?.slice(0, MAX_FEATURED) ?? null, hidden: next.hidden },
+          [key]: {
+            picks: next.picks?.slice(0, MAX_FEATURED) ?? null,
+            hidden: next.hidden,
+          },
         };
       });
     },
@@ -1085,6 +1332,18 @@ function LevelView({
       from exactly the set on screen rather than from an empty list.
     */
     const seed = shown.slice(0, MAX_FEATURED).map((one) => one.id);
+    /*
+      What the *other* blocks on this page are showing — this one excluded, or every
+      picture already ticked would also be marked as being somewhere else, which is
+      true of nothing.
+    */
+    const elsewhere = [
+      ...new Set(
+        [...shownByBlock]
+          .filter(([other]) => other !== key)
+          .flatMap(([, ids]) => ids),
+      ),
+    ];
     return (
       <MediaPicker
         title={title}
@@ -1093,6 +1352,7 @@ function LevelView({
         media={media}
         tree={tree}
         selected={picks ?? seed}
+        elsewhere={elsewhere}
         onToggle={(id) => togglePicked(key, id, seed)}
         onClose={() => setPicking(null)}
       />
@@ -1297,7 +1557,8 @@ function LevelView({
       if (band) {
         return {
           kind: 'Block',
-          title: band.title || GALLERY_DISPLAY_NAMES[(drafts[band.id] ?? band.layout).display],
+          title:
+            band.title || GALLERY_DISPLAY_NAMES[(drafts[band.id] ?? band.layout).display],
           body: bandEditor(band),
         };
       }
@@ -1338,7 +1599,9 @@ function LevelView({
          * **No rows at all — one panel.** It had three (Its card picture, Where it
          * sits, Its details), which is three clicks to reach three short controls
          * about one thing. A list of one collapsible section is a list that only
-         * ever costs you a click, and three was not far off it.
+         * ever costs you a click, and three was not far off it. The card picture
+         * is gone entirely now — see `summariseChildren`; a card cycles through
+         * what is beneath it and there is nothing to choose.
          *
          * What is *not* here is deliberate rather than a saving: its own
          * photographs and how they are arranged belong to *its* page, where the
@@ -1356,30 +1619,6 @@ function LevelView({
                 onChanged={refresh}
                 onRemoved={refresh}
               />
-
-              <div className="inspector__group">
-                <p className="inspector__legend">Picture on its card</p>
-                <MediaPicker
-                  title={`The picture on ${child.title}`}
-                  mode="one"
-                  media={media}
-                  tree={tree}
-                  selected={child.coverMediaId ? [child.coverMediaId] : []}
-                  onToggle={(id) => {
-                    const next = togglePick(
-                      child.coverMediaId ? [child.coverMediaId] : [],
-                      id,
-                      'one',
-                      1,
-                    );
-                    void write(async () => {
-                      await setNodeCover(child.id, next[0] ?? null, admin.uid);
-                      refresh();
-                    });
-                  }}
-                  onClose={() => edit.select({ kind: 'page' })}
-                />
-              </div>
 
               {/*
                 Moving a level, which the fixed three levels made impossible.
@@ -1416,7 +1655,9 @@ function LevelView({
                     .filter(
                       (one) =>
                         one.id !== child.id &&
-                        !descendantsOf(tree, child.id).some((under) => under.id === one.id),
+                        !descendantsOf(tree, child.id).some(
+                          (under) => under.id === one.id,
+                        ),
                     )
                     .map((one) => (
                       <option key={one.id} value={one.id}>
@@ -1464,7 +1705,24 @@ function LevelView({
       kind: node ? 'Level' : 'Ministry',
       title,
       body: (
-        <DisclosureGroup key={nodeId ?? 'program'}>
+        <DisclosureGroup
+          key={nodeId ?? 'program'}
+          /*
+            Open on the details, not on nothing.
+            
+            It defaulted to `null`, so the column landed on two collapsed rows and
+            a line of idle text — and everything real, including the field that
+            names what is inside this level, was one more click down. Tommy, twice:
+            the panel looked useless, and then *"there's still no section to name
+            the subcollections."* There was; it was behind a closed row.
+            
+            `details` rather than `pictures` because it holds the things that are
+            *facts* about the page — its name, its dates, whether anyone can see it,
+            what its parts are called. The photographs choice is one switch and it
+            is one click away.
+          */
+          defaultOpen="details"
+        >
           <Disclosure
             id="pictures"
             label="Photographs"
@@ -1479,8 +1737,8 @@ function LevelView({
             {children.length === 0 ? (
               <p className="inspector__note">
                 Nothing is inside this level, so every block on it starts from all the
-                photographs filed here — there is nothing to summarise. Add a part in
-                the shelf and this becomes a choice.
+                photographs filed here — there is nothing to summarise. Add a part in the
+                shelf and this becomes a choice.
               </p>
             ) : (
               <>
@@ -1509,8 +1767,8 @@ function LevelView({
                 {showAll === true && (
                   <p className="inspector__note">
                     Every approved photograph inside this level, however deep, and it
-                    keeps up on its own as more are approved. That is a lot for a grid
-                    — turn a block into a wheel and it holds the lot comfortably.
+                    keeps up on its own as more are approved. That is a lot for a grid —
+                    turn a block into a wheel and it holds the lot comfortably.
                   </p>
                 )}
 
@@ -1522,9 +1780,9 @@ function LevelView({
                   before this one.
                 */}
                 <p className="inspector__note">
-                  A block you <em>have</em> picked for is not affected — it shows
-                  exactly what you picked. <strong>Back to automatic</strong> under
-                  that block brings it back here.
+                  A block you <em>have</em> picked for is not affected — it shows exactly
+                  what you picked. <strong>Back to automatic</strong> under that block
+                  brings it back here.
                 </p>
               </>
             )}
@@ -1547,39 +1805,86 @@ function LevelView({
                 onRemoved={() => window.location.reload()}
               />
             ) : (
-              <ProgramDetails
-                program={program}
-                onChanged={refresh}
-                onRemoved={() => window.location.reload()}
-              />
+              <>
+                <ProgramDetails
+                  program={program}
+                  onChanged={refresh}
+                  onRemoved={() => window.location.reload()}
+                />
+
+                {/*
+                  Every picture in the ministry, in one screen.
+
+                  Here and on no level below, for the reason `PictureManager` gives:
+                  a level's page only has its own subtree to offer, so a manager
+                  there could only file a picture *deeper*, and the mis-filing this
+                  fixes is nearly always a picture that is too shallow.
+
+                  A button rather than the screen itself: it is a full-screen
+                  modal, and one that renders because a panel row happens to be
+                  open is one nobody asked for.
+                */}
+                <div className="inspector__group">
+                  {/*
+                    ## The label, which was wrong twice before it was too long
+
+                    It said "Move or delete pictures…", and *move* was the problem:
+                    dragging a picture means reordering it everywhere else in this
+                    editor, so the button read as one more way to arrange a page.
+                    Then "Re-file or delete pictures…", and *re-file* was the
+                    parish's filing-cabinet verb rather than a volunteer's — Tommy:
+                    "very missable and not very clear what it does". The fix for
+                    that named the whole outcome, "Put a photograph on a different
+                    page, or delete it…", which is accurate and is a sentence to
+                    read rather than a button to press.
+
+                    So: two plain words, and the line under them does the
+                    explaining. That is the division of labour this shape exists
+                    for — a `strong` you can recognise without reading, and a
+                    `small` that says what happens next. The legend above it went
+                    with the long label; it was a third statement of the same fact.
+
+                    ## The explanation stays inside the control
+
+                    It used to be an `inspector__note` *under* a `button--quiet
+                    button--small` — a footnote under the quietest thing in the
+                    panel. See `.inspector__action`.
+                  */}
+                  <button
+                    type="button"
+                    className="inspector__action"
+                    onClick={() => setManaging(true)}
+                  >
+                    <Icon name="photos" size={20} />
+                    <span>
+                      <strong>Edit photos…</strong>
+                      <small>
+                        Every photograph in the ministry at once. Drag one onto a
+                        different page to put it there, or delete it for good.
+                      </small>
+                    </span>
+                  </button>
+                </div>
+              </>
             )}
 
             {/*
-              The card picture, with the page's own facts.
+              "Picture on its card" was here — a chooser for the one photograph a
+              level's card opened its cycle on, at Tommy's direction removed.
 
-              It is not about anything *on* this page — it is the picture that
-              stands for this level on the card its parent draws for it, which is
-              the same kind of fact as its name and its dates.
+              A card already cycles through what is beneath it, and the pick only
+              decided which lap it started on: a setting whose whole effect was
+              invisible after four seconds of cross-fade. Two of these existed —
+              this one for the level being looked at, one more for a child
+              selected from its card — so the same question was asked in two
+              places to move a picture to the front of a rotation nobody was
+              watching from the top.
+
+              The ministry's own version went earlier, for a related reason: the
+              tile never read it at all. See `Program.coverMediaId` in the schema
+              for that one, and `summariseChildren`, which is now the only thing
+              that decides a card's pictures — the subtree's own, in filing order.
             */}
-            <div className="inspector__group">
-              <p className="inspector__legend">
-                {node ? 'Picture on its card' : 'Picture on its tile'}
-              </p>
-              <MediaPicker
-                title={node ? `The picture on ${title}` : "The picture on this ministry's tile"}
-                mode="one"
-                media={media}
-                tree={tree}
-                selected={chosenCover ? [chosenCover] : []}
-                onToggle={(id) =>
-                  setCover((was) => {
-                    const current = was === undefined ? coverOnDocument : was;
-                    return togglePick(current ? [current] : [], id, 'one', 1)[0] ?? null;
-                  })
-                }
-                onClose={() => edit.select({ kind: 'page' })}
-              />
-            </div>
           </Disclosure>
         </DisclosureGroup>
       ),
@@ -1643,6 +1948,7 @@ function LevelView({
 
   const shelf = (
     <SubgroupShelf
+      inline
       legend={childLabel}
       busy={saving}
       addLabel={`Add to ${childLabel.toLowerCase()}…`}
@@ -1708,6 +2014,386 @@ function LevelView({
    * "Present this" on the first screen.
    */
   const sideMenu = !edit.on && children.length > 0;
+
+  /**
+   * Every block on the page, as a node and the width it takes, in page order.
+   *
+   * Built as a list rather than written straight into the JSX because of what
+   * sits between it and the page now: `useBlockPacking`, which measures each one
+   * and hands the heights to the packer. A block cannot be measured until it is
+   * a real element, and it cannot be placed until every one of them has been, so
+   * building them and drawing them are two steps with a measurement between.
+   */
+  const blocks: {
+    width: SectionWidth;
+    node: (spot: BlockPlacement | null) => React.ReactNode;
+  }[] = [];
+
+  if (!picturesOff && (pictures.length > 0 || edit.on)) {
+    blocks.push({
+      width: summaryLayout.width,
+      node: (spot) => (
+        /*
+                The page's own block, and the first of however many it carries.
+
+                Its controls are *on it* while editing — grab it, change its shape,
+                and (for the ones below) throw it away. See `BlockFrame`: moving a
+                block is a gesture, and no arrangement of a settings list makes a
+                gesture out of a button labelled "Move up the page".
+
+                This one has no grip, because it is the page's own block — stored in
+                `sectionLayout` rather than in `bands`, so there is no order for it to
+                have a position in. It does have a bin: Tommy asked to be able to remove
+                every section of pictures and leave a page empty, and this was the one
+                block that refused. Its Delete writes `hidePagePictures` rather than
+                splicing an array, and takes the "Also from here" strip with it.
+
+                Drawn while editing **even when it is empty**, which it was not. Somebody
+                who presses × on the last photograph in it would otherwise watch the
+                whole block vanish, footer and all — taking with it the one control that
+                puts the photographs back.
+
+                `frozen` while editing: a rail drifting under a hand is one that moves
+                the very tiles being aimed at.
+              */
+        <Block
+          key="summary"
+          place={spot}
+          display={summaryLayout.display}
+          label="the first block"
+          busy={saving}
+          onShape={(next) => {
+            const layout = layoutForLook(
+              next,
+              // `fit` is the upright wheel's size alone, so a block leaving `column`
+              // rejoins the fixed ladder rather than keeping a height it cannot have.
+              next === 'column' || summaryLayout.scale !== 'fit'
+                ? summaryLayout.scale
+                : 'large',
+              summaryLayout.width,
+              // Carried, or changing the shape would silently throw away the
+              // caption choice. Same reasoning as `scale` and `width`.
+              summaryLayout.caption.placement,
+              summaryLayout.spin,
+              summaryLayout.fit,
+            );
+            setDrafts((was) => ({ ...was, summary: layout }));
+            void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          /* `spinFor`, not the raw field: a wheel holding a direction from the other
+             axis must show the one it is actually travelling. */
+          spin={spinFor(summaryLayout)}
+          onSpin={(spin) => {
+            const layout = { ...summaryLayout, spin };
+            setDrafts((was) => ({ ...was, summary: layout }));
+            void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          fit={summaryLayout.fit}
+          onFit={(fit) => {
+            const layout = { ...summaryLayout, fit };
+            setDrafts((was) => ({ ...was, summary: layout }));
+            void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          captions={summaryLayout.caption.placement !== 'hidden'}
+          onCaptions={(on) => {
+            const layout = layoutForLook(
+              summaryLayout.display,
+              summaryLayout.scale,
+              summaryLayout.width,
+              /*
+                      `over` for on, whatever the shape. `below` is the schema's third
+                      value and has no control: it is a grid look, and offering three
+                      states for "show the words or not" is a menu where a switch will
+                      do. It stays honoured on read for anything already set to it.
+                    */
+              on ? 'over' : 'hidden',
+              summaryLayout.spin,
+              summaryLayout.fit,
+            );
+            setDrafts((was) => ({ ...was, summary: layout }));
+            void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          /*
+                  The page's own block can be resized like any other, so a wheel
+                  added under it can sit beside it rather than below it. Its width
+                  lives in `sectionLayout` where the rest of its arrangement does.
+
+                  Drafted before it is written, for the reason every other control
+                  here is: the write is a round trip, and a block that snaps back to
+                  its old width for half a second reads as the drag having failed.
+                */
+          width={summaryLayout.width}
+          onWidth={(next) => {
+            const layout = { ...summaryLayout, width: next };
+            setDrafts((was) => ({ ...was, summary: layout }));
+            void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          /*
+                  How long it is, when it is a wheel — the handle on its bottom edge.
+
+                  The draft is what draws the drag: `summaryLayout` reads through
+                  `drafts` first, so setting one on every step of the gesture is what
+                  makes the wheel grow under the pointer. Only the last step writes,
+                  or a drag across four sizes would be four round trips.
+                */
+          scale={summaryLayout.scale}
+          onHeight={(next, live) => {
+            const layout = { ...summaryLayout, scale: next };
+            setDrafts((was) => ({ ...was, summary: layout }));
+            if (!live) void write(() => setSectionLayout(target, layout, admin.uid));
+          }}
+          {...(edit.on
+            ? {
+                /*
+                        Nothing is destroyed by it — `featuredMediaIds`, the hidden list
+                        and the arrangement all stay exactly as they are, and the way
+                        back is one press in the row below. Same reason the bin on a band
+                        needs no confirmation.
+                      */
+                onRemove: () => setPicturesOffDraft(true),
+                removeTitle: 'Take the page\u2019s own pictures off this page',
+                pictures: {
+                  count: pictures.length,
+                  picked: chosen.length > 0,
+                  onAdd: () => setPicking(picking === 'summary' ? null : 'summary'),
+                  ...(chosen.length > 0 || hidden.length > 0
+                    ? { onAutomatic: () => automaticFor('summary') }
+                    : {}),
+                },
+                picker: pickerFor(
+                  'summary',
+                  'The pictures in the first block',
+                  pictures,
+                  chosen.length > 0 ? chosen : null,
+                ),
+              }
+            : {})}
+        >
+          <GallerySection
+            id="summary"
+            /*
+                    No heading. It was a hardcoded "Photographs" over the first block of
+                    every gallery in the parish, at Tommy's direction to remove it — and
+                    it was the only heading on the site that named the medium rather
+                    than the thing: the page is already titled "Day 2" and everything
+                    under it is photographs of Day 2, so the word bought a line of
+                    display type and no information.
+
+                    `label` is what remains: the block's accessible name, and the wording
+                    on the little tab an administrator clicks to select it. A heading
+                    nobody needs and a name every screen reader does are different
+                    things, which is exactly the split `GallerySection` draws.
+                  */
+            title=""
+            label="Photographs"
+            layout={summaryLayout}
+            media={pictures}
+            onSelect={(at) => openAt('summary', at)}
+            onPlace={place}
+            frozen={edit.on}
+            empty={
+              <p className="gallery-empty">
+                Nothing in this block. Press <strong>Add pictures</strong> to choose some,
+                or <strong>Back to automatic</strong> to show what this level holds.
+              </p>
+            }
+            onDropPicture={(ordered) => dropInto('summary', chosen.length > 0, ordered)}
+            onRemovePicture={(mediaId) => removeFrom('summary', mediaId)}
+          />
+        </Block>
+      ),
+    });
+  }
+
+  {
+    /*
+          The rest of the blocks, straight after the first.
+
+          They sat *below* the cards once, on the reasoning that a block was the
+          archive and the cards were the way to one particular day. That reasoning
+          went when the blocks became a set of ways to look at one level's
+          photographs: a grid and a wheel are two halves of one thing to look at,
+          and putting the navigation between them separates them for no reason.
+        */
+  }
+  bandBlocks.forEach(({ band, layout, picks, media: shown }, index) => {
+    blocks.push({
+      width: layout.width,
+      node: (spot) => (
+        <Block
+          key={band.id}
+          place={spot}
+          display={layout.display}
+          label={`block ${index + 2}`}
+          busy={saving}
+          onShape={(next) => {
+            const shaped = layoutForLook(
+              next,
+              next === 'column' || layout.scale !== 'fit' ? layout.scale : 'large',
+              layout.width,
+              layout.caption.placement,
+              layout.spin,
+              layout.fit,
+            );
+            setDrafts((was) => ({ ...was, [band.id]: shaped }));
+            void write(async () => {
+              await updateBand(target, band.id, { layout: shaped }, admin.uid);
+              refresh();
+            });
+          }}
+          spin={spinFor(layout)}
+          onSpin={(spin) => {
+            const spun = { ...layout, spin };
+            setDrafts((was) => ({ ...was, [band.id]: spun }));
+            void write(async () => {
+              await updateBand(target, band.id, { layout: spun }, admin.uid);
+              refresh();
+            });
+          }}
+          fit={layout.fit}
+          onFit={(fit) => {
+            const fitted = { ...layout, fit };
+            setDrafts((was) => ({ ...was, [band.id]: fitted }));
+            void write(async () => {
+              await updateBand(target, band.id, { layout: fitted }, admin.uid);
+              refresh();
+            });
+          }}
+          captions={layout.caption.placement !== 'hidden'}
+          onCaptions={(on) => {
+            const shaped = layoutForLook(
+              layout.display,
+              layout.scale,
+              layout.width,
+              on ? 'over' : 'hidden',
+              layout.spin,
+              layout.fit,
+            );
+            setDrafts((was) => ({ ...was, [band.id]: shaped }));
+            void write(async () => {
+              await updateBand(target, band.id, { layout: shaped }, admin.uid);
+              refresh();
+            });
+          }}
+          width={layout.width}
+          onWidth={(next) => {
+            const sized = { ...layout, width: next };
+            setDrafts((was) => ({ ...was, [band.id]: sized }));
+            void write(async () => {
+              await updateBand(target, band.id, { layout: sized }, admin.uid);
+              refresh();
+            });
+          }}
+          /*
+                  Its length, when it is a wheel. The draft is what draws the drag —
+                  see the same pair on the first block — and only the last step of a
+                  gesture is written.
+                */
+          scale={layout.scale}
+          onHeight={(next, live) => {
+            const sized = { ...layout, scale: next };
+            setDrafts((was) => ({ ...was, [band.id]: sized }));
+            if (live) return;
+            void write(async () => {
+              await updateBand(target, band.id, { layout: sized }, admin.uid);
+              refresh();
+            });
+          }}
+          /*
+                  Absent when there is nothing to dock against, or when the block
+                  before it is already sharing its row — `dockWidths` is what decides
+                  that, and the handle draws no hint for a gesture that would do
+                  nothing.
+                */
+          onDock={
+            dockWidths(blockWidths, blockIndexOf(index))
+              ? () => dockBand(index)
+              : undefined
+          }
+          onMove={(delta) =>
+            void write(async () => {
+              await moveBand(target, band.id, delta, admin.uid);
+              refresh();
+            })
+          }
+          onRemove={() =>
+            void write(async () => {
+              await removeBand(target, band.id, admin.uid);
+              refresh();
+            })
+          }
+          {...(edit.on
+            ? {
+                pictures: {
+                  count: shown.length,
+                  picked: picks !== null,
+                  onAdd: () => setPicking(picking === band.id ? null : band.id),
+                  ...(picks !== null || band.hidden.length > 0
+                    ? { onAutomatic: () => automaticFor(band.id) }
+                    : {}),
+                },
+                picker: pickerFor(
+                  band.id,
+                  `The pictures in ${band.title || `block ${index + 2}`}`,
+                  shown,
+                  picks,
+                ),
+              }
+            : {})}
+        >
+          <GallerySection
+            id={band.id}
+            /*
+                    An empty title draws no heading, which is the ordinary case: a
+                    second block under a page that already says "Photographs" rarely
+                    wants one. `label` is what it is called when it has none — its
+                    accessible name.
+                  */
+            title={band.title}
+            label={`${GALLERY_DISPLAY_NAMES[layout.display]} of photographs`}
+            layout={layout}
+            media={shown}
+            onPlace={place}
+            frozen={edit.on}
+            empty={
+              <p className="gallery-empty">
+                Nothing in this block. Press <strong>Add pictures</strong> to choose some.
+              </p>
+            }
+            onDropPicture={(ordered) => dropInto(band.id, picks !== null, ordered)}
+            onRemovePicture={(mediaId) => removeFrom(band.id, mediaId)}
+            /*
+                    Into its own stretch of the flat list, which it needs now that it
+                    draws its own set — so the arrow keys in the lightbox walk the page
+                    rather than jumping into whatever sits at that index in the block
+                    above.
+                  */
+            onSelect={(at) => openAt(band.id, at)}
+          />
+        </Block>
+      ),
+    });
+  });
+
+  /**
+   * Whether the row that adds a block is drawn, which the packer has to know
+   * about: it is a child of the same grid and takes the whole width, so it is
+   * placed with everything else rather than appended underneath.
+   */
+  const addRow = edit.on && (picturesOff || bands.length < MAX_BANDS);
+
+  /**
+   * Where every one of them goes.
+   *
+   * Measured, because a block's height is whatever is inside it — see
+   * `useBlockPacking`. Null until the first measurement and on a phone, and the
+   * blocks fall back to ordinary flow, which is also what a reader with no
+   * JavaScript keeps.
+   */
+  const placements = useBlockPacking(blockGrid, [
+    ...blocks.map((one) => SECTION_WIDTH_COLUMNS[one.width]),
+    ...(addRow ? [SECTION_COLUMNS] : []),
+  ]);
 
   return (
     <article className={sideMenu ? 'gallery gallery--side-menu' : 'gallery'}>
@@ -1794,7 +2480,9 @@ function LevelView({
                     {clips} {clips === 1 ? 'clip' : 'clips'}
                   </span>
                 )}
-                {canEdit && !published && <span className="badge badge--draft">Draft</span>}
+                {canEdit && !published && (
+                  <span className="badge badge--draft">Draft</span>
+                )}
               </p>
             </div>
 
@@ -1809,16 +2497,26 @@ function LevelView({
               laptop, not by somebody with an account. Nothing it shows is
               anything a visitor cannot already see on these pages.
             */}
-            {presentable.length > 0 && (
-              <p className="gallery-head__actions">
+            {/*
+              Two page-level actions at the top, and the row exists for either.
+
+              `SubmitPhotos` is a button here now rather than a section at the foot of
+              the page — Tommy: *"I want the add photos section to be on the top and I
+              want it to be a button that opens a panel."* It renders nothing at all
+              when the parish has stopped collecting or the ministry has no levels
+              yet, so the row can be unconditional without ever being empty of both.
+            */}
+            <p className="gallery-head__actions">
+              {presentable.length > 0 && (
                 <a
                   className="button button--ghost"
                   href={presentHref(program.slug, node ? trailSlugs(tree, node.id) : [])}
                 >
                   <Icon name="present" size={17} /> Present this
                 </a>
-              </p>
-            )}
+              )}
+              <SubmitPhotos program={program} tree={level.tree} node={node} />
+            </p>
           </div>
         </header>
 
@@ -1830,12 +2528,18 @@ function LevelView({
           anywhere; below that there is no width to float 13rem beside a title, so
           it returns to the flow — and the flow has to put it here, under the
           name of the thing it lists, rather than at the foot of the page where it
-          used to live. See `.shelf--reading`.
+          used to live. See `.subshelf--reading`.
 
           A visitor gets the read-only one, and only when there is something in
           it: a label reading "Albums" over nothing is furniture.
         */}
-        {edit.on ? shelf : sideMenu && visitorShelf}
+        {/*
+          Only the visitor's menu is here now. The editing shelf moved into the
+          right-hand column — see `Inspector`'s `aside` — because navigation in one
+          corner and properties in another meant looking in two places to do one
+          job.
+        */}
+        {!edit.on && sideMenu && visitorShelf}
 
         {/*
           The calendar entry, when an administrator has filed this level against
@@ -1883,212 +2587,13 @@ function LevelView({
           the blocks it adds to rather than after a grid it is not part of. It
           spans all twelve; see `.blocks > .addblock`.
         */}
-        <div className="blocks">
-          {!picturesOff && (pictures.length > 0 || edit.on) && (
-            /*
-              The page's own block, and the first of however many it carries.
-
-              Its controls are *on it* while editing — grab it, change its shape,
-              and (for the ones below) throw it away. See `BlockFrame`: moving a
-              block is a gesture, and no arrangement of a settings list makes a
-              gesture out of a button labelled "Move up the page".
-
-              This one has no grip, because it is the page's own block — stored in
-              `sectionLayout` rather than in `bands`, so there is no order for it to
-              have a position in. It does have a bin: Tommy asked to be able to remove
-              every section of pictures and leave a page empty, and this was the one
-              block that refused. Its Delete writes `hidePagePictures` rather than
-              splicing an array, and takes the "Also from here" strip with it.
-
-              Drawn while editing **even when it is empty**, which it was not. Somebody
-              who presses × on the last photograph in it would otherwise watch the
-              whole block vanish, footer and all — taking with it the one control that
-              puts the photographs back.
-
-              `frozen` while editing: a rail drifting under a hand is one that moves
-              the very tiles being aimed at.
-            */
-            <Block
-              display={summaryLayout.display}
-              label="the first block"
-              busy={saving}
-              onShape={(next) => {
-                const layout = layoutForLook(next, summaryLayout.scale, summaryLayout.width);
-                setDrafts((was) => ({ ...was, summary: layout }));
-                void write(() => setSectionLayout(target, layout, admin.uid));
-              }}
-              /*
-                The page's own block can be resized like any other, so a wheel
-                added under it can sit beside it rather than below it. Its width
-                lives in `sectionLayout` where the rest of its arrangement does.
-
-                Drafted before it is written, for the reason every other control
-                here is: the write is a round trip, and a block that snaps back to
-                its old width for half a second reads as the drag having failed.
-              */
-              width={summaryLayout.width}
-              onWidth={(next) => {
-                const layout = { ...summaryLayout, width: next };
-                setDrafts((was) => ({ ...was, summary: layout }));
-                void write(() => setSectionLayout(target, layout, admin.uid));
-              }}
-              {...(edit.on
-                ? {
-                    /*
-                      Nothing is destroyed by it — `featuredMediaIds`, the hidden list
-                      and the arrangement all stay exactly as they are, and the way
-                      back is one press in the row below. Same reason the bin on a band
-                      needs no confirmation.
-                    */
-                    onRemove: () => setPicturesOffDraft(true),
-                    removeTitle: 'Take the page\u2019s own pictures off this page',
-                    pictures: {
-                      count: pictures.length,
-                      picked: chosen.length > 0,
-                      onAdd: () => setPicking(picking === 'summary' ? null : 'summary'),
-                      ...(chosen.length > 0 || hidden.length > 0
-                        ? { onAutomatic: () => automaticFor('summary') }
-                        : {}),
-                    },
-                    picker: pickerFor(
-                      'summary',
-                      'The pictures in the first block',
-                      pictures,
-                      chosen.length > 0 ? chosen : null,
-                    ),
-                  }
-                : {})}
-            >
-              <GallerySection
-                id="summary"
-                /*
-                  No heading. It was a hardcoded "Photographs" over the first block of
-                  every gallery in the parish, at Tommy's direction to remove it — and
-                  it was the only heading on the site that named the medium rather
-                  than the thing: the page is already titled "Day 2" and everything
-                  under it is photographs of Day 2, so the word bought a line of
-                  display type and no information.
-
-                  `label` is what remains: the block's accessible name, and the wording
-                  on the little tab an administrator clicks to select it. A heading
-                  nobody needs and a name every screen reader does are different
-                  things, which is exactly the split `GallerySection` draws.
-                */
-                title=""
-                label="Photographs"
-                layout={summaryLayout}
-                media={pictures}
-                onSelect={(at) => openAt('summary', at)}
-                onPlace={place}
-                frozen={edit.on}
-                empty={
-                  <p className="gallery-empty">
-                    Nothing in this block. Press <strong>Add pictures</strong> to choose
-                    some, or <strong>Back to automatic</strong> to show what this level
-                    holds.
-                  </p>
-                }
-                onDropPicture={(ordered) => dropInto('summary', chosen.length > 0, ordered)}
-                onRemovePicture={(mediaId) => removeFrom('summary', mediaId)}
-              />
-            </Block>
-          )}
-
+        <div className={`blocks${placements ? ' blocks--packed' : ''}`} ref={blockGrid}>
           {/*
-            The rest of the blocks, straight after the first.
-
-            They sat *below* the cards once, on the reasoning that a block was the
-            archive and the cards were the way to one particular day. That reasoning
-            went when the blocks became a set of ways to look at one level's
-            photographs: a grid and a wheel are two halves of one thing to look at,
-            and putting the navigation between them separates them for no reason.
+            Every block, in the page's own order, each one where the packer put it.
+            A block with no placement — before the first measurement, or on a phone
+            — draws itself in ordinary flow instead. See `BlockFrame`.
           */}
-          {bandBlocks.map(({ band, layout, picks, media: shown }, index) => (
-            <Block
-              key={band.id}
-              display={layout.display}
-              label={`block ${index + 2}`}
-              busy={saving}
-              onShape={(next) => {
-                const shaped = layoutForLook(next, layout.scale, layout.width);
-                setDrafts((was) => ({ ...was, [band.id]: shaped }));
-                void write(async () => {
-                  await updateBand(target, band.id, { layout: shaped }, admin.uid);
-                  refresh();
-                });
-              }}
-              width={layout.width}
-              onWidth={(next) => {
-                const sized = { ...layout, width: next };
-                setDrafts((was) => ({ ...was, [band.id]: sized }));
-                void write(async () => {
-                  await updateBand(target, band.id, { layout: sized }, admin.uid);
-                  refresh();
-                });
-              }}
-              onMove={(delta) =>
-                void write(async () => {
-                  await moveBand(target, band.id, delta, admin.uid);
-                  refresh();
-                })
-              }
-              onRemove={() =>
-                void write(async () => {
-                  await removeBand(target, band.id, admin.uid);
-                  refresh();
-                })
-              }
-              {...(edit.on
-                ? {
-                    pictures: {
-                      count: shown.length,
-                      picked: picks !== null,
-                      onAdd: () => setPicking(picking === band.id ? null : band.id),
-                      ...(picks !== null || band.hidden.length > 0
-                        ? { onAutomatic: () => automaticFor(band.id) }
-                        : {}),
-                    },
-                    picker: pickerFor(
-                      band.id,
-                      `The pictures in ${band.title || `block ${index + 2}`}`,
-                      shown,
-                      picks,
-                    ),
-                  }
-                : {})}
-            >
-              <GallerySection
-                id={band.id}
-                /*
-                  An empty title draws no heading, which is the ordinary case: a
-                  second block under a page that already says "Photographs" rarely
-                  wants one. `label` is what it is called when it has none — its
-                  accessible name.
-                */
-                title={band.title}
-                label={`${GALLERY_DISPLAY_NAMES[layout.display]} of photographs`}
-                layout={layout}
-                media={shown}
-                onPlace={place}
-                frozen={edit.on}
-                empty={
-                  <p className="gallery-empty">
-                    Nothing in this block. Press <strong>Add pictures</strong> to choose
-                    some.
-                  </p>
-                }
-                onDropPicture={(ordered) => dropInto(band.id, picks !== null, ordered)}
-                onRemovePicture={(mediaId) => removeFrom(band.id, mediaId)}
-                /*
-                  Into its own stretch of the flat list, which it needs now that it
-                  draws its own set — so the arrow keys in the lightbox walk the page
-                  rather than jumping into whatever sits at that index in the block
-                  above.
-                */
-                onSelect={(at) => openAt(band.id, at)}
-              />
-            </Block>
-          ))}
+          {blocks.map((one, at) => one.node(placements?.[at] ?? null))}
 
           {/*
             Add another block, right under the ones already there.
@@ -2099,15 +2604,35 @@ function LevelView({
             panel whose entire body was these buttons — a click spent to reveal a
             click.
           */}
-          {edit.on && (picturesOff || bands.length < MAX_BANDS) && (
-            <div className="addblock">
+          {addRow && (
+            /*
+              The last child of the same grid, so the packer places it like
+              everything else — under whatever is tallest, across the full width.
+              Left to flow it would have sat in the first hole it fitted, which for
+              a full-width row is the same place; given a placement it is also
+              given a row *span*, without which a grid of half-rem rows would hand
+              it exactly one of them.
+            */
+            <div
+              className="addblock"
+              style={
+                placements?.[blocks.length]
+                  ? {
+                      gridColumn: '1 / -1',
+                      gridRow: `${placements[blocks.length]?.row} / span ${placements[blocks.length]?.rows}`,
+                    }
+                  : undefined
+              }
+            >
               {/*
                 It said "Show the same photographs again, as", which was true when every
                 block drew the page's one set and is not now: a new block starts on the
                 page's photographs and stops the moment somebody presses Add on it.
               */}
               <p className="addblock__legend">
-                {picturesOff && bands.length === 0 ? 'Add a block of pictures' : 'Add another block'}
+                {picturesOff && bands.length === 0
+                  ? 'Add a block of pictures'
+                  : 'Add another block'}
               </p>
 
               {/*
@@ -2139,38 +2664,38 @@ function LevelView({
               )}
 
               {bands.length < MAX_BANDS && (
-              <p className="addblock__choices">
-                {(
-                  [
-                    ['grid', 'A grid'],
-                    ['rail', 'A sideways wheel'],
-                    ['column', 'An upright wheel'],
-                  ] as const
-                ).map(([display, label]) => (
-                  <button
-                    key={display}
-                    type="button"
-                    className="addblock__button"
-                    disabled={saving}
-                    onClick={() =>
-                      void write(async () => {
-                        await addBand(target, display, admin.uid);
-                        refresh();
-                      })
-                    }
-                  >
-                    <span
-                      className={`block__glyph block__glyph--${display}`}
-                      aria-hidden="true"
+                <p className="addblock__choices">
+                  {(
+                    [
+                      ['grid', 'A grid'],
+                      ['rail', 'A sideways wheel'],
+                      ['column', 'An upright wheel'],
+                    ] as const
+                  ).map(([display, label]) => (
+                    <button
+                      key={display}
+                      type="button"
+                      className="addblock__button"
+                      disabled={saving}
+                      onClick={() =>
+                        void write(async () => {
+                          await addBand(target, display, admin.uid);
+                          refresh();
+                        })
+                      }
                     >
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                    {label}
-                  </button>
-                ))}
-              </p>
+                      <span
+                        className={`block__glyph block__glyph--${display}`}
+                        aria-hidden="true"
+                      >
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </p>
               )}
             </div>
           )}
@@ -2201,18 +2726,18 @@ function LevelView({
           click to put one in the properties panel.
         */}
         {edit.on && (
-        <section className="gallery-section" aria-labelledby="level-inside">
-          <h2 id="level-inside" className="gallery-title gallery-title--small">
-            {insideTitle}
-          </h2>
+          <section className="gallery-section" aria-labelledby="level-inside">
+            <h2 id="level-inside" className="gallery-title gallery-title--small">
+              {insideTitle}
+            </h2>
 
-          {children.length === 0 && <p className="gallery-empty">{insideEmpty}</p>}
+            {children.length === 0 && <p className="gallery-empty">{insideEmpty}</p>}
 
-          {children.length > 0 && (
-            <ul className="gathering-grid">
-              {children.map((child) => (
-                <li key={child.id}>
-                  {/*
+            {children.length > 0 && (
+              <ul className="gathering-grid">
+                {children.map((child) => (
+                  <li key={child.id}>
+                    {/*
                     Selecting a card puts its properties in the column. The Edit
                     and Cover buttons that used to sit under every one are gone —
                     two controls per card, on a page that may have twelve.
@@ -2222,39 +2747,81 @@ function LevelView({
                     it: an administrator needs to see at a glance which levels are
                     not yet public, without clicking each one.
                   */}
-                  <div
-                    className={`gathering-slot${
-                      edit.on && edit.isSelected({ kind: 'level', id: child.id })
-                        ? ' is-selected'
-                        : ''
-                    }`}
-                    onClickCapture={(click) => {
-                      if (!edit.on) return;
-                      // The card is a link. In edit mode the click selects
-                      // instead of navigating — otherwise choosing a level to
-                      // edit would leave the page it is on.
-                      click.preventDefault();
-                      click.stopPropagation();
-                      edit.select({ kind: 'level', id: child.id });
-                    }}
-                  >
-                    <LevelCard
-                      href={hrefOf(child.id)}
-                      node={child}
-                      summary={summaries.get(child.id)}
-                    />
-                    {canEdit && (!child.published || child.submissionsOpen) && (
-                      <p className="gathering-card__admin">
-                        {!child.published && <span className="badge badge--draft">Draft</span>}
-                        {child.submissionsOpen && <span className="badge">Collecting</span>}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    <div
+                      className={`gathering-slot${
+                        edit.on && edit.isSelected({ kind: 'level', id: child.id })
+                          ? ' is-selected'
+                          : ''
+                      }`}
+                      onClickCapture={(click) => {
+                        if (!edit.on) return;
+                        /*
+                        The card is a link; in edit mode a click selects the level
+                        instead, or navigating away would be the cost of choosing
+                        something to edit.
+
+                        Except when the click landed in one of the card's own
+                        fields: `preventDefault` on that stops the caret being
+                        placed, so clicking into the middle of a word put the
+                        cursor at the end of it. It still selects — a field belongs
+                        to its level — but the click goes through.
+                      */
+                        const onAField =
+                          click.target instanceof HTMLElement &&
+                          click.target.closest('input, textarea');
+
+                        if (!onAField) {
+                          click.preventDefault();
+                          click.stopPropagation();
+                        }
+                        edit.select({ kind: 'level', id: child.id });
+                      }}
+                    >
+                      <LevelCard
+                        href={hrefOf(child.id)}
+                        node={{
+                          ...child,
+                          // The local overlay wins, so a keystroke shows without
+                          // waiting for the refetch. See `editLevel`.
+                          ...(levelEdits[child.id] ?? {}),
+                        }}
+                        summary={summaries.get(child.id)}
+                        editing={edit.on}
+                        onTitle={(title) => editLevel(child.id, { title })}
+                        onDescription={(description) =>
+                          editLevel(child.id, { description })
+                        }
+                      />
+                      {canEdit &&
+                        (!child.published ||
+                          child.id === program.prioritySubmissionNodeId) && (
+                          <p className="gathering-card__admin">
+                            {!child.published && (
+                              <span className="badge badge--draft">Draft</span>
+                            )}
+                            {/*
+                            Was "Collecting", read off the level's own
+                            `submissionsOpen`. That flag governs nothing now — one
+                            flag on the ministry decides whether the parish is
+                            collecting — so the badge was describing a field
+                            nobody reads, which is worse than no badge.
+
+                            What is worth a badge in its place is where uploads
+                            are going. It is set from the queue on the ministry
+                            page and there is otherwise nothing on the level it
+                            points at to show that it was chosen.
+                          */}
+                            {child.id === program.prioritySubmissionNodeId && (
+                              <span className="badge">Photographs go here</span>
+                            )}
+                          </p>
+                        )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
 
         {/* ---- anything filed here that the summary did not show ----------- */}
@@ -2288,23 +2855,49 @@ function LevelView({
           />
         )}
 
-
         {showsNothing && (
           <p className="gallery-empty">No photographs have been added here yet.</p>
         )}
 
         {/*
-          Below the gallery rather than above it. Somebody arriving from a link
-          came to look at the photographs; the invitation to add to them makes
-          sense after they have. It renders nothing at all when the level has
-          stopped collecting — see `submissionsOpen` — and nothing on a ministry
-          page, which has no queue of its own.
+          `SubmitPhotos` used to be a whole section here, below the gallery, on the
+          argument that somebody arriving from a link came to look at the photographs
+          and the invitation made sense after them. It is a button in the head now —
+          see the note there. The argument was right about a *section* and is what
+          made a section the wrong shape: at the top it pushed the pictures down, at
+          the bottom nobody sending photographs could find it.
+
+          It still renders on every level and on the ministry page, still nothing when
+          the parish has stopped collecting (`Program.submissionsOpen`, one flag for
+          the whole tree) and nothing in a ministry with no levels yet.
         */}
-        {node && <SubmitPhotos event={node} />}
+
+        {/*
+          The approval queue, on the ministry page only, and only for somebody
+          who administers it.
+
+          Last on the page and outside edit mode both, deliberately. It is not a
+          property of what the page shows — it is the parish's inbox — so it does
+          not belong in the properties column, and hiding it behind the edit
+          toggle would mean photographs waiting unseen for however long it takes
+          somebody to press a button they had no reason to press.
+
+          `refresh` rather than a local insert: an approved photograph's file does
+          not exist at the moment of approval, because the Function has not copied
+          it yet. Re-reading is what eventually draws it.
+        */}
+        {node === null && (
+          <SubmissionQueue program={program} tree={level.tree} onDecided={refresh} />
+        )}
       </PageBody>
 
       {open !== null && (
-        <Lightbox media={flat} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />
+        <Lightbox
+          media={flat}
+          index={open}
+          onIndex={setOpen}
+          onClose={() => setOpen(null)}
+        />
       )}
 
       <EditToggle />
@@ -2316,9 +2909,39 @@ function LevelView({
       */}
 
       {edit.on && (
-        <Inspector title={inspecting.title} kind={inspecting.kind} saving={saving}>
+        <Inspector
+          title={inspecting.title}
+          kind={inspecting.kind}
+          saving={saving}
+          /*
+            The list of what is inside, in the column under the properties. It is
+            what makes an always-present column worth its space when nothing in
+            particular is selected: page settings above, somewhere to go below.
+          */
+          aside={shelf}
+        >
           {inspecting.body}
         </Inspector>
+      )}
+
+      {/*
+        The all-pictures manager. A portal, so it is mounted here rather than inside
+        the panel row that opens it — a fixed overlay inside the editing column would
+        be clipped by the column's own scroll area.
+
+        `node === null` is belt as well as braces: the button that sets this is only
+        rendered on the ministry's own page, and the guard means a stale `true` after
+        navigating into a level cannot put a manager on a page whose tree is a subtree.
+      */}
+      {edit.on && managing && node === null && (
+        <PictureManager
+          programId={program.id}
+          programName={program.name}
+          tree={tree}
+          media={media}
+          onChanged={refresh}
+          onClose={() => setManaging(false)}
+        />
       )}
     </article>
   );
@@ -2380,9 +3003,9 @@ function BandEditor({
           }}
         />
         <span className="inspector__note">
-          Its shape, its position, whether it stays and which photographs are in it
-          are all on the block itself — the controls in its corner and the row under
-          it. This is the only thing about it that is words.
+          Its shape, its position, whether it stays and which photographs are in it are
+          all on the block itself — the controls in its corner and the row under it. This
+          is the only thing about it that is words.
         </span>
       </label>
     </div>
@@ -2404,14 +3027,42 @@ function BandEditor({
  * Its counts are of everything beneath it, and it says how many levels that is.
  * "4 parts · 214 photographs" is the fact somebody wants before they click.
  */
+/**
+ * One card for a level inside this one — an album, a year, a week, a day.
+ *
+ * ## Two shapes, the same argument as `ProgramTile`
+ *
+ * Read, it is a `Link` into the level. **Edited, it is a `div`**, because an
+ * `<input>` inside an `<a>` is invalid HTML and behaves like it: the anchor eats
+ * the first click, so the caret lands somewhere unpredictable and dragging to
+ * select a word starts a link drag.
+ *
+ * Tommy asked for the ministry tiles' arrangement to reach down here: *"I prefer
+ * the options for editing each ministry how it is done here I want the same to be
+ * applied to the lower levels I should be able to change the name of the albumns."*
+ * So the name and the description are the card's own fields, and everything else
+ * about a level — its dates, whether it is public, what its parts are called,
+ * removing it — stays in the panel, which is where a switch belongs.
+ *
+ * Renaming is safe to do in place: a level's `slug` is set when it is created and
+ * `renameProgramEvent` never touches it, so the title is what it is *called* and
+ * never where it lives. `LevelDetails` says so in the panel.
+ */
 function LevelCard({
   href,
   node,
   summary,
+  editing = false,
+  onTitle,
+  onDescription,
 }: {
   href: string;
   node: DocOf<ProgramEvent>;
   summary: NodeSummary<DocOf<GalleryMedia>> | undefined;
+  /** Draw the words as fields. False for every visitor. */
+  editing?: boolean;
+  onTitle?: ((title: string) => void) | undefined;
+  onDescription?: ((description: string) => void) | undefined;
 }) {
   const cover = summary?.cover ?? null;
   /*
@@ -2422,30 +3073,73 @@ function LevelCard({
    * material, so the card keeps its shape either way.
    */
   const clip = cover?.kind === 'video' ? cover.renditionPath : null;
-  const path = cover?.kind === 'video' ? cover.posterPath : cover?.renditionPath ?? null;
+  const path =
+    cover?.kind === 'video' ? cover.posterPath : (cover?.renditionPath ?? null);
   const when = formatDateSpan(node.startAt, node.endAt, node.timeZone);
   const photos = summary?.photos ?? 0;
   const clips = summary?.videos ?? 0;
   const inside = summary?.children ?? 0;
 
-  return (
-    <Link className="gathering-card" href={href}>
+  const cardInner = (
+    <>
       <span
         className={`gathering-card__cover${path || clip ? '' : ' gathering-card__cover--empty'}`}
         aria-hidden="true"
       >
         {clip ? (
-          <AutoClip src={galleryPathUrl(clip)} poster={path ? galleryPathUrl(path) : null} />
+          <AutoClip
+            src={galleryPathUrl(clip)}
+            poster={path ? galleryPathUrl(path) : null}
+          />
         ) : (
-          path && <img src={galleryPathUrl(path)} alt="" loading="lazy" decoding="async" />
+          path && (
+            <img src={galleryPathUrl(path)} alt="" loading="lazy" decoding="async" />
+          )
         )}
       </span>
 
       <span className="gathering-card__body">
         {when && <span className="gathering-card__when">{when}</span>}
-        <span className="gathering-card__name">{node.title}</span>
-        {node.description && (
-          <span className="gathering-card__blurb">{captionOf(node.description, 110)}</span>
+
+        {editing && onTitle ? (
+          <span className="gathering-card__name">
+            <Plain
+              name={`level-name-${node.id}`}
+              label={`The name of ${node.title || 'this level'}`}
+              value={node.title}
+              placeholder="Name this one"
+              onChange={onTitle}
+            />
+          </span>
+        ) : (
+          <span className="gathering-card__name">{node.title}</span>
+        )}
+
+        {editing && onDescription ? (
+          /*
+            The whole description, not `captionOf`'s 110 characters — a field
+            showing a truncation would edit the truncation, and the first keystroke
+            would discard everything past the cut. The card grows for it; these
+            cards are in a grid, not a drifting rail, so an uneven row is only
+            uneven.
+          */
+          <span className="gathering-card__blurb gathering-card__blurb--editing">
+            <Grow
+              name={`level-blurb-${node.id}`}
+              className="ee-plain"
+              value={node.description}
+              minRows={2}
+              aria-label={`What ${node.title || 'this level'} was`}
+              placeholder="What this was. Shown above its photographs."
+              onChange={onDescription}
+            />
+          </span>
+        ) : (
+          node.description && (
+            <span className="gathering-card__blurb">
+              {captionOf(node.description, 110)}
+            </span>
+          )
         )}
         <span className="gathering-card__counts">
           {inside > 0 && (
@@ -2466,6 +3160,16 @@ function LevelCard({
           {photos === 0 && clips === 0 && inside === 0 && <span>No photographs yet</span>}
         </span>
       </span>
+    </>
+  );
+
+  if (editing) {
+    return <div className="gathering-card gathering-card--editing">{cardInner}</div>;
+  }
+
+  return (
+    <Link className="gathering-card" href={href}>
+      {cardInner}
     </Link>
   );
 }

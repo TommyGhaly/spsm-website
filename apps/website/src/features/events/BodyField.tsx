@@ -29,7 +29,7 @@
  */
 
 import { useRef } from 'react';
-import { Grow } from './EditorParts';
+import { Grow } from '@/components/Inline';
 
 /**
  * One thing the toolbar can do.
