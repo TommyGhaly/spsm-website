@@ -18,6 +18,16 @@ export { enforceTenantOnCreate, setMemberRole } from './auth.js';
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
 export { squareCheckout } from './checkout.js';
 
+// The active bulletin, read at request time. The homepage schedule was baked
+// into static HTML at build time, so making a different bulletin active in the
+// announcements app changed nothing until a redeploy. See bulletin.ts.
+export { bulletin } from './bulletin.js';
+
+// Whether a liturgy is streaming right now, and which video it is. YouTube
+// sends no CORS header, so unlike the Castr probe this cannot be a fetch from
+// the page itself. See live.ts.
+export { live } from './live.js';
+
 // Program galleries: transcode on submission, publish on approval, take down on
 // rejection. Deployed to us-east1 rather than us-central1 like everything else
 // here — a v2 Firestore trigger must sit in the database's own region, and

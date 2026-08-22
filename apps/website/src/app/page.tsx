@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { formatAddress, type ContentPage, type DocOf } from '@spsm/shared';
 import { BookshelfPreview, getProducts, toShopProducts } from '@/features/bookstore';
-import { getCurrentBulletin, BulletinWeek } from '@/features/bulletin';
+import { ActivitiesPreview } from '@/features/programs';
+import { getCurrentBulletin, BulletinLive, todayInParish } from '@/features/bulletin';
 import { bundledPortrait, getContentPages } from '@/features/content';
 import { givingUrl } from '@/features/giving';
-import { LivestreamPlayer, ShowWhenLive, livestreamProbeUrl } from '@/features/livestream';
+import { LivestreamPlayer, ShowWhenLive, livestreamProbe } from '@/features/livestream';
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
+import { DragRail } from '@/components/DragRail';
 import { Icon, type IconName } from '@/components/Icon';
 import { SectionHeading } from '@/components/SectionHeading';
 
@@ -40,6 +42,31 @@ export default async function HomePage() {
           `alternatingBands`. */}
       <Welcome band={band()} />
 
+      {/* The ministries, directly under the welcome and above everything the
+          parish *does for* a visitor — the stream, the sheet, the shop.
+
+          Asked for directly, and the ordering is the point of it. The welcome
+          says who the parish is in three sentences; this says it in five
+          photographs, which is the better answer to the same question. It is a
+          preview of `/events` rather than a second copy of it: smaller plates,
+          no editing, and a link out at the foot. See `ActivitiesPreview`.
+
+          Takes a turn of `band()` like every other section — see
+          `alternatingBands`. **The turn is consumed even in the one case where
+          the section renders nothing**, which is the trade `band` being a prop
+          buys: the tint is dealt on the server, so a client-side read that comes
+          back empty cannot change the colour of the page under a reader. The
+          cost is two matching bands running together on a parish that publishes
+          no ministries at all, which is not a state this parish is in.
+
+          `band--tight-end`, at Tommy's direction, for the same reason the
+          bookstore carries it: the full `--space-section` under this section and
+          again over the schedule put two sections' worth of air into one seam.
+          The rail also brings its own — `.rail--programs .rail` pads its block
+          axis to make room for the plates standing off the page — so the gap
+          here was the widest on the homepage. See `.rail--activities` in
+          globals.css for the rest of it. */}
+      <ActivitiesPreview band={`${band()} band--tight-end`} />
 
       {/* The player itself, not a link to it — someone at home on a Sunday
           morning should not have to navigate to watch. Only when a stream is
@@ -59,13 +86,46 @@ export default async function HomePage() {
         <Livestream band="band band--deep" config={config.livestream} />
       )}
 
-      {/* The bookstore, between the stream and the week ahead.
-          
+      {/* The parish's own weekly sheet — whichever bulletin the announcements
+          app has made active. Absent if the source is empty or the section is
+          switched off in config/integrations.
+
+          The week read at build time is the first paint, not the last word:
+          `BulletinLive` re-reads the source in the browser, so making a
+          different bulletin active reaches this page without a deploy. The
+          section and its band stay out here, so the alternation is still dealt
+          out at build time and nothing arrives late to move the page.
+
+          `band--tight-start`, at Tommy's direction: the activities above stop
+          close under their own last line and this starts close over its heading,
+          which are the two halves of one seam. Safe here because the ground
+          changes colour across it — see the note on the modifier. */}
+      {bulletin && (
+        <section
+          className={`${band()} band--tight-start`}
+          aria-labelledby="bulletin-heading"
+        >
+          <div className="wrap reveal">
+            <BulletinLive initial={bulletin} today={todayInParish()} />
+          </div>
+        </section>
+      )}
+
+      {/* The bookstore, under the week's sheet.
+
           Here because of who is on this page: someone checking whether there is
           a Liturgy this Saturday, who has no idea the parish sells books at
-          all. Below the stream so it never competes with a service in progress,
-          and above the week's sheet because the sheet is the errand most people
-          came for and the page should not interrupt it.
+          all. Below the stream so it never competes with a service in progress.
+
+          **It was above the sheet, and it moved below it at Tommy's direction.**
+          The old note argued the sheet is the errand most people came for and
+          the page should not interrupt it — which is the argument for putting
+          the shop *after* the sheet, not before. What it got wrong is how
+          reading works: a section above the thing you came for interrupts it by
+          definition, and a shelf of covers between the stream and the schedule
+          was a page saying "buy something" on the way to a service time. After
+          the sheet, the errand is done and the shelf is an offer rather than an
+          obstacle.
 
           Takes a turn of `band()` like the other conditional sections — see
           `alternatingBands`. It removes itself when the catalog is empty, and a
@@ -103,22 +163,6 @@ export default async function HomePage() {
               note="Collect at the church, or have them delivered."
             />
             <BookshelfPreview products={toShopProducts(products)} />
-          </div>
-        </section>
-      )}
-
-      {/* The parish's own weekly sheet. Absent if the source is empty or the
-          section is switched off in config/integrations. */}
-      {bulletin && (
-        <section className={band()} aria-labelledby="bulletin-heading">
-          <div className="wrap reveal">
-            <SectionHeading
-              id="bulletin-heading"
-              eyebrow="This week"
-              title={bulletin.weekLabel}
-              note={bulletin.presetName || undefined}
-            />
-            <BulletinWeek bulletin={bulletin} />
           </div>
         </section>
       )}
@@ -627,12 +671,27 @@ function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
             to 11rem — large enough that a visitor can recognise a father from
             the row afterwards, which is the only thing this section is for —
             and setting the caption alongside is what pays for that without the
-            section taking another 3rem of the page for each of them. */}
-        <ul className="clergy reveal-stagger">
-          {clergy.map((page) => (
-            <Cleric key={page.id} page={page} />
-          ))}
-        </ul>
+            section taking another 3rem of the page for each of them.
+
+            A rail, the same one the ministries and the shelf use. Three fathers
+            fit a laptop, so on one it is simply a row and nothing moves —
+            `DragRail` measures before it animates anything. It earns its keep
+            narrower than that, where the row used to become a column three
+            portraits tall.
+
+            `reveal-stagger` came off when it did. That rule animates on a
+            `view()` timeline, which resolves against the nearest scroll
+            container — and inside the rail that is the rail, which never scrolls
+            vertically, so the fathers would have sat at the start of their
+            reveal permanently. The `.reveal` on the wrap above still brings the
+            whole section in. */}
+        <DragRail className="rail--clergy">
+          <ul className="clergy">
+            {clergy.map((page) => (
+              <Cleric key={page.id} page={page} />
+            ))}
+          </ul>
+        </DragRail>
       </div>
     </section>
   );
@@ -742,11 +801,12 @@ function Livestream({
    * a page *about* watching, so it owes an answer either way; the homepage owes
    * none, and the stream is off far more hours of the week than it is on.
    *
-   * `probe={false}` on the player because `ShowWhenLive` has already asked —
-   * see that component and the prop's note.
+   * `probe={false}` on the player because `ShowWhenLive` has already asked, and
+   * hands its answer — including which video — down through context. See
+   * `InheritedLiveState`.
    */
   return (
-    <ShowWhenLive probeUrl={livestreamProbeUrl(config)}>
+    <ShowWhenLive probe={livestreamProbe(config)}>
       <section id="livestream" className={band} aria-labelledby="livestream-heading">
         <div className="wrap reveal">
           <SectionHeading

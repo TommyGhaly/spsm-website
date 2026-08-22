@@ -1,5 +1,6 @@
-import { isCastrTarget, type LivestreamConfig } from '@spsm/shared';
+import { isCastrTarget, isYouTubeChannelId, type LivestreamConfig } from '@spsm/shared';
 import { LiveFrame } from './LiveFrame';
+import type { LiveProbe } from './useLiveStatus';
 
 /**
  * The liturgy stream.
@@ -44,7 +45,18 @@ export function LivestreamPlayer({
   }
 
   const src = embedUrl(config);
-  if (!src) {
+  const available = livestreamProbe(config);
+  // Withheld, not absent, when `probe` is false: an ancestor has already asked
+  // and hands its answer down through context.
+  const liveProbe = probe ? available : null;
+
+  // Tested against `available` rather than `liveProbe`, because the homepage
+  // passes `probe={false}` and a settings-only check would call that
+  // misconfigured. Only genuinely misconfigured when *neither* half can produce
+  // a player: no usable embed URL from the settings, and no probe that could
+  // name one at request time. A YouTube channel legitimately has the first and
+  // not the second, which is why this is not simply `!src`.
+  if (!src && !available) {
     return (
       <div className="notice notice--alarm">
         <h2>The stream is misconfigured</h2>
@@ -58,7 +70,7 @@ export function LivestreamPlayer({
 
   return (
     <>
-      <LiveFrame src={src} probeUrl={probe ? livestreamProbeUrl(config) : null} wide={wide} />
+      <LiveFrame src={src} probe={liveProbe} fallbackUrl={config.fallbackUrl} wide={wide} />
 
       {config.scheduleNote && <p className="meta">{config.scheduleNote}</p>}
 
@@ -75,20 +87,32 @@ export function LivestreamPlayer({
 }
 
 /**
- * Where to read this stream's live status, or `null` if it can't be asked.
+ * How to read this stream's live status, or `null` if it can't be asked.
  *
- * Only a Castr target answers this question — see `isCastrTarget`. `null` means
- * "don't ask", and every consumer then behaves as the site did before any of
- * this existed: the player renders unconditionally.
+ * `null` means "don't ask", and every consumer then behaves as the site did
+ * before any of this existed: the player renders unconditionally.
  *
  * Note this deliberately tests `config.target` and not the embed URL: the embed
  * URL is the *embeddable* form, which for YouTube and Facebook is a URL on
  * their domains rather than on the parish's provider.
  */
-export function livestreamProbeUrl(config: LivestreamConfig): string | null {
+export function livestreamProbe(config: LivestreamConfig): LiveProbe | null {
+  if (!config.enabled) return null;
+
   const target = config.target.trim();
-  if (!config.enabled || !target) return null;
-  return isCastrTarget(target) ? target : null;
+  if (isCastrTarget(target)) return { kind: 'castr', url: target };
+
+  /*
+   * `archiveChannelId` rather than `target`, because it is the field that names
+   * the parish's own channel — the only thing whose live status can be looked
+   * up. `target` may be a single video id, or the channel id, or empty; none of
+   * those is a reliable answer to "what is this parish streaming now".
+   */
+  if (config.platform === 'youtube' && isYouTubeChannelId(config.archiveChannelId.trim())) {
+    return { kind: 'youtube' };
+  }
+
+  return null;
 }
 
 /** Null when the target can't be turned into something embeddable. */
@@ -98,10 +122,20 @@ function embedUrl(config: LivestreamConfig): string | null {
 
   switch (config.platform) {
     case 'youtube':
-      // A channel id means "whatever this channel is streaming now", which is
-      // the only form that survives the video id changing every Sunday.
-      return target.startsWith('UC')
-        ? `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(target)}`
+      /*
+       * A channel id has no build-time embed, and used to.
+       * `youtube.com/embed/live_stream?channel=UC…` was the form that survived
+       * the video id changing every Sunday — and YouTube has retired it. On
+       * 2026-08-21 it rendered "This video is unavailable" for a channel that
+       * was live at that moment, whose watch page reported `playableInEmbed:
+       * true` and `playabilityStatus: OK`, and whose video id embedded fine.
+       *
+       * So the id is resolved at request time instead, by `/api/live`. Null
+       * here is not a failure: it means "ask the probe", and the misconfigured
+       * notice above is careful not to treat it as one.
+       */
+      return isYouTubeChannelId(target)
+        ? null
         : `https://www.youtube.com/embed/${encodeURIComponent(target)}`;
 
     case 'facebook':

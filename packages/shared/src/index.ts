@@ -16,11 +16,14 @@ export * from './castr.js';
 
 export * from './schema/common.js';
 export * from './schema/bulletin.js';
+export * from './bulletinSource.js';
 export * from './schema/config.js';
 export * from './schema/content.js';
 export * from './schema/events.js';
 export * from './schema/programs.js';
+export * from './schema/sectionLayout.js';
 export * from './gallery/layout.js';
+export * from './gallery/tree.js';
 export * from './gallery/urls.js';
 export * from './schema/prayer.js';
 export * from './schema/servants.js';

@@ -133,7 +133,7 @@
       ]
     },
     {
-      "comment": "Public section pages. The published filter is mandatory for anonymous reads (see firestore.rules), so it must be in the index \u2014 the staff index above cannot serve this query.",
+      "comment": "Public section pages. The published filter is mandatory for anonymous reads (see firestore.rules), so it must be in the index — the staff index above cannot serve this query.",
       "collectionGroup": "content",
       "queryScope": "COLLECTION",
       "fields": [
@@ -167,7 +167,7 @@
       ]
     },
     {
-      "comment": "Program galleries. These matter more than most: the gallery pages are client-rendered at request time, so a missing index is not a failed build a developer sees \u2014 it is a live page that spins forever for a visitor. Every entry below mirrors a query in apps/website/src/features/programs.",
+      "comment": "Program galleries. These matter more than most: the gallery pages are client-rendered at request time, so a missing index is not a failed build a developer sees — it is a live page that spins forever for a visitor. Every entry below mirrors a query in apps/website/src/features/programs.",
       "collectionGroup": "programs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -182,7 +182,7 @@
       ]
     },
     {
-      "comment": "The events under one program, newest first. Undated events sort last by convention, not by this index.",
+      "comment": "Every level under one program, at every depth, in one query. `parentId` is deliberately absent: the tree is read whole and walked in memory, because a page that summarises what is beneath it needs the descendants anyway — a generation-at-a-time read would be a query per level per page. The startAt order is what the index and the rules require, not what anything renders in; `compareNodes` sorts client-side, manual order first.",
       "collectionGroup": "programEvents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -201,7 +201,7 @@
       ]
     },
     {
-      "comment": "Admin: every event under a program, published or not. Cannot be served by the public index above, which requires the published filter.",
+      "comment": "Admin: the whole tree under a program, drafts included. Cannot be served by the public index above, which requires the published filter — and an administrator's tree has to be complete or the unpublished week they just created has nowhere to hang its days.",
       "collectionGroup": "programEvents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -216,35 +216,12 @@
       ]
     },
     {
-      "comment": "One gallery. The status filter is mandatory for public reads \u2014 firestore.rules denies the query outright without it, not merely the rows \u2014 so it is part of every public index here.",
+      "comment": "One level of a program, and — as an `in` filter over up to thirty of these — a whole subtree. Firestore serves an `in` from the same index as an `==`, which is why reading a week and its days needs no index of its own. The status filter is mandatory for public reads — firestore.rules denies the query outright without it, not merely the rows — so it is part of every public index here.",
       "collectionGroup": "galleryMedia",
       "queryScope": "COLLECTION",
       "fields": [
         {
           "fieldPath": "programEventId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "order",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "comment": "One group within a gallery, and the presentation running a single day.",
-      "collectionGroup": "galleryMedia",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "programEventId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "groupId",
           "order": "ASCENDING"
         },
         {
@@ -277,7 +254,7 @@
       ]
     },
     {
-      "comment": "The approval queue, scoped to one program. A program-scoped administrator MUST filter on programId \u2014 the rules cannot prove their grant covers an unfiltered list, so the query is denied rather than trimmed.",
+      "comment": "The approval queue, scoped to one program. A program-scoped administrator MUST filter on programId — the rules cannot prove their grant covers an unfiltered list, so the query is denied rather than trimmed.",
       "collectionGroup": "galleryMedia",
       "queryScope": "COLLECTION",
       "fields": [

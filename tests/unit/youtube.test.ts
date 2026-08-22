@@ -5,6 +5,8 @@ import {
   parseWatchPageStart,
   watchPageUrl,
   isYouTubeChannelId,
+  liveBroadcastIds,
+  videosListUrl,
 } from '@spsm/shared';
 
 /**
@@ -188,5 +190,88 @@ describe('parseWatchPageStart', () => {
     expect(parseWatchPageStart('"startTimestamp" : "2026-08-16T11:52:52+00:00"')).toBe(
       '2026-08-16T11:52:52+00:00',
     );
+  });
+});
+
+
+
+
+/**
+ * `liveBroadcastIds` reads a `videos.list` response. This is the one call the
+ * livestream's live check spends quota on, and it is asked about several videos
+ * at once — so which of them comes back as *the* live one, and in what order,
+ * is the whole behaviour.
+ */
+describe('liveBroadcastIds', () => {
+  const candidates = ['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc'];
+
+  const body = (entries: Array<[string, string]>) => ({
+    items: entries.map(([id, liveBroadcastContent]) => ({ id, snippet: { liveBroadcastContent } })),
+  });
+
+  it('returns only the videos YouTube calls live', () => {
+    expect(
+      liveBroadcastIds(
+        body([
+          ['aaaaaaaaaaa', 'none'],
+          ['bbbbbbbbbbb', 'live'],
+          ['ccccccccccc', 'none'],
+        ]),
+        candidates,
+      ),
+    ).toEqual(['bbbbbbbbbbb']);
+  });
+
+  it('ignores an upcoming broadcast', () => {
+    // A scheduled stream has no content in it yet, so putting a player on the
+    // page for one would show a countdown where a liturgy should be.
+    expect(liveBroadcastIds(body([['aaaaaaaaaaa', 'upcoming']]), candidates)).toEqual([]);
+  });
+
+  it('answers in candidate order, not response order', () => {
+    /*
+     * The API does not promise to echo ids back in the order they were asked
+     * for. Candidate order is the channel feed's, so the caller taking the first
+     * result gets the most recently published broadcast — which is only true if
+     * the ordering is imposed here.
+     */
+    expect(
+      liveBroadcastIds(
+        body([
+          ['ccccccccccc', 'live'],
+          ['aaaaaaaaaaa', 'live'],
+        ]),
+        candidates,
+      ),
+    ).toEqual(['aaaaaaaaaaa', 'ccccccccccc']);
+  });
+
+  it('ignores ids that were not asked about', () => {
+    expect(liveBroadcastIds(body([['zzzzzzzzzzz', 'live']]), candidates)).toEqual([]);
+  });
+
+  it('returns nothing on a body it cannot read, without throwing', () => {
+    // The caller treats an empty list as "could not find out" only because it
+    // also checks the HTTP status; a malformed 200 is reported as nothing live.
+    for (const junk of [null, undefined, {}, { items: 'nope' }, { items: [null, 7] }, 'text']) {
+      expect(() => liveBroadcastIds(junk, candidates)).not.toThrow();
+      expect(liveBroadcastIds(junk, candidates)).toEqual([]);
+    }
+  });
+});
+
+describe('videosListUrl', () => {
+  it('asks for every candidate in one request', () => {
+    // One request for many ids is what makes this cost a single unit of quota
+    // rather than one per video.
+    expect(videosListUrl(['aaaaaaaaaaa', 'bbbbbbbbbbb'])).toBe(
+      'https://www.googleapis.com/youtube/v3/videos?part=snippet&id=aaaaaaaaaaa%2Cbbbbbbbbbbb',
+    );
+  });
+
+  it('carries no key', () => {
+    // The key is appended by the Function from Secret Manager. Building it into
+    // a shared URL helper would invite it into the website bundle.
+    expect(videosListUrl(['aaaaaaaaaaa'])).not.toContain('key=');
   });
 });

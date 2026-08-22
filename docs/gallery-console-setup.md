@@ -77,10 +77,15 @@ NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY=<the site key from 1a>
 A debug token is a **bypass**. One per machine, never in CI, and revoke it from
 that same screen when a laptop is replaced.
 
-> Neither variable is read by any code yet. Wiring `initializeAppCheck` into
-> `apps/website/src/lib/firebase.ts` is mine to do, and enforcement in 1c should
-> be switched on **after** that ships — enforcing first blocks the site's own
-> uploads. Tell me when 1a–1b are done and I will wire it.
+> **Done (Aug 20 2026).** `initializeAppCheck` is wired into
+> `apps/website/src/lib/firebase.ts`, started from `db()` and `storage()` so it
+> runs before the first request and never during the Node export build. It is
+> inert while `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY` is empty and skipped
+> entirely under the emulators, and every failure inside it is swallowed — an
+> unregistered app must not take the parish website down.
+>
+> Enforcement in 1c still has to come **after** 1b, not before: enforcing
+> against an app that is not registered blocks the site's own uploads.
 
 ---
 
@@ -195,10 +200,14 @@ of a developer — it is a page that spins in front of a visitor.
 
 ## Checklist
 
-- [ ] 1a reCAPTCHA Enterprise key created, site key copied
-- [ ] 1b key registered in App Check
-- [ ] 1d debug token created and both values in `.env`
-- [ ] *(then tell me — I wire `initializeAppCheck`)*
+- [x] 1a reCAPTCHA Enterprise key created — `SPSM Database`, SCORE, domains
+      `www.spsmwayland.org` / `spsmwayland.org` / `localhost`. Site key is in
+      `.env` as `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY`.
+- [x] *(`initializeAppCheck` wired — see the note in 1d)*
+- [ ] **1b key registered in App Check** ← the next thing, and it enables the
+      App Check API, which is still off. Nothing attests until this is done.
+- [ ] 1d debug token created and put in `.env` (needed for `npm run dev`
+      against the real project; irrelevant under the emulators)
 - [ ] 1c **enforce on Cloud Storage**, leave Firestore unenforced
 - [ ] 2 lifecycle rule applied and verified
 - [ ] 3 budget alert at $25

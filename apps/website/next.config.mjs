@@ -31,6 +31,21 @@ for (const name of ['.env', '.env.local']) {
 const nextConfig = {
   output: 'export',
 
+  /*
+   * Dev tooling: somewhere else to put the build output.
+   *
+   * `next dev` refuses to start a second server for the same output directory,
+   * and the two servers worth having at once are exactly the pair this repo
+   * needs — one on the real Firestore, which is what the public pages read, and
+   * one on the emulators, which is the only way to see a program gallery or
+   * anything behind sign-in. Without this, working on the galleries means
+   * stopping whichever server you already had.
+   *
+   * Unset, `distDir` is absent from the config and nothing changes. `npm run
+   * dev:emulated:second` is the intended user.
+   */
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+
   // Must agree with firebase.json's hosting block, or links will 301 on every
   // navigation in production while working fine in `next dev`.
   //   firebase.json: cleanUrls true, trailingSlash false
@@ -77,11 +92,11 @@ if (process.env.NODE_ENV === 'development') {
   const region = process.env.FUNCTIONS_REGION ?? 'us-central1';
 
   /*
-   * Listed one by one rather than as `/api/square/:fn`, because the path and
-   * the function name are not the same string. The path segment is `checkout`
-   * and the Function is `squareCheckout` — a captured param is lowercase, so
-   * the pattern built `squarecheckout` and the emulator rejected it. These are
-   * a mirror of the rewrites in firebase.json; add to both together.
+   * Listed one by one rather than as `/api/:fn`, because a path segment and its
+   * function name are not the same string. The path is `square/checkout` and
+   * the Function is `squareCheckout` — a captured param is lowercase, so the
+   * pattern built `squarecheckout` and the emulator rejected it. These are a
+   * mirror of the rewrites in firebase.json; add to both together.
    */
   nextConfig.rewrites = async () => ({
     beforeFiles: [],
@@ -93,6 +108,25 @@ if (process.env.NODE_ENV === 'development') {
       {
         source: '/api/square/webhook',
         destination: `${origin}/${project}/${region}/squareWebhook`,
+      },
+      /*
+       * The homepage schedule's live read. Same arrangement as the two above: a
+       * Hosting rewrite in production, and nothing at all on the dev server
+       * without this — which means the bulletin section silently never refreshes
+       * locally and the polling cannot be exercised.
+       */
+      {
+        source: '/api/bulletin',
+        destination: `${origin}/${project}/${region}/bulletin`,
+      },
+      /*
+       * The livestream's live check. Same arrangement again — and without it
+       * the player locally can only ever show its "could not find out" state,
+       * because the probe has nothing to talk to.
+       */
+      {
+        source: '/api/live',
+        destination: `${origin}/${project}/${region}/live`,
       },
     ],
     /*

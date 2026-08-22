@@ -183,14 +183,16 @@ The requirements doc says "no deep integration with Taksis — linked via deep l
 only." That is **no longer true.** Two external Firebase projects are now in
 scope:
 
-- `weeklyannouncements` — separate Firebase project, **read only**, mirrored into
-  our `announcements` collection.
-- Taksis — **write only**, receiving pending vehicle registrations.
+- `weeklyannouncements` — separate Firebase project, **read only**. Read
+  through, never mirrored: one source of truth, no copy to fall behind, no
+  `syncedAt` to reason about. Read from two places now — the build, and the
+  `bulletin` Function (decision #12).
+- Taksis — **write only**, receiving pending vehicle registrations. Unimplemented
+  pending a schema.
 
 Shared plumbing is built
-([`functions/src/external/secondaryApp.ts`](../functions/src/external/secondaryApp.ts));
-both syncs are unimplemented pending schemas. See
-[`docs/integrations.md`](integrations.md).
+([`functions/src/external/secondaryApp.ts`](../functions/src/external/secondaryApp.ts)).
+See [`docs/integrations.md`](integrations.md).
 
 **Still open, and consequential:**
 
@@ -246,6 +248,77 @@ build-time fetch throttled.
 **Revisit if:** the archive ever needs to be current to the hour rather than the
 day. That is a different design — a Function caching the feed, with the page
 reading it client-side — and it is not worth a service for twelve links.
+
+---
+
+### 12. The homepage schedule follows `config/active_bulletin`, at request time
+
+Two changes, and the first is the one that was actually wrong.
+
+**Which bulletin.** The rule was "sort `bulletins` by week, take the newest",
+written when that collection was documented as a singleton the source app
+overwrites weekly. It is not one: it holds the active week *plus* whichever
+future week staff have started drafting. So on 2026-08-20 the homepage was headed
+"August 24, 2026" and listed an unpublished draft, while the screen in the
+narthex showed August 17.
+
+The announcements app records its own answer in `config/active_bulletin` — one
+field, an id in `bulletins` — and the site now follows it. Nothing about the
+dates is used, deliberately: a bulletin is a schedule somebody publishes, not a
+calendar range, and the parish is entitled to leave last week's up over a feast
+or put next week's up early. Deriving the week from `days[]` overrules that
+decision, and `lastPublished` gets the common case right while still being
+capable of disagreeing with the narthex.
+
+**When it is read.** Decision #11 above ends by naming the shape this takes — "a
+Function caching the feed, with the page reading it client-side… not worth a
+service for twelve links." It is worth a service for the bulletin, and the
+difference is what the staleness costs. Twelve stale archive links are a page
+less complete than it could be. A stale schedule sends somebody to church at the
+wrong hour, and does not look stale while doing it.
+
+So `/api/bulletin` is a Hosting rewrite onto the `bulletin` Function, and the
+section re-asks it on load, on every return to the tab, and once a minute while
+the tab is being looked at. The browser cannot make this read itself — the
+bulletin is in another Firebase project, so it needs that project's
+service-account key, which is exactly what must not ship to a browser. That
+constraint, not a preference, is what makes it a Function.
+
+**The read itself lives in
+[`packages/shared/src/bulletinSource.ts`](../packages/shared/src/bulletinSource.ts)
+and is imported by both callers.** If the build and the live check ever resolved
+"the active bulletin" differently, the homepage would change week a moment after
+load, for no reason a reader could see and with nothing in either codebase
+looking wrong.
+
+**What the build still does:** it bakes in whatever was active at deploy, and
+that is what paints first. The live check then replaces it — and *only* replaces
+it. A null answer, a 502, a 503, an offline reader: all leave the week on screen
+alone. A section that can empty itself mid-visit takes a band's worth of height
+out from under whatever the reader is looking at, and for a switched-off section
+the old behaviour was already "gone at the next deploy" rather than "gone now".
+
+**The costs, stated rather than discovered:**
+
+- **A second home for the key.** `ANNOUNCEMENTS_SERVICE_ACCOUNT` is now needed in
+  Secret Manager as well as in the build environment. Missing there, the endpoint
+  answers 503 and the page keeps its built-in week — which looks exactly like
+  nothing being wrong. First thing to check after a deploy.
+- **Reads per reader rather than per build.** `s-maxage=30` on the response is
+  what keeps a Sunday morning's arrivals from becoming a Sunday morning's worth
+  of reads against the announcements project.
+- **A client component on the homepage.** The section's contents, heading
+  included, now render in the browser. The heading had to move with them:
+  `weekLabel` comes out of the same document as the days, and refreshing one
+  without the other shows the new week's services under the old week's date.
+- **`today` became a prop.** A static export prerenders client components too, so
+  reading the clock inside one gives the day of the deploy on one side of
+  hydration and the day of the visit on the other. It is read on the server page
+  and passed down, which keeps the "Today" flag the build-time value it always
+  was. See `todayInParish`.
+
+**Revisit if:** anything else needs request-time freshness. Two such endpoints is
+a pattern worth naming; one is a section with an unusual cost of being wrong.
 
 ---
 

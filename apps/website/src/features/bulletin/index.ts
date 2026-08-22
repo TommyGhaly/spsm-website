@@ -1,2 +1,3 @@
 export { getCurrentBulletin } from './data';
-export { BulletinWeek } from './BulletinWeek';
+export { BulletinLive } from './BulletinLive';
+export { todayInParish } from './today';

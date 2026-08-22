@@ -133,6 +133,10 @@ for (const program of PROGRAMS) {
   const document = {
     ...program,
     coverMediaId: null,
+    // Empty means "show the recent photographs automatically" rather than "show
+    // none" — see `programFeatured`. Written explicitly so a program created by
+    // this script has the same shape as one created from the ministry page.
+    featuredMediaIds: [],
     published: false,
     publishAt: null,
     createdAt: new Date(),
