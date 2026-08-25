@@ -40,6 +40,13 @@ export interface ShopProduct {
   gallery: { src: string; srcSet: string | null; large: string }[];
   /** Null means "not tracked"; 0 means sold out. */
   stockCount: number | null;
+  /**
+   * Which division of the shop this belongs in. Null means unfiled, which the
+   * shop shows in its own group rather than hiding.
+   *
+   * The parish's field, not Square's — see the note on `Product.section`.
+   */
+  section: string | null;
 }
 
 /**
@@ -78,6 +85,7 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
       coverLarge: bundled ? bundled.src.replace(/\.webp$/, '@2x.webp') : (product.imagePaths[0] ?? null),
       gallery: galleryFor(product),
       stockCount: product.stockCount,
+      section: product.section ?? null,
     };
   });
 }

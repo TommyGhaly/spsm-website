@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapSquareCatalog, slugify } from '@spsm/shared';
+import { mapSquareCatalog, parseInventoryCounts, slugify } from '@spsm/shared';
 
 /**
  * Mapping Square's catalog into bookstore products.
@@ -286,5 +286,116 @@ describe('slugify', () => {
 
   it('is stable, because it is the document id', () => {
     expect(slugify('Holy Bible')).toBe(slugify('Holy Bible'));
+  });
+});
+
+/**
+ * Stock, which is three states rather than two.
+ *
+ * `null` is "Square is not counting these", `0` is sold out and hides the book,
+ * and a number is what is on the shelf. The whole risk in this area is the two
+ * ways those collapse into each other: an untracked item reading as 0 empties
+ * the shop, and a tracked-but-uncounted item reading as null sells copies that
+ * are not there.
+ */
+describe('mapSquareCatalog inventory', () => {
+  const TRACKED = [
+    { type: 'CATEGORY', id: 'CAT_BOOK', category_data: { name: 'Bookstore' } },
+    {
+      type: 'ITEM',
+      id: 'ITEM_A',
+      item_data: {
+        name: 'Counted Book',
+        categories: [{ id: 'CAT_BOOK' }],
+        variations: [
+          {
+            id: 'VAR_A',
+            item_variation_data: {
+              price_money: { amount: 1000, currency: 'USD' },
+              track_inventory: true,
+            },
+          },
+        ],
+      },
+    },
+    {
+      type: 'ITEM',
+      id: 'ITEM_B',
+      item_data: {
+        name: 'Uncounted Book',
+        categories: [{ id: 'CAT_BOOK' }],
+        variations: [
+          {
+            id: 'VAR_B',
+            item_variation_data: { price_money: { amount: 1000, currency: 'USD' } },
+          },
+        ],
+      },
+    },
+  ] as const;
+
+  const stock = (objects: readonly unknown[], counts?: ReadonlyMap<string, number>) =>
+    new Map(mapSquareCatalog(objects, 'Bookstore', counts).products.map((p) => [p.name, p.stockCount]));
+
+  it('reads a tracked variation from the counts and leaves an untracked one null', () => {
+    const counts = stock(TRACKED, new Map([['VAR_A', 4]]));
+
+    expect(counts.get('Counted Book')).toBe(4);
+    // Tracking is off on this one, so no count exists and none is invented.
+    expect(counts.get('Uncounted Book')).toBe(null);
+  });
+
+  /**
+   * The distinction the sync depends on. Square returns no count row for a
+   * variation that has never had one recorded, so "absent" is only zero when
+   * the variation says it is being tracked.
+   */
+  it('treats a tracked variation with no count row as sold out', () => {
+    expect(stock(TRACKED, new Map()).get('Counted Book')).toBe(0);
+  });
+
+  /**
+   * The failure that would empty the shop. `sync-catalog.mjs` passes `undefined`
+   * when the inventory endpoint refuses it — one 403 on INVENTORY_READ must not
+   * mark every tracked book sold out.
+   */
+  it('marks nothing sold out when inventory was never read', () => {
+    expect(stock(TRACKED, undefined).get('Counted Book')).toBe(null);
+    expect(stock(TRACKED).get('Counted Book')).toBe(null);
+  });
+});
+
+describe('parseInventoryCounts', () => {
+  it('keeps IN_STOCK and drops the other states', () => {
+    const counts = parseInventoryCounts([
+      { catalog_object_id: 'VAR_A', state: 'IN_STOCK', quantity: '3' },
+      // Summing these in would count every copy already sold as still on the
+      // shelf, which is the one arithmetic error available here.
+      { catalog_object_id: 'VAR_A', state: 'SOLD', quantity: '11' },
+      { catalog_object_id: 'VAR_B', state: 'WASTE', quantity: '2' },
+    ]);
+
+    expect(counts.get('VAR_A')).toBe(3);
+    expect(counts.has('VAR_B')).toBe(false);
+  });
+
+  it('clamps an oversell to zero rather than reading it as plenty', () => {
+    const counts = parseInventoryCounts([
+      { catalog_object_id: 'VAR_A', state: 'IN_STOCK', quantity: '-1' },
+    ]);
+    // The shop reads `stockCount === 0` as sold out; -1 would have shown as in
+    // stock, which is exactly backwards.
+    expect(counts.get('VAR_A')).toBe(0);
+  });
+
+  it('ignores rows it cannot use', () => {
+    expect(
+      parseInventoryCounts([
+        null,
+        'nonsense',
+        { state: 'IN_STOCK', quantity: '4' },
+        { catalog_object_id: 'VAR_A', state: 'IN_STOCK', quantity: 'many' },
+      ]).size,
+    ).toBe(0);
   });
 });

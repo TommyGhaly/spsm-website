@@ -18,6 +18,35 @@ export { enforceTenantOnCreate, setMemberRole } from './auth.js';
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
 export { squareCheckout } from './checkout.js';
 
+// A buyer finding their own orders with no account, because on this site they
+// cannot have one. The credential is a receipt: order number plus the email it
+// was sent to. See orders.ts.
+export { orderLookup } from './orders.js';
+
+// Adding a book to the shop and putting photographs on it. Square first, always
+// — a product that exists only in Firestore has no variation id and therefore
+// cannot be bought. See catalog.ts.
+// Stock and removal go through Square too, for the same reason: `stockCount` is
+// on the sync's field mask, and `published` is overwritten on every run — so a
+// number or a hide written only to Firestore lasts until the next sync.
+export {
+  squareCreateProduct,
+  squareProductImage,
+  squareRemoveProductImage,
+  squareProductStock,
+  squareArchiveProduct,
+} from './catalog.js';
+
+// Refunding an order in full. The parish publishes a no-returns policy; this is
+// the door for the exceptions to it, and it records who made one and why.
+export { squareRefund } from './refunds.js';
+
+// Bookstore statistics. The shop writes one document per view and cart change
+// rather than incrementing a counter — a counter tops out near one write per
+// second and would fail first on the most popular book — so all the arithmetic
+// happens here, hourly, off the request path. See stats.ts.
+export { rollupBookstoreStats, refreshBookstoreStats } from './stats.js';
+
 // The active bulletin, read at request time. The homepage schedule was baked
 // into static HTML at build time, so making a different bulletin active in the
 // announcements app changed nothing until a redeploy. See bulletin.ts.

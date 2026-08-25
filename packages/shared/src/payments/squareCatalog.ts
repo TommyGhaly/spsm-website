@@ -23,7 +23,9 @@
  *   - Duplicate names, including "The Bridegroom: Pascha Sermons" twice. Slugs
  *     therefore cannot be assumed unique — see `slugify` and the suffixing.
  *   - Trailing spaces on several names ("The Angelic Life ").
- *   - No item tracks inventory and none carries weight or dimensions.
+ *   - No item tracks inventory and none carries weight or dimensions. Staff can
+ *     now switch tracking on per product from /bookstore, so this is the
+ *     starting state rather than a permanent one — see `stockCount` below.
  * ---------------------------------------------------------------------------
  */
 import type { Money } from '../schema/commerce.js';
@@ -61,8 +63,26 @@ export interface MappedCatalog {
  * unmatched name yields no products rather than everything — silently
  * publishing 68 festival items because someone renamed a category in Square is
  * the worst failure this function could have.
+ *
+ * `counts` is the parsed body of `POST /v2/inventory/counts/batch-retrieve`,
+ * keyed by variation id — see `parseInventoryCounts`. **Omitting it is not the
+ * same as passing an empty map**, and the distinction is load-bearing:
+ *
+ *   - omitted ⇒ inventory was never asked for, and every product gets
+ *     `stockCount: null`, which is "not tracked" and puts nothing out of stock.
+ *   - supplied ⇒ the counts are authoritative, so a variation with tracking
+ *     switched on and no count row is 0, i.e. genuinely sold out.
+ *
+ * A caller that cannot reach the inventory endpoint must therefore pass nothing
+ * rather than an empty map. The alternative — one failed request emptying the
+ * whole shop — is the worst outcome available here, and it is a single
+ * `undefined` away.
  */
-export function mapSquareCatalog(objects: readonly unknown[], categoryName: string): MappedCatalog {
+export function mapSquareCatalog(
+  objects: readonly unknown[],
+  categoryName: string,
+  counts?: ReadonlyMap<string, number>,
+): MappedCatalog {
   const wanted = categoryName.trim().toLowerCase();
 
   const categories = new Map<string, string>();
@@ -142,10 +162,14 @@ export function mapSquareCatalog(objects: readonly unknown[], categoryName: stri
       imagePaths: imageUrls(data, images),
       squareCatalogObjectId: id,
       squareVariationId: variation?.id ?? null,
-      // Null means "not tracked", which is the truth: no item in this catalog
-      // has inventory tracking switched on. Deliberately not 0, which would
-      // mean sold out and hide everything.
-      stockCount: null,
+      /*
+       * Tracking is read off the variation, not inferred from the presence of a
+       * count. Square returns no count row for a variation that has never had
+       * one recorded, so "no row" is ambiguous on its own — it means zero for a
+       * tracked item and "not tracked" for an untracked one, and only
+       * `track_inventory` tells the two apart.
+       */
+      stockCount: stockOf(variation, counts),
       category,
     });
   }
@@ -204,13 +228,57 @@ function itemCategoryId(data: Record<string, unknown> | null): string | null {
 
 function firstVariation(
   data: Record<string, unknown> | null,
-): { id: string | null; price: unknown } | null {
+): { id: string | null; price: unknown; tracked: boolean } | null {
   const list = data?.['variations'];
   if (!Array.isArray(list) || list.length === 0) return null;
 
   const variation = asRecord(list[0]);
   const variationData = asRecord(variation?.['item_variation_data']);
-  return { id: str(variation?.['id']), price: variationData?.['price_money'] };
+  return {
+    id: str(variation?.['id']),
+    price: variationData?.['price_money'],
+    tracked: variationData?.['track_inventory'] === true,
+  };
+}
+
+/** What this variation's stock is, given what we know about inventory. */
+function stockOf(
+  variation: { id: string | null; tracked: boolean } | null,
+  counts: ReadonlyMap<string, number> | undefined,
+): number | null {
+  if (!counts || !variation?.tracked) return null;
+  return variation.id ? (counts.get(variation.id) ?? 0) : null;
+}
+
+/**
+ * `POST /v2/inventory/counts/batch-retrieve` → variation id → quantity.
+ *
+ * Square reports quantities as *strings* (`"3"`), and one row per catalog
+ * object per state: an item can hold IN_STOCK, SOLD, and WASTE rows at once.
+ * Only IN_STOCK is what a shopper can buy, so the others are dropped — summing
+ * them would have counted every copy already sold as still on the shelf.
+ *
+ * A negative quantity is possible in Square (an oversell recorded at the till)
+ * and is clamped to 0. The shop reads `stockCount === 0` as sold out and would
+ * treat -1 as plenty in stock.
+ */
+export function parseInventoryCounts(rows: readonly unknown[]): Map<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const raw of rows) {
+    const row = asRecord(raw);
+    if (!row || row['state'] !== 'IN_STOCK') continue;
+
+    const id = str(row['catalog_object_id']);
+    if (!id) continue;
+
+    const quantity = Number(row['quantity']);
+    if (!Number.isFinite(quantity)) continue;
+
+    counts.set(id, Math.max(0, Math.floor(quantity)));
+  }
+
+  return counts;
 }
 
 /** Square money → `Money`, or null if it isn't usable. */

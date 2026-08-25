@@ -128,6 +128,23 @@ export function isUsableAddress(address: {
   );
 }
 
+/** A name is long enough to be one and short enough to be a field. */
+export const MAX_NAME = 60;
+
+/**
+ * Trim a supplied name to something storable, or return null.
+ *
+ * Deliberately permissive about *what* a name contains — Coptic, Arabic,
+ * hyphens, apostrophes, and spaces are all ordinary in this parish, and a
+ * pattern strict enough to exclude nonsense would exclude parishioners first.
+ * It checks only that something was typed and bounds how much.
+ */
+export function cleanName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME);
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * The shape of an email address, checked only enough to catch a typo.
  *

@@ -1,5 +1,13 @@
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { COLLECTIONS, type DocOf, type Product } from '@spsm/shared';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import {
+  CONFIG_DOC_BOOKSTORE,
+  COLLECTIONS,
+  DEFAULT_BOOKSTORE_CONFIG,
+  parseBookstoreConfig,
+  type BookstoreConfig,
+  type DocOf,
+  type Product,
+} from '@spsm/shared';
 import { db } from '@/lib/firebase';
 import { docOf, safely } from '@/lib/firestore';
 
@@ -28,5 +36,24 @@ export async function getProducts(): Promise<DocOf<Product>[]> {
         .sort((a, b) => a.name.localeCompare(b.name));
     },
     [],
+  );
+}
+
+/**
+ * The shop's settings, read at build time.
+ *
+ * Unauthenticated, like everything else in this file — `config/bookstore` is
+ * world-readable because the page prints it. Falls back to the committed
+ * defaults, which are the exact strings that used to be hard-coded in `Shop`,
+ * so a parish that has never opened the editor sees no change at all.
+ */
+export async function getBookstoreConfig(): Promise<BookstoreConfig> {
+  return safely(
+    'config/bookstore',
+    async () => {
+      const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_BOOKSTORE));
+      return parseBookstoreConfig(snapshot.exists() ? snapshot.data() : null);
+    },
+    DEFAULT_BOOKSTORE_CONFIG,
   );
 }

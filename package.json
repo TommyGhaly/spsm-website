@@ -32,6 +32,8 @@
     "programs": "npm run build --workspace @spsm/shared && node scripts/seed-programs.mjs",
     "//catalog": "Mirror the Square bookstore catalog into Firestore products.",
     "catalog": "npm run build --workspace @spsm/shared && node scripts/sync-catalog.mjs",
+    "//orders:backfill": "Gives every existing order a lowercased contactEmailLower, which is the field the buyer-facing order lookup queries. Orders taken before that field existed are otherwise invisible to it. Dry run by default; --write applies.",
+    "orders:backfill": "npm run build --workspace @spsm/shared && node scripts/backfill-order-emails.mjs",
     "//archive": "Refresh the committed snapshot of past livestreams.",
     "archive": "npm run build --workspace @spsm/shared && node scripts/refresh-archive.mjs",
     "//assets": "Rebuilds the web-ready images in public/ and app/ from the originals in assets/. Run after adding a photo; --check verifies the committed outputs exist.",

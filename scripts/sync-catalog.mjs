@@ -30,7 +30,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { mapSquareCatalog } from '../packages/shared/dist/index.js';
+import { mapSquareCatalog, parseInventoryCounts } from '../packages/shared/dist/index.js';
 import { accessToken, documentUrl, toFieldMap } from './lib/firestore-rest.mjs';
 
 process.loadEnvFile('.env');
@@ -175,12 +175,80 @@ async function existingSlugs(auth) {
   return new Set((body.documents ?? []).map((d) => d.name.split('/').pop()));
 }
 
+/**
+ * How many of each variation Square says are on the shelf.
+ *
+ * Returns `undefined` — never an empty map — when the counts cannot be read.
+ * `mapSquareCatalog` treats an absent map as "inventory unknown, nothing is out
+ * of stock", and an empty one as "every tracked item is at zero". Getting that
+ * backwards would mean one failed request emptying the whole shop on the next
+ * deploy, so the distinction is kept all the way out to here.
+ */
+async function readInventory(variationIds) {
+  if (variationIds.length === 0) return undefined;
+
+  const counts = [];
+  // Square caps this endpoint at 1000 ids. The parish has eleven books, so the
+  // chunking is insurance rather than something that runs today.
+  for (let index = 0; index < variationIds.length; index += 500) {
+    const response = await fetch(`${squareHost}/v2/inventory/counts/batch-retrieve`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${squareToken}`,
+        'Square-Version': '2025-01-23',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ catalog_object_ids: variationIds.slice(index, index + 500) }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = body?.errors?.[0];
+      console.warn(
+        `\n  Could not read inventory: HTTP ${response.status} ${detail?.code ?? ''} ${detail?.detail ?? ''}`,
+      );
+      if (detail?.code === 'FORBIDDEN' || response.status === 403) {
+        console.warn('  The token needs INVENTORY_READ. Run npm run verify:scopes.');
+      }
+      console.warn('  Stock counts are left untouched this run; nothing is marked sold out.\n');
+      return undefined;
+    }
+
+    counts.push(...(body.counts ?? []));
+  }
+
+  return parseInventoryCounts(counts);
+}
+
 const objects = await readSquareCatalog();
-const { products, skipped } = mapSquareCatalog(objects, CATEGORY);
+
+/*
+ * Mapped twice, and the first pass is thrown away.
+ *
+ * The inventory endpoint is asked about *variations*, and the only thing that
+ * knows which variations are in the Bookstore category is the mapping itself.
+ * So: map to learn the ids, fetch the counts, map again with them. It is pure
+ * and network-free, which is what makes running it twice a non-event — and the
+ * alternative is a second copy of the category and variation logic here, which
+ * is exactly the duplication that put a wrong `slugify` in the Functions.
+ */
+const inventory = await readInventory(
+  mapSquareCatalog(objects, CATEGORY)
+    .products.map((product) => product.squareVariationId)
+    .filter(Boolean),
+);
+const { products, skipped } = mapSquareCatalog(objects, CATEGORY, inventory);
 
 console.log(`Square (${squareEnv}): ${objects.length} catalog objects`);
 console.log(`Target: ${emulator ? `emulator ${EMULATOR_HOST}` : `project ${project}`}`);
-console.log(`Category "${CATEGORY}": ${products.length} product(s), ${skipped.length} skipped\n`);
+console.log(`Category "${CATEGORY}": ${products.length} product(s), ${skipped.length} skipped`);
+
+const tracked = products.filter((product) => product.stockCount !== null);
+console.log(
+  inventory
+    ? `Inventory: ${tracked.length} tracked, ${tracked.filter((p) => p.stockCount === 0).length} sold out\n`
+    : 'Inventory: not read — stockCount left off this run\'s field mask\n',
+);
 
 if (products.length === 0) {
   console.error(
@@ -275,6 +343,45 @@ if (!skipImages) {
   );
 }
 
+/*
+ * Exactly the fields Square owns on a product document.
+ *
+ * `section` is deliberately absent — see the note at the PATCH below, and the
+ * field's own note in packages/shared/src/schema/commerce.ts.
+ */
+const MIRRORED_FIELDS = [
+  'slug',
+  'name',
+  'description',
+  'price',
+  'imagePaths',
+  'squareCatalogObjectId',
+  'squareVariationId',
+  'stockCount',
+  'category',
+  'published',
+  'publishAt',
+  'syncedAt',
+  'createdAt',
+  'updatedAt',
+  'updatedBy',
+];
+
+/*
+ * The mask this run actually uses.
+ *
+ * A masked field with no value is a *delete*, not a skip — that is the whole
+ * point of the mask and it cuts both ways here. When the inventory read fails
+ * every product carries `stockCount: null`, and leaving the field on the mask
+ * would write that null over a real count: one 403 on INVENTORY_READ and every
+ * sold-out book is quietly back on the shop at full stock.
+ *
+ * So a run that could not read inventory does not claim to know it.
+ */
+const fields = inventory
+  ? MIRRORED_FIELDS
+  : MIRRORED_FIELDS.filter((field) => field !== 'stockCount');
+
 const now = new Date();
 let created = 0;
 let updated = 0;
@@ -299,14 +406,35 @@ for (const product of products) {
     ...(existed ? {} : { createdAt: now }),
   };
 
-  // PATCH with no updateMask replaces the document, which is what a mirror
-  // wants: a field removed in Square must disappear here rather than linger.
-  // `createdAt` is therefore re-sent on updates too — see below.
   if (existed) {
     body.createdAt = now;
   }
 
-  const response = await fetch(docUrl(`products/${product.slug}`), {
+  /*
+   * A field mask, and the reason it replaced a whole-document PATCH.
+   *
+   * This used to send no `updateMask`, which replaces the document outright —
+   * described here as "what a mirror wants: a field removed in Square must
+   * disappear rather than linger". That was true while every field came from
+   * Square. It stopped being true when `section` arrived: the shop's divisions
+   * are the parish's, stored on this document and edited on the site, and a
+   * whole-document PATCH silently erased every one of them on the next sync.
+   * Nothing would have failed; the shop would just have gone flat again.
+   *
+   * The mask keeps the original property where it matters. Every mirrored field
+   * is listed, so one absent from `body` because Square dropped it is deleted
+   * here too — a masked field with no value is a delete, not a skip. Fields
+   * *not* on the list are left alone, which is now exactly what is wanted.
+   *
+   * **Anything added to this document that the parish owns rather than Square
+   * must be left off this list.** That is the whole contract.
+   */
+  const url = new URL(docUrl(`products/${product.slug}`));
+  for (const field of fields) {
+    url.searchParams.append('updateMask.fieldPaths', field);
+  }
+
+  const response = await fetch(url, {
     method: 'PATCH',
     headers: { Authorization: auth, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: toFieldMap(body) }),

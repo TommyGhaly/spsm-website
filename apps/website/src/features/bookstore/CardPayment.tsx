@@ -69,6 +69,18 @@ export function CardPayment({
 }) {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
+  /*
+   * The buyer's name, and why it is asked for rather than inferred.
+   *
+   * A collection order is handed to a person across a table, and "an order for
+   * b.something@gmail" is not something a volunteer can call out or file a
+   * paper bag under. Square captures a cardholder name, but that is the name on
+   * the card — a spouse's, a parent's, sometimes a business's — and it is not
+   * returned to us in a form we can rely on. So it is asked once, plainly, and
+   * it is the name the order is put aside under.
+   */
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [shipping, setShipping] = useState(false);
   const [address, setAddress] = useState({ line1: '', line2: '', city: '', state: '', postalCode: '' });
@@ -130,7 +142,8 @@ export function CardPayment({
 
   const shippingIncomplete =
     shipping && !(address.line1.trim() && address.city.trim() && address.state.trim() && address.postalCode.trim());
-  const blocked = status !== 'ready' || !looksLikeEmail(email) || shippingIncomplete;
+  const named = firstName.trim().length > 0 && lastName.trim().length > 0;
+  const blocked = status !== 'ready' || !looksLikeEmail(email) || !named || shippingIncomplete;
 
   async function pay() {
     if (!card.current) return;
@@ -152,6 +165,8 @@ export function CardPayment({
           sourceId: result.token,
           cart,
           email: email.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
           fulfillment: shipping ? 'ship' : 'pickup',
           address: shipping ? address : undefined,
           idempotencyKey: idempotencyKey.current,
@@ -242,7 +257,32 @@ export function CardPayment({
             1
           </span>
           <div className="pay__body">
-            <label className="pay__label" htmlFor="pay-email">
+            <label className="pay__label" htmlFor="pay-first">
+              Who is this order for?
+            </label>
+            {/* Two fields rather than one "full name", because the bookstore
+                files collection orders by surname and splitting a single string
+                on a space gets Coptic and hyphenated names wrong. */}
+            <div className="pay__name">
+              <input
+                id="pay-first"
+                value={firstName}
+                autoComplete="given-name"
+                onChange={(event) => setFirstName(event.target.value)}
+                placeholder="First name"
+                aria-label="First name"
+              />
+              <input
+                id="pay-last"
+                value={lastName}
+                autoComplete="family-name"
+                onChange={(event) => setLastName(event.target.value)}
+                placeholder="Last name"
+                aria-label="Last name"
+              />
+            </div>
+
+            <label className="pay__label pay__label--stacked" htmlFor="pay-email">
               Where should the receipt go?
             </label>
             <input

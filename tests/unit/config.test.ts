@@ -4,8 +4,11 @@ import {
   parseParishConfig,
   hasParishDetails,
   formatAddress,
+  parseBookstoreConfig,
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
+  DEFAULT_BOOKSTORE_CONFIG,
+  MAX_DELIVERY_CENTS,
 } from '@spsm/shared';
 
 /**
@@ -274,5 +277,64 @@ describe('formatAddress', () => {
 
   it('returns an empty string for a wholly blank address', () => {
     expect(formatAddress(DEFAULT_PARISH_CONFIG.address)).toBe('');
+  });
+});
+
+describe('parseBookstoreConfig', () => {
+  it('falls back to the committed wording when the document is missing', () => {
+    expect(parseBookstoreConfig(null)).toEqual(DEFAULT_BOOKSTORE_CONFIG);
+    expect(parseBookstoreConfig(undefined)).toEqual(DEFAULT_BOOKSTORE_CONFIG);
+    expect(parseBookstoreConfig('nonsense')).toEqual(DEFAULT_BOOKSTORE_CONFIG);
+  });
+
+  it('takes the parish’s values when they are usable', () => {
+    expect(
+      parseBookstoreConfig({
+        deliveryCents: 550,
+        orderEmail: 'office@spsmwayland.org',
+        fulfilmentNote: 'Pick up after Liturgy.',
+        returnsNotice: 'All sales final.',
+      }),
+    ).toEqual({
+      deliveryCents: 550,
+      orderEmail: 'office@spsmwayland.org',
+      fulfilmentNote: 'Pick up after Liturgy.',
+      returnsNotice: 'All sales final.',
+      // Absent from the document means no divisions, which is the ordinary
+      // state — `parseSections` has its own tests in shopSections.test.ts.
+      sections: [],
+    });
+  });
+
+  it('falls each field back on its own, so a half-written document still counts', () => {
+    const partial = parseBookstoreConfig({ deliveryCents: 0 });
+    expect(partial.deliveryCents).toBe(0);
+    expect(partial.returnsNotice).toBe(DEFAULT_BOOKSTORE_CONFIG.returnsNotice);
+  });
+
+  /*
+   * `deliveryCents` is turned into a real charge by the checkout Function, so
+   * these are the cases that would take money nobody authorised. Rejected back
+   * to the default rather than clamped — clamping silently charges a figure the
+   * parish never chose.
+   */
+  it('refuses a delivery charge that is not a usable amount', () => {
+    for (const bad of [-100, 1_000_00, 7.5, NaN, Infinity, '700', null]) {
+      expect(parseBookstoreConfig({ deliveryCents: bad }).deliveryCents).toBe(
+        DEFAULT_BOOKSTORE_CONFIG.deliveryCents,
+      );
+    }
+  });
+
+  it('allows free delivery, which is not the same as unset', () => {
+    expect(parseBookstoreConfig({ deliveryCents: 0 }).deliveryCents).toBe(0);
+    expect(parseBookstoreConfig({ deliveryCents: MAX_DELIVERY_CENTS }).deliveryCents).toBe(
+      MAX_DELIVERY_CENTS,
+    );
+  });
+
+  it('preserves a deliberately cleared order email', () => {
+    // Empty means "say contact the parish office", which is a choice, not a gap.
+    expect(parseBookstoreConfig({ orderEmail: '' }).orderEmail).toBe('');
   });
 });

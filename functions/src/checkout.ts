@@ -1,55 +1,107 @@
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineSecret, defineString } from 'firebase-functions/params';
+import { defineString } from 'firebase-functions/params';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
+  CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
+  DEFAULT_BOOKSTORE_CONFIG,
   buildOrderEmail,
   buildSquareOrder,
+  cleanName,
   isUsableAddress,
   looksLikeEmail,
+  normalizeEmail,
+  parseBookstoreConfig,
+  type BookstoreConfig,
   type Product,
 } from '@spsm/shared';
+import { callerOf } from './httpAuth.js';
+import {
+  SQUARE_ACCESS_TOKEN,
+  SQUARE_ENVIRONMENT,
+  SQUARE_LOCATION_ID,
+  SQUARE_SANDBOX_ACCESS_TOKEN,
+  SQUARE_VERSION,
+  squareHost,
+} from './square.js';
 
-const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');
 /*
- * The sandbox counterpart, and the reason it has to exist separately.
- *
- * Square issues one token per environment and they are not interchangeable: the
- * production token returns 401 against `connect.squareupsandbox.com`, and the
- * sandbox token returns 401 against `connect.squareup.com`. Both were already
- * in the repo's .env, but only `SQUARE_ACCESS_TOKEN` was ever read — so with
- * `SQUARE_ENVIRONMENT=sandbox`, which is how the site runs locally, every
- * payment sent the production token to the sandbox host and came back 401.
- *
- * Reading the pair together is what makes the environment switch mean one
- * thing. Setting `SQUARE_ENVIRONMENT=production` to make that 401 go away would
- * have been the dangerous fix: the browser stays in sandbox mode, still showing
- * "Test mode — no real money moves", while the Function starts taking real
- * money.
+ * Square's host, token pair, and location now live in ./square.ts, imported
+ * above. They were defined here, and the long note explaining that the sandbox
+ * and production tokens 401 against each other's hosts moved with them — the
+ * refund endpoint needs the same pairing and must not grow its own copy of the
+ * rule.
  */
-const SQUARE_SANDBOX_ACCESS_TOKEN = defineSecret('SQUARE_SANDBOX_ACCESS_TOKEN');
-const SQUARE_LOCATION_ID = defineString('SQUARE_LOCATION_ID');
-const SQUARE_ENVIRONMENT = defineString('SQUARE_ENVIRONMENT');
 
 /**
- * Flat shipping, in cents.
+ * Flat shipping, in cents — the fallback, not the source of truth any more.
  *
- * Flat because it is the only honest option available: not one item in the
- * parish's Square catalog carries a weight or a dimension, so no carrier can
- * quote a rate for a parcel nobody has described. When those are filled in,
- * this becomes a rate lookup; until then a single number the parish chooses is
- * better than a calculation resting on invented data.
+ * ---------------------------------------------------------------------------
+ * The parish sets this in `config/bookstore` now, and edits it on the shop page.
+ *
+ * It was only ever this parameter, which meant changing what the parish charges
+ * for postage was a redeploy performed by somebody with deploy rights. That is
+ * exactly what `collections.ts` says the `config` collection exists to avoid:
+ * "feature switches that staff can change without a code deploy". A price is the
+ * clearest possible member of that set.
+ *
+ * The parameter stays as the floor. A missing or unreadable settings document
+ * then means the charge the parish has been using all along, rather than free
+ * postage on every delivered order — which is the failure mode that costs money
+ * quietly.
+ *
+ * Flat, either way, because it is the only honest option available: not one item
+ * in the parish's Square catalog carries a weight or a dimension, so no carrier
+ * can quote a rate for a parcel nobody has described.
+ * ---------------------------------------------------------------------------
  */
 const SHIPPING_FLAT_CENTS = defineString('SHIPPING_FLAT_CENTS', { default: '700' });
 
 /**
- * Where a buyer should write if their order is wrong. Empty is fine — the email
- * then says "contact the parish office" rather than naming an address that does
- * not exist.
+ * Where a buyer should write if their order is wrong. Same arrangement as the
+ * charge above: `config/bookstore` wins, this is the fallback. Empty is fine —
+ * the email then says "contact the parish office" rather than naming an address
+ * that does not exist.
  */
 const PARISH_EMAIL = defineString('PARISH_EMAIL', { default: '' });
 
-const SQUARE_VERSION = '2025-01-23';
+/**
+ * The shop's settings, or the deploy-time fallbacks.
+ *
+ * Read per request rather than cached in a module global. A Function instance
+ * lives for hours, and a cache would mean the parish changes the delivery charge
+ * and warm instances keep charging the old one for the rest of the afternoon —
+ * with the page already showing the new figure. One extra document read on a
+ * request that is already making two round trips to Square is not worth that.
+ */
+async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<BookstoreConfig> {
+  /*
+   * The document wins outright when it exists; the deployed parameters are used
+   * only when it does not.
+   *
+   * An earlier version of this merged the two field by field, treating "equal to
+   * the committed default" as "the document did not really say that". It was
+   * wrong in a way worth recording: a parish that deliberately set the delivery
+   * charge to $7.00 — the committed default — would have had it silently
+   * replaced by whatever `SHIPPING_FLAT_CENTS` happened to be. A value is not
+   * unset because it matches a default.
+   *
+   * `parseBookstoreConfig` already falls each field back individually when it is
+   * missing or out of range, so a half-written document is handled there.
+   */
+  try {
+    const snapshot = await db.collection(COLLECTIONS.config).doc(CONFIG_DOC_BOOKSTORE).get();
+    if (snapshot.exists) return parseBookstoreConfig(snapshot.data());
+  } catch (error) {
+    console.error('[checkout] could not read config/bookstore; using the deployed values', error);
+  }
+
+  return {
+    ...DEFAULT_BOOKSTORE_CONFIG,
+    deliveryCents: Number(SHIPPING_FLAT_CENTS.value()) || 0,
+    orderEmail: PARISH_EMAIL.value(),
+  };
+}
 
 /**
  * Take a payment for a basket.
@@ -109,6 +161,8 @@ export const squareCheckout = onRequest(
       sourceId?: unknown;
       cart?: unknown;
       email?: unknown;
+      firstName?: unknown;
+      lastName?: unknown;
       fulfillment?: unknown;
       address?: Record<string, string>;
       idempotencyKey?: unknown;
@@ -130,6 +184,21 @@ export const squareCheckout = onRequest(
       res.status(400).json({ error: 'A valid email address is needed for the receipt.' });
       return;
     }
+
+    /*
+     * Required, and validated here rather than only in the browser.
+     *
+     * A collection order is handed to a person, and an order with nobody's name
+     * on it is one a volunteer cannot file or hand over. The page marks both
+     * fields required; this is the half that actually holds, because the page
+     * is one anybody can edit.
+     */
+    const firstName = cleanName(body.firstName);
+    const lastName = cleanName(body.lastName);
+    if (!firstName || !lastName) {
+      res.status(400).json({ error: 'A first and last name are needed for the order.' });
+      return;
+    }
     if (shipping && !isUsableAddress(body.address ?? {})) {
       res.status(400).json({ error: 'A full shipping address is needed.' });
       return;
@@ -137,6 +206,7 @@ export const squareCheckout = onRequest(
 
     // ── Price the basket from the catalog, never from the request ──────────
     const db = getFirestore();
+    const settings = await bookstoreSettings(db);
     const cart = Array.isArray(body.cart) ? body.cart : [];
     if (cart.length === 0) {
       res.status(400).json({ error: 'The basket is empty.' });
@@ -181,7 +251,7 @@ export const squareCheckout = onRequest(
                   {
                     name: 'Shipping',
                     amount_money: {
-                      amount: Number(SHIPPING_FLAT_CENTS.value()) || 0,
+                      amount: settings.deliveryCents,
                       currency: 'USD',
                     },
                     calculation_phase: 'TOTAL_PHASE',
@@ -277,6 +347,31 @@ export const squareCheckout = onRequest(
 
       // ── 3. Record it ─────────────────────────────────────────────────────
       const status = payJson.payment.status === 'COMPLETED' ? 'paid' : 'pending';
+
+      /*
+       * Unit prices, taken from the order Square priced.
+       *
+       * Not from the Firestore catalog mirror, for the same reason the
+       * confirmation email is not: the mirror can be stale by exactly the
+       * amount that would make a sales report disagree with the bank. Square's
+       * `line_items` carry `base_price_money`, which is the price it actually
+       * charged, and the report is built on that or on nothing.
+       *
+       * Matched by name because that is the only field common to both sides —
+       * the request carries slugs and Square's reply carries catalog names, and
+       * `built.names` is the map between them. A title that fails to match
+       * leaves `unitPrice` null, which the rollup handles by leaving
+       * per-product revenue at zero rather than guessing.
+       */
+      const pricedByName = new Map<string, number>();
+      for (const item of orderJson.order?.line_items ?? []) {
+        const quantity = Number(item.quantity ?? '1') || 1;
+        const lineTotal = item.total_money?.amount;
+        if (item.name && typeof lineTotal === 'number') {
+          pricedByName.set(item.name, Math.round(lineTotal / quantity));
+        }
+      }
+
       await db
         .collection(COLLECTIONS.orders)
         .doc(orderId)
@@ -284,15 +379,40 @@ export const squareCheckout = onRequest(
           {
             squareOrderId: orderId,
             squarePaymentId: payJson.payment.id,
-            memberUid: null,
+            /*
+             * The uid when the buyer happens to be signed in, null otherwise.
+             *
+             * Nearly always null, and that is not a defect: sign-in on this
+             * site is Microsoft-only and restricted to the parish tenant, so a
+             * parishioner cannot have an account. A servant buying a book from
+             * their own laptop can, and attributing that order costs one header
+             * read. Buyers find their orders by receipt instead — see
+             * functions/src/orders.ts.
+             *
+             * Read from a verified ID token, never from the request body. A
+             * uid the browser could name is a uid the browser could choose.
+             */
+            memberUid: (await callerOf(req))?.uid ?? null,
             contactEmail: email,
+            // The only form a lookup query can match. See the note on
+            // `contactEmailLower` in schema/commerce.ts.
+            contactEmailLower: normalizeEmail(email),
+            // Who the books are for. Not the cardholder name — see the note in
+            // schema/commerce.ts.
+            buyerFirstName: firstName,
+            buyerLastName: lastName,
             lineItems: cart
               .filter((l: { slug?: string }) => built.names[String(l?.slug)])
-              .map((l: { slug?: string; quantity?: number }) => ({
-                productId: String(l.slug),
-                name: built.names[String(l.slug)],
-                quantity: Number(l.quantity),
-              })),
+              .map((l: { slug?: string; quantity?: number }) => {
+                const name = built.names[String(l.slug)] as string;
+                const unit = pricedByName.get(name);
+                return {
+                  productId: String(l.slug),
+                  name,
+                  quantity: Number(l.quantity),
+                  unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
+                };
+              }),
             total: { amount: total, currency: 'USD' },
             status,
             fulfillment: 'unfulfilled',
@@ -302,6 +422,16 @@ export const squareCheckout = onRequest(
             // The webhook fills this as events arrive; starting it empty means
             // the first one is never mistaken for a replay.
             appliedEventIds: [],
+            /*
+             * `refund` is deliberately NOT written here, not even as null.
+             *
+             * This write is a `set(..., { merge: true })`, and Square returns
+             * the original order for a repeated idempotency key — so this block
+             * can run a second time for one purchase. Writing `refund: null`
+             * would then erase a refund that had already been issued, and the
+             * order would read as never refunded while the money was gone.
+             * Absent means not refunded; readers treat it that way.
+             */
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
             updatedBy: null,
@@ -345,6 +475,7 @@ export const squareCheckout = onRequest(
             buildOrderEmail({
               orderId,
               email,
+              buyerName: `${firstName} ${lastName}`,
               shipping,
               lines: (orderJson.order?.line_items ?? []).map((item) => ({
                 name: item.name ?? 'Book',
@@ -352,7 +483,7 @@ export const squareCheckout = onRequest(
                 amount: item.total_money?.amount ?? 0,
               })),
               total,
-              ...(PARISH_EMAIL.value() ? { parishEmail: PARISH_EMAIL.value() } : {}),
+              ...(settings.orderEmail ? { parishEmail: settings.orderEmail } : {}),
             }),
           );
       } catch (cause) {
@@ -375,8 +506,3 @@ export const squareCheckout = onRequest(
   },
 );
 
-function squareHost(environment: string): string {
-  return environment === 'production'
-    ? 'https://connect.squareup.com'
-    : 'https://connect.squareupsandbox.com';
-}

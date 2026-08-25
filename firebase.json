@@ -19,6 +19,38 @@
         "function": "squareWebhook"
       },
       {
+        "source": "/api/square/orders",
+        "function": "orderLookup"
+      },
+      {
+        "source": "/api/square/refund",
+        "function": "squareRefund"
+      },
+      {
+        "source": "/api/square/product",
+        "function": "squareCreateProduct"
+      },
+      {
+        "source": "/api/square/product-image",
+        "function": "squareProductImage"
+      },
+      {
+        "source": "/api/square/product-image-remove",
+        "function": "squareRemoveProductImage"
+      },
+      {
+        "source": "/api/square/product-stock",
+        "function": "squareProductStock"
+      },
+      {
+        "source": "/api/square/product-archive",
+        "function": "squareArchiveProduct"
+      },
+      {
+        "source": "/api/square/stats-refresh",
+        "function": "refreshBookstoreStats"
+      },
+      {
         "source": "/api/bulletin",
         "function": "bulletin"
       },

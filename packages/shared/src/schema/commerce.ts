@@ -42,7 +42,41 @@ export interface Product extends AuditFields, Publishable {
    * out. When mirroring from Square, Square's count wins.
    */
   stockCount: number | null;
+
+  /**
+   * The Square category this came from. Always `"Bookstore"` today.
+   *
+   * It is the *gate*, not a division: `sync-catalog.mjs` filters the parish's
+   * 68 Square items down to the 11 in this one category, and the other 57 are
+   * the Coptic Festival food menu. So every product's value is the same string
+   * and it groups nothing. `section` below is what divides the shop.
+   */
   category: string | null;
+
+  /**
+   * Which part of the shop this belongs in — `"books"`, `"icons"`, and so on.
+   *
+   * ---------------------------------------------------------------------------
+   * Owned by the parish here, not mirrored from Square. That is deliberate and
+   * it is the one field on this document Square must never overwrite.
+   *
+   * Square keeps a single `Bookstore` category as the gate (see `category`), and
+   * the divisions the shop actually shows are maintained on this site — Tommy's
+   * call: *"group in the firestore it should all be under bookstore in the
+   * square categories."* It avoids reorganising a catalog the festival and the
+   * POS also depend on.
+   *
+   * The consequence, and it is a sharp one: `sync-catalog.mjs` used to `PATCH`
+   * these documents with no field mask, which replaces the whole document. That
+   * would erase every section assignment on each run. It now sends an explicit
+   * `updateMask` of the mirrored fields only. Anything added here in future that
+   * the parish owns rather than Square must be left out of that mask too.
+   *
+   * Null means unsorted; the shop shows those together at the end rather than
+   * hiding them.
+   * ---------------------------------------------------------------------------
+   */
+  section?: string | null;
 }
 
 /**
@@ -57,17 +91,56 @@ export interface Order extends AuditFields {
   squareOrderId: string;
   squarePaymentId: string | null;
 
-  /** Purchaser. Null for a guest checkout. */
+  /** Purchaser. Null for a guest checkout, which is nearly all of them. */
   memberUid: string | null;
   contactEmail: string;
 
+  /**
+   * Who the order is for.
+   *
+   * Kept as two fields rather than one string. The bookstore files collection
+   * orders by surname, and splitting a full name on a space gets Coptic and
+   * hyphenated names wrong in exactly the cases a parish sees most.
+   *
+   * Not the cardholder name. Square captures one of those and it is frequently
+   * somebody else — a spouse, a parent, a business — so it cannot be the name a
+   * volunteer calls out across the bookstore table.
+   *
+   * Optional because orders taken before this was asked for do not have one.
+   */
+  buyerFirstName?: string;
+  buyerLastName?: string;
+  /**
+   * `contactEmail` lowercased, because that is the only form a query can match.
+   *
+   * Firestore `==` is byte-exact, so an order placed as `Anba@…` is invisible
+   * to a lookup typed as `anba@…` — and the buyer, who typed both, would be
+   * told they have no orders. Written at checkout; older orders predate it and
+   * the lookup Function queries both fields for exactly that reason.
+   */
+  contactEmailLower?: string;
+
   lineItems: OrderLineItem[];
-  subtotal: Money;
-  tax: Money;
+  /**
+   * Square's own breakdown, where we have it.
+   *
+   * Optional because the checkout Function does not currently ask for it:
+   * Square prices the order and returns a total, and the total is what gets
+   * charged. Declaring these required described an order document that has
+   * never existed, which is worse than admitting the gap — `total` is the
+   * number that is always true, and every report is built on it.
+   */
+  subtotal?: Money | null;
+  tax?: Money | null;
   total: Money;
 
   status: OrderStatus;
   fulfillment: FulfillmentStatus;
+
+  /** True when this is being posted rather than collected after Liturgy. */
+  shipping: boolean;
+  /** Only set on a shipped order. Null for collection, always. */
+  shippingAddress: Record<string, string> | null;
 
   /**
    * Idempotency key we sent to Square. Kept so a retry after a network failure
@@ -77,13 +150,47 @@ export interface Order extends AuditFields {
 
   /** Raw webhook event ids we've already applied, newest last. */
   appliedEventIds: string[];
+
+  /**
+   * Set when staff refunded this order. Null on every order that was not.
+   *
+   * The parish publishes a no-returns policy, so this is the record of an
+   * exception being made — which is precisely the thing worth keeping a name
+   * and a reason against. `status` moving to `refunded` is Square's webhook
+   * doing its job; this is the parish's own note about why.
+   *
+   * Optional, and absent on an order that was not refunded — the checkout
+   * Function does not write it as null, because that write merges and could
+   * erase a real refund on a retry. See the note there.
+   */
+  refund?: OrderRefund | null;
+}
+
+export interface OrderRefund {
+  squareRefundId: string;
+  amount: Money;
+  /** Free text from the staff member. Shown to nobody but staff. */
+  reason: string;
+  /** uid of the staff member who pressed the button. Never null. */
+  refundedBy: string;
+  refundedByEmail: string;
+  refundedAt: Timestamped;
 }
 
 export interface OrderLineItem {
   productId: string;
   /** Denormalized so a later price change doesn't rewrite history. */
   name: string;
-  unitPrice: Money;
+  /**
+   * What Square charged for one of these, at the time.
+   *
+   * Read back from Square's priced order rather than from our catalog mirror —
+   * the mirror can be stale by exactly the amount that would make a sales
+   * report disagree with the bank. Optional because orders taken before this
+   * was recorded have no value to supply, and inventing one would be worse than
+   * leaving per-product revenue at zero for them.
+   */
+  unitPrice?: Money | null;
   quantity: number;
 }
 
@@ -103,7 +210,7 @@ export function formatMoney(money: Money): string {
 
 export function sumMoney(items: OrderLineItem[]): Money {
   return {
-    amount: items.reduce((total, item) => total + item.unitPrice.amount * item.quantity, 0),
+    amount: items.reduce((total, item) => total + (item.unitPrice?.amount ?? 0) * item.quantity, 0),
     currency: 'USD',
   };
 }

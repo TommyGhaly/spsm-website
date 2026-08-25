@@ -165,3 +165,16 @@ export function partOfDay(instant: Date, timeZone: string): string {
   if (hour >= 17 && hour < 22) return 'Evening';
   return 'Night';
 }
+
+/**
+ * An instant -> `"YYYY-MM-DD"` as read in `timeZone`.
+ *
+ * The bucket key for every bookstore statistic. It has to be computed in the
+ * parish's zone rather than UTC, because a purchase made at 9pm on a Saturday
+ * in Wayland is a Sunday sale in UTC — and a bookstore report that puts the
+ * after-Liturgy rush on the wrong day is worse than no report.
+ */
+export function dayKey(instant: Date, timeZone: string): string {
+  const wallClock = instantToWallClock(instant, timeZone);
+  return wallClock.slice(0, 10);
+}

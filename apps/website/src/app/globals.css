@@ -2888,8 +2888,23 @@ main {
  * answer to both belongs above the books rather than three screens down inside
  * a basket nobody has opened yet.
  */
+/*
+ * The foot of the shop: how an order reaches you, and the returns policy.
+ *
+ * Both used to sit above the shelf, each with a negative top margin to tuck
+ * under what was above it. At the end of the page they need the opposite — space
+ * and a rule, so they read as a footnote to the shop rather than as a caption on
+ * the bottom-left cover.
+ */
+.shop-foot {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-md, 1rem);
+  max-width: var(--measure, 62ch);
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+}
+
 .shop-note {
-  margin: calc(var(--space-md, 1rem) * -1) 0 var(--space-lg, 1.6rem);
+  margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-soft, #4b413e);
@@ -3700,6 +3715,61 @@ main {
 
 .sheet--pay {
   width: min(60rem, calc(100vw - 2rem));
+}
+
+/*
+ * The orders-and-metrics drawer: the same sheet, pinned to the right edge.
+ *
+ * ---------------------------------------------------------------------------
+ * Why a modifier on `.sheet` rather than a drawer of its own.
+ *
+ * The inline version of this pushed the whole catalog down when it opened, which
+ * is the thing it was rejected for. An overlay was the fix, and the bookstore
+ * already has exactly one overlay — this sheet — used by the basket, the product
+ * detail, and the payment form. A second implementation would have meant a
+ * second Escape handler, a second backdrop, and a second sticky bar, drifting
+ * apart from these three from the first commit.
+ *
+ * So everything below is position and shape. The behaviour is inherited.
+ *
+ * `margin: 0 0 0 auto` is what moves it: a modal `<dialog>` is centred by the UA
+ * stylesheet's `margin: auto`, and overriding only the left margin pushes it to
+ * the right edge. `inset-block` pins it top and bottom so it is full height.
+ * ---------------------------------------------------------------------------
+ */
+.sheet--drawer {
+  width: min(38rem, 100vw);
+  max-width: 100vw;
+  /* Full height, and `max-height` too — the base sheet caps at 48rem, which
+     would leave a drawer floating in the middle of a tall window. */
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  inset-block: 0;
+  /* Square against the three edges it meets, rounded on the one it does not. */
+  border-radius: var(--radius-lg, 14px) 0 0 var(--radius-lg, 14px);
+  border-right: 0;
+  /* The gold rule belongs along the leading edge here, not the top: the top of
+     this drawer is against the top of the window, where a 3px line reads as a
+     browser chrome artefact rather than as the sheet's own trim. */
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, var(--color-rule, #e0cac3));
+  border-left: 3px solid var(--color-gold, #b08d43);
+}
+
+/*
+ * Under 60rem it is the whole window.
+ *
+ * A 38rem drawer beside a 24rem phone is two unusable halves — the same
+ * reasoning that turns `.inspector-col` into a sheet at this width. Full width
+ * and square, because a rounded corner against a screen edge is a gap.
+ */
+@media (max-width: 60rem) {
+  .sheet--drawer {
+    width: 100vw;
+    border-radius: 0;
+    border-left: 0;
+    border-top: 3px solid var(--color-gold, #b08d43);
+  }
 }
 
 .sheet::backdrop {
@@ -18676,3 +18746,1582 @@ span.gallery-figure__frame {
  * `.inspector__action` is the shape that survived it: a panel control that opens
  * a full-screen modal, saying inside itself what pressing it does.
  */
+
+/* ==========================================================================
+   Bookstore: the returns line, and a buyer looking up their own order
+   ========================================================================== */
+
+/*
+ * The returns policy, above the books.
+ *
+ * Quieter than `.shop-note` — that line answers a question someone is actively
+ * asking ("can I collect it?"), this one answers a question they will only ask
+ * if something goes wrong. It should be readable and findable and should not
+ * compete with the shelf.
+ */
+/* Under the delivery line, quieter than it. Both live in `.shop-foot`. */
+.shop-terms {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * On the receipt: where the reference number is actually used.
+ *
+ * Sits directly under `.done__ref` and is deliberately the same size, so the
+ * number and the sentence explaining it read as one thing.
+ */
+.done__track {
+  margin: var(--space-xs, 0.35rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- /bookstore/orders --------------------------------------------------- */
+
+/*
+ * Every class here is prefixed `orderfind__`, and that is not decoration.
+ *
+ * There is one globals.css and no CSS modules, so a class called `.order` or
+ * `.results` or `.state` is a class that belongs to the whole site. That has
+ * already gone wrong once — a `.shelf` written for the programs panel flattened
+ * the bookstore — and the prefix is the only thing preventing a repeat.
+ */
+.orderfind {
+  /*
+   * A narrower measure than the page, centred by `margin-inline: auto`.
+   *
+   * Both halves are needed: the `.wrap` around this sets the page width, and a
+   * narrower `max-width` inside it without `auto` margins pins the block to the
+   * left and reads as a layout bug rather than a choice.
+   */
+  max-width: 38rem;
+  margin-inline: auto;
+}
+
+.orderfind__form {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-lg, 1.6rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
+}
+
+.orderfind__lead {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.orderfind__field {
+  display: grid;
+  gap: var(--space-xs, 0.35rem);
+  /*
+   * `minmax(0, 1fr)` on every grid that holds an input, always.
+   *
+   * An input has an intrinsic minimum width that a bare `1fr` will not shrink
+   * below, so on a narrow phone the field pushes the grid wider than the
+   * viewport and the whole page scrolls sideways. It has happened here before —
+   * a date input put the admin 93px off a phone — and the top-level
+   * `scrollWidth` did not show it.
+   */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.orderfind__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.orderfind__input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #2f2723);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.orderfind__input:focus-visible {
+  outline: 2px solid var(--color-accent, #8a6a3b);
+  outline-offset: 1px;
+}
+
+.orderfind__submit {
+  justify-self: start;
+  padding: 0.6rem 1.25rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #8a6a3b);
+  border: 0;
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+}
+
+.orderfind__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.orderfind__error {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink, #2f2723);
+}
+
+.orderfind__results {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+.orderfind__count {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.25rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.orderfind__empty {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.orderfind__list {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.orderfind__order {
+  padding: var(--space-lg, 1.6rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-lg, 0.75rem);
+}
+
+.orderfind__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: start;
+  justify-content: space-between;
+  padding-bottom: var(--space-sm, 0.6rem);
+  border-bottom: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.orderfind__when {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.orderfind__ref {
+  margin: 0.1rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  /* Long, and the one string a buyer may need to copy or read aloud. */
+  overflow-wrap: anywhere;
+}
+
+.orderfind__state {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * Colour carries no information on its own here — the sentence beside it
+ * already says what happened. These only add emphasis to the two states that
+ * mean "this did not go as expected", and the text stands alone without them.
+ */
+.orderfind__state--failed,
+.orderfind__state--canceled,
+.orderfind__state--refunded {
+  color: var(--color-accent-strong, #6d4f28);
+}
+
+.orderfind__lines {
+  display: grid;
+  gap: var(--space-xs, 0.35rem);
+  margin: var(--space-sm, 0.6rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.orderfind__line {
+  display: flex;
+  gap: var(--space-sm, 0.6rem);
+  justify-content: space-between;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.orderfind__qty {
+  margin-right: 0.35rem;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.orderfind__lineamount {
+  white-space: nowrap;
+}
+
+.orderfind__total {
+  display: flex;
+  justify-content: space-between;
+  margin: var(--space-sm, 0.6rem) 0 0;
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.orderfind__refund {
+  margin: var(--space-xs, 0.35rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* The name a collection order is filed under, on the buyer's own order card. */
+.orderfind__who {
+  margin: 0.1rem 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * First and last name, side by side on the payment form.
+ *
+ * `minmax(0, 1fr)` on both, not `1fr`: an input will not shrink below its
+ * intrinsic width, so a bare `1fr` pushes this pair — and the dialog around it
+ * — wider than a phone. That has happened here before and the top-level
+ * scrollWidth did not show it. Collapses to one column when there is genuinely
+ * no room for two.
+ */
+.pay__name {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-sm, 0.6rem);
+}
+
+.pay__name > input {
+  min-width: 0;
+}
+
+/* A second label inside one numbered step needs the space a step provides. */
+.pay__label--stacked {
+  margin-top: var(--space-md, 1rem);
+}
+
+/* ==========================================================================
+   /staff/bookstore — the orders queue and the metrics
+   ========================================================================== */
+
+/*
+ * Prefixed `bk*`, like `orderfind__` above and for the same reason: one
+ * globals.css, no modules, so `.tile` or `.tag` or `.tabs` would belong to the
+ * whole site. `.shelf` from the programs panel already flattened the bookstore
+ * once. `.bkqueue` rather than `.bkorders` so it cannot be misread as a plural
+ * of `.bkorder`, which is a different thing one character away.
+ */
+
+.bktabs {
+  display: flex;
+  gap: var(--space-xs, 0.35rem);
+  margin-bottom: var(--space-lg, 1.6rem);
+  border-bottom: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bktabs__tab {
+  padding: 0.5rem 0.9rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border: 0;
+  /* On the element rather than on a pseudo-element, so the tab does not shift
+     by 2px when it becomes current. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.bktabs__tab.is-on {
+  color: var(--color-ink, #2f2723);
+  border-bottom-color: var(--color-accent, #8a6a3b);
+}
+
+/* ---- the bar of filters, shared by both tabs ---------------------------- */
+
+.bkqueue__bar,
+.bkstats__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg, 1.6rem);
+}
+
+.bkqueue__filters,
+.bkstats__periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.35rem);
+}
+
+.bkqueue__filter {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+.bkqueue__filter.is-on {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent-strong, #6d4f28);
+  border-color: var(--color-accent-strong, #6d4f28);
+}
+
+.bkqueue__badge {
+  font-size: var(--type-micro, 0.8125rem);
+  opacity: 0.75;
+  /* Tabular figures so the pill does not resize as the count ticks over. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- one order ---------------------------------------------------------- */
+
+.bkqueue__list {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bkorder {
+  padding: var(--space-md, 1rem) var(--space-lg, 1.6rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-lg, 0.75rem);
+}
+
+/*
+ * A refunded order stays in the list and is dimmed rather than removed.
+ *
+ * It is still a real thing that happened, and a volunteer looking for "did we
+ * ever sort out that damaged Bible" needs to find it. Opacity alone would take
+ * the text below contrast, so only the chrome softens.
+ */
+.bkorder.is-refunded {
+  background: var(--color-paper-sunken, #f6efe9);
+  border-style: dashed;
+}
+
+.bkorder__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: start;
+  justify-content: space-between;
+}
+
+.bkorder__name {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.bkorder__meta {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkorder__lines {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.bkorder__qty {
+  color: var(--color-ink-faint, #6f5f5a);
+  font-variant-numeric: tabular-nums;
+}
+
+.bkorder__addr {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: normal;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.bkorder__contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  justify-content: space-between;
+  margin: var(--space-sm, 0.6rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkorder__ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.bkorder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: center;
+  margin-top: var(--space-md, 1rem);
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+}
+
+/*
+ * Refund is a link, not a button, and that is the point.
+ *
+ * It sits beside two buttons that are safe and reversible. Giving it the same
+ * weight would make the destructive one the easiest thing on the row to press
+ * by accident; giving it a red button would make it the loudest. Quiet and
+ * last is right for something a volunteer needs a few times a year.
+ */
+.bkorder__refund {
+  margin-left: auto;
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent-strong, #6d4f28);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bkorder__refund:hover:not(:disabled) {
+  border-color: var(--color-accent-strong, #6d4f28);
+  text-decoration: none;
+}
+
+.bkorder__refund:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- the state word ----------------------------------------------------- */
+
+.bktag {
+  align-self: start;
+  padding: 0.2rem 0.6rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  white-space: nowrap;
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper-sunken, #f6efe9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-full, 999px);
+}
+
+/*
+ * Colour is never the only signal. Each tag already says its state in words —
+ * these only make the queue skimmable, and the screen reads correctly in
+ * greyscale and to anyone who cannot tell these two browns apart.
+ */
+.bktag--ready {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent-strong, #6d4f28);
+  border-color: var(--color-accent-strong, #6d4f28);
+}
+
+.bktag--done {
+  color: var(--color-ink-faint, #6f5f5a);
+  background: transparent;
+}
+
+.bktag--wait,
+.bktag--off {
+  color: var(--color-accent-strong, #6d4f28);
+  background: var(--color-accent-soft, #f2e6d2);
+  border-color: var(--color-accent-soft, #f2e6d2);
+}
+
+/* ---- the refund confirmation ------------------------------------------- */
+
+.bkmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--space-md, 1rem);
+  background: rgb(28 22 20 / 0.45);
+}
+
+.bkmodal__panel {
+  width: min(30rem, 100%);
+  padding: var(--space-lg, 1.6rem);
+  background: var(--color-paper, #fffefb);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-lg, 0 20px 40px rgb(0 0 0 / 0.2));
+}
+
+.bkmodal__title {
+  margin: 0 0 var(--space-sm, 0.6rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.bkmodal__note,
+.bkmodal__after {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.bkmodal__after {
+  margin: var(--space-md, 1rem) 0 0;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkmodal__field {
+  display: grid;
+  /* minmax(0, 1fr): an input will not shrink below its intrinsic width, and a
+     bare 1fr pushes this panel wider than a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xs, 0.35rem);
+  margin-bottom: var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkmodal__field input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #2f2723);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bkmodal__error {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent-strong, #6d4f28);
+}
+
+.bkmodal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ---- metrics ------------------------------------------------------------ */
+
+.bkstats__tiles {
+  display: grid;
+  /* auto-fit with a min(…, 100%) floor, so four tiles sit in a row on a laptop
+     and stack on a phone without a breakpoint to maintain. */
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: var(--space-md, 1rem);
+  margin-bottom: var(--space-xl, 2.5rem);
+}
+
+.bktile {
+  padding: var(--space-md, 1rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-lg, 0.75rem);
+}
+
+.bktile__label {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bktile__value {
+  margin: 0.2rem 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  color: var(--color-ink, #2f2723);
+  font-variant-numeric: tabular-nums;
+}
+
+.bktile__note {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkstats__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: var(--space-lg, 1.6rem);
+}
+
+.bktable {
+  padding: var(--space-md, 1rem) var(--space-lg, 1.6rem) var(--space-lg, 1.6rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-lg, 0.75rem);
+}
+
+.bktable__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.bktable__hint {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bktable__empty {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bktable__rows {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bktable__row {
+  display: grid;
+  /* The name takes the slack and truncates; the number never does. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--space-sm, 0.6rem);
+  align-items: baseline;
+  padding: 0.35rem 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.bktable__row + .bktable__row {
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bktable__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink, #2f2723);
+}
+
+.bktable__note {
+  grid-column: 1;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bktable__value {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #2f2723);
+}
+
+.bkstats__asof {
+  max-width: var(--measure, 62ch);
+  margin: var(--space-xl, 2.5rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- /bookstore, the orders-and-metrics drawer --------------------------- */
+
+/*
+ * The pill that opens the drawer.
+ *
+ * Deliberately identical to `.edit-toggle` — same shape, same corner, same
+ * language — but its own selector, because that one is named for editing and
+ * this opens a read-only drawer. Duplicated rather than shared for eight
+ * declarations; the alternative is a shared base class that couples a review
+ * control to whatever the editing pill becomes next.
+ *
+ * `position: fixed` is load-bearing, not decoration. A control in the flow
+ * would shift the catalog by its own height the moment it appeared for a
+ * signed-in volunteer — a smaller version of the problem the drawer exists to
+ * solve. Fixed, it costs the page exactly nothing.
+ */
+.bkadmin__toggle {
+  position: fixed;
+  right: var(--space-lg, 1.5rem);
+  bottom: var(--space-lg, 1.5rem);
+  /* Below the sheet, which is in the top layer, and above the shelf. */
+  z-index: 120;
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1.1rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.12));
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+/*
+ * Inside the drawer. No background and no border: it is already on the sheet's
+ * paper, and a card inside a card is a border for the sake of one.
+ */
+.bkadmin {
+  min-width: 0;
+}
+
+/* The sheet's bar is sticky and holds the close, so the tabs sit under it and
+   need no rule of their own above them. */
+.bkadmin .bktabs {
+  margin-top: calc(var(--space-sm, 0.6rem) * -1);
+}
+
+/*
+ * A drawer is narrow, so the two grids that assume a page's width are told to
+ * stop assuming. Both use `auto-fit` with a `min()` floor already, which
+ * collapses them correctly — these only tighten the floor so a 38rem drawer gets
+ * two stat tiles to a row rather than one very wide one.
+ */
+.bkadmin .bkstats__tiles {
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+}
+
+.bkadmin .bkstats__grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Order cards keep their card treatment against the sheet's raised paper. */
+.bkadmin .bkorder {
+  background: var(--color-paper, #fffefb);
+}
+
+/* ---- /bookstore, the shop's divisions ------------------------------------ */
+
+/*
+ * A heading over each part of the shelf.
+ *
+ * Only rendered when the parish has made sections and filed something into
+ * them; an unsorted shop is one bare `.shelf` exactly as before, with no
+ * heading over the whole catalog. See `groupProducts`.
+ */
+.shelf-group + .shelf-group {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+.shelf-group__name {
+  margin: 0 0 var(--space-md, 1rem);
+  padding-bottom: var(--space-xs, 0.35rem);
+  border-bottom: 1px solid var(--color-rule, #e4dbd2);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.25rem);
+  color: var(--color-ink, #2f2723);
+}
+
+/* `.bkmodal` is the refund dialog in the orders queue; its fields need the look. */
+.bkmodal__field select,
+.bkmodal__field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  color: var(--color-ink, #2f2723);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bkmodal__field textarea {
+  resize: vertical;
+  line-height: var(--leading-normal, 1.5);
+}
+
+/* ---- /bookstore, the category pills -------------------------------------- */
+
+/*
+ * The shop's categories, as a filter row under the search bar.
+ *
+ * They replaced one `<ul>` per category stacked down the page. Dividing the
+ * catalog must not hide any of it — every book is on screen until somebody
+ * presses a pill — so the divisions became a filter rather than a set of
+ * headings. As many as the parish wants: the row wraps.
+ */
+.shop-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.35rem);
+  align-items: center;
+  margin: 0 0 var(--space-md, 1rem);
+}
+
+.shop-filter {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.shop-filter:hover {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+}
+
+/* The chosen one, filled. A pill row where the selection is only an outline
+   reads as four equal buttons. */
+.shop-filter.is-on {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+/* The count. Always present, so a shopper can see a category is worth opening
+   before opening it. */
+.shop-filter__n {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+/* ---- the same pills, while editing --------------------------------------- */
+
+/*
+ * The editing lives on the pills themselves. A panel of the same categories
+ * again was built under this row and taken out — it was a second copy of the
+ * row you were arranging, and nothing but this component renders for a
+ * volunteer anyway.
+ */
+
+/* A pill that is a category rather than a filter alone: it wraps its own
+   controls, so it is a span with buttons inside instead of one button. */
+.shop-filter--edit {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  /* A drag across a pill would otherwise select its label, and the browser's
+     own text-drag then competes with the reorder. */
+  user-select: none;
+  /* On the whole pill, because the whole pill is what you drag — and the cursor
+     is the only thing that says so before you try. */
+  cursor: grab;
+  touch-action: none;
+}
+
+.shop-filter--edit:active {
+  cursor: grabbing;
+}
+
+/* The grip mark. Says the pill can be moved before anyone tries to move it —
+   the cursor only says so once you are already on it. */
+.shop-filter__dots {
+  padding-left: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  opacity: 0.4;
+}
+
+/* The label. Inherits the pill's cursor — the drag is on the pill now, and this
+   button is only what a press *without* a drag activates. */
+.shop-filter__grip {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.3rem 0.4rem 0.3rem 0.35rem;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: inherit;
+}
+
+/* Removing, inside the pill. Quiet until hovered — a red × on every category
+   would make the destructive thing the loudest mark in the row. */
+.shop-filter__x {
+  padding: 0.3rem 0.55rem 0.3rem 0.3rem;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  opacity: 0.45;
+  cursor: inherit;
+}
+
+.shop-filter__x:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--color-accent, #992a21);
+}
+
+.shop-filter.is-on .shop-filter__x:hover:not(:disabled) {
+  color: var(--color-ink-inverse, #fffefb);
+}
+
+/*
+ * The pill in hand.
+ *
+ * It stays in the row and the row rearranges around it, rather than the pill
+ * flying loose under the pointer — so what you are looking at *is* the order you
+ * will get. Lifted clearly, because the only other cue that a drag is happening
+ * is the cursor.
+ *
+ * `pointer-events: none` so the hit-testing underneath reads the other pills
+ * rather than this one.
+ */
+.shop-filter.is-held {
+  z-index: 2;
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.12));
+  transform: scale(1.06);
+  pointer-events: none;
+}
+
+.shop-filter.is-held .shop-filter__dots {
+  opacity: 0.85;
+}
+
+/*
+ * Everything else slides to its new place instead of jumping.
+ *
+ * The transition is what makes a reorder legible: a row that rearranges
+ * instantly looks like a glitch, and the same row easing into place reads as the
+ * pills moving. Not applied to the held one, which must track the hand exactly.
+ */
+.shop-filter--edit:not(.is-held) {
+  transition:
+    transform 140ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+/* While a drag is in flight the row is a workbench, not a filter. */
+.shop-filters.is-dragging {
+  cursor: grabbing;
+}
+
+/* Renaming in place. Sized to its text so the row keeps its shape. */
+.shop-filter--naming {
+  padding: 0.2rem 0.4rem;
+  border-color: var(--color-accent, #992a21);
+}
+
+.shop-filter--naming input {
+  min-width: 0;
+  font: inherit;
+  color: var(--color-ink, #2f2723);
+  background: none;
+  border: 0;
+}
+
+.shop-filter--naming input:focus-visible {
+  outline: none;
+}
+
+/* The confirmation takes the width it needs and pushes the rest of the row
+   along, rather than opening a layer over it. */
+.shop-filter--ask {
+  gap: 0.4rem;
+  border-color: var(--color-accent, #992a21);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 8%, var(--color-paper, #fffefb));
+}
+
+.shop-filter__go {
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+/* Adding, at the end of the row — the same dashed language as the tile at the
+   end of the shelf, and for the same reason. */
+.shop-filter--add {
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+}
+
+.shop-filter--add:hover:not(:disabled) {
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+/* ---- /bookstore, editing the shop in place ------------------------------- */
+
+/*
+ * The settings live on the card, in the space it already occupies — a properties
+ * column down the side was built first and rejected as too confusing. See
+ * EditControls.tsx for why that is right here and not in the galleries.
+ */
+
+/*
+ * The corner both staff pills share.
+ *
+ * `.bkadmin__toggle` and `.edit-toggle` were each written as the only control in
+ * that corner, both `position: fixed` at the same offsets, so rendering two put
+ * one exactly on top of the other. This row holds them apart and the children
+ * give up their own positioning to it.
+ */
+.shop-tools {
+  position: fixed;
+  right: var(--space-lg, 1.5rem);
+  bottom: var(--space-lg, 1.5rem);
+  /* The layer both pills claimed: below the sheet's top layer, above the shelf. */
+  z-index: 120;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.shop-tools .bkadmin__toggle {
+  position: static;
+  right: auto;
+  bottom: auto;
+}
+
+/* The shop's own Edit/Done pill. Matched to `.bkadmin__toggle` beside it rather
+   than to `.edit-toggle`, which it never shares a page with. */
+.shop-edit {
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1.1rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.12));
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+/* Editing is a mode, and the control that started it should look switched on. */
+.shop-edit.is-on {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+/* The new-product form. Only ever inside the tile at the end of the shelf. */
+.bknew {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  width: 100%;
+}
+
+.bknew input,
+.bknew select {
+  /* Grows into the row but may shrink to nothing before forcing a scrollbar —
+     the flex equivalent of `minmax(0, 1fr)`, and the reason a date input once
+     pushed a whole admin screen 93px off a phone. */
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bknew__price {
+  flex: 0 0 5rem;
+}
+
+.bknew__note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the settings on a card --------------------------------------------- */
+
+/*
+ * A card being edited. Marked, but not resized and not moved: the shelf is what
+ * is being judged, so the grid must stay the grid a shopper will see.
+ */
+.book.is-editing {
+  outline: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 25%, transparent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+/*
+ * The settings block.
+ *
+ * Rewritten to be half the height it was. It had a tinted panel, a full line for
+ * each uppercase label, and bordered boxes around every control — which read as
+ * a form from about 2003 and left a card mostly empty. Now: a hairline to
+ * separate it from the price, one line per setting with the label beside the
+ * control, and borders only where something is actually editable.
+ */
+.bkedit {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.3;
+}
+
+/* A write is in flight. Dimming the whole block is more honest than a spinner on
+   the one control that started it — everything here is momentarily stale. */
+.bkedit.is-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.bkedit__field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.4rem;
+  align-items: center;
+  min-width: 0;
+}
+
+/* A narrow fixed column, so the three settings line up without a table. Sentence
+   case, not small caps: three lines of uppercase on a book card is shouting. */
+.bkedit__label {
+  flex: 0 0 3.1rem;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkedit__control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * Borderless until touched — the card is a shelf, not a form.
+ *
+ * `appearance: none` is what makes that true. Without it the browser draws its
+ * own bevelled box and arrow over everything set here, which is most of what
+ * made this block look like a form from a decade ago. The caret is drawn back on
+ * as a background image, because a select with no affordance at all is worse
+ * than the native one.
+ */
+.bkedit__select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.1rem 0.9rem 0.1rem 0.2rem;
+  font: inherit;
+  color: var(--color-ink, #2f2723);
+  appearance: none;
+  background-color: transparent;
+  background-image: linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position: right 0.35rem center, right 0.15rem center;
+  background-size: 0.22rem 0.22rem, 0.22rem 0.22rem;
+  background-repeat: no-repeat;
+  border: 0;
+  border-bottom: 1px dashed var(--color-rule, #e4dbd2);
+  border-radius: 0;
+}
+
+.bkedit__select:hover,
+.bkedit__select:focus-visible {
+  border-bottom-color: var(--color-accent, #992a21);
+}
+
+/* ---- the stock stepper --------------------------------------------------- */
+
+/*
+ * One segmented control rather than three separate buttons: a single rounded
+ * shape reads as a quantity, where three bordered squares read as a toolbar.
+ */
+.bkstep {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.bkstep__btn {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1;
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper-sunken, #f6efe9);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.bkstep__btn:hover:not(:disabled) {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+}
+
+.bkstep__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bkstep__n {
+  min-width: 1.4rem;
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--color-ink, #2f2723);
+}
+
+/* Zero is sold out, and the number is where the eye already is. */
+.bkstep__n.is-out {
+  color: var(--color-accent, #992a21);
+}
+
+.bkstep__flag {
+  color: var(--color-accent, #992a21);
+}
+
+/* The quiet verbs — "stop", "count it". Lower case and underlined, so they read
+   as asides rather than as buttons competing with the stepper. */
+.bkedit__power {
+  padding: 0;
+  font: inherit;
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.bkedit__power:hover:not(:disabled) {
+  color: var(--color-accent, #992a21);
+}
+
+.bkedit__untracked {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+}
+
+.bkedit__value {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- pictures ------------------------------------------------------------ */
+
+.bkpix {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.bkpix__one {
+  position: relative;
+  display: block;
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.bkpix__one img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 0.35rem);
+  background: var(--color-paper-sunken, #f6efe9);
+}
+
+/* Which one the shop actually shows. A dot, not a word — at this size a label
+   would be wider than the picture it labels. */
+.bkpix__cover {
+  position: absolute;
+  bottom: -0.15rem;
+  left: 50%;
+  width: 0.3rem;
+  height: 0.3rem;
+  overflow: hidden;
+  text-indent: 100%;
+  white-space: nowrap;
+  background: var(--color-accent, #992a21);
+  border-radius: var(--radius-full, 999px);
+  transform: translateX(-50%);
+}
+
+.bkpix__del {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  display: grid;
+  place-items: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  font-size: 0.625rem;
+  line-height: 1;
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-ink-faint, #6f5f5a);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+/* Revealed on approach. A row of × badges sitting over every thumbnail is what
+   made this look busy. */
+.bkpix__one:hover .bkpix__del,
+.bkpix__del:focus-visible {
+  opacity: 1;
+}
+
+.bkpix__del:hover:not(:disabled) {
+  background: var(--color-accent, #992a21);
+}
+
+.bkpix__add {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1;
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border: 1px dashed var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+}
+
+.bkpix__add:hover:not(:disabled) {
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+.bkpix__add:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- removal ------------------------------------------------------------- */
+
+/* Last and quietest. A red button in every card would make the destructive
+   thing the loudest mark on the shelf. */
+.bkedit__remove {
+  justify-self: start;
+  margin-top: 0.1rem;
+  padding: 0;
+  font: inherit;
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.bkedit__remove:hover {
+  color: var(--color-accent, #992a21);
+}
+
+.bkedit__confirm {
+  padding: 0.4rem;
+  background: color-mix(in srgb, var(--color-accent, #992a21) 7%, var(--color-paper, #fffefb));
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bkedit__confirm p {
+  margin: 0 0 0.35rem;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.bkedit__confirmrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.bkedit__keep,
+.bkedit__gone {
+  padding: 0.15rem 0.55rem;
+  font: inherit;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+.bkedit__keep {
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bkedit__gone {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border: 1px solid var(--color-accent, #992a21);
+}
+
+/* ---- the add-a-book tile, last on the shelf ------------------------------ */
+
+/*
+ * A cell of the shelf's own grid, not a control beside it — so it is exactly the
+ * width of a book and lands where the next one would.
+ */
+.book--add {
+  display: flex;
+  /*
+   * `start`, not the grid's default `stretch`. A row's height is set by its
+   * tallest card, and while editing that is a cover plus a whole settings block
+   * — so a stretched tile came out 718px of empty dashed outline. It only needs
+   * to be a place to press.
+   */
+  align-self: start;
+  min-height: 14rem;
+}
+
+.bkadd {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  /* The one dashed outline on the shelf, because "put something here" is
+     precisely what a dashed outline means. */
+  border: 1px dashed color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.bkadd:hover {
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 5%, transparent);
+}
+
+.bkadd__plus {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+/* The form takes the tile over, so the grid never reflows while it is open. */
+.book--add.is-open {
+  padding: var(--space-sm, 0.6rem);
+  background: var(--color-paper-raised, #fffdf9);
+  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 30%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+/* Stacked inside a card-width tile rather than strung across a bar. */
+.book--add .bknew {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  width: 100%;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.book--add .bknew input,
+.book--add .bknew select,
+.book--add .bknew__price {
+  flex: none;
+  width: 100%;
+}

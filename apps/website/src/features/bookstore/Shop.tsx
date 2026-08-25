@@ -7,6 +7,53 @@ import { DragRail } from "@/components/DragRail";
 import { Icon } from "@/components/Icon";
 import { Cover } from "./Cover";
 import { money } from "./money";
+import { track, trackProduct, trackSearch, trackViewOnce } from "./track";
+import { Suspense, lazy } from "react";
+import { Dialog } from "./Sheet";
+import { useBookstoreAdmin } from "./useBookstoreAdmin";
+import { useLiveCatalog } from "./useLiveCatalog";
+import { useCatalogDocs } from "./useCatalogDocs";
+import {
+  groupProducts,
+  UNSORTED_LABEL,
+  type BookstoreConfig,
+  type BookstoreSection,
+  type DocOf,
+  type Product,
+} from "@spsm/shared";
+
+/*
+ * The whole orders-and-metrics section, kept out of the shop's own chunk.
+ *
+ * A static import here put its markup into the JavaScript every parishioner
+ * downloads to look at books — measured at 39KB in the export build, rendering
+ * nothing for all of them. It is only ever mounted behind a claim check, so
+ * there is no case where a visitor needs a byte of it.
+ */
+const BookstoreAdmin = lazy(() =>
+  import("./BookstoreAdmin").then((m) => ({ default: m.BookstoreAdmin })),
+);
+
+/*
+ * The controls that appear on the shop while editing it.
+ *
+ * One module for all three — the bar over the shelf, the controls beside a
+ * section heading, and the ones on a book — so that pressing Edit fetches once
+ * and every card is drawing from the same already-loaded chunk. Behind `lazy`
+ * because it pulls `adminData` and the Square catalog writes with it, and it is
+ * fetched only once somebody has actually pressed Edit rather than merely being
+ * allowed to. A volunteer who opens /bookstore to buy a book downloads none of
+ * it.
+ */
+const BookControls = lazy(() =>
+  import("./EditControls").then((m) => ({ default: m.BookControls })),
+);
+const CategoryPills = lazy(() =>
+  import("./EditControls").then((m) => ({ default: m.CategoryPills })),
+);
+const AddProductTile = lazy(() =>
+  import("./EditControls").then((m) => ({ default: m.AddProductTile })),
+);
 
 export { money };
 
@@ -30,13 +77,71 @@ const CART_KEY = "spsm.bookstore.cart";
  * thing without the navigation.
  */
 export function Shop({
-  products,
+  products: bakedProducts,
   square,
+  settings,
 }: {
   products: ShopProduct[];
   /** Public Web Payments values. Empty when checkout is not configured. */
   square: { applicationId: string; locationId: string; sandbox: boolean };
+  /**
+   * The shop's own settings, as the build baked them.
+   *
+   * Rendered straight into the static HTML, so a visitor sees the parish's
+   * wording with no request and no SDK.
+   */
+  settings: BookstoreConfig;
 }) {
+  /*
+   * Whether to offer the orders-and-metrics drawer at the foot of the shop.
+   *
+   * False for every visitor, and cheaply so — this does not import
+   * `firebase/auth`, it reads the session store the masthead already maintains.
+   * See `useBookstoreAdmin`.
+   */
+  const admin = useBookstoreAdmin();
+  /*
+   * Whether the shop is being arranged rather than shopped.
+   *
+   * Plain local state, and deliberately not the `EditModeProvider` the galleries
+   * use. That context earns its keep by carrying a *selection* — which of many
+   * nested things a side panel is describing — and there is no side panel here
+   * any more: every control sits on the thing it changes, so nothing needs to
+   * know what is selected. See EditControls.tsx.
+   */
+  const [editing, setEditing] = useState(false);
+
+  /*
+   * What makes an edit show up on the shelf.
+   *
+   * Bumped after every successful write, which re-runs the live read below.
+   * That is the whole mechanism: there is no second copy of the catalog in this
+   * component to patch, so a rename, a new book, a removed one and a section
+   * moved all arrive by the same path a visitor's page uses.
+   */
+  const [nonce, setNonce] = useState(0);
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  /* Every editing refusal lands here, once, above the shelf. */
+  const [editError, setEditError] = useState<string | null>(null);
+  /* The documents behind the shelf, for the one control that needs Square's own
+     image URLs rather than the build's optimised covers. Staff-only, and only
+     once Edit is on. */
+  const docs = useCatalogDocs(editing, nonce);
+
+  /*
+   * The catalog as it is now, replacing the baked copy once it arrives.
+   *
+   * The page is prerendered, so without this a product added in the admin — or
+   * a section renamed — would be invisible until somebody redeployed the site.
+   * That is the same problem the homepage bulletin has and the same fix it uses.
+   *
+   * `products` and `sections` are taken together or not at all. Taking fresh
+   * sections while keeping baked products would file books into headings that do
+   * not match them; `useLiveCatalog` only ever reports both.
+   */
+  const live = useLiveCatalog(bakedProducts, true, nonce);
+  const products = live.products ?? bakedProducts;
+  const sections = live.sections ?? settings.sections;
   const [cart, setCart] = useState<Cart>({});
   const [open, setOpen] = useState<ShopProduct | null>(null);
   const [basketOpen, setBasketOpen] = useState(false);
@@ -84,6 +189,10 @@ export function Shop({
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          // The ref is the one the handlers read, so it has to be seeded too —
+          // otherwise the first click after a reload computes its delta against
+          // an empty basket and records an add for books already in it.
+          cartRef.current = parsed as Cart;
           setCart(parsed as Cart);
         }
       }
@@ -103,17 +212,64 @@ export function Shop({
     }
   }, [cart, ready]);
 
-  const setQuantity = useCallback((slug: string, quantity: number) => {
-    setCart((current) => {
-      const next = { ...current };
-      // Capped at 20: this is a parish bookstore, and an unbounded number field
-      // is how someone orders 9,999 Bibles by leaning on a key.
-      const bounded = Math.max(0, Math.min(20, Math.trunc(quantity)));
-      if (bounded === 0) delete next[slug];
-      else next[slug] = bounded;
-      return next;
-    });
+  /*
+   * The basket, mirrored outside React state.
+   *
+   * ---------------------------------------------------------------------------
+   * This ref exists to solve two problems that pull in opposite directions.
+   *
+   * **Batching.** React coalesces a fast run of clicks into one render, so a
+   * handler that computes `(cart[slug] ?? 0) + 1` from the render's `cart` sees
+   * the same stale count every time — five clicks on + produced a basket of
+   * one. The usual fix is to do the arithmetic inside the `setCart` updater,
+   * where the previous value is passed in.
+   *
+   * **Side effects.** But recording the change cannot happen inside that
+   * updater. React invokes updaters more than once — twice under StrictMode in
+   * development, and again whenever it replays a render — and an updater is
+   * required to be pure for exactly that reason. Tracking from inside one
+   * doubled every cart figure, which was caught by clicking Add three times and
+   * finding six events in Firestore.
+   *
+   * So the running quantity lives here instead. The handler reads and updates
+   * it synchronously — once per click, because an event handler is not replayed
+   * — records the delta, and hands the result to `setCart`. The updater goes
+   * back to being pure, and the count stays right under batching.
+   * ---------------------------------------------------------------------------
+   */
+  const cartRef = useRef<Cart>({});
+
+  /** Apply a change to the basket, record it, and re-render. One place. */
+  const applyCart = useCallback((slug: string, next: (before: number) => number) => {
+    const before = cartRef.current[slug] ?? 0;
+    // Capped at 20: this is a parish bookstore, and an unbounded number field
+    // is how someone orders 9,999 Bibles by leaning on a key.
+    const bounded = Math.max(0, Math.min(20, Math.trunc(next(before))));
+    if (bounded === before) return;
+
+    const updated = { ...cartRef.current };
+    if (bounded === 0) delete updated[slug];
+    else updated[slug] = bounded;
+    cartRef.current = updated;
+
+    const delta = bounded - before;
+    if (delta > 0) trackProduct('cartAdd', slug, delta);
+    else trackProduct('cartRemove', slug, -delta);
+
+    setCart(updated);
   }, []);
+
+  /** Set an exact quantity. Only the basket's remove control uses this. */
+  const setQuantity = useCallback(
+    (slug: string, quantity: number) => applyCart(slug, () => quantity),
+    [applyCart],
+  );
+
+  /** Add to, or take from, what is in the basket now. Everything else. */
+  const bumpQuantity = useCallback(
+    (slug: string, by: number) => applyCart(slug, (before) => before + by),
+    [applyCart],
+  );
 
   const lines = useMemo(
     () =>
@@ -165,6 +321,84 @@ export function Shop({
       )
     : products;
 
+  /*
+   * The search is recorded when someone stops typing, not on every keystroke.
+   *
+   * Filtering happens per keystroke because eleven books need no debounce, but
+   * recording per keystroke would file "b", "bi", "bib", "bibl", "bible" as
+   * five separate searches — and the four prefixes would swamp the one thing
+   * the person actually looked for. Nine hundred milliseconds of stillness is
+   * the closest this can get to "they finished typing" without a submit button.
+   */
+  const searchState = useRef({ needle, empty: shown.length === 0 });
+  searchState.current = { needle, empty: shown.length === 0 };
+
+  useEffect(() => {
+    if (!needle) return;
+    const settle = setTimeout(() => {
+      const state = searchState.current;
+      if (state.needle === needle) trackSearch(needle, state.empty);
+    }, 900);
+    return () => clearTimeout(settle);
+  }, [needle]);
+
+  /*
+   * The shop's divisions, as filters rather than as headings.
+   *
+   * ---------------------------------------------------------------------------
+   * The shelf used to be cut into one `<ul>` per section, stacked down the page.
+   * Tommy's instruction is that dividing the catalog must not hide any of it —
+   * *"after separating into categories the store should still show all of the
+   * options but there should be category pills under the search bar that the
+   * user can use to filter"* — and he is right about what the headings cost: a
+   * shopper who does not know which heading a title sits under has to scan every
+   * one of them, and the shop got longer with every category the parish added.
+   *
+   * So one grid, always, and a row of pills that narrows it. Everything is on
+   * screen until somebody chooses otherwise.
+   *
+   * `groupProducts` still does the work, unchanged, because its three rules are
+   * exactly the ones a pill row needs: an empty category is dropped, a book
+   * whose category was deleted falls into the catch-all rather than off the
+   * shop, and no categories at all means no divisions. It is applied to the
+   * *whole* catalog rather than to the search results, so the pills and their
+   * counts stay put while somebody types instead of rearranging under the
+   * cursor.
+   * ---------------------------------------------------------------------------
+   */
+  const pills = useMemo(() => groupProducts(products, sections), [products, sections]);
+
+  /** Which pill is chosen. `undefined` is "All", which is not a section id. */
+  const [pill, setPill] = useState<string | null | undefined>(undefined);
+
+  /*
+   * A pill that stops existing — its category deleted, or its last product
+   * removed or re-filed — must not leave the shop filtered to nothing with no
+   * way back.
+   *
+   * Measured against `sections` rather than against `pills`, because while
+   * editing the row shows *every* category including the empty ones. Checking
+   * `pills` would have snapped the filter back to All the moment somebody
+   * selected a category they had just emptied — which is exactly when they are
+   * looking at it.
+   */
+  useEffect(() => {
+    if (pill === undefined) return;
+    const stillThere =
+      pill === null
+        ? pills.some((group) => group.id === null)
+        : sections.some((section) => section.id === pill);
+    if (!stillThere) setPill(undefined);
+  }, [pills, sections, pill]);
+
+  const shownHere = useMemo(() => {
+    if (pill === undefined) return shown;
+    const inPill = new Set(
+      (pills.find((group) => group.id === pill)?.items ?? []).map((item) => item.slug),
+    );
+    return shown.filter((product) => inPill.has(product.slug));
+  }, [shown, pills, pill]);
+
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
   const total = lines.reduce(
     (sum, line) => sum + line.product.amount * line.quantity,
@@ -215,45 +449,226 @@ export function Shop({
       </div>
 
       {/*
-        How a book actually reaches someone, said once, above the books.
+        The orders queue and the metrics, for the people who run the shop.
 
-        These are the two questions a parish bookshop is asked before any other
-        — can I pick it up on Sunday, and will you deliver it — and the answers
-        were buried three screens down inside a basket nobody had opened yet.
+        Placed here — above the shelf rather than under it — because a volunteer
+        who opens it came for it, and putting it after eleven book covers would
+        mean scrolling the whole catalog to reach the thing they wanted. It is a
+        single quiet control until pressed, so a volunteer browsing as a
+        parishioner still sees the shop first.
+
+        `ready` as well as `canReview`: while the session is still restoring both
+        are false, and rendering on `canReview` alone would flash the control in
+        a moment later for somebody who has the claim.
       */}
-      <p className="shop-note">
-        Collect your order at the church, or have it delivered to you.
-      </p>
+      {/*
+        The two staff controls, in one corner and side by side.
 
-      {needle && (
+        They are genuinely two things: the drawer *reviews* what happened —
+        orders taken, what sold — and Edit *changes* what the shop is.
+
+        **Wrapped, because both pills were `position: fixed` at the same
+        `right`/`bottom` and landed exactly on top of each other.** That is the
+        overlapping-pills bug the events bar was rebuilt to remove, reintroduced
+        the moment a second control joined the corner.
+
+        Its own pill rather than the galleries' `EditToggle`, which renders
+        nothing while editing because Done lives in that feature's side column.
+        There is no column here, so the one pill has to say both things.
+      */}
+      {admin.ready && admin.canReview && (
+        <div className="shop-tools">
+          <Suspense fallback={null}>
+            <BookstoreAdmin />
+          </Suspense>
+          <button
+            type="button"
+            className={editing ? 'shop-edit is-on' : 'shop-edit'}
+            aria-pressed={editing}
+            onClick={() => setEditing((was) => !was)}
+          >
+            {editing ? 'Done' : 'Edit the shop'}
+          </button>
+        </div>
+      )}
+
+      {/*
+        The categories, under the search bar.
+
+        Only when there is more than one, because a single pill beside "All" is
+        a choice between the whole shop and the whole shop. `groupProducts`
+        already drops empty categories, so this is the honest test.
+
+        While editing, the *same row* is rendered by `CategoryPills` with the
+        editing affordances on the pills themselves — drag to reorder, rename in
+        place, remove. There is no separate panel: one was built and Tommy took
+        it out, *"there no reason to add a whole panel"*, which is right. A strip
+        of chips under the pills was a second copy of the same row, and the
+        parish would have had to look at one to understand the other.
+      */}
+      {editing ? (
+        /* Every category, including the empty ones — see `CategoryPills`. */
+        <Suspense fallback={null}>
+          <CategoryPills
+            groups={pills}
+            sections={sections}
+            total={products.length}
+            active={pill}
+            onPick={setPill}
+            onChanged={refresh}
+            onError={setEditError}
+          />
+        </Suspense>
+      ) : (
+        pills.length > 1 && (
+          <div className="shop-filters" role="group" aria-label="Filter by category">
+            <button
+              type="button"
+              className={pill === undefined ? 'shop-filter is-on' : 'shop-filter'}
+              aria-pressed={pill === undefined}
+              onClick={() => setPill(undefined)}
+            >
+              All
+              <span className="shop-filter__n">{products.length}</span>
+            </button>
+
+            {pills.map((group) => (
+              <button
+                key={group.id ?? '__unfiled'}
+                type="button"
+                className={pill === group.id ? 'shop-filter is-on' : 'shop-filter'}
+                aria-pressed={pill === group.id}
+                onClick={() => setPill(group.id)}
+              >
+                {group.label || UNSORTED_LABEL}
+                <span className="shop-filter__n">{group.items.length}</span>
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* One place for every refusal, so no control needs its own error slot. */}
+      {editError && (
+        <div className="notice notice--alarm" role="alert">
+          <p>{editError}</p>
+          <button
+            type="button"
+            className="button button--quiet button--small"
+            onClick={() => setEditError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {(needle || pill !== undefined) && (
         <p className="shop-count" aria-live="polite">
-          {shown.length === 0
-            ? `Nothing matches \u201C${query.trim()}\u201D.`
-            : `${shown.length} of ${products.length} titles`}
+          {shownHere.length === 0
+            ? needle
+              ? `Nothing matches \u201C${query.trim()}\u201D.`
+              : 'Nothing in this category.'
+            : `${shownHere.length} of ${products.length} titles`}
         </p>
       )}
 
-      <ul className="shelf">
-        {shown.map((product) => (
+      {/*
+        One shelf per section, in the order the parish chose.
+
+        `groupProducts` decides what appears and what does not — an empty
+        section is dropped, and a product whose section was deleted falls into
+        an unfiled group rather than off the shop. All of that is pinned in
+        tests/unit/shopSections.test.ts, because every one of those rules is a
+        way to lose a book.
+
+        While a search is running the divisions are suppressed: matches scattered
+        under five headings, most of them empty, is a worse answer than a single
+        list of what matched.
+      */}
+      {/*
+        One grid, whatever the categories are. The pills above narrow it; nothing
+        below is ever split into a second shelf.
+      */}
+      <ul className={editing ? 'shelf is-editing' : 'shelf'}>
+        {shownHere.map((product) => (
           <Book
             key={product.id}
             product={product}
             inCart={cart[product.slug] ?? 0}
-            onOpen={() => setOpen(product)}
-            onAdd={() => setQuantity(product.slug, (cart[product.slug] ?? 0) + 1)}
+            editing={editing}
+            doc={docs.get(product.slug)}
+            sections={sections}
+            onChanged={refresh}
+            onError={setEditError}
+            onOpen={() => {
+              trackProduct('detail', product.slug);
+              setOpen(product);
+            }}
+            onAdd={() => bumpQuantity(product.slug, 1)}
           />
         ))}
+
+        {/* The last tile, where the next book goes. Inside the `<ul>` so it is a
+            cell of the same grid rather than a control beside it. */}
+        {editing && (
+          <Suspense fallback={null}>
+            <AddProductTile sections={sections} onChanged={refresh} onError={setEditError} />
+          </Suspense>
+        )}
       </ul>
+
+      {/*
+        How an order reaches someone, and what happens if it arrives wrong —
+        together, at the foot of the page.
+
+        Both were above the shelf, on the argument that these are the two
+        questions a parish bookshop is asked before any other. Tommy has moved
+        them here, and the reason the old placement was wrong is the same for
+        both: they are three lines of small print between the shop's name and a
+        single book, and a shop that opens with terms reads as one bracing for a
+        complaint. Someone who wants either can always find them at the end, and
+        the order lookup has its own page besides.
+      */}
+      <div className="shop-foot">
+        <p className="shop-note">
+          {settings.fulfilmentNote}{' '}
+          <a href="/bookstore/orders">Check an order</a>.
+        </p>
+
+        {/*
+        The returns policy.
+
+        It used to sit above the shelf, on the argument that a policy belongs
+        before the money rather than after it. Tommy has moved it here, and the
+        reason it was wrong up there is worth keeping: it is the third paragraph
+        of small print a shopper meets *before* seeing a single book, and a
+        parish bookshop that opens with two disclaimers reads as a shop bracing
+        for a complaint.
+
+        What it says is unchanged, and both halves still go together. The parish
+        does not take returns — a volunteer-run bookshop cannot run a returns
+        desk — but a book that arrives damaged or is the wrong one is the
+        parish's mistake to put right, and refusing that under cover of a blanket
+        policy is not something a church should do.
+
+        Still plain text and still not a link: the whole of it is two sentences,
+        and a policy behind a click is a policy nobody has read.
+      */}
+        <p className="shop-terms">{settings.returnsNotice}</p>
+      </div>
 
       {open && (
         <Detail
           product={open}
           inCart={cart[open.slug] ?? 0}
           others={products.filter((p) => p.slug !== open.slug)}
-          onPick={setOpen}
+          onPick={(product) => {
+            trackProduct('detail', product.slug);
+            setOpen(product);
+          }}
           onClose={() => setOpen(null)}
           onAdd={(quantity) => {
-            setQuantity(open.slug, (cart[open.slug] ?? 0) + quantity);
+            bumpQuantity(open.slug, quantity);
             setOpen(null);
             setBasketOpen(true);
           }}
@@ -346,9 +761,19 @@ export function Shop({
               </button>
 
               {/* Last, and small. Nobody needs this unless something goes
-                  wrong, and then they need to be able to select it. */}
+                  wrong, and then they need to be able to select it.
+
+                  It is also the buyer's only credential: /bookstore/orders
+                  takes this number and the address above and shows them where
+                  the order has got to. There is no account to sign in to —
+                  see OrderLookup.tsx — so saying where the number is used
+                  belongs here, next to the number. */}
               <p className="done__ref">
                 Reference <code>{receipt.orderId}</code>
+              </p>
+              <p className="done__track">
+                Keep it: with the address above it shows you{' '}
+                <a href="/bookstore/orders">where your order has got to</a>.
               </p>
             </div>
           ) : lines.length === 0 ? (
@@ -403,7 +828,7 @@ export function Shop({
                       <div className="stepper stepper--sm">
                         <button
                           type="button"
-                          onClick={() => setQuantity(product.slug, quantity - 1)}
+                          onClick={() => bumpQuantity(product.slug, -1)}
                           aria-label={`One fewer ${product.name}`}
                         >
                           −
@@ -411,7 +836,7 @@ export function Shop({
                         <span aria-live="polite">{quantity}</span>
                         <button
                           type="button"
-                          onClick={() => setQuantity(product.slug, quantity + 1)}
+                          onClick={() => bumpQuantity(product.slug, 1)}
                           aria-label={`One more ${product.name}`}
                           disabled={quantity >= 20}
                         >
@@ -450,7 +875,12 @@ export function Shop({
               <button
                 type="button"
                 className="basket__pay"
-                onClick={() => setStage('pay')}
+                onClick={() => {
+                  // One per basket that reaches the card form. Paired with the
+                  // orders for that day, this is the drop-off rate.
+                  for (const line of lines) track({ kind: 'checkoutStart', slug: line.product.slug });
+                  setStage('pay');
+                }}
               >
                 Checkout
               </button>
@@ -489,9 +919,7 @@ export function Shop({
                           <button
                             type="button"
                             className="addmore__book"
-                            onClick={() =>
-                              setQuantity(product.slug, (cart[product.slug] ?? 0) + 1)
-                            }
+                            onClick={() => bumpQuantity(product.slug, 1)}
                           >
                             <Cover product={product} className="addmore__cover" />
                             <span className="addmore__name">{product.name}</span>
@@ -606,18 +1034,71 @@ export function Shop({
 function Book({
   product,
   inCart,
+  editing,
+  doc,
+  sections,
   onOpen,
   onAdd,
+  onChanged,
+  onError,
 }: {
   product: ShopProduct;
   inCart: number;
+  /** Staff are arranging the shop, so the card carries its own settings. */
+  editing: boolean;
+  /** The product document, for the picture control. Absent until the read lands. */
+  doc: DocOf<Product> | undefined;
+  sections: BookstoreSection[];
   onOpen: () => void;
   onAdd: () => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
 }) {
   const soldOut = product.stockCount === 0;
 
+  /*
+   * "Was this card actually on screen?", answered by the browser.
+   *
+   * Counting a view when the card renders would count every book in the catalog
+   * on every visit, which makes "most viewed" a list of eleven equal numbers.
+   * An IntersectionObserver counts the ones a person actually scrolled to, once
+   * each per page view — `trackViewOnce` holds the set.
+   *
+   * 50% for a quarter of a second, so a card that flies past under a fast
+   * flick is not a view. Disconnected as soon as it fires: the card has been
+   * seen, and nothing about seeing it again changes that.
+   */
+  const card = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    const element = card.current;
+    if (!element || typeof IntersectionObserver === 'undefined') return;
+
+    let dwell: ReturnType<typeof setTimeout> | null = null;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          dwell ??= setTimeout(() => {
+            trackViewOnce(product.slug);
+            observer.disconnect();
+          }, 250);
+        } else if (dwell) {
+          clearTimeout(dwell);
+          dwell = null;
+        }
+      },
+      { threshold: 0.5 },
+    );
+
+    observer.observe(element);
+    return () => {
+      if (dwell) clearTimeout(dwell);
+      observer.disconnect();
+    };
+  }, [product.slug]);
+
   return (
-    <li className="book">
+    <li className={editing ? 'book is-editing' : 'book'} ref={card}>
       {/* `title` because the card's own heading is clamped to three lines —
           Square's longest runs to five. The whole of it is in the dialog this
           opens, and here on hover. */}
@@ -654,17 +1135,44 @@ function Book({
       <div className="book__foot">
         {/* The price stays even when the book does not: a sold-out title still
             costs what it costs, and the flag on the cover is what says it is
-            gone. */}
+            gone. It also stays while editing — it is what Square charges, and
+            seeing it is how you notice it is wrong. */}
         <p className="book__price">{money(product.amount, product.currency)}</p>
 
         {soldOut ? (
           <span className="book__gone">Unavailable</span>
         ) : (
-          <button type="button" className="book__add" onClick={onAdd}>
-            {inCart > 0 ? "Add another" : "Add to basket"}
-          </button>
+          !editing && (
+            <button type="button" className="book__add" onClick={onAdd}>
+              {inCart > 0 ? "Add another" : "Add to basket"}
+            </button>
+          )
         )}
       </div>
+
+      {/*
+        The settings, in the space the card already occupies.
+
+        This replaced a properties column down the right of the window — Tommy's
+        judgement on that arrangement was that it was *"way too confusing"*, and
+        that most of it belongs *"in the space that the product already takes up
+        rather than on the side view"*. He is right for this page specifically:
+        the galleries' column exists because a photograph inside a strip inside a
+        section has no room of its own to hold anything, and a book on a shelf
+        has a whole card. Nothing here has to be looked up in a panel to know
+        which book it belongs to.
+      */}
+      {editing && (
+        <Suspense fallback={null}>
+          <BookControls
+            product={product}
+            doc={doc}
+            sections={sections}
+            onChanged={onChanged}
+            onError={onError}
+          />
+        </Suspense>
+      )}
     </li>
   );
 }
@@ -979,114 +1487,3 @@ function Detail({
   );
 }
 
-/**
- * A modal, hand-rolled on `<dialog>`.
- *
- * `showModal()` rather than the `open` attribute: only the modal form gets the
- * top layer, the backdrop, focus trapping, and Escape-to-close from the
- * browser. Setting `open` renders a dialog that looks right and traps nothing.
- */
-function Dialog({
-  title,
-  heading,
-  back,
-  screen,
-  className,
-  onClose,
-  children,
-}: {
-  title: string;
-  /**
-   * The visible title in the bar, where the screen has one to show.
-   *
-   * Separate from `title`, which is only the accessible name. The product
-   * dialog sets its own heading in the reading column, at display size, and
-   * repeating it in the bar two lines above would be the same words twice —
-   * so it passes nothing and gets a bar holding only the close.
-   */
-  heading?: string;
-  /**
-   * The way back to the previous screen, pinned in the bar beside the title.
-   *
-   * It used to sit at the top of the checkout's recap panel, which scrolls —
-   * and on a phone, where that panel stacks above the payment form rather than
-   * beside it, scrolls away completely. A way out of a payment screen should
-   * not be something you have to scroll back up to find.
-   */
-  back?: { label: string; onBack: () => void };
-  /**
-   * Changes when the dialog swaps one screen for another, so the scroll can go
-   * back to the top.
-   *
-   * The sheet scrolls, and the two screens it holds are different heights. Left
-   * alone, Checkout pressed at the foot of a long basket landed you part-way
-   * down the payment form, and Back landed you in the middle of the basket —
-   * both of which read as the dialog having lost its place.
-   */
-  screen?: string;
-  /** A width modifier, or empty. The basket and the product page want
-      different ones. */
-  className?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (node && !node.open) node.showModal();
-  }, []);
-
-  useEffect(() => {
-    ref.current?.scrollTo({ top: 0 });
-  }, [screen]);
-
-  return (
-    <dialog
-      ref={ref}
-      className={className ? `sheet ${className}` : 'sheet'}
-      aria-label={title}
-      // Fires for Escape as well as `close()`, so both routes out land here.
-      onClose={onClose}
-      // Clicking the backdrop is a click on the dialog element itself; a click
-      // on anything inside it stops at that child.
-      onClick={(event) => {
-        if (event.target === ref.current) ref.current?.close();
-      }}
-    >
-      {/*
-        The bar is pinned and the close lives in it.
-
-        Both of those were bugs. The close was absolutely positioned against the
-        sheet, so it scrolled away with the content — and the heading, which was
-        sticky, then slid over the top of it and hid it on the way past. The
-        heading was not properly pinned either: its `top` was a negative offset,
-        so it moved a couple of centimetres before it stuck, which reads as the
-        header sliding around while you scroll.
-
-        One sticky bar at `top: 0` holding both fixes both. It only works
-        because the sheet's own padding moved to `.sheet__body`: a sticky child
-        of a padded scroller sticks to the *padding* box, which leaves a strip
-        above it for content to scroll through.
-      */}
-      <div className="sheet__bar">
-        {back && (
-          <button type="button" className="sheet__back" onClick={back.onBack}>
-            <span aria-hidden="true">←</span> {back.label}
-          </button>
-        )}
-        {heading && <h2 className="sheet__name">{heading}</h2>}
-        <button
-          type="button"
-          className="sheet__close"
-          onClick={() => ref.current?.close()}
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
-
-      <div className="sheet__body">{children}</div>
-    </dialog>
-  );
-}
