@@ -35,6 +35,8 @@ export interface OrderEmailLine {
 export interface OrderEmailInput {
   orderId: string;
   email: string;
+  /** Who the order is for. Omitted on orders taken before this was asked. */
+  buyerName?: string;
   /** True when the order is being delivered rather than collected. */
   shipping: boolean;
   lines: readonly OrderEmailLine[];
@@ -85,6 +87,17 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
     ? 'Your order will be delivered to you. The parish packs orders by hand, so allow a few days.'
     : 'Your order will be waiting for you at the bookstore. You can collect it after any Liturgy.';
 
+  /*
+   * The name the order is filed under, on a collection order only.
+   *
+   * On a delivery it says nothing the address does not already say. On a
+   * collection it is the string the volunteer at the table is looking for, so
+   * the buyer should be able to see which name to give — particularly when
+   * somebody ordered on behalf of a relative.
+   */
+  const filedUnder =
+    !input.shipping && input.buyerName ? `It is put aside under ${input.buyerName}.` : '';
+
   const question = input.parishEmail
     ? `If anything is wrong with this order, reply to ${input.parishEmail} and quote the reference above.`
     : 'If anything is wrong with this order, contact the parish office and quote the reference above.';
@@ -93,6 +106,7 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
     'Your order from the parish bookstore is placed.',
     '',
     fulfilment,
+    ...(filedUnder ? [filedUnder] : []),
     '',
     ...input.lines.map((l) => `${l.quantity} x ${l.name} — ${money(l.amount)}`),
     '',
@@ -129,7 +143,9 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
       <tr>
         <td style="padding:24px;">
           <h1 style="margin:0 0 12px;font-size:22px;font-weight:normal;">Your order is placed</h1>
-          <p style="margin:0 0 20px;font-size:15px;line-height:1.5;color:#4b413e;">${escapeHtml(fulfilment)}</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.5;color:#4b413e;">${escapeHtml(fulfilment)}${
+            filedUnder ? ` ${escapeHtml(filedUnder)}` : ''
+          }</p>
 
           <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-size:15px;border-top:1px solid #e0cac3;">${rows}
             <tr>

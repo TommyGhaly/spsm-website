@@ -110,6 +110,43 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/squareWebhook`,
       },
       /*
+       * The buyer's order lookup, the staff refund, and the on-demand stats
+       * rebuild. Same arrangement as the checkout above — Hosting rewrites in
+       * production, nothing at all locally without these.
+       */
+      {
+        source: '/api/square/orders',
+        destination: `${origin}/${project}/${region}/orderLookup`,
+      },
+      {
+        source: '/api/square/refund',
+        destination: `${origin}/${project}/${region}/squareRefund`,
+      },
+      {
+        source: '/api/square/product',
+        destination: `${origin}/${project}/${region}/squareCreateProduct`,
+      },
+      {
+        source: '/api/square/product-image',
+        destination: `${origin}/${project}/${region}/squareProductImage`,
+      },
+      {
+        source: '/api/square/product-image-remove',
+        destination: `${origin}/${project}/${region}/squareRemoveProductImage`,
+      },
+      {
+        source: '/api/square/product-stock',
+        destination: `${origin}/${project}/${region}/squareProductStock`,
+      },
+      {
+        source: '/api/square/product-archive',
+        destination: `${origin}/${project}/${region}/squareArchiveProduct`,
+      },
+      {
+        source: '/api/square/stats-refresh',
+        destination: `${origin}/${project}/${region}/refreshBookstoreStats`,
+      },
+      /*
        * The homepage schedule's live read. Same arrangement as the two above: a
        * Hosting rewrite in production, and nothing at all on the dev server
        * without this — which means the bulletin section silently never refreshes

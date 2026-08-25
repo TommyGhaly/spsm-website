@@ -571,3 +571,190 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function str(value: unknown): string | null {
   return typeof value === 'string' ? value.trim() : null;
 }
+
+/* ==========================================================================
+   The bookstore's own settings
+   ========================================================================== */
+
+/** Document id of the bookstore settings document. */
+export const CONFIG_DOC_BOOKSTORE = 'bookstore';
+
+/**
+ * The handful of things about the shop that are a parish decision, not a code
+ * decision.
+ *
+ * ---------------------------------------------------------------------------
+ * Why these moved out of the Functions runtime.
+ *
+ * `deliveryCents` and `orderEmail` were `defineString` parameters in
+ * `functions/src/checkout.ts` — which meant changing what the parish charges for
+ * postage required a redeploy by somebody who can deploy. That contradicts the
+ * whole reason this collection exists, stated in `collections.ts`: config is for
+ * "feature switches that staff can change without a code deploy". A price the
+ * parish sets is the most obvious member of that set there is.
+ *
+ * The Functions parameters remain as the fallback, so a missing document is a
+ * working checkout rather than free postage.
+ *
+ * ## Integer cents, never a formatted string
+ *
+ * The same rule as everywhere else money appears here, and the same rule the
+ * design tokens follow: store the number, format at the edge. `"$7.00"` in
+ * Firestore is a value the phone app would have to parse back out of a currency
+ * string, and a value somebody can make mean nothing by typing "seven dollars".
+ * ---------------------------------------------------------------------------
+ */
+/**
+ * One division of the shop — "Books", "Icons for the home", "Gifts".
+ *
+ * `id` is what a product's `section` field holds and never changes; `label` is
+ * what the shop prints and can be renamed freely. Keeping them separate is what
+ * makes renaming a section a one-field edit rather than a migration across every
+ * product in it.
+ */
+export interface BookstoreSection {
+  id: string;
+  label: string;
+}
+
+export interface BookstoreConfig {
+  /** Flat delivery charge, in integer minor units. 0 means free delivery. */
+  deliveryCents: number;
+  /**
+   * Where a buyer is told to write about a wrong order. Empty is fine — the
+   * confirmation email then says "contact the parish office" rather than naming
+   * an address that does not exist.
+   */
+  orderEmail: string;
+  /** The line above the shelf about collection and delivery. */
+  fulfilmentNote: string;
+  /** The returns policy, shown before anyone reaches the card form. */
+  returnsNotice: string;
+
+  /**
+   * The shop's divisions, in the order they appear.
+   *
+   * The array *is* the order — no `position` field to keep in step with itself.
+   * Reordering is a reordered array, which is the one representation that cannot
+   * develop two sections claiming the same slot.
+   *
+   * Empty is a valid and normal state: a parish that has not sorted anything
+   * gets one undivided shelf, exactly as before this existed.
+   */
+  sections: BookstoreSection[];
+}
+
+/** Section ids are generated from the label and then frozen. */
+export const MAX_SECTIONS = 12;
+export const MAX_SECTION_LABEL = 40;
+
+/**
+ * A storable id for a new section, from whatever was typed.
+ *
+ * Falls back to a timestamp rather than to an empty string: two sections both
+ * called "Icons — الأيقونات" would otherwise both reduce to `""` and become the
+ * same section, silently merging their products.
+ */
+export function sectionId(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return slug || `section-${Date.now().toString(36)}`;
+}
+
+/**
+ * What the shop says when nothing has been configured.
+ *
+ * These are the exact strings that were hard-coded into `Shop.tsx` and
+ * `checkout.ts` before this document existed, so seeding it changes nothing on
+ * screen — which is the property that makes the migration safe to deploy on its
+ * own.
+ */
+export const DEFAULT_BOOKSTORE_CONFIG: BookstoreConfig = {
+  deliveryCents: 700,
+  orderEmail: '',
+  fulfilmentNote: 'Collect your order at the church, or have it delivered to you.',
+  returnsNotice:
+    'Sales are final. If a book reaches you damaged, or is not the one you ordered, ' +
+    'write to the parish office within 14 days and it will be put right.',
+  /*
+   * No sections by default, and none invented.
+   *
+   * Seeding "Books" and "Gifts" would put two headings on a shop that has
+   * eleven titles and no opinion about them yet, and somebody would have to
+   * delete them before the page looked right. An unsorted shop renders exactly
+   * as it did before sections existed.
+   */
+  sections: [],
+};
+
+/** The most the parish can charge for postage, as a guard against a typo. */
+export const MAX_DELIVERY_CENTS = 100_00;
+
+/**
+ * Coerce whatever is in `config/bookstore` into usable settings.
+ *
+ * Every field falls back individually rather than the document falling back as
+ * a whole: a half-written document — one field edited in place before the others
+ * existed — should contribute the field it has, not be discarded.
+ *
+ * `deliveryCents` is the one that is range-checked rather than merely typed.
+ * It is read by the checkout Function and turned into a charge, so a negative
+ * number is a discount nobody authorised and a number with a stray zero is a
+ * $700 delivery fee. Out of range falls back to the default rather than being
+ * clamped: clamping silently charges something nobody chose, and the default is
+ * at least a figure the parish once agreed on.
+ */
+export function parseBookstoreConfig(raw: unknown): BookstoreConfig {
+  const doc = asRecord(raw);
+  const fallback = DEFAULT_BOOKSTORE_CONFIG;
+
+  const delivery = doc?.['deliveryCents'];
+  const usableDelivery =
+    typeof delivery === 'number' &&
+    Number.isInteger(delivery) &&
+    delivery >= 0 &&
+    delivery <= MAX_DELIVERY_CENTS;
+
+  return {
+    deliveryCents: usableDelivery ? (delivery as number) : fallback.deliveryCents,
+    // `?? fallback` rather than `|| fallback`, so a parish that deliberately
+    // cleared the address gets an empty string and the email says "the parish
+    // office" — not the default, which is also empty, but only by coincidence.
+    orderEmail: str(doc?.['orderEmail']) ?? fallback.orderEmail,
+    fulfilmentNote: str(doc?.['fulfilmentNote']) || fallback.fulfilmentNote,
+    returnsNotice: str(doc?.['returnsNotice']) || fallback.returnsNotice,
+    sections: parseSections(doc?.['sections']),
+  };
+}
+
+/**
+ * The sections array, with anything unusable dropped rather than the lot.
+ *
+ * One malformed entry — a hand edit in the console, a half-written document —
+ * must not take the other five headings off the shop with it. Duplicated ids are
+ * dropped too: two sections sharing an id means products land in whichever one
+ * renders first, which looks like products going missing.
+ */
+export function parseSections(raw: unknown): BookstoreSection[] {
+  if (!Array.isArray(raw)) return [];
+
+  const seen = new Set<string>();
+  const sections: BookstoreSection[] = [];
+
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const id = str(record?.['id']);
+    const label = str(record?.['label']);
+    if (!id || !label) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    sections.push({ id, label: label.slice(0, MAX_SECTION_LABEL) });
+    if (sections.length >= MAX_SECTIONS) break;
+  }
+
+  return sections;
+}

@@ -321,18 +321,57 @@ if (taksis.error) {
 // ---------------------------------------------------------------------------
 section(4, 'Square — bookstore payments');
 
-const squareToken = env('SQUARE_ACCESS_TOKEN');
-const squareLocation = env('SQUARE_LOCATION_ID');
+/*
+ * The token and the location that match the environment — not whichever pair
+ * happens to be named first.
+ *
+ * ---------------------------------------------------------------------------
+ * This script reported a false failure for as long as it existed.
+ *
+ * It read `SQUARE_ACCESS_TOKEN` unconditionally and then chose the host from
+ * `SQUARE_ENVIRONMENT`. With the repo's normal `SQUARE_ENVIRONMENT=sandbox`
+ * that sends the *production* token to the sandbox host, which is a guaranteed
+ * 401 — and the message it printed blamed the credentials: "the classic cause
+ * is a sandbox token with SQUARE_ENVIRONMENT=production, or the reverse". The
+ * diagnosis was right about the mechanism and wrong about the culprit. Checked
+ * 2026-08-23: both tokens in this .env are valid, each against its own host.
+ *
+ * The same pairing bug was found and fixed in the checkout Function months
+ * earlier — see the note in functions/src/checkout.ts and `squareClient()` in
+ * functions/src/square.ts. This is the third copy of that rule; it is the last
+ * place that had it wrong.
+ *
+ * The location id is environment-specific too. A sandbox account has its own
+ * locations, so checking `SQUARE_LOCATION_ID` while pointed at sandbox fails
+ * even once the token is right.
+ * ---------------------------------------------------------------------------
+ */
 const squareEnvironment = env('SQUARE_ENVIRONMENT') === 'production' ? 'production' : 'sandbox';
+const squareProduction = squareEnvironment === 'production';
+
+const squareTokenName = squareProduction
+  ? 'SQUARE_ACCESS_TOKEN'
+  : env('SQUARE_SANDBOX_ACCESS_TOKEN')
+    ? 'SQUARE_SANDBOX_ACCESS_TOKEN'
+    : 'SQUARE_ACCESS_TOKEN';
+const squareToken = env(squareTokenName);
+
+const squareLocationName = squareProduction
+  ? 'SQUARE_LOCATION_ID'
+  : env('SQUARE_SANDBOX_LOCATION_ID')
+    ? 'SQUARE_SANDBOX_LOCATION_ID'
+    : 'SQUARE_LOCATION_ID';
+const squareLocation = env(squareLocationName);
 
 if (!squareToken) {
-  fail('SQUARE_ACCESS_TOKEN is not set.');
+  fail(`${squareTokenName} is not set.`);
 } else {
   const host =
     squareEnvironment === 'production'
       ? 'https://connect.squareup.com'
       : 'https://connect.squareupsandbox.com';
   info(`environment: ${squareEnvironment} (${host})`);
+  info(`using ${squareTokenName} and ${squareLocationName}`);
 
   try {
     const res = await fetch(`${host}/v2/locations`, {
@@ -344,7 +383,13 @@ if (!squareToken) {
     const body = await res.json();
 
     if (res.status === 401) {
-      fail('Square rejected the access token (401). The classic cause is a sandbox token with SQUARE_ENVIRONMENT=production, or the reverse — the two credential sets are not interchangeable.');
+      fail(
+        `Square rejected ${squareTokenName} (401) against the ${squareEnvironment} host. ` +
+          'The two credential sets are not interchangeable — a sandbox token 401s against ' +
+          'connect.squareup.com and a production token 401s against connect.squareupsandbox.com. ' +
+          `Either ${squareTokenName} holds the wrong environment's token, or SQUARE_ENVIRONMENT ` +
+          'should be the other value.',
+      );
     } else if (!res.ok) {
       fail(`Square returned HTTP ${res.status}: ${JSON.stringify(body?.errors ?? body).slice(0, 300)}`);
     } else {
@@ -352,11 +397,80 @@ if (!squareToken) {
       pass(`token valid — ${locations.length} location(s) visible`);
       const match = locations.find((l) => l.id === squareLocation);
       if (!squareLocation) {
-        fail('SQUARE_LOCATION_ID is not set.');
+        fail(`${squareLocationName} is not set.`);
       } else if (match) {
-        pass(`SQUARE_LOCATION_ID matches "${match.name}" (${match.status}, ${match.currency})`);
+        pass(`${squareLocationName} matches "${match.name}" (${match.status}, ${match.currency})`);
       } else {
-        fail(`SQUARE_LOCATION_ID "${squareLocation}" is not among this token's locations: ${locations.map((l) => l.id).join(', ') || 'none'}`);
+        fail(`${squareLocationName} "${squareLocation}" is not among this token's locations: ${locations.map((l) => l.id).join(', ') || 'none'}`);
+      }
+
+      /*
+       * Can this token write to the catalog?
+       *
+       * `ITEMS_WRITE` is needed by nothing else on this site — checkout reads
+       * prices, the sync reads the catalog, the webhook reads payments — so the
+       * first time anyone adds a product through /bookstore is the first time a
+       * token without it fails. That failure arrives as a bare `FORBIDDEN` in a
+       * Cloud Function log and sends people looking at Firestore rules.
+       *
+       * Checked by asking for the *permissions the token actually has*, not by
+       * attempting a write: a probe that creates and deletes a catalog object
+       * would leave debris in the parish's live catalog on every run of this
+       * script.
+       */
+      const scopes = await fetch(`${host}/oauth2/token/status`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${squareToken}`,
+          'Square-Version': '2025-01-23',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (scopes.ok) {
+        const granted = (await scopes.json())?.scopes ?? [];
+        if (granted.includes('ITEMS_WRITE')) {
+          pass('token carries ITEMS_WRITE — the bookstore admin can add products, photos, and remove them');
+        } else {
+          fail(
+            'token is missing ITEMS_WRITE. Adding a product or a photo from /bookstore, or ' +
+              'removing one, will fail with FORBIDDEN. Grant it on the application in the ' +
+              'Square Developer Dashboard.',
+          );
+        }
+
+        /*
+         * Inventory, which is a separate pair of permissions from ITEMS_WRITE
+         * and fails in two different places.
+         *
+         * `INVENTORY_WRITE` is what the stock box on /bookstore needs, and its
+         * absence is at least visible — a volunteer presses Save and is told.
+         * `INVENTORY_READ` is the quiet one: `sync-catalog.mjs` needs it to read
+         * counts back, and without it the sync drops `stockCount` from its field
+         * mask and every count silently stops updating. Both are worth naming
+         * here rather than discovering from a log.
+         */
+        for (const [scope, consequence] of [
+          ['INVENTORY_WRITE', 'setting a stock count from /bookstore will fail with FORBIDDEN'],
+          ['INVENTORY_READ', 'npm run catalog cannot read stock counts and will leave them unchanged'],
+        ]) {
+          if (granted.includes(scope)) {
+            pass(`token carries ${scope}`);
+          } else {
+            fail(`token is missing ${scope} — ${consequence}.`);
+          }
+        }
+      } else {
+        /*
+         * A personal access token has no OAuth status endpoint and returns 401
+         * here even though it is perfectly valid — it simply carries every
+         * permission the account has. Not a failure, but not a confirmation
+         * either, so say which of the two this is.
+         */
+        info(
+          'could not read token scopes (normal for a personal access token); ITEMS_WRITE, ' +
+            'INVENTORY_READ, and INVENTORY_WRITE unverified',
+        );
       }
     }
   } catch (error) {

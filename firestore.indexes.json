@@ -133,7 +133,7 @@
       ]
     },
     {
-      "comment": "Public section pages. The published filter is mandatory for anonymous reads (see firestore.rules), so it must be in the index — the staff index above cannot serve this query.",
+      "comment": "Public section pages. The published filter is mandatory for anonymous reads (see firestore.rules), so it must be in the index \u2014 the staff index above cannot serve this query.",
       "collectionGroup": "content",
       "queryScope": "COLLECTION",
       "fields": [
@@ -167,7 +167,7 @@
       ]
     },
     {
-      "comment": "Program galleries. These matter more than most: the gallery pages are client-rendered at request time, so a missing index is not a failed build a developer sees — it is a live page that spins forever for a visitor. Every entry below mirrors a query in apps/website/src/features/programs.",
+      "comment": "Program galleries. These matter more than most: the gallery pages are client-rendered at request time, so a missing index is not a failed build a developer sees \u2014 it is a live page that spins forever for a visitor. Every entry below mirrors a query in apps/website/src/features/programs.",
       "collectionGroup": "programs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -182,7 +182,7 @@
       ]
     },
     {
-      "comment": "Every level under one program, at every depth, in one query. `parentId` is deliberately absent: the tree is read whole and walked in memory, because a page that summarises what is beneath it needs the descendants anyway — a generation-at-a-time read would be a query per level per page. The startAt order is what the index and the rules require, not what anything renders in; `compareNodes` sorts client-side, manual order first.",
+      "comment": "Every level under one program, at every depth, in one query. `parentId` is deliberately absent: the tree is read whole and walked in memory, because a page that summarises what is beneath it needs the descendants anyway \u2014 a generation-at-a-time read would be a query per level per page. The startAt order is what the index and the rules require, not what anything renders in; `compareNodes` sorts client-side, manual order first.",
       "collectionGroup": "programEvents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -201,7 +201,7 @@
       ]
     },
     {
-      "comment": "Admin: the whole tree under a program, drafts included. Cannot be served by the public index above, which requires the published filter — and an administrator's tree has to be complete or the unpublished week they just created has nowhere to hang its days.",
+      "comment": "Admin: the whole tree under a program, drafts included. Cannot be served by the public index above, which requires the published filter \u2014 and an administrator's tree has to be complete or the unpublished week they just created has nowhere to hang its days.",
       "collectionGroup": "programEvents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -216,7 +216,7 @@
       ]
     },
     {
-      "comment": "One level of a program, and — as an `in` filter over up to thirty of these — a whole subtree. Firestore serves an `in` from the same index as an `==`, which is why reading a week and its days needs no index of its own. The status filter is mandatory for public reads — firestore.rules denies the query outright without it, not merely the rows — so it is part of every public index here.",
+      "comment": "One level of a program, and \u2014 as an `in` filter over up to thirty of these \u2014 a whole subtree. Firestore serves an `in` from the same index as an `==`, which is why reading a week and its days needs no index of its own. The status filter is mandatory for public reads \u2014 firestore.rules denies the query outright without it, not merely the rows \u2014 so it is part of every public index here.",
       "collectionGroup": "galleryMedia",
       "queryScope": "COLLECTION",
       "fields": [
@@ -254,7 +254,7 @@
       ]
     },
     {
-      "comment": "The approval queue, scoped to one program. A program-scoped administrator MUST filter on programId — the rules cannot prove their grant covers an unfiltered list, so the query is denied rather than trimmed.",
+      "comment": "The approval queue, scoped to one program. A program-scoped administrator MUST filter on programId \u2014 the rules cannot prove their grant covers an unfiltered list, so the query is denied rather than trimmed.",
       "collectionGroup": "galleryMedia",
       "queryScope": "COLLECTION",
       "fields": [
@@ -323,7 +323,60 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "comment": "Order lookup: every order for one email, newest first. The buyer proves a receipt and gets their history; see functions/src/orders.ts.",
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contactEmailLower",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "comment": "The same, on the address exactly as the buyer typed it. Orders taken before contactEmailLower existed have only this field, and a history that silently starts in September is worse than one that errors.",
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contactEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "comment": "Monthly rollup: the daily stats documents in a month, summed. Wider periods are built from these rather than from raw events, which expire on a TTL.",
+      "collectionGroup": "bookstoreStats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "period",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "key",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "comment": "Raw bookstore events are working material, not a record the parish keeps \u2014 the rollups are the record. Firestore deletes each row 90 days after expiresAt, so the collection cannot grow without bound and nobody has to remember to prune it. ttl requires indexes to be present, which is why the empty list is here rather than omitted.",
+      "collectionGroup": "bookstoreEvents",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }

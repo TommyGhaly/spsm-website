@@ -1,5 +1,11 @@
 import type { Metadata } from 'next';
-import { getProducts, toShopProducts, Shop, squarePublicConfig } from '@/features/bookstore';
+import {
+  getBookstoreConfig,
+  getProducts,
+  toShopProducts,
+  Shop,
+  squarePublicConfig,
+} from '@/features/bookstore';
 import { EmptyState } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
@@ -24,7 +30,7 @@ export const metadata: Metadata = {
  * not there.
  */
 export default async function BookstorePage() {
-  const products = await getProducts();
+  const [products, settings] = await Promise.all([getProducts(), getBookstoreConfig()]);
 
   return (
     <PageBody flush>
@@ -33,7 +39,11 @@ export default async function BookstorePage() {
       {products.length === 0 ? (
         <EmptyState what="products" collection="products" />
       ) : (
-        <Shop products={toShopProducts(products)} square={squarePublicConfig()} />
+        <Shop
+          products={toShopProducts(products)}
+          square={squarePublicConfig()}
+          settings={settings}
+        />
       )}
     </PageBody>
   );

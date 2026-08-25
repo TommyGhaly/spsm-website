@@ -112,6 +112,62 @@ service cloud.firestore {
       allow write: if hasRole('admin');
     }
 
+    /*
+     * The shop's divisions, writable by the people who run the shop.
+     *
+     * -----------------------------------------------------------------------
+     * A second match on a path the rule above already covers. Firestore grants
+     * if **any** matching rule allows, so this can only widen `config/{docId}` —
+     * it cannot narrow it, and nothing here tries to.
+     *
+     * A near-identical block existed briefly to support an in-place settings
+     * editor, and was removed with that editor because an open write path kept
+     * for a caller that no longer exists is pure attack surface. It is back for
+     * a caller that does exist: the section editor in the admin drawer. The
+     * difference is the key set — `sections` only. The delivery charge, the
+     * order email and the two pieces of shop copy are **not** writable here and
+     * remain admin-only through the rule above, because nothing in a browser
+     * writes them.
+     *
+     * `config` is world-readable, so a writer cannot leak anything they could
+     * not already read; the risk is a malformed document breaking the shop, and
+     * the shape check below is what bounds that. Twelve sections, forty
+     * characters of label. `parseSections` drops anything that gets through.
+     * -----------------------------------------------------------------------
+     */
+    match /config/bookstore {
+      allow read: if true;
+
+      /*
+       * Create and update are separate, and that is not tidiness.
+       *
+       * `request.resource.data.diff(resource.data)` needs `resource` to exist.
+       * Nothing seeds `config/bookstore` — the defaults live in the shared
+       * package and the document is written the first time somebody changes
+       * something — so on a parish that has never touched it, `resource` is
+       * null, `diff` fails, and the *first* section anyone tries to make is
+       * refused with nothing to explain it. The create branch checks the whole
+       * key set instead, which is the same guarantee without the dereference.
+       */
+      allow create: if (inGroup('bookstore') || hasRole('staff'))
+        && request.resource.data.keys().hasOnly(['sections', 'updatedAt', 'updatedBy'])
+        && isSectionList(request.resource.data.sections)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      allow update: if (inGroup('bookstore') || hasRole('staff'))
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['sections', 'updatedAt', 'updatedBy'])
+        && isSectionList(request.resource.data.sections)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // Never. The shop's divisions going missing wholesale is not an edit.
+      allow delete: if false;
+    }
+
+    function isSectionList(sections) {
+      return sections is list && sections.size() <= 12;
+    }
+
     match /events/{eventId} {
       // Parish calendar. Servant-only entries live in /servantEvents so this
       // stays a path check rather than a per-doc audience filter — a filter
@@ -284,10 +340,40 @@ service cloud.firestore {
       allow read: if hasRole('staff');
       // Catalog writes go through the Square sync Function or staff tooling.
       allow write: if hasRole('staff');
+
+      /*
+       * The one field the bookstore group may change: which part of the shop a
+       * product appears in.
+       *
+       * A widening of the rule above, which is `staff` only. A bookstore
+       * volunteer is `member` plus the group — the same people who work the
+       * orders queue — and filing a book under "Icons" is the least consequential
+       * thing on that screen. Everything Square owns stays untouchable from a
+       * browser: `hasOnly` admits three keys and `section` is the only one that
+       * carries meaning.
+       *
+       * Creating a product is *not* here and must not be. It has to happen in
+       * Square first, because the checkout prices orders from Square's catalog —
+       * a row invented in Firestore has no variation id and cannot be bought.
+       * That path is `squareCreateProduct`, which re-checks the claim server-side.
+       */
+      allow update: if (inGroup('bookstore') || hasRole('staff'))
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['section', 'updatedAt', 'updatedBy'])
+        && (request.resource.data.section == null
+            || (request.resource.data.section is string
+                && request.resource.data.section.size() <= 40))
+        && request.resource.data.updatedBy == request.auth.uid;
     }
 
     match /orders/{orderId} {
       // A member sees their own orders; bookstore volunteers see all.
+      //
+      // A buyer is neither. Sign-in here is Microsoft-only and restricted to
+      // the parish tenant, so a parishioner has no uid for `isSelf` to match —
+      // they reach their orders through the `orderLookup` Function, which
+      // authenticates them with a receipt instead. Nothing below grants them
+      // anything, and that is correct: the Admin SDK bypasses these rules.
       allow read: if isSelf(resource.data.memberUid)
         || inGroup('bookstore')
         || hasRole('staff');
@@ -295,6 +381,106 @@ service cloud.firestore {
       // Orders are created and advanced ONLY by Cloud Functions reconciling
       // Square webhooks. If the client could write here, a member could mark
       // their own order paid.
+      allow create, delete: if false;
+
+      /*
+       * The one exception: whether the books have been handed over.
+       *
+       * `fulfillment` is the only field a volunteer changes, and it is the only
+       * field this admits. Everything about money — `status`, `total`,
+       * `refund`, `squarePaymentId` — stays unwritable by any client, because
+       * the reason the rest of this block says `false` is that a client able to
+       * write `status` is a client able to mark its own order paid. Packing a
+       * parcel is not that, and routing it through a Cloud Function would buy
+       * nothing but a cold start.
+       *
+       * `hasOnly` is what makes the sentence above true. Without it a write
+       * that sets `fulfillment` may set anything else in the same breath.
+       */
+      allow update: if (inGroup('bookstore') || hasRole('staff'))
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['fulfillment', 'updatedAt', 'updatedBy'])
+        && request.resource.data.fulfillment in ['unfulfilled', 'ready', 'collected']
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    // ---- bookstore statistics ---------------------------------------------
+
+    /*
+     * One document per view, cart change, and search.
+     *
+     * -----------------------------------------------------------------------
+     * Writable by anyone, readable by nobody, and both halves are load-bearing.
+     *
+     * Writable because the people being counted are not signed in and never
+     * will be: this site has no public authentication at all. There is no
+     * identity to gate on, so the gate is the shape of the document instead —
+     * every field below is bounded and typed, which is what keeps an open
+     * `create` from being an open-ended write.
+     *
+     * Readable by nobody, which is what makes the open create acceptable. There
+     * is no `list` here and no `get`, so the collection cannot be enumerated,
+     * cannot be mined, and holds nothing that identifies anyone in the first
+     * place — `visitor` is a random string the browser made up about itself.
+     * The worst an abuser achieves is a wrong number on a parish dashboard.
+     *
+     * No update and no delete: an event is a fact about a moment, and a fact
+     * that can be edited afterwards is not one. Old rows leave via the TTL
+     * policy on `expiresAt`, which is the database's job rather than a client's.
+     *
+     * This block and packages/shared/src/analytics/bookstoreEvents.ts must
+     * agree field for field. A document this rule rejects is invisible — the
+     * write fails inside a fire-and-forget batch that swallows errors, and the
+     * statistic just stops moving with nothing in any log to say why.
+     * -----------------------------------------------------------------------
+     */
+    match /bookstoreEvents/{eventId} {
+      allow read, update, delete: if false;
+
+      allow create: if isBookstoreEvent(request.resource.data);
+    }
+
+    function isBookstoreEvent(doc) {
+      return doc.keys().hasOnly(['kind', 'slug', 'term', 'quantity', 'visitor', 'day', 'at', 'expiresAt'])
+        && doc.keys().hasAll(['kind', 'slug', 'term', 'quantity', 'visitor', 'day', 'at', 'expiresAt'])
+        && doc.kind in ['view', 'detail', 'cartAdd', 'cartRemove', 'checkoutStart', 'search', 'searchZero']
+        && isEventSubject(doc)
+        && doc.quantity is int && doc.quantity >= 1 && doc.quantity <= 20
+        // 16 hex characters, generated by the browser for itself. Pinned to a
+        // length and an alphabet so it cannot be used as a smuggling field.
+        && doc.visitor is string
+        && doc.visitor.size() == 16
+        && doc.visitor.matches('^[0-9a-f]{16}$')
+        && doc.day is string
+        && doc.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        // The server's clock, not the browser's, so a client cannot backdate an
+        // event into a period that has already been rolled up and signed off.
+        && doc.at == request.time
+        && doc.expiresAt is timestamp;
+    }
+
+    /*
+     * A product event carries a slug and no term; a search carries a term and
+     * no slug. Enforced as an exclusive choice rather than "at least one",
+     * because a document with both would leave the rollup deciding which kind
+     * of event it really was.
+     */
+    function isEventSubject(doc) {
+      return (doc.kind in ['search', 'searchZero'])
+        ? (doc.term is string && doc.term.size() > 0 && doc.term.size() <= 80 && doc.slug == null)
+        : (doc.slug is string && doc.slug.size() > 0 && doc.slug.size() <= 120 && doc.term == null);
+    }
+
+    /*
+     * The rolled-up numbers.
+     *
+     * Staff-only read: these are the parish's sales figures. Written solely by
+     * the scheduled rollup through the Admin SDK, so `write: false` here costs
+     * nothing and closes the obvious hole — a dashboard that could be edited by
+     * the person it reports on is not a report.
+     */
+    match /bookstoreStats/{periodId} {
+      allow read: if inGroup('bookstore') || hasRole('staff');
       allow write: if false;
     }
 

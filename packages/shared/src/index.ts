@@ -29,6 +29,7 @@ export * from './schema/prayer.js';
 export * from './schema/servants.js';
 export * from './schema/theme.js';
 export * from './schema/commerce.js';
+export * from './schema/analytics.js';
 export * from './schema/vehicles.js';
 
 export * from './payments/provider.js';
@@ -36,3 +37,8 @@ export * from './payments/squareCatalog.js';
 export * from './payments/squareWebhook.js';
 export * from './payments/squareCheckout.js';
 export * from './payments/orderEmail.js';
+export * from './payments/orderLookup.js';
+export * from './payments/shopSections.js';
+
+export * from './analytics/bookstoreEvents.js';
+export * from './analytics/rollup.js';

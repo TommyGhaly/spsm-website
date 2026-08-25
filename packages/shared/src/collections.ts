@@ -47,6 +47,20 @@ export const COLLECTIONS = {
   products: 'products',
   /** Bookstore orders, keyed to the Square order id. */
   orders: 'orders',
+  /**
+   * Raw bookstore interactions — one document per view, cart change, or search.
+   *
+   * Create-only and unreadable by any client, which is what makes an
+   * unauthenticated write path acceptable. One document per event rather than a
+   * counter per product is the whole design; see schema/analytics.ts for why a
+   * counter cannot work at all.
+   */
+  bookstoreEvents: 'bookstoreEvents',
+  /**
+   * Rolled-up bookstore statistics, keyed `day-YYYY-MM-DD`, `month-YYYY-MM`,
+   * or `all`. Written by the scheduled rollup, read by staff in one `get`.
+   */
+  bookstoreStats: 'bookstoreStats',
   /** Parking lot vehicle registrations (members + guests). */
   vehicles: 'vehicles',
   /** Firestore-backed form definitions and their submissions. */
