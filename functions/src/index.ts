@@ -37,6 +37,13 @@ export {
   squareArchiveProduct,
 } from './catalog.js';
 
+// Keeping the mirror in step with Square without anybody running a script.
+// A photograph attached in the Square app appears on the website within fifteen
+// minutes, and one deleted there disappears — see catalogSync.ts, and the note
+// there about what it cannot do (re-bake the optimised covers).
+export { syncSquareCatalog, refreshSquareCatalog } from './catalogSync.js';
+import { mirrorCatalog } from './catalogSync.js';
+
 // Refunding an order in full. The parish publishes a no-returns policy; this is
 // the door for the exceptions to it, and it records who made one and why.
 export { squareRefund } from './refunds.js';
@@ -188,6 +195,38 @@ export const squareWebhook = onRequest(
     }
 
     const envelope = payload as { event_id?: string; type?: string };
+
+    /*
+     * A catalog change, which is not an order event at all.
+     *
+     * Handled before `interpretSquareWebhook` because that function is about
+     * orders and correctly returns null for everything else — which would
+     * acknowledge this and do nothing. Square fires
+     * `catalog.version.updated` whenever any catalog object changes, including a
+     * photograph attached or removed in the Square app, so this is what makes
+     * *"the pictures in square should automatically show up"* mean seconds
+     * rather than the scheduled fifteen minutes.
+     *
+     * The event carries no useful detail — only that *something* changed — so
+     * there is nothing to interpret and nothing to replay-guard: the mirror is
+     * idempotent, and running it twice writes the same documents twice.
+     *
+     * Acknowledged 200 even when the mirror fails. Square retries a non-2xx for
+     * days, and `syncSquareCatalog` is already the safety net; turning a
+     * transient Square blip into a retry storm buys nothing.
+     *
+     * This does nothing until `catalog.version.updated` is added to the parish's
+     * webhook subscription in Square. Absent that, the schedule is the only path
+     * and the shop is at most fifteen minutes stale.
+     */
+    if (envelope.type === 'catalog.version.updated') {
+      const result = await mirrorCatalog();
+      if (result.failure) console.warn(`[square] catalog webhook: ${result.failure}`);
+      else console.info(`[square] catalog webhook mirrored ${result.written} product(s).`);
+      res.status(200).json({ ok: true, catalog: true });
+      return;
+    }
+
     const update = interpretSquareWebhook({
       verified: true,
       eventId: envelope.event_id ?? '',

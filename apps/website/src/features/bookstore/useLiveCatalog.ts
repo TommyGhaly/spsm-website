@@ -95,45 +95,40 @@ function restBase(): { url: string; key: string } | null {
  * ---------------------------------------------------------------------------
  */
 /**
- * Whether the build's images survive the swap, given the two counts.
+ * Whether the build's images survive the swap.
  *
  * ---------------------------------------------------------------------------
- * The rule: **the document wins whenever it has any pictures at all. The baked
- * copies are only a stand-in for having none.**
+ * **Identity, not arity.** The optimised WebP pair the build produced is a copy
+ * of specific Square photographs, so it is only still correct while the document
+ * still lists exactly those photographs, in that order. `bakedFrom` carries the
+ * URLs they were made from — see `shopData.ts`.
  *
- * Exported and tested on its own because both ways of getting it wrong are
- * silent — the shop keeps working, the layout does not move, and the covers are
- * simply the wrong ones.
+ * Counting them instead cost two bugs in one day, in opposite directions:
  *
- *   - Nothing in `imagePaths` → keep the baked copies. An empty list is not a
- *     removed photograph; it is what the whole catalog looks like whenever the
- *     mirror is pointed at a Square account with no images on its items, which
- *     is the sandbox and therefore today. Believing it blanked every cover on
- *     the shop while the homepage's server-rendered shelf went on showing them.
- *   - Anything in `imagePaths` → use it. Those are the pictures Square holds,
- *     which is what the parish just changed.
+ *   - `length === length && length > 0` blanked every cover on the shop, because
+ *     the mirror lists no pictures at all when it is pointed at a Square account
+ *     that has none, and 1-vs-0 is not a match.
+ *   - Then `length === length || live === 0` hid a *newly added* photograph: a
+ *     book with one baked cover and an empty list goes to 1-vs-1 when its first
+ *     picture arrives, which counts as a match. Tommy uploaded a photo to The
+ *     Eucharist and the card never changed.
  *
- * **Matching counts used to mean "keep", and that was the second bug.** It reads
- * as "nothing has changed since the build", and it is not: a book with one baked
- * cover and an empty `imagePaths` is at 1-vs-0, so adding its *first* photograph
- * in the editor takes it to 1-vs-1 — a match — and the shop went on showing the
- * old baked file. The photograph reached Square, the document, and the picture
- * manager, and was invisible in the only place anybody looks. A count is not an
- * identity, and these two lists have been out of step ever since the mirror
- * changed Square accounts, so it never was one.
+ * Neither could have happened against the URLs themselves, and a third counting
+ * rule would only have found a third way to be wrong.
  *
- * The cost is the one `covers.ts` documents: a product whose `imagePaths` is
- * populated is served Square's own URL, and Square's originals are the parish's
- * photographs at 3105px. That is real and it is recoverable — `npm run catalog`
- * re-downloads and re-optimises every cover, and it is already a step in the
- * cutover. Serving a heavy correct photograph beats serving a light wrong one,
- * and there is no third option available in a browser.
- *
- * A product the build never saw has nothing to keep either way.
+ * The one case left is a product the build baked and the document has since
+ * emptied — a photograph deleted in the Square app. The live list wins, the
+ * placeholder shows, and the picture really is gone from the shop. That is the
+ * behaviour asked for: *"when I decide to delete them they should delete."*
  * ---------------------------------------------------------------------------
  */
-export function keepsBakedImages(bakedCount: number, liveCount: number): boolean {
-  return bakedCount > 0 && liveCount === 0;
+export function keepsBakedImages(
+  bakedFrom: readonly string[] | null | undefined,
+  live: readonly string[],
+): boolean {
+  if (!bakedFrom || bakedFrom.length === 0) return false;
+  if (bakedFrom.length !== live.length) return false;
+  return bakedFrom.every((url, index) => url === live[index]);
 }
 
 function toShopProduct(
@@ -146,7 +141,7 @@ function toShopProduct(
 
   const images = Array.isArray(product.imagePaths) ? product.imagePaths.filter(Boolean) : [];
   const squareCover = images[0] ?? null;
-  const keepBaked = baked != null && keepsBakedImages(baked.gallery.length, images.length);
+  const keepBaked = baked != null && keepsBakedImages(baked.bakedFrom, images);
 
   return {
     id,
@@ -159,6 +154,9 @@ function toShopProduct(
     coverSrcSet: keepBaked ? baked.coverSrcSet : null,
     coverLarge: keepBaked ? baked.coverLarge : squareCover,
     gallery: keepBaked ? baked.gallery : images.map((src) => ({ src, srcSet: null, large: src })),
+    /* Carried through unchanged: it describes the *build*, not this read, so a
+       later refresh must be able to make the same comparison. */
+    bakedFrom: baked?.bakedFrom ?? null,
     stockCount: product.stockCount ?? null,
     section: product.section ?? null,
   };

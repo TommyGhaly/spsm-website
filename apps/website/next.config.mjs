@@ -180,6 +180,10 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/squareArchiveProduct`,
       },
       {
+        source: '/api/square/catalog-refresh',
+        destination: `${origin}/${project}/${region}/refreshSquareCatalog`,
+      },
+      {
         source: '/api/square/stats-refresh',
         destination: `${origin}/${project}/${region}/refreshBookstoreStats`,
       },

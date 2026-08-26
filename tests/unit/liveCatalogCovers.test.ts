@@ -25,34 +25,42 @@ import { keepsBakedImages } from '../../apps/website/src/features/bookstore/useL
  * ---------------------------------------------------------------------------
  */
 describe('keepsBakedImages', () => {
-  it('keeps the build’s covers when the document lists no pictures', () => {
-    // The regression. Every product in the live mirror looks like this.
-    expect(keepsBakedImages(1, 0)).toBe(true);
-    expect(keepsBakedImages(3, 0)).toBe(true);
+  const A = 'https://items-images.s3.amazonaws.com/files/aaa/original.jpeg';
+  const B = 'https://items-images.s3.amazonaws.com/files/bbb/original.jpeg';
+
+  it('keeps the optimised covers while Square still lists the same pictures', () => {
+    // The only case where the baked WebP pair is still a copy of the truth.
+    expect(keepsBakedImages([A], [A])).toBe(true);
+    expect(keepsBakedImages([A, B], [A, B])).toBe(true);
   });
 
-  it('yields to the live list the moment there is one — even at a matching count', () => {
+  it('yields when a picture was deleted in Square', () => {
     /*
-     * The second bug, and the one that made adding a photograph look broken.
-     *
-     * A book with one baked cover and an empty `imagePaths` sits at 1-vs-0. Add
-     * its first photograph in the editor and it becomes 1-vs-1 — which the old
-     * rule read as "nothing has changed since the build" and kept the baked
-     * file. The picture reached Square, the document and the picture manager,
-     * and never appeared on the shop.
-     *
-     * A count is not an identity. These two lists have been out of step since
-     * the mirror changed Square accounts, so a match proves nothing at all.
+     * The behaviour asked for: "when I decide to delete them they should
+     * delete." An emptied list is Square saying the photograph is gone, and the
+     * shop shows its placeholder rather than a file the build happens to hold.
      */
-    expect(keepsBakedImages(1, 1)).toBe(false);
-    expect(keepsBakedImages(4, 4)).toBe(false);
-    expect(keepsBakedImages(1, 2)).toBe(false);
-    expect(keepsBakedImages(3, 1)).toBe(false);
+    expect(keepsBakedImages([A], [])).toBe(false);
   });
 
-  it('has nothing to keep for a product the build never saw', () => {
-    // Falls through to Square's own URL, which is the point of the live read.
-    expect(keepsBakedImages(0, 0)).toBe(false);
-    expect(keepsBakedImages(0, 2)).toBe(false);
+  it('yields when a picture was added, replaced, or reordered', () => {
+    /*
+     * Counting could not see any of these. `[A]` → `[A, B]` is arity 1→2 and was
+     * caught, but `[A]` → `[B]` is 1→1 — a match under the old rule — and so was
+     * a book gaining its *first* photograph while the build already had a cover
+     * for it. That second case is the one Tommy hit: he uploaded a photo to The
+     * Eucharist, it reached Square and Firestore, and the card never changed.
+     */
+    expect(keepsBakedImages([A], [B])).toBe(false);
+    expect(keepsBakedImages([A], [A, B])).toBe(false);
+    expect(keepsBakedImages([A, B], [B, A])).toBe(false);
+  });
+
+  it('claims nothing for a product the build never baked', () => {
+    // `bakedFrom` is null when the build used Square's own URLs, and absent on a
+    // product it never saw. Either way there is no optimised copy to protect.
+    expect(keepsBakedImages(null, [A])).toBe(false);
+    expect(keepsBakedImages(undefined, [])).toBe(false);
+    expect(keepsBakedImages([], [])).toBe(false);
   });
 });

@@ -38,6 +38,30 @@ export interface ShopProduct {
    * the whole of the work to light it up.
    */
   gallery: { src: string; srcSet: string | null; large: string }[];
+  /**
+   * The Square URLs the bundled covers above were made from — or null when the
+   * build did not use bundled covers for this product.
+   *
+   * -------------------------------------------------------------------------
+   * This is what lets the live refresh tell "nothing has changed" from "the
+   * picture was replaced", and it exists because *counting* the two lists
+   * cannot: a book with one baked cover and an empty `imagePaths` sits at
+   * 1-vs-0, so adding its first photograph takes it to 1-vs-1 — a match — and
+   * the shop went on showing the old file. That was reported as the photograph
+   * not being added at all.
+   *
+   * Identity, not arity. `useLiveCatalog` keeps the optimised WebP pair only
+   * when the document still lists exactly these URLs in exactly this order; any
+   * other answer, including an emptied list, means Square is the honest source
+   * and its own URLs are used. So a photograph deleted in the Square app really
+   * does leave the shop, which is the whole point of the mirror.
+   *
+   * Travels as part of the baked catalog, so it costs one array of strings in
+   * the prerendered HTML and no schema field, no Firestore write, and nothing
+   * for the mobile app to know about.
+   * -------------------------------------------------------------------------
+   */
+  bakedFrom: string[] | null;
   /** Null means "not tracked"; 0 means sold out. */
   stockCount: number | null;
   /**
@@ -84,6 +108,17 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
       // original, which is slow but is only fetched if someone zooms.
       coverLarge: bundled ? bundled.src.replace(/\.webp$/, '@2x.webp') : (product.imagePaths[0] ?? null),
       gallery: galleryFor(product),
+      /*
+       * Claimed only when the two lists line up one-for-one. A build that ran
+       * after a photograph was added in Square but before `npm run catalog`
+       * re-downloaded the covers has more URLs than files, and claiming identity
+       * there would pin the shop to a stale set. No claim simply means the live
+       * URLs win, which is the safe direction.
+       */
+      bakedFrom:
+        bundled && bundledCovers(product.slug).length === product.imagePaths.length
+          ? product.imagePaths
+          : null,
       stockCount: product.stockCount,
       section: product.section ?? null,
     };
