@@ -16,6 +16,15 @@
         "function": "formSubmit"
       },
       {
+        "//prayer": "Prayer requests, sealed with AES-256-GCM under PRAYER_KEY. Both directions are Functions: the key cannot live in a browser, and the read exists because encrypting without a way to open would leave the parish a collection nobody can read. firestore.rules closes prayerRequests to clients in both directions; the Admin SDK bypasses that. Supersedes docs/decisions.md #1.",
+        "source": "/api/prayer/submit",
+        "function": "prayerSubmit"
+      },
+      {
+        "source": "/api/prayer/list",
+        "function": "prayerList"
+      },
+      {
         "source": "/api/forms/breeze-list",
         "function": "breezeListForms"
       },

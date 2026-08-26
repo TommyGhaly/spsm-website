@@ -119,6 +119,14 @@ if (process.env.NODE_ENV === 'development') {
        * Breeze ones are staff-only and inert until BREEZE_API_KEY is set.
        */
       {
+        source: '/api/prayer/submit',
+        destination: `${origin}/${project}/${region}/prayerSubmit`,
+      },
+      {
+        source: '/api/prayer/list',
+        destination: `${origin}/${project}/${region}/prayerList`,
+      },
+      {
         source: '/api/forms/submit',
         destination: `${origin}/${project}/${region}/formSubmit`,
       },

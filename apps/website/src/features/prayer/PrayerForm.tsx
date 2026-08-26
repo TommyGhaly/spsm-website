@@ -2,8 +2,12 @@
 
 import { useState } from 'react';
 import {
+  COMMEMORATION_LABELS,
+  COMMEMORATION_WHEN,
   PRAYER_BODY_MAX_LENGTH,
   validatePrayerRequest,
+  type CommemorationWhen,
+  type PrayerKind,
   type PrayerRequestInput,
 } from '@spsm/shared';
 import { submitPrayerRequest } from './data';
@@ -12,12 +16,21 @@ import { submitPrayerRequest } from './data';
  * Prayer request submission.
  *
  * A client component, unavoidably: the site is a static export, so there is no
- * server at request time to post to. The write goes straight from the browser
- * to Firestore, which is exactly why `firestore.rules` validates every field
- * rather than trusting this form.
+ * server at request time. The write goes to `prayerSubmit`, a Cloud Function,
+ * because the request is sealed before storage and the key cannot live here.
+ * The Function runs this same validator again; that run is the one that decides.
  *
  * No account required, and that is the point — sign-in here is for the parish
  * directory, and a parishioner has no account by design.
+ *
+ * ## Two requests, not one
+ *
+ * A prayer for the living and a commemoration of the departed are different
+ * acts, read at different moments, and asking which one first is what lets the
+ * fathers work through a list without reading every entry to sort it. Choosing
+ * `commemoration` reveals *when* it is offered — recently departed, the fortieth
+ * day, or the annual — which follows Coptic practice rather than being a
+ * category invented for a database.
  */
 
 const EMPTY: PrayerRequestInput = {
@@ -26,6 +39,8 @@ const EMPTY: PrayerRequestInput = {
   anonymous: false,
   authorName: null,
   contactEmail: null,
+  kind: 'prayer',
+  commemoration: null,
 };
 
 type Status =
@@ -53,16 +68,33 @@ export function PrayerForm() {
     if (found.length > 0) return;
 
     setStatus({ kind: 'saving' });
-    try {
-      await submitPrayerRequest(input);
-      setStatus({ kind: 'sent' });
-      setInput(EMPTY);
-    } catch (error) {
-      setStatus({
-        kind: 'error',
-        message: error instanceof Error ? error.message : 'Something went wrong.',
-      });
+    const result = await submitPrayerRequest(input);
+
+    if (!result.ok) {
+      setErrors(result.errors);
+      setStatus({ kind: 'idle' });
+      return;
     }
+
+    setStatus({ kind: 'sent' });
+    setInput(EMPTY);
+  }
+
+  /**
+   * Switching kind clears the occasion.
+   *
+   * The validator refuses an ordinary prayer request that carries `annual`, and
+   * without this a person who picked commemoration, chose the fortieth day, then
+   * changed their mind would be blocked by an answer to a question no longer on
+   * screen — the same stale-answer trap `visibleFields` exists to prevent on the
+   * built forms.
+   */
+  function setKind(kind: PrayerKind) {
+    setInput((previous) => ({
+      ...previous,
+      kind,
+      commemoration: kind === 'commemoration' ? previous.commemoration : null,
+    }));
   }
 
   if (status.kind === 'sent') {
@@ -109,7 +141,66 @@ export function PrayerForm() {
       <fieldset>
         <legend>Your request</legend>
 
-        <label className="field">
+        {/*
+        Asked first, because it changes what the rest of the form means.
+
+        A radio group rather than a select: there are two, both matter, and the
+        one a person wants should be visible without opening anything.
+      */}
+      <fieldset className="fx__group">
+        <legend>
+          <span>What are you asking for?</span>
+        </legend>
+        <div className="fx__options">
+          {([
+            ['prayer', 'A prayer request'],
+            ['commemoration', 'A commemoration'],
+          ] as const).map(([value, label]) => (
+            <label key={value} className={input.kind === value ? 'fx__option is-on' : 'fx__option'}>
+              <input
+                type="radio"
+                name="prayer-kind"
+                value={value}
+                checked={input.kind === value}
+                onChange={() => setKind(value)}
+              />
+              <span className="fx__option-label">{label}</span>
+            </label>
+          ))}
+        </div>
+        <small>
+          A commemoration is a prayer for someone who has fallen asleep.
+        </small>
+      </fieldset>
+
+      {input.kind === 'commemoration' && (
+        <fieldset className="fx__group">
+          <legend>
+            <span>
+              When is it offered? <abbr title="required">*</abbr>
+            </span>
+          </legend>
+          <div className="fx__options">
+            {COMMEMORATION_WHEN.map((when) => (
+              <label
+                key={when}
+                className={input.commemoration === when ? 'fx__option is-on' : 'fx__option'}
+              >
+                <input
+                  type="radio"
+                  name="commemoration-when"
+                  value={when}
+                  checked={input.commemoration === when}
+                  onChange={() => set('commemoration', when as CommemorationWhen)}
+                />
+                <span className="fx__option-label">{COMMEMORATION_LABELS[when]}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      <label className="field">
           <span>
             What would you like us to pray for? <abbr title="required">*</abbr>
           </span>

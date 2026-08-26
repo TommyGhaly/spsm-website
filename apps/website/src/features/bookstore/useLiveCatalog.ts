@@ -98,29 +98,42 @@ function restBase(): { url: string; key: string } | null {
  * Whether the build's images survive the swap, given the two counts.
  *
  * ---------------------------------------------------------------------------
- * Exported and tested on its own because getting it wrong is silent and total:
- * the shop keeps working, the layout does not move, and every cover simply
- * becomes the title placeholder a moment after the page loads — while the
- * homepage's server-rendered shelf, which never runs this swap, goes on showing
- * the photographs. That is precisely the shape the bug took.
+ * The rule: **the document wins whenever it has any pictures at all. The baked
+ * copies are only a stand-in for having none.**
  *
- * The rule: keep the baked images unless the document *contradicts* them.
+ * Exported and tested on its own because both ways of getting it wrong are
+ * silent — the shop keeps working, the layout does not move, and the covers are
+ * simply the wrong ones.
  *
- *   - No pictures in the document at all → keep. An empty `imagePaths` is not a
+ *   - Nothing in `imagePaths` → keep the baked copies. An empty list is not a
  *     removed photograph; it is what the whole catalog looks like whenever the
  *     mirror is pointed at a Square account with no images on its items, which
- *     is the sandbox and therefore today. It says nothing about the book.
- *   - The same number → keep. Nothing changed, and the baked pair is the
- *     optimised 800px WebP; the document holds 3105px originals.
- *   - A different number, and not zero → use the live list. A photograph really
- *     was added or removed since the build, and slower is better than wrong.
+ *     is the sandbox and therefore today. Believing it blanked every cover on
+ *     the shop while the homepage's server-rendered shelf went on showing them.
+ *   - Anything in `imagePaths` → use it. Those are the pictures Square holds,
+ *     which is what the parish just changed.
  *
- * A product the build never saw has nothing to keep, and falls to Square's URL.
+ * **Matching counts used to mean "keep", and that was the second bug.** It reads
+ * as "nothing has changed since the build", and it is not: a book with one baked
+ * cover and an empty `imagePaths` is at 1-vs-0, so adding its *first* photograph
+ * in the editor takes it to 1-vs-1 — a match — and the shop went on showing the
+ * old baked file. The photograph reached Square, the document, and the picture
+ * manager, and was invisible in the only place anybody looks. A count is not an
+ * identity, and these two lists have been out of step ever since the mirror
+ * changed Square accounts, so it never was one.
+ *
+ * The cost is the one `covers.ts` documents: a product whose `imagePaths` is
+ * populated is served Square's own URL, and Square's originals are the parish's
+ * photographs at 3105px. That is real and it is recoverable — `npm run catalog`
+ * re-downloads and re-optimises every cover, and it is already a step in the
+ * cutover. Serving a heavy correct photograph beats serving a light wrong one,
+ * and there is no third option available in a browser.
+ *
+ * A product the build never saw has nothing to keep either way.
  * ---------------------------------------------------------------------------
  */
 export function keepsBakedImages(bakedCount: number, liveCount: number): boolean {
-  if (bakedCount === 0) return false;
-  return liveCount === 0 || liveCount === bakedCount;
+  return bakedCount > 0 && liveCount === 0;
 }
 
 function toShopProduct(

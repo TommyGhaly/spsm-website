@@ -1,58 +1,85 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { COLLECTIONS, type PrayerRequestInput } from '@spsm/shared';
-import { db } from '@/lib/firebase';
+import type { PrayerRequestInput } from '@spsm/shared';
 
 /**
- * Submit a prayer request. Browser-side, and deliberately open to anyone.
+ * Send a prayer request. Through a Cloud Function, not straight to Firestore.
  *
- * This used to require a signed-in uid, from a time when sign-in was expected
- * to be for everyone. It is not: authentication is Microsoft-only against the
- * parish Entra tenant, so clergy, staff and servants have accounts and a
- * parishioner does not. Requiring one would have meant the only people able to
- * ask for prayer were the people you would ask in person anyway.
+ * ---------------------------------------------------------------------------
+ * This used to be an unauthenticated `addDoc`, and it cannot be any more.
  *
- * So this follows `features/parking`: an unauthenticated write straight from
- * the browser, with `firestore.rules` validating every field rather than
- * trusting the form.
+ * The old comment here explained at length why the write went straight from the
+ * browser with `firestore.rules` bounding it: authentication is Microsoft-only
+ * against the parish tenant, so a parishioner has no account, and requiring one
+ * would have meant the only people able to ask for prayer were the people you
+ * would ask in person anyway. All of that is still true, and none of it changed.
  *
- * The one subtlety, and it is the whole privacy model: anonymity is enforced by
- * *omitting* identity, not by a flag. The rules reject a create where
- * `anonymous: true` carries either an `authorUid` or an `authorName`, so an
- * anonymous request genuinely cannot be traced back afterwards — including by
- * us. The cost is that the submitter cannot edit or withdraw it either, because
- * nothing ties it to them. See docs/decisions.md #1.
+ * What changed is that the bodies are sealed now — AES-256-GCM under a Secret
+ * Manager key, so the database holds envelopes rather than sentences. Sealing
+ * needs the key, and a key shipped to a browser is not a key. So the write moved
+ * into `prayerSubmit`, which validates with the same shared validator this form
+ * runs, seals, and writes with the Admin SDK.
  *
- * @param signedInUid  uid when a servant or staff member happens to be signed
- *                     in, otherwise null. The rules only ever permit your own
- *                     uid, so this cannot be used to write on someone's behalf.
+ * `firestore.rules` now closes the collection to clients in both directions.
+ * See docs/decisions.md #1, which this supersedes.
+ *
+ * The privacy properties that survive intact:
+ *   - no account needed, still;
+ *   - anonymity is still *absence* rather than a flag, so an anonymous request
+ *     cannot be un-anonymised later — including by us — and the submitter
+ *     equally cannot edit or withdraw it.
+ * ---------------------------------------------------------------------------
  */
-export async function submitPrayerRequest(
-  input: PrayerRequestInput,
-  signedInUid: string | null = null,
-): Promise<string> {
-  const name = input.authorName?.trim() || null;
+export type SubmitOutcome =
+  | { ok: true; id: string }
+  | { ok: false; errors: string[] };
 
-  const doc = await addDoc(collection(db(), COLLECTIONS.prayerRequests), {
-    body: input.body.trim(),
-    visibility: input.visibility,
-    anonymous: input.anonymous,
+export async function submitPrayerRequest(input: PrayerRequestInput): Promise<SubmitOutcome> {
+  let response: Response;
+  try {
+    response = await fetch('/api/prayer/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        body: input.body,
+        visibility: input.visibility,
+        anonymous: input.anonymous,
+        // Both null when anonymous. The Function enforces this again; sending
+        // them would not help anyone and there is no reason to transmit a name
+        // somebody asked us not to keep.
+        authorName: input.anonymous ? null : input.authorName,
+        contactEmail: input.contactEmail,
+        kind: input.kind,
+        commemoration: input.commemoration,
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      errors: ['Could not reach the parish server. Check your connection and try again.'],
+    };
+  }
 
-    // Both null when anonymous, or the rules reject the write. That is the
-    // enforcement; this code merely agrees with it.
-    authorUid: input.anonymous ? null : signedInUid,
-    authorName: input.anonymous ? null : name,
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    /*
+     * Not JSON. In production that means the Hosting rewrite for this path is
+     * missing; locally it means the Functions emulator is not running. Neither
+     * is something the person asking for prayer can act on.
+     */
+    console.error(
+      `[prayer] ${response.status} from /api/prayer/submit, and the body was not JSON. ` +
+        'That endpoint is a Cloud Function behind a Hosting rewrite.',
+    );
+    return { ok: false, errors: ['That did not send. Please try again shortly.'] };
+  }
 
-    // Opt-in, and it survives anonymity: someone can ask for follow-up without
-    // their name being attached to the request itself.
-    contactEmail: input.contactEmail?.trim() || null,
+  if (!response.ok) {
+    const errors = Array.isArray(payload['errors'])
+      ? (payload['errors'] as unknown[]).map(String).filter(Boolean)
+      : [];
+    return { ok: false, errors: errors.length > 0 ? errors : ['That did not send.'] };
+  }
 
-    status: 'active',
-    notifiedAt: null,
-
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    updatedBy: input.anonymous ? null : signedInUid,
-  });
-
-  return doc.id;
+  return { ok: true, id: String(payload['id'] ?? '') };
 }

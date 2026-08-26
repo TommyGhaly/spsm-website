@@ -203,14 +203,17 @@ describe('orders are written only by Cloud Functions', () => {
   });
 });
 
-describe('prayer requests — clergy is not a higher tier of staff', () => {
+describe('prayer requests are closed to clients in both directions', () => {
   beforeEach(() =>
     reset(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'prayerRequests', 'clergy-only'), {
-        body: 'A private matter.',
-        authorUid: 'member-1',
-        authorName: 'Mina',
-        anonymous: false,
+      await setDoc(doc(ctx.firestore(), 'prayerRequests', 'sealed'), {
+        // What the collection actually holds now: envelopes, not sentences.
+        body: 'v1.aXYtYnl0ZXM.dGFnLWJ5dGVz.Y2lwaGVydGV4dA',
+        authorUid: null,
+        authorName: null,
+        anonymous: true,
+        kind: 'commemoration',
+        commemoration: 'forty-days',
         visibility: 'clergy',
         status: 'active',
         contactEmail: null,
@@ -220,22 +223,34 @@ describe('prayer requests — clergy is not a higher tier of staff', () => {
     }),
   );
 
+  /*
+   * The whole policy is two words now — `if false` — and these assert it for
+   * each tier that used to be treated differently.
+   *
+   * The clergy-is-not-staff separation these tests used to guard has not been
+   * abandoned; it moved. `prayerList` checks `inGroup('clergy') ||
+   * hasRole('admin')`, which is the same test this rule used to apply, and a
+   * Function is where it has to live now that reading means decrypting. What a
+   * rules test can still prove is the half that matters here: nobody reaches
+   * the ciphertext directly, whatever claims they hold.
+   */
   it('denies a facilities coordinator who is legitimately staff', async () => {
-    // This is the separation the two-axis model exists for. If it ever passes,
-    // the `groups` axis has collapsed into the `role` ladder.
-    await assertFails(getDoc(doc(asStaff(env).firestore(), 'prayerRequests', 'clergy-only')));
+    await assertFails(getDoc(doc(asStaff(env).firestore(), 'prayerRequests', 'sealed')));
   });
 
-  it('allows the clergy group', async () => {
-    await assertSucceeds(getDoc(doc(asClergy(env).firestore(), 'prayerRequests', 'clergy-only')));
+  it('denies the clergy group too, because reading now means decrypting', async () => {
+    // This one *changed direction* when the bodies were sealed, and that is the
+    // point rather than a regression: a clergy member who read this document
+    // directly would get an envelope. They read through `prayerList`.
+    await assertFails(getDoc(doc(asClergy(env).firestore(), 'prayerRequests', 'sealed')));
   });
 
-  it('allows an admin', async () => {
-    await assertSucceeds(getDoc(doc(asAdmin(env).firestore(), 'prayerRequests', 'clergy-only')));
+  it('denies an admin', async () => {
+    await assertFails(getDoc(doc(asAdmin(env).firestore(), 'prayerRequests', 'sealed')));
   });
 
   it('denies an anonymous read', async () => {
-    await assertFails(getDoc(doc(asAnon(env).firestore(), 'prayerRequests', 'clergy-only')));
+    await assertFails(getDoc(doc(asAnon(env).firestore(), 'prayerRequests', 'sealed')));
   });
 });
 
@@ -308,112 +323,85 @@ function prayerDoc(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('prayer requests can be submitted without an account', () => {
+describe('prayer requests can no longer be written from a browser', () => {
   beforeEach(() => reset());
 
-  it('allows an anonymous stranger to ask for prayer', async () => {
-    // The whole point: sign-in is Microsoft-only for the parish directory, so
-    // requiring it would mean only staff could ask.
-    await assertSucceeds(
-      addDoc(collection(asAnon(env).firestore(), 'prayerRequests'), prayerDoc()),
+  /*
+   * This block used to be ninety lines asserting a field whitelist, length
+   * bounds, and the anonymity rule — the shape of an unauthenticated `addDoc`
+   * bounded entirely by rules.
+   *
+   * All of it is gone with the write path it guarded. Sealing a request needs
+   * the key, a key in a browser is not a key, so `prayerSubmit` is now the only
+   * writer and it uses the Admin SDK. The validation those tests covered did not
+   * disappear either: `validatePrayerRequest` in @spsm/shared is what the
+   * Function runs, and `tests/unit/prayer.test.ts` is where it is asserted now —
+   * against the validator itself rather than against a rules expression
+   * approximating it.
+   *
+   * What is left to prove here is that the door is shut.
+   */
+  it('refuses an anonymous create', async () => {
+    await assertFails(
+      addDoc(collection(asAnon(env).firestore(), 'prayerRequests'), {
+        body: 'Please pray for my mother.',
+        kind: 'prayer',
+        commemoration: null,
+        visibility: 'clergy',
+        anonymous: true,
+        authorUid: null,
+        authorName: null,
+        contactEmail: null,
+        status: 'active',
+        notifiedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: null,
+      }),
     );
   });
 
-  it('allows a genuinely anonymous request with no name at all', async () => {
-    await assertSucceeds(
-      addDoc(
-        collection(asAnon(env).firestore(), 'prayerRequests'),
-        prayerDoc({ anonymous: true, authorName: null }),
-      ),
+  it('refuses a create even from a signed-in servant', async () => {
+    await assertFails(
+      addDoc(collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'), {
+        body: 'Please pray for my mother.',
+        kind: 'prayer',
+        commemoration: null,
+        visibility: 'clergy',
+        anonymous: false,
+        authorUid: 'servant-1',
+        authorName: 'A servant',
+        contactEmail: null,
+        status: 'active',
+        notifiedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: 'servant-1',
+      }),
     );
   });
 
-  it('refuses an anonymous request that still carries a name', async () => {
-    // Anonymity is enforced by omitting identity, not by a flag. If this ever
-    // passes, "anonymous" is cosmetic and the privacy model is a lie.
+  it('refuses a create from an admin, so nothing can write plaintext by hand', async () => {
+    // The one that matters most. An admin bypassing the Function would store a
+    // body in the clear beside all the sealed ones, and nothing downstream
+    // would notice until a priest read a request that had never been encrypted.
     await assertFails(
-      addDoc(
-        collection(asAnon(env).firestore(), 'prayerRequests'),
-        prayerDoc({ anonymous: true, authorName: 'Mina' }),
-      ),
+      addDoc(collection(asAdmin(env).firestore(), 'prayerRequests'), {
+        body: 'Plaintext, written by hand.',
+        kind: 'prayer',
+        commemoration: null,
+        visibility: 'clergy',
+        anonymous: true,
+        authorUid: null,
+        authorName: null,
+        contactEmail: null,
+        status: 'active',
+        notifiedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: null,
+      }),
     );
-  });
-
-  it('refuses a named request with no name to pray for', async () => {
-    await assertFails(
-      addDoc(
-        collection(asAnon(env).firestore(), 'prayerRequests'),
-        prayerDoc({ anonymous: false, authorName: null }),
-      ),
-    );
-  });
-
-  it('refuses an unauthenticated writer claiming somebody else’s uid', async () => {
-    await assertFails(
-      addDoc(
-        collection(asAnon(env).firestore(), 'prayerRequests'),
-        prayerDoc({ authorUid: 'member-1' }),
-      ),
-    );
-  });
-
-  it('lets a signed-in servant attach their own uid, but not another', async () => {
-    await assertSucceeds(
-      addDoc(
-        collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'),
-        prayerDoc({ authorUid: 'servant-1' }),
-      ),
-    );
-    await assertFails(
-      addDoc(
-        collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'),
-        prayerDoc({ authorUid: 'someone-else' }),
-      ),
-    );
-  });
-
-  it('bounds the body, the name, and the email', async () => {
-    const db = asAnon(env).firestore();
-    await assertFails(addDoc(collection(db, 'prayerRequests'), prayerDoc({ body: '' })));
-    await assertFails(
-      addDoc(collection(db, 'prayerRequests'), prayerDoc({ body: 'x'.repeat(2001) })),
-    );
-    await assertFails(
-      addDoc(collection(db, 'prayerRequests'), prayerDoc({ authorName: 'x'.repeat(101) })),
-    );
-    await assertFails(
-      addDoc(
-        collection(db, 'prayerRequests'),
-        prayerDoc({ contactEmail: `${'x'.repeat(250)}@example.org` }),
-      ),
-    );
-  });
-
-  it('refuses smuggled extra fields', async () => {
-    // An open write endpoint with no key whitelist is a free document store.
-    await assertFails(
-      addDoc(
-        collection(asAnon(env).firestore(), 'prayerRequests'),
-        prayerDoc({ payload: 'x'.repeat(500) }),
-      ),
-    );
-  });
-
-  it('refuses a request that arrives pre-answered or pre-notified', async () => {
-    const db = asAnon(env).firestore();
-    await assertFails(
-      addDoc(collection(db, 'prayerRequests'), prayerDoc({ status: 'answered' })),
-    );
-    await assertFails(
-      addDoc(collection(db, 'prayerRequests'), prayerDoc({ notifiedAt: new Date() })),
-    );
-  });
-
-  it('still refuses anonymous reads — submitting is not seeing', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'prayerRequests', 'p1'), prayerDoc());
-    });
-    await assertFails(getDoc(doc(asAnon(env).firestore(), 'prayerRequests', 'p1')));
   });
 });
 

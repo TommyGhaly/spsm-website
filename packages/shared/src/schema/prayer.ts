@@ -3,22 +3,65 @@ import type { AuditFields, Timestamped } from './common.js';
 /**
  * Prayer requests.
  *
- * Privacy model: Firestore at-rest encryption (Open Decision #1, resolved —
- * see docs/decisions.md). Bodies are stored as plaintext in Firestore and are
- * readable by clergy, which is the point: clergy need to pray over and follow
- * up on them. Confidentiality is enforced by security rules, not cryptography.
+ * ---------------------------------------------------------------------------
+ * Privacy model: **application-level encryption**, superseding decision #1.
  *
- * Two consequences worth being explicit about, because they are the whole
- * trade-off of choosing Option A:
- *   1. A Firestore admin (or anyone with the service account) can read every
- *      request. Say so plainly in the submission UI — do not imply otherwise.
- *   2. `anonymous: true` means we genuinely do not store the uid. It is not a
- *      display flag over a retained identity, so it cannot be un-anonymized
- *      later. That also means the submitter cannot edit or withdraw it.
+ * `docs/decisions.md` #1 chose Option A — plaintext in Firestore, confidentiality
+ * from `firestore.rules` — and said in as many words: "Revisit if the parish
+ * ever wants true confidentiality. That's a schema migration, but the `body`
+ * field is deliberately a single opaque string, so it's a contained one."
+ *
+ * The parish asked, on 2026-08-26. This is that migration, and the foresight
+ * paid: `body` was already one opaque string, so it became one sealed string.
+ *
+ * What changed. The three fields that carry what somebody actually confided —
+ * `body`, `authorName`, `contactEmail` — are now **sealed**: AES-256-GCM
+ * ciphertext, keyed from Secret Manager, written and read only by Cloud
+ * Functions. Firestore holds blobs. A console admin, a data export, a mistaken
+ * rules edit, or a stolen database backup all yield nothing readable.
+ *
+ * What did NOT change, and must be said plainly rather than implied away:
+ * **whoever holds the Functions service account can still decrypt.** This is
+ * not end-to-end encryption. Decision #1's central objection — that clergy must
+ * be able to read these, so somebody must hold a key — is still true and is
+ * still the reason true E2E was not chosen. What this buys is that the *database*
+ * is no longer a place where the plaintext exists.
+ *
+ * `anonymous: true` still means we genuinely do not store the uid. It is not a
+ * display flag over a retained identity, so it cannot be un-anonymized later.
+ * That also means the submitter cannot edit or withdraw it.
+ * ---------------------------------------------------------------------------
  */
 export interface PrayerRequest extends AuditFields {
-  /** The request itself. Plaintext — see the note above. */
-  body: string;
+  /**
+   * The request itself, **sealed**. See `SealedText`.
+   *
+   * Never plaintext in the database, and never sent to a browser except by the
+   * clergy read Function after it has opened it.
+   */
+  body: SealedText;
+
+  /**
+   * What is being asked for.
+   *
+   * `prayer`        — pray for someone living: illness, a journey, an exam.
+   * `commemoration` — pray for someone who has died.
+   *
+   * Split because the two are different acts and the fathers read them at
+   * different moments. Lumping a commemoration in with a request for a sick
+   * child means someone has to sort them by reading each one, which is exactly
+   * the work a category is for.
+   */
+  kind: PrayerKind;
+
+  /**
+   * When a commemoration is offered. Null for an ordinary prayer request.
+   *
+   * The three follow Coptic Orthodox practice rather than being invented:
+   * the departed are commemorated soon after death, again on the fortieth day,
+   * and thereafter each year.
+   */
+  commemoration: CommemorationWhen | null;
 
   /**
    * uid of the submitter, or null when submitted anonymously.
@@ -26,8 +69,14 @@ export interface PrayerRequest extends AuditFields {
    */
   authorUid: string | null;
 
-  /** Display name the submitter chose to attach. Null when anonymous. */
-  authorName: string | null;
+  /**
+   * The name to pray for, **sealed**. Null when anonymous.
+   *
+   * Sealed as well as the body, because on a commemoration the name *is* the
+   * sensitive part — "pray for the repose of X" tells you someone has died and
+   * who, and a body that said nothing else would still be a disclosure.
+   */
+  authorName: SealedText | null;
 
   /** True ⇒ `authorUid` and `authorName` are both null. Irreversible. */
   anonymous: boolean;
@@ -40,12 +89,39 @@ export interface PrayerRequest extends AuditFields {
 
   status: PrayerStatus;
 
-  /** Optional contact-back channel, if the submitter wants follow-up. */
-  contactEmail: string | null;
+  /** Optional contact-back channel, **sealed**, if the submitter wants follow-up. */
+  contactEmail: SealedText | null;
 
   /** Set by the notification Cloud Function so it never double-sends. */
   notifiedAt: Timestamped | null;
 }
+
+/**
+ * A sealed field, as stored.
+ *
+ * Deliberately a plain string rather than a record of iv/tag/ciphertext. The
+ * envelope is self-describing — `v1.<iv>.<tag>.<ciphertext>`, all base64url —
+ * which keeps a sealed field a drop-in replacement for the plaintext string it
+ * replaced, and keeps the door open to a `v2` without a second migration.
+ *
+ * Typed as its own alias so a reviewer can see at a glance which fields are
+ * sealed, and so `PrayerRequestInput` (what a browser sends, in the clear) can
+ * never be mistaken for `PrayerRequest` (what the database holds).
+ */
+export type SealedText = string;
+
+export const PRAYER_KINDS = ['prayer', 'commemoration'] as const;
+export type PrayerKind = (typeof PRAYER_KINDS)[number];
+
+export const COMMEMORATION_WHEN = ['recent', 'forty-days', 'annual'] as const;
+export type CommemorationWhen = (typeof COMMEMORATION_WHEN)[number];
+
+/** What each commemoration is called where a person has to read it. */
+export const COMMEMORATION_LABELS: Record<CommemorationWhen, string> = {
+  recent: 'Recently departed',
+  'forty-days': 'Forty days',
+  annual: 'Annual',
+};
 
 export const PRAYER_VISIBILITIES = ['public', 'clergy'] as const;
 export type PrayerVisibility = (typeof PRAYER_VISIBILITIES)[number];
@@ -54,10 +130,19 @@ export const PRAYER_STATUSES = ['active', 'answered', 'archived'] as const;
 export type PrayerStatus = (typeof PRAYER_STATUSES)[number];
 
 /** What a submission form is allowed to send. Everything else is server-set. */
-export type PrayerRequestInput = Pick<
-  PrayerRequest,
-  'body' | 'visibility' | 'anonymous' | 'authorName' | 'contactEmail'
->;
+/**
+ * What a submission form sends — in the clear, over TLS, to the Function that
+ * seals it. Never written to Firestore in this shape.
+ */
+export interface PrayerRequestInput {
+  body: string;
+  visibility: PrayerVisibility;
+  anonymous: boolean;
+  authorName: string | null;
+  contactEmail: string | null;
+  kind: PrayerKind;
+  commemoration: CommemorationWhen | null;
+}
 
 export const PRAYER_BODY_MAX_LENGTH = 2000;
 export const PRAYER_NAME_MAX_LENGTH = 100;
@@ -105,5 +190,26 @@ export function validatePrayerRequest(input: PrayerRequestInput): string[] {
   if (email.length > 0 && !email.includes('@')) {
     errors.push('That does not look like an email address.');
   }
+
+  if (!PRAYER_KINDS.includes(input.kind)) {
+    errors.push('Choose whether this is a prayer request or a commemoration.');
+  }
+
+  /*
+   * The two halves have to agree, in both directions.
+   *
+   * A commemoration with no occasion is an unsorted commemoration, which is the
+   * thing the split exists to prevent. And an ordinary prayer request carrying
+   * `annual` is a record nobody can interpret — it arrived through a form that
+   * never showed that question.
+   */
+  if (input.kind === 'commemoration') {
+    if (!input.commemoration || !COMMEMORATION_WHEN.includes(input.commemoration)) {
+      errors.push('Choose whether this is recently departed, forty days, or annual.');
+    }
+  } else if (input.commemoration !== null) {
+    errors.push('Only a commemoration can carry an occasion.');
+  }
+
   return errors;
 }
