@@ -26,6 +26,20 @@ export const metadata: Metadata = {
  * read before someone types something personal, and its wording is a decision
  * (docs/decisions.md #1), not filler.
  */
+/**
+ * The NFC destination for the prayer card in the pews.
+ *
+ * The same form is now also at `/forms/prayer-requests`, and both stay. This
+ * URL is printed on physical cards that cannot be reprinted by editing a file —
+ * the same argument that keeps `/parking` where it is — and `robots.ts`
+ * disallows it, because a search result for "prayer request" should land on the
+ * hub that explains what it is rather than cold on the form itself.
+ *
+ * Worth knowing why the hub route had to exist at all: when `/forms` became
+ * data-driven, only forms with a `forms/*` document appeared on it, and this
+ * page had none. It was reachable solely by typing the URL or tapping a card —
+ * which removed the "second door" the hub was built to be.
+ */
 export default function PrayerPage() {
   return (
     <>

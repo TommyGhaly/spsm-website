@@ -40,13 +40,13 @@ const FormsAdmin = lazy(() =>
  */
 const FALLBACK: readonly HubCard[] = [
   {
-    slug: 'prayer',
-    href: '/prayer',
+    slug: 'prayer-requests',
+    href: '/forms/prayer-requests',
     title: 'Prayer requests',
     blurb:
-      'Ask the clergy and the congregation to pray for you or for someone you love. No account needed.',
+      'Ask the fathers to pray for you or for someone you love, or offer a commemoration for the departed. No account needed.',
     icon: 'hands',
-    image: null,
+    image: '/img/sketch-christ-800.webp',
     external: false,
   },
   {

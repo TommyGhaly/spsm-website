@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 import { FormRenderer } from './FormRenderer';
 import { VehicleForm } from './VehicleForm';
+import { PrayerForm, PrivacyDisclosure } from '@/features/prayer';
 import { readFormBySlug, type WithId } from './data';
 
 /**
@@ -175,6 +176,23 @@ function FormBody({ form }: { form: WithId<FormDefinition> }) {
 
   if (form.kind === 'vehicle') {
     return <VehicleForm slug={form.slug} confirmation={form.confirmationMessage} />;
+  }
+
+  /*
+   * Prayer requests keep their own component and their own disclosure.
+   *
+   * The disclosure is not decoration and does not belong in `blurb`: it is the
+   * one place a person is told, before they type, that the fathers can read
+   * what they write and that anonymity is irreversible. It travels with the
+   * form wherever the form appears.
+   */
+  if (form.kind === 'prayer') {
+    return (
+      <>
+        <PrivacyDisclosure />
+        <PrayerForm />
+      </>
+    );
   }
 
   return <FormRenderer form={form} />;
