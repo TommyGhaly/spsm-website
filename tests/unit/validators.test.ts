@@ -96,6 +96,8 @@ function prayer(overrides: Partial<PrayerRequestInput> = {}): PrayerRequestInput
     anonymous: false,
     authorName: 'Mina',
     contactEmail: null,
+    kind: 'prayer',
+    commemoration: null,
     ...overrides,
   };
 }
@@ -166,5 +168,40 @@ describe('validatePrayerRequest', () => {
       validatePrayerRequest(prayer({ visibility: 'clergy-only' as unknown as 'clergy' })),
     ).toHaveLength(1);
     expect(validatePrayerRequest(prayer({ visibility: 'clergy' }))).toEqual([]);
+  });
+});
+
+describe('prayers and commemorations are different requests', () => {
+  /*
+   * The two halves have to agree in both directions, and the second direction
+   * is the one that is easy to forget: a commemoration with no occasion is the
+   * unsorted record the split exists to prevent, and an ordinary prayer request
+   * carrying `annual` is a record nobody can interpret, because it arrived
+   * through a form that never asked.
+   */
+  it('requires an occasion on a commemoration', () => {
+    expect(
+      validatePrayerRequest(prayer({ kind: 'commemoration', commemoration: null })),
+    ).toHaveLength(1);
+  });
+
+  it('accepts each of the three occasions', () => {
+    for (const when of ['recent', 'forty-days', 'annual'] as const) {
+      expect(
+        validatePrayerRequest(prayer({ kind: 'commemoration', commemoration: when })),
+      ).toEqual([]);
+    }
+  });
+
+  it('refuses an occasion on an ordinary prayer request', () => {
+    expect(
+      validatePrayerRequest(prayer({ kind: 'prayer', commemoration: 'annual' })),
+    ).toHaveLength(1);
+  });
+
+  it('refuses a kind it does not recognise', () => {
+    expect(
+      validatePrayerRequest(prayer({ kind: 'memorial' as never, commemoration: null })),
+    ).not.toEqual([]);
   });
 });

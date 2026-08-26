@@ -272,68 +272,39 @@ service cloud.firestore {
     // Bodies are plaintext and readable by clergy. Enforcement is here.
 
     match /prayerRequests/{requestId} {
-
-      // Public requests: any signed-in member, plus the prayer team.
-      // Clergy-only requests: clergy group or admin. Staff tier alone is NOT
-      // enough — a facilities coordinator has no business reading these.
-      allow read: if (resource.data.visibility == 'public' && signedIn())
-        || inGroup('clergy')
-        || hasRole('admin');
-
-      // Open to unauthenticated writers, and it has to be.
-      //
-      // This required `signedIn()` when sign-in was expected to be for
-      // everyone. It is not: authentication is Microsoft-only against the
-      // parish Entra tenant, so clergy, staff and servants have accounts and a
-      // parishioner deliberately does not. Keeping the requirement would mean
-      // the only people who could ask for prayer are the people you would ask
-      // in person anyway.
-      //
-      // So this is bounded the way `vehicles` is — create-only, no read, every
-      // field checked, and abuse handled in a Function rather than here.
-      allow create: if request.resource.data.keys().hasOnly([
-          'body', 'visibility', 'anonymous', 'authorUid', 'authorName',
-          'contactEmail', 'status', 'notifiedAt',
-          'createdAt', 'updatedAt', 'updatedBy'
-        ])
-        && request.resource.data.body is string
-        && request.resource.data.body.size() > 0
-        && request.resource.data.body.size() <= 2000
-        && request.resource.data.visibility in ['public', 'clergy']
-        && request.resource.data.status == 'active'
-        && request.resource.data.notifiedAt == null
-        && (request.resource.data.contactEmail == null
-          || (request.resource.data.contactEmail is string
-            && request.resource.data.contactEmail.size() <= 254))
-        // A uid may only ever be your own. An unauthenticated writer must leave
-        // it null rather than claiming to be a member.
-        && request.resource.data.authorUid == (signedIn() ? request.auth.uid : null)
-        && (
-          // Anonymity is real, not cosmetic: no uid *and* no name, so there is
-          // nothing to trace back later — including by us.
-          (request.resource.data.anonymous == true
-            && request.resource.data.authorUid == null
-            && request.resource.data.authorName == null)
-          ||
-          // Otherwise they told us what to call them. Unverified when they are
-          // not signed in, which is fine: it is a name for the fathers to pray
-          // with, not an identity claim that authorizes anything.
-          (request.resource.data.anonymous == false
-            && request.resource.data.authorName is string
-            && request.resource.data.authorName.size() > 0
-            && request.resource.data.authorName.size() <= 100)
-        );
-
-      // The trade-off of true anonymity: with no uid stored, there is nobody to
-      // authorize an edit. Anonymous requests are clergy-managed only.
-      allow update: if (resource.data.authorUid != null && isSelf(resource.data.authorUid))
-        || inGroup('clergy')
-        || hasRole('admin');
-
-      allow delete: if inGroup('clergy') || hasRole('admin');
+      /*
+       * CLOSED to clients in both directions, and that is a strengthening
+       * rather than a restriction.
+       *
+       * ---------------------------------------------------------------------
+       * The bodies are encrypted now. Rules are no longer the privacy model.
+       *
+       * `docs/decisions.md` #1 chose plaintext-plus-rules and said what it
+       * cost: "anyone with the Firebase service account can read every request;
+       * so can a Firestore console admin." The parish asked for that to stop
+       * being true of the database, so `body`, `authorName` and `contactEmail`
+       * are now AES-256-GCM envelopes sealed under a Secret Manager key.
+       *
+       * Which forces both halves through Cloud Functions:
+       *
+       *   create — sealing needs the key, and a key in a browser is not a key.
+       *            `prayerSubmit` validates with the same shared validator the
+       *            form used, seals, and writes with the Admin SDK.
+       *   read   — a client reading this collection directly would get
+       *            envelopes. `prayerList` opens them for clergy and admins,
+       *            which is the same test this rule used to apply. Moving the
+       *            check into a Function is not a licence to widen it.
+       *
+       * The long `hasOnly([...])` field whitelist that used to live here is
+       * gone with the client write path it guarded. Nothing is unguarded: the
+       * Admin SDK is the only writer, and what it writes is fixed in code.
+       *
+       * A read arriving here is by definition not from us, and would only ever
+       * yield ciphertext anyway.
+       * ---------------------------------------------------------------------
+       */
+      allow read, write: if false;
     }
-
-    // ---- bookstore --------------------------------------------------------
 
     match /products/{productId} {
       allow read: if isPublished(resource.data);

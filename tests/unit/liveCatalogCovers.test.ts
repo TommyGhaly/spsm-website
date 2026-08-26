@@ -31,15 +31,21 @@ describe('keepsBakedImages', () => {
     expect(keepsBakedImages(3, 0)).toBe(true);
   });
 
-  it('keeps them when the count is unchanged', () => {
-    // Nothing happened to the pictures, and the baked pair is the optimised one
-    // — Square's URL is the 3105px original with no resize parameter.
-    expect(keepsBakedImages(1, 1)).toBe(true);
-    expect(keepsBakedImages(4, 4)).toBe(true);
-  });
-
-  it('yields to the live list when a picture was genuinely added or removed', () => {
-    // A real contradiction: slower images beat wrong ones.
+  it('yields to the live list the moment there is one — even at a matching count', () => {
+    /*
+     * The second bug, and the one that made adding a photograph look broken.
+     *
+     * A book with one baked cover and an empty `imagePaths` sits at 1-vs-0. Add
+     * its first photograph in the editor and it becomes 1-vs-1 — which the old
+     * rule read as "nothing has changed since the build" and kept the baked
+     * file. The picture reached Square, the document and the picture manager,
+     * and never appeared on the shop.
+     *
+     * A count is not an identity. These two lists have been out of step since
+     * the mirror changed Square accounts, so a match proves nothing at all.
+     */
+    expect(keepsBakedImages(1, 1)).toBe(false);
+    expect(keepsBakedImages(4, 4)).toBe(false);
     expect(keepsBakedImages(1, 2)).toBe(false);
     expect(keepsBakedImages(3, 1)).toBe(false);
   });

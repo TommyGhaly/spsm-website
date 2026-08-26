@@ -445,9 +445,72 @@ export const squareRemoveProductImage = onRequest(
 
     const db = getFirestore();
     const ref = db.collection(COLLECTIONS.products).doc(slug);
-    if (!(await ref.get()).exists) {
+    const snapshot = await ref.get();
+    if (!snapshot.exists) {
       res.status(404).json({ error: 'No such product.' });
       return;
+    }
+
+    /*
+     * Square first, and the whole point of this Function is that it happens at
+     * all.
+     *
+     * This used to be the `arrayRemove` below and nothing else, under a comment
+     * claiming the image was "deleted in Square" — which it never was. The
+     * effect was a Remove button that worked until the next `npm run catalog`
+     * and then silently undid itself, because the sync mirrors `image_ids` off
+     * the Square item and the picture was still attached to it. A control that
+     * reverses itself hours later is worse than one that refuses.
+     *
+     * Detaching means upserting the ITEM without that image id. Square's upsert
+     * is optimistic-concurrency controlled, so it has to be a read-modify-write
+     * against the live object at its current version — see `readCatalogObject`.
+     */
+    const squareId = snapshot.get('squareCatalogObjectId') as string | undefined;
+    const square = squareClient();
+
+    if (squareId && square) {
+      const found = await findAttachedImage(square, squareId, url);
+
+      if (found) {
+        const { item, imageId } = found;
+        const data = (item['item_data'] ?? {}) as Record<string, unknown>;
+        const ids = Array.isArray(data['image_ids']) ? (data['image_ids'] as string[]) : [];
+
+        const failure = await upsertCatalogObject(
+          square,
+          { ...item, item_data: { ...data, image_ids: ids.filter((id) => id !== imageId) } },
+          `detach-${slug}-${imageId}`,
+        );
+        if (failure) {
+          // Nothing written to Firestore: a product whose document says the
+          // picture is gone while Square still carries it is the state the next
+          // sync silently reverses, which is the bug this branch exists to end.
+          res.status(502).json({ error: failure });
+          return;
+        }
+
+        /*
+         * Then delete the image object itself. Best effort, and deliberately
+         * not fatal: it is already detached, so the shop and the next sync both
+         * agree it is gone. An orphaned image in the Square library is untidy;
+         * failing the whole removal over it would leave the parish unable to
+         * take a wrong photograph off a book.
+         */
+        const dropped = await fetch(
+          `${square.host}/v2/catalog/object/${encodeURIComponent(imageId)}`,
+          { method: 'DELETE', headers: square.headers },
+        );
+        if (!dropped.ok) {
+          console.warn(`[catalog] detached ${imageId} but could not delete it: ${dropped.status}`);
+        }
+      }
+      /*
+       * Not found is not an error. `imagePaths` can hold a URL Square no longer
+       * knows about — an image deleted in the Square dashboard, or a row from
+       * before a re-sync — and that is precisely the case where the document
+       * needs cleaning up rather than the request refusing.
+       */
     }
 
     await ref.update({
@@ -459,6 +522,50 @@ export const squareRemoveProductImage = onRequest(
     res.status(200).json({ ok: true });
   },
 );
+
+/**
+ * The item, and the id of the image on it that serves this URL.
+ *
+ * Matched by URL because that is all the browser has: the shop renders
+ * `imagePaths`, which are Square's CDN URLs, and nothing on the page ever sees a
+ * catalog object id. `include_related_objects` brings the IMAGE objects back
+ * with the item, so this is one request rather than one per picture.
+ *
+ * Null when Square has no such attachment — see the caller for why that is an
+ * ordinary answer and not a failure.
+ */
+async function findAttachedImage(
+  square: { host: string; headers: Record<string, string> },
+  itemId: string,
+  url: string,
+): Promise<{ item: Record<string, unknown>; imageId: string } | null> {
+  const response = await fetch(
+    `${square.host}/v2/catalog/object/${encodeURIComponent(itemId)}?include_related_objects=true`,
+    { headers: square.headers },
+  );
+  if (!response.ok) return null;
+
+  const body = (await response.json()) as {
+    object?: Record<string, unknown>;
+    related_objects?: Record<string, unknown>[];
+  };
+
+  const item = body.object;
+  if (!item) return null;
+
+  const data = (item['item_data'] ?? {}) as Record<string, unknown>;
+  const ids = Array.isArray(data['image_ids']) ? (data['image_ids'] as string[]) : [];
+  if (ids.length === 0) return null;
+
+  for (const related of body.related_objects ?? []) {
+    if (related['type'] !== 'IMAGE') continue;
+    const id = String(related['id'] ?? '');
+    const imageData = (related['image_data'] ?? {}) as Record<string, unknown>;
+    if (ids.includes(id) && imageData['url'] === url) return { item, imageId: id };
+  }
+
+  return null;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Stock, and retiring a product                                               */

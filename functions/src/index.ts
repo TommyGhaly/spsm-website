@@ -54,6 +54,17 @@ export { squareRefund } from './refunds.js';
  * and BREEZE_SUBDOMAIN are set. Nothing else depends on them.
  */
 export { formSubmit } from './forms/submit.js';
+
+/*
+ * Prayer requests, sealed.
+ *
+ * Both directions are Functions because the key cannot be in a browser, and
+ * because encrypting without building a read path would leave the parish with a
+ * collection nobody can open. `firestore.rules` closes the collection to clients
+ * in both directions; the Admin SDK bypasses that. See docs/decisions.md #1,
+ * which this supersedes.
+ */
+export { prayerSubmit, prayerList } from './prayer/index.js';
 export { breezeListForms, breezeImportForm } from './forms/breeze.js';
 
 // Bookstore statistics. The shop writes one document per view and cart change
