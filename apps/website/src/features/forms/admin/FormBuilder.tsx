@@ -40,6 +40,37 @@ import { writeForm, type WithId } from './adminData';
  * ---------------------------------------------------------------------------
  */
 
+/**
+ * Pictures a form may wear, and why the list is short and hand-written.
+ *
+ * These are the parish's own vetted images, already built into `public/img` by
+ * `optimize-assets.mjs`. Staff pick from them rather than typing a URL, because
+ * a free text box here is how a form ends up hotlinking a stock photo from
+ * somebody else's website.
+ *
+ * Notable absences, both deliberate:
+ *
+ *   - The Crucifixion icon (`icon-crucifixion-1200.webp`). It is genuine and it
+ *     is beautiful, and an icon is venerated rather than used as page furniture.
+ *     Nobody should meet it at the top of a form about parking a car.
+ *   - Anything built from `assets/Coptic_pattern.png`, which is AI-generated —
+ *     the "Coptic" in its banners is imitation letterforms spelling nothing.
+ *     `optimize-assets.mjs` excludes it for exactly that reason.
+ *
+ * Most forms want none of these. The crest on the card is the better answer for
+ * a van request, and "No picture" is the default for that reason.
+ */
+const PICTURES: { value: string | null; label: string }[] = [
+  { value: null, label: 'No picture — use the crest' },
+  { value: '/img/home-sanctuary-1000.webp', label: 'The sanctuary' },
+  { value: '/img/cross-coptic-360.webp', label: 'Coptic cross' },
+  { value: '/img/backdrop-domes-800.webp', label: 'Domes' },
+  { value: '/img/backdrop-towers-800.webp', label: 'Towers' },
+  { value: '/img/hero-glass-1000.webp', label: 'Stained glass' },
+  { value: '/img/sketch-christ-800.webp', label: 'Icon study — Christ' },
+  { value: '/img/sketch-face-800.webp', label: 'Icon study — face' },
+];
+
 const TYPE_LABELS: Record<FormFieldType, string> = {
   shortText: 'Short text',
   longText: 'Paragraph',
@@ -234,6 +265,35 @@ function Settings({
         <textarea rows={2} value={draft.blurb} onChange={(event) => edit({ blurb: event.target.value })} />
         <small>One or two sentences, shown on the card and above the form.</small>
       </label>
+
+      <label className="field">
+        <span>Picture</span>
+        <select
+          value={draft.image ?? ''}
+          onChange={(event) => edit({ image: event.target.value || null })}
+        >
+          {PICTURES.map((picture) => (
+            <option key={picture.label} value={picture.value ?? ''}>
+              {picture.label}
+            </option>
+          ))}
+        </select>
+        <small>Shown on the card on /forms, and as a band above the form itself.</small>
+      </label>
+
+      {/*
+        A live thumbnail, at the card's own 5:2 crop.
+
+        Without it the picker is a list of words, and "Domes" is not something
+        anyone can picture. Showing it at the aspect ratio the card actually
+        uses also makes the one real failure mode visible before it ships: a tall
+        image whose subject is cropped out entirely by a wide, short box.
+      */}
+      {draft.image && (
+        <span className="fxb__thumb">
+          <img src={draft.image} alt="" />
+        </span>
+      )}
 
       <div className="field-row">
         <label className="field">

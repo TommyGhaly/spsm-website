@@ -17,7 +17,9 @@
     "//dev:emulated:second": "The same, alongside a server you already have running. `next dev` refuses a second server for the same output directory, so this one gets its own (.next-emulated, gitignored) and its own port. Use it to compare the real Firestore and the emulators side by side without stopping either.",
     "dev:emulated:second": "NEXT_DIST_DIR=.next-emulated NEXT_PUBLIC_USE_EMULATORS=1 PORT=3100 next dev",
     "//dev:emulated:third": "A third server, for when :3100 is already taken by another session working in this same tree. Its own output directory again \u2014 `next dev` refuses two servers sharing one.",
-    "dev:emulated:third": "NEXT_DIST_DIR=.next-emulated-3200 NEXT_PUBLIC_USE_EMULATORS=1 PORT=3200 next dev"
+    "dev:emulated:third": "NEXT_DIST_DIR=.next-emulated-3200 NEXT_PUBLIC_USE_EMULATORS=1 PORT=3200 next dev",
+    "//dev:real:spare": "The real Firestore on a spare port and its own output dir, for when :3000 is taken by another session. Same as `dev`, just somewhere else.",
+    "dev:real:spare": "NEXT_DIST_DIR=.next-real-3300 PORT=3300 next dev"
   },
   "dependencies": {
     "@spsm/shared": "*",

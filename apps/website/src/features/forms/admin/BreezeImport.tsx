@@ -75,6 +75,7 @@ export function BreezeImport({ onImported }: { onImported: () => Promise<void> }
       title: result.title,
       blurb: '',
       icon: 'file',
+      image: null,
       order: 100,
       // Unpublished, always. See the note above: an import is a draft.
       published: false,

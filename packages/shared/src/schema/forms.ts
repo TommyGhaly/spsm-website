@@ -209,6 +209,26 @@ export interface FormDefinition extends AuditFields {
   blurb: string;
   /** An `IconName` from the website's icon set. Unknown names fall back. */
   icon: string;
+  /**
+   * A picture for the card and the top of the form. Empty for most.
+   *
+   * ---------------------------------------------------------------------------
+   * Chosen by the parish, never assigned by us — and that is the whole point.
+   *
+   * The tempting version of "make the forms less bland" is a stock photograph on
+   * every card. It does not survive contact with the actual list: there is no
+   * photograph of a church van, and putting the sanctuary behind "Request a van"
+   * is decoration that means nothing, which reads as worse than none.
+   *
+   * A summer camp registration or a festival form genuinely has a picture, and
+   * this is where it goes. Everything else gets the ornamental tile instead — see
+   * `.form-card__crest` — which is honest about being a mark rather than a
+   * photograph.
+   *
+   * A path under `/img/`, or an absolute URL for something in Storage.
+   * ---------------------------------------------------------------------------
+   */
+  image: string | null;
   /** Ordering on the hub. Lower first; ties break on title. */
   order: number;
 
@@ -441,6 +461,7 @@ export function parseFormDefinition(id: string, raw: unknown): FormDefinition {
     title: str(record['title']).trim() || 'Untitled form',
     blurb: str(record['blurb']).trim(),
     icon: str(record['icon']).trim() || 'file',
+    image: nullableStr(record['image']),
     order: typeof record['order'] === 'number' ? record['order'] : 100,
 
     published: bool(record['published']),

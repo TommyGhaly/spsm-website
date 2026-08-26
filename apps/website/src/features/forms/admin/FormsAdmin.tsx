@@ -332,6 +332,7 @@ function blankForm(id: string): FormDraft {
     title: 'New form',
     blurb: '',
     icon: 'file',
+    image: null,
     order: 100,
     published: false,
     open: true,

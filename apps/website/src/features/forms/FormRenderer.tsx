@@ -12,6 +12,7 @@ import {
   type FormDefinition,
 } from '@spsm/shared';
 import { money } from '@/features/bookstore/money';
+import { Icon } from '@/components/Icon';
 import { FieldInput } from './FormFields';
 import { submitForm } from './data';
 import { FormPaymentStep } from './FormPaymentStep';
@@ -109,13 +110,22 @@ export function FormRenderer({ form }: { form: FormDefinition }) {
 
   if (stage.kind === 'done') {
     return (
-      <div className="notice">
+      /*
+       * `role="status"` so the change is announced.
+       *
+       * The form is replaced wholesale by this panel, and for anyone not looking
+       * at the screen that is silent — the page simply stops having the fields
+       * they were filling in. Polite rather than assertive: nothing here is
+       * urgent, it just needs to arrive.
+       */
+      <div className="fx__done" role="status">
+        <span className="fx__done-mark" aria-hidden="true">
+          <Icon name="check" size={26} />
+        </span>
         <h2>Submitted</h2>
         <p>{form.confirmationMessage}</p>
         {stage.paid && (
-          <p className="note">
-            Your card has been charged {money(total)}. Square will email you a receipt.
-          </p>
+          <p>Your card has been charged {money(total)}. Square will email you a receipt.</p>
         )}
       </div>
     );

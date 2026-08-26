@@ -40,6 +40,7 @@ out/
 # The spare server's output dir — see .claude/launch.json's -3200 entry. A peer
 # session working in this same tree often already holds :3100.
 .next-emulated-3200/
+.next-real-3300/
 .turbo/
 coverage/
 *.tsbuildinfo
