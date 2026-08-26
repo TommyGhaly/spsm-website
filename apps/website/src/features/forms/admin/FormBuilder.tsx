@@ -286,12 +286,16 @@ function Settings({
             below; every other form can only ever be `native` or `external`.
             Changing this is a code change, which is the right weight for it.
           */}
-          {draft.kind === 'vehicle' ? (
+          {draft.kind === 'vehicle' || draft.kind === 'prayer' ? (
             <>
-              <input value="Vehicle registration" readOnly />
+              <input
+                value={draft.kind === 'vehicle' ? 'Vehicle registration' : 'Prayer requests'}
+                readOnly
+              />
               <small>
-                Writes to the Taksis parking system. Only this form does, and that
-                cannot be changed here.
+                {draft.kind === 'vehicle'
+                  ? 'Writes to the Taksis parking system. Only this form does, and that cannot be changed here.'
+                  : 'Its own form, and the body is encrypted before it is stored. That cannot be changed here.'}
               </small>
             </>
           ) : (

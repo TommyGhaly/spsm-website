@@ -118,6 +118,31 @@ const FORMS = [
   },
 
   {
+    slug: 'prayer-requests',
+    title: 'Prayer requests',
+    blurb:
+      'Ask the fathers to pray for you or for someone you love, or offer a commemoration for the departed. No account needed, and you may write without giving your name.',
+    icon: 'hands',
+    image: '/img/sketch-christ-800.webp',
+    order: 5,
+    /*
+     * Published, like the vehicle registration and unlike the three Breeze
+     * rebuilds. It is not a new form: it has been live at /prayer since before
+     * the hub existed, and there is nothing to hold back.
+     *
+     * Its own component, not a field list — the body is sealed before storage
+     * and the occasion is conditional, neither of which the builder has a
+     * vocabulary for. See FormKind.
+     */
+    published: true,
+    kind: 'prayer',
+    fields: [],
+    confirmationMessage:
+      'Your request has been passed to the fathers of the parish. There is no ' +
+      'confirmation email — the request was not tied to an account, which is deliberate.',
+  },
+
+  {
     slug: 'van-request',
     image: '/img/stock-passenger-van-1000.webp',
     title: 'Request a church van',

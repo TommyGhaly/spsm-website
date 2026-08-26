@@ -167,9 +167,10 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
 /**
  * Forms that are parish infrastructure rather than parish paperwork.
  *
- * Vehicle registration is the only one today, and it is permanent: there are
- * NFC tags in the car park pointing at `/parking`, which renders this form
- * directly. Those tags cannot be reprinted by editing a file.
+ * Two of them: vehicle registration and prayer requests. Both are permanent,
+ * and for the same reason — there are physical NFC tags pointing at `/parking`
+ * and at `/prayer`, a card in the car park and a card in the pews, and neither
+ * can be reprinted by editing a file.
  *
  * That matters here because `/parking` does not check `published` — but
  * `formSubmit` does, and answers 404 to an unpublished form. So unticking
@@ -180,7 +181,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
  * the two controls that cause it are not offered on this row.
  */
 function isPermanent(form: FormDefinition): boolean {
-  return form.kind === 'vehicle';
+  return form.kind === 'vehicle' || form.kind === 'prayer';
 }
 
 function FormsList({
@@ -316,6 +317,7 @@ const KIND_LABEL: Record<FormDefinition['kind'], string> = {
   native: 'built here',
   external: 'links out',
   vehicle: 'vehicle registration',
+  prayer: 'prayer requests',
 };
 
 /**
