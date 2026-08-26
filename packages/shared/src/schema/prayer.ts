@@ -81,12 +81,6 @@ export interface PrayerRequest extends AuditFields {
   /** True ⇒ `authorUid` and `authorName` are both null. Irreversible. */
   anonymous: boolean;
 
-  /**
-   * `public`  — visible to the prayer team and congregation.
-   * `clergy`  — visible only to the clergy group and admins.
-   */
-  visibility: PrayerVisibility;
-
   status: PrayerStatus;
 
   /** Optional contact-back channel, **sealed**, if the submitter wants follow-up. */
@@ -123,8 +117,24 @@ export const COMMEMORATION_LABELS: Record<CommemorationWhen, string> = {
   annual: 'Annual',
 };
 
-export const PRAYER_VISIBILITIES = ['public', 'clergy'] as const;
-export type PrayerVisibility = (typeof PRAYER_VISIBILITIES)[number];
+/*
+ * There is no `visibility` field, and there never should have been.
+ *
+ * It offered `public` — "visible to the prayer team and congregation" — beside
+ * `clergy`. **The parish has no prayer team. The priests read these, and nobody
+ * else does.** So the choice was between one real audience and an audience that
+ * does not exist, which is worse than no choice at all: "public" implied to a
+ * parishioner that a congregation would see what they wrote.
+ *
+ * Removed rather than pinned to a constant. A field every record carries the
+ * same value in is a question the next reader has to work out the answer to, and
+ * `prayerList` would still have had to explain why it never filtered on it.
+ *
+ * Nothing was migrated because nothing had to be: the collection was empty when
+ * this was corrected. Had it not been, this would be a backfill rather than a
+ * deletion — worth knowing before reintroducing a field on the assumption it is
+ * free.
+ */
 
 export const PRAYER_STATUSES = ['active', 'answered', 'archived'] as const;
 export type PrayerStatus = (typeof PRAYER_STATUSES)[number];
@@ -136,7 +146,6 @@ export type PrayerStatus = (typeof PRAYER_STATUSES)[number];
  */
 export interface PrayerRequestInput {
   body: string;
-  visibility: PrayerVisibility;
   anonymous: boolean;
   authorName: string | null;
   contactEmail: string | null;
@@ -167,10 +176,6 @@ export function validatePrayerRequest(input: PrayerRequestInput): string[] {
   if (body.length > PRAYER_BODY_MAX_LENGTH) {
     errors.push(`Please keep requests under ${PRAYER_BODY_MAX_LENGTH} characters.`);
   }
-  if (!PRAYER_VISIBILITIES.includes(input.visibility)) {
-    errors.push('Choose whether this request is public or clergy-only.');
-  }
-
   if (input.anonymous) {
     if (name) errors.push('An anonymous request cannot carry a name.');
   } else {

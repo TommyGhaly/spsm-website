@@ -22,8 +22,13 @@ server-side notifications, and any hope of recovering data after a lost key.
 - So can a Firestore console admin.
 
 **Mitigations built in:**
-- `visibility: 'clergy'` requires the `clergy` group or `admin` — the `staff`
-  tier alone is not sufficient. A facilities coordinator cannot read them.
+- ~~`visibility: 'clergy'` requires the `clergy` group or `admin`~~ — the field is
+  **gone** (2026-08-26). It offered `public`, described as "the prayer team and
+  congregation", and **the parish has no prayer team**: the priests read these and
+  nobody else. A choice between one real audience and one that does not exist is
+  worse than no choice, because the wrong answer implied a congregation would
+  read what somebody wrote. The clergy-vs-staff separation it enforced survives
+  in `prayerList`, which still requires `clergy` or `admin`.
 - `anonymous: true` genuinely omits the uid rather than hiding it behind a flag,
   so an anonymous request cannot be traced later. The trade-off is that the
   submitter can't edit or withdraw it either.
@@ -40,8 +45,8 @@ opaque string and became one sealed string, so the migration was contained.
 
 `authorName` is sealed too, which the original decision did not anticipate — on a
 commemoration the name *is* the disclosure, because it says someone has died and
-who. `kind`, `commemoration`, `visibility` and the timestamps stay readable so a
-priest can filter to "forty days" without decrypting the collection.
+who. `kind`, `commemoration` and the timestamps stay readable so a priest can
+filter to "forty days" without decrypting the collection.
 
 **Both directions are Cloud Functions.** Sealing needs the key and a key in a
 browser is not a key, so the write moved to `prayerSubmit`. Reading moved to

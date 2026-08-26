@@ -29,13 +29,26 @@
  * the parish's own administrators. The last line — speak to a father directly —
  * is the honest answer for anything that needs more than this.
  *
- * One line was corrected when the form shipped. It said public requests were
- * readable by "any signed-in member of the parish, so the community can pray
- * with you", which stopped being true when sign-in became Microsoft-only
- * against the parish directory: clergy, staff and servants have accounts and a
- * parishioner does not. It now says who actually reads them. A privacy notice
- * that overstates the audience is the one kind of inaccuracy that is worse than
- * saying nothing.
+ * ## This notice has now been wrong about the audience twice
+ *
+ * Worth recording, because it is the same mistake in two forms and the next
+ * person should expect to make it a third time.
+ *
+ * First it said public requests were readable by "any signed-in member of the
+ * parish, so the community can pray with you". That stopped being true when
+ * sign-in became Microsoft-only against the parish directory — clergy, staff and
+ * servants have accounts, a parishioner does not.
+ *
+ * Then it described two audiences, "the fathers only" and "the fathers and the
+ * prayer team", offered as a choice on the form. **The parish has no prayer
+ * team.** The priests read these and nobody else does, so the choice was between
+ * one real audience and one that does not exist — and picking the wrong one
+ * implied to a parishioner that a congregation would read what they wrote. The
+ * question is gone and `visibility` is gone from the schema with it.
+ *
+ * A privacy notice that overstates the audience is the one kind of inaccuracy
+ * that is worse than saying nothing. Do not describe a reader of these requests
+ * without checking that the reader exists.
  */
 export function PrivacyDisclosure() {
   return (
@@ -43,12 +56,9 @@ export function PrivacyDisclosure() {
       <h2>Who can read your request</h2>
       <ul>
         <li>
-          <strong>Clergy-only requests</strong> are readable by the fathers of this parish
-          and by site administrators. Being parish staff is not enough on its own.
-        </li>
-        <li>
-          <strong>Public requests</strong> are readable by the fathers and by the parish
-          servants who pray for them. They are not shown anywhere on this website.
+          <strong>The fathers of this parish read these, and site administrators can.</strong>{' '}
+          Being parish staff is not enough on its own, and nothing you write is shown
+          anywhere on this website.
         </li>
         <li>
           <strong>Requests are encrypted before they are stored.</strong> What is kept
