@@ -7,7 +7,7 @@ reader can tell a considered trade-off from an accident.
 
 ## Resolved
 
-### 1. Prayer request privacy — **Option A, Firestore at-rest encryption**
+### 1. Prayer request privacy — ~~Option A~~ → **superseded 2026-08-26: application-level encryption**
 
 Bodies are stored as plaintext in Firestore. Confidentiality comes from
 [`firestore.rules`](../firestore.rules), not cryptography.
@@ -29,9 +29,40 @@ server-side notifications, and any hope of recovering data after a lost key.
   submitter can't edit or withdraw it either.
 - `auditLog` collection exists for recording staff reads of sensitive data.
 
-**Revisit if:** the parish ever wants to promise true confidentiality. That's a
-schema migration, but the `body` field is deliberately a single opaque string,
-so it's a contained one.
+~~**Revisit if:** the parish ever wants to promise true confidentiality.~~ —
+**the parish asked, on 2026-08-26.** Everything above is history; read it for the
+reasoning, not the current state.
+
+**What ships now.** `body`, `authorName` and `contactEmail` are AES-256-GCM
+envelopes sealed under `PRAYER_KEY` in Secret Manager. Firestore holds
+ciphertext. The prediction in the sentence above held exactly: `body` was one
+opaque string and became one sealed string, so the migration was contained.
+
+`authorName` is sealed too, which the original decision did not anticipate — on a
+commemoration the name *is* the disclosure, because it says someone has died and
+who. `kind`, `commemoration`, `visibility` and the timestamps stay readable so a
+priest can filter to "forty days" without decrypting the collection.
+
+**Both directions are Cloud Functions.** Sealing needs the key and a key in a
+browser is not a key, so the write moved to `prayerSubmit`. Reading moved to
+`prayerList` for a less obvious reason: a clergy member could previously read a
+request in the Firestore console, and after sealing they cannot, so encrypting
+without building a read path would have made the feature confidential and
+useless. `firestore.rules` now closes the collection to clients in both
+directions.
+
+**What did NOT change, and is still the honest limit.** Whoever holds the
+Functions service account can decrypt. The objection this decision was originally
+built on — clergy must be able to read these, so somebody must hold a key — is
+still true and is still why true end-to-end was not chosen. What changed is that
+the *database* is no longer a place the plaintext exists. `PrivacyDisclosure.tsx`
+says exactly this to the person before they type, and must not be softened into
+promising secrecy from the parish's own administrators.
+
+**The new risk this creates:** losing or rotating `PRAYER_KEY` orphans every
+request sealed under the old version. `prayerSubmit` proves the key round-trips
+before it will store anything, because sealing under a key that cannot open is
+the one failure here with no recovery.
 
 ### 6. Frontend stack — **Next.js with `output: 'export'`**
 

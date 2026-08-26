@@ -2,18 +2,32 @@
  * What we promise about prayer request confidentiality, and what we don't.
  *
  * This component exists because docs/decisions.md #1 says the trade-off must be
- * stated plainly in the submission UI rather than papered over. Bodies are
- * stored as plaintext in Firestore; confidentiality comes from security rules,
- * not cryptography. Anyone with the Firebase service account or console access
- * can read every request.
+ * stated plainly in the submission UI rather than papered over. That obligation
+ * did not go away when the storage changed — it just changed what has to be
+ * said.
  *
- * That was the right call — clergy have to actually read and follow up on these,
- * and true end-to-end encryption would have meant distributing keys to clergy
- * anyway, reintroducing the same trust boundary while giving up search,
- * notifications, and any hope of recovery. But someone writing about a private
- * matter deserves to know it before they type, not after.
+ * ---------------------------------------------------------------------------
+ * Rewritten 2026-08-26, when the requests were sealed.
  *
- * Do not soften this copy without revisiting that decision.
+ * The third bullet used to read: "Requests are stored as ordinary text. They
+ * are protected by access rules, not by encryption — so the people who
+ * administer the parish's systems are technically able to read them."
+ *
+ * That was accurate and is now false. Bodies, names and contact addresses are
+ * AES-256-GCM envelopes; the database holds ciphertext. Leaving the old copy up
+ * would have understated the protection, which is a gentler failure than
+ * overstating it and is still a false statement on a privacy notice.
+ *
+ * **The new copy still does not claim more than is true**, and that is the part
+ * to guard. This is not end-to-end encryption: clergy must be able to read
+ * these, so a key exists on the parish's servers, and whoever administers those
+ * servers can decrypt. Decision #1's central reasoning survives — only the
+ * database changed. Somebody writing about a private matter deserves that
+ * distinction before they type, not after.
+ *
+ * Do not soften this copy, and do not let it drift into promising secrecy from
+ * the parish's own administrators. The last line — speak to a father directly —
+ * is the honest answer for anything that needs more than this.
  *
  * One line was corrected when the form shipped. It said public requests were
  * readable by "any signed-in member of the parish, so the community can pray
@@ -37,9 +51,15 @@ export function PrivacyDisclosure() {
           servants who pray for them. They are not shown anywhere on this website.
         </li>
         <li>
-          Requests are stored as ordinary text. They are protected by access rules, not
-          by encryption — so the people who administer the parish&apos;s systems are
-          technically able to read them.
+          <strong>Requests are encrypted before they are stored.</strong> What is kept
+          in the parish database is unreadable on its own — a copy of the database,
+          or of a backup, gives nothing away.
+        </li>
+        <li>
+          This is not a promise of secrecy from the parish itself. The fathers have to
+          be able to read what you write, so the key is held on the parish&apos;s
+          systems, and whoever administers those systems can read a request. What the
+          encryption prevents is anyone reading the database without that key.
         </li>
         <li>
           <strong>Submitting anonymously genuinely removes your name.</strong> We do not
