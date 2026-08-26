@@ -20145,6 +20145,7 @@ span.gallery-figure__frame {
  * control, and borders only where something is actually editable.
  */
 .bkedit {
+  position: relative;
   display: grid;
   gap: 0.25rem;
   margin-top: 0.5rem;
@@ -20155,11 +20156,83 @@ span.gallery-figure__frame {
   line-height: 1.3;
 }
 
-/* A write is in flight. Dimming the whole block is more honest than a spinner on
-   the one control that started it — everything here is momentarily stale. */
+/*
+ * The block arriving when Edit is pressed.
+ *
+ * A card gains a third of its height at that moment, and without this the shelf
+ * simply jumps. Transform and opacity only — this animates on the compositor and
+ * cannot reflow the grid it sits in, which matters because eleven of these start
+ * at once. Honoured as a preference below: `prefers-reduced-motion` is the whole
+ * reason the transition is on a class rather than baked into the element.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .bkedit {
+    animation: bkedit-in 180ms ease-out both;
+  }
+}
+
+@keyframes bkedit-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+}
+
+/*
+ * A write is in flight.
+ *
+ * Dimming the whole block is more honest than a spinner on the one control that
+ * started it — everything here is momentarily stale. Lighter than it was (0.5 →
+ * 0.62) now that `.bkedit__state` says *what* is happening: the dim no longer
+ * has to carry the message on its own, and at 0.5 the numbers were hard to read
+ * at exactly the moment somebody was watching them change.
+ */
 .bkedit.is-busy {
-  opacity: 0.5;
+  opacity: 0.62;
   pointer-events: none;
+}
+
+/*
+ * "Saving…" and "Saved", over the block's own hairline.
+ *
+ * ---------------------------------------------------------------------------
+ * Absolutely positioned, and that is the point rather than a detail: this block
+ * was deliberately rewritten to half its former height, so feedback bought with
+ * a permanent row would hand that back — and the row would be empty almost all
+ * of the time, which is the exact fault the single error notice above the shelf
+ * exists to avoid.
+ *
+ * It earns its place because every write on this card is slow enough to doubt.
+ * The stepper debounces by 700ms before it calls Square at all; a photograph is
+ * a round trip with an upload in it. Between the press and the change there was
+ * nothing but a slight dim, and a volunteer pressing + twice because the first
+ * press "did not work" is how a shelf ends up with the wrong count.
+ * ---------------------------------------------------------------------------
+ */
+.bkedit__state {
+  position: absolute;
+  top: -0.62rem;
+  right: 0;
+  padding: 0 0.3rem;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.2;
+  /* On the card, not on the rule it crosses. */
+  background: var(--color-paper, #fffefb);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.bkedit__state.is-working {
+  color: var(--color-ink-faint, #6f5f5a);
+  opacity: 1;
+}
+
+/* Green would be a colour this site uses nowhere else for one word on a book
+   card. The accent already means "the parish changed this". */
+.bkedit__state.is-saved {
+  color: var(--color-accent, #992a21);
+  opacity: 1;
 }
 
 .bkedit__field {
@@ -21307,4 +21380,60 @@ span.gallery-figure__frame {
 .fx > .field:has(input[type='number']),
 .fx > .field:has(input[type='date']) {
   max-width: 16rem;
+}
+
+/* ---- form errors: at the field, not only at the top ------------------- */
+
+/*
+ * The message under its own input.
+ *
+ * `hidden` when there is nothing to say, so the `aria-describedby` target
+ * always exists in the DOM — referencing an id that is not there is how a
+ * description silently goes unannounced.
+ */
+.fx__error {
+  color: var(--color-accent, #992a21);
+  font-weight: 500;
+}
+
+.fx__error[hidden] {
+  display: none;
+}
+
+/*
+ * The summary is focused after a failed submit, so it needs a visible ring —
+ * it is a container rather than a control, and without this the focus lands
+ * somewhere with no outward sign of having moved.
+ */
+.fx__errors:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+/*
+ * Each summary item links down to its field. Underlined rather than
+ * colour-only: the summary sits on the alarm panel, where the accent red the
+ * rest of the site uses for links is already the surrounding colour.
+ */
+.fx__errors a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.fx__errors a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/*
+ * The jump target.
+ *
+ * Following one of those links moves the browser to the field, which on a page
+ * with a sticky masthead would otherwise put the label underneath it —
+ * `scroll-margin-top` is what keeps the question visible above its own input.
+ * WCAG 2.2 calls this out as its own failure: focus must not be obscured.
+ */
+.fx .field,
+.fx .fx__group {
+  scroll-margin-top: 6rem;
 }

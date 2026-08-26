@@ -646,19 +646,49 @@ function looksLikeAPhone(value: string): boolean {
   return digits.length >= 10 && digits.length <= 11;
 }
 
+/** One problem, and the field it belongs to. */
+export interface FieldProblem {
+  /** The `key` of the offending field, or null for a whole-form problem. */
+  key: string | null;
+  /** The sentence the submitter reads. */
+  message: string;
+}
+
 /**
- * Everything wrong with this submission, in the words the submitter reads.
+ * Everything wrong with this submission, each tied to the field it came from.
  *
- * Run in the browser to render messages beside the fields, and run again in the
- * Function against the stored definition — same list, same order. The second run
- * is the one that decides; the first only saves a round trip.
+ * ---------------------------------------------------------------------------
+ * Keyed, because a red border and a list at the top is not enough.
+ *
+ * This used to return bare sentences, which forced the page into a shape that
+ * is a known accessibility failure: a summary at the top, a red border on the
+ * control, and nothing connecting the two. Someone using a screen reader hears
+ * "Phone number is required" once, at the top, and then meets an input with no
+ * error attached to it; someone with a long form has to hold the list in their
+ * head while scrolling.
+ *
+ * With a key on every problem the page can do all three of the things that
+ * matter — put the message *under its own field*, wire it to the input with
+ * `aria-describedby`, and link each summary item down to the control it is
+ * about — from one source that cannot disagree with itself.
+ *
+ * `key: null` is for problems that belong to the submission rather than to any
+ * one field, such as exceeding the answer cap.
+ * ---------------------------------------------------------------------------
+ *
+ * Run in the browser to render the messages, and run again in the Function
+ * against the stored definition. The second run is the one that decides; the
+ * first only saves a round trip.
  *
  * Only visible fields are checked, which is the whole reason `visibleFields`
  * resolves chains: a required "which grade?" that is not on screen must not
  * block a submission from someone who never picked Sunday School.
  */
-export function validateSubmission(form: FormDefinition, answers: FormAnswers): string[] {
-  const errors: string[] = [];
+export function validateSubmissionFields(
+  form: FormDefinition,
+  answers: FormAnswers,
+): FieldProblem[] {
+  const errors: FieldProblem[] = [];
   const shown = visibleFields(form.fields, answers);
 
   for (const field of shown) {
@@ -668,11 +698,13 @@ export function validateSubmission(form: FormDefinition, answers: FormAnswers): 
     const blank = isBlank(answer);
 
     if (field.required && blank) {
-      errors.push(
-        field.type === 'consent'
-          ? `Please agree to “${field.label}”.`
-          : `${field.label} is required.`,
-      );
+      errors.push({
+        key: field.key,
+        message:
+          field.type === 'consent'
+            ? `Please agree to “${field.label}”.`
+            : `${field.label} is required.`,
+      });
       continue;
     }
     if (blank) continue;
@@ -682,35 +714,39 @@ export function validateSubmission(form: FormDefinition, answers: FormAnswers): 
     // cheapest way to make one big.
     const asText = Array.isArray(answer) ? answer.join(',') : String(answer);
     if (asText.length > MAX_ANSWER_LENGTH) {
-      errors.push(`${field.label} is too long.`);
+      errors.push({ key: field.key, message: `${field.label} is too long.` });
       continue;
     }
 
     switch (field.type) {
       case 'email':
-        if (!looksLikeAnEmail(asText)) errors.push(`${field.label} is not an email address.`);
+        if (!looksLikeAnEmail(asText)) {
+          errors.push({ key: field.key, message: `${field.label} is not an email address.` });
+        }
         break;
 
       case 'phone':
-        if (!looksLikeAPhone(asText)) errors.push(`${field.label} is not a phone number.`);
+        if (!looksLikeAPhone(asText)) {
+          errors.push({ key: field.key, message: `${field.label} is not a phone number.` });
+        }
         break;
 
       case 'date':
         // `<input type="date">` gives ISO, but a typed-in value on a browser
         // without the picker does not have to.
         if (!/^\d{4}-\d{2}-\d{2}$/.test(asText)) {
-          errors.push(`${field.label} is not a date.`);
+          errors.push({ key: field.key, message: `${field.label} is not a date.` });
         }
         break;
 
       case 'number': {
         const value = typeof answer === 'number' ? answer : Number(asText);
         if (!Number.isFinite(value)) {
-          errors.push(`${field.label} must be a number.`);
+          errors.push({ key: field.key, message: `${field.label} must be a number.` });
         } else if (field.min !== null && value < field.min) {
-          errors.push(`${field.label} must be ${field.min} or more.`);
+          errors.push({ key: field.key, message: `${field.label} must be ${field.min} or more.` });
         } else if (field.max !== null && value > field.max) {
-          errors.push(`${field.label} must be ${field.max} or less.`);
+          errors.push({ key: field.key, message: `${field.label} must be ${field.max} or less.` });
         }
         break;
       }
@@ -720,7 +756,7 @@ export function validateSubmission(form: FormDefinition, answers: FormAnswers): 
         // An answer that is not one of the offered options means either a stale
         // page or a hand-crafted request. Both are rejected the same way.
         if (!field.options.some((option) => option.value === asText)) {
-          errors.push(`Choose one of the options for ${field.label}.`);
+          errors.push({ key: field.key, message: `Choose one of the options for ${field.label}.` });
         }
         break;
       }
@@ -728,12 +764,12 @@ export function validateSubmission(form: FormDefinition, answers: FormAnswers): 
       case 'checkboxes': {
         const chosen = Array.isArray(answer) ? answer : [];
         if (chosen.length > MAX_SELECTIONS) {
-          errors.push(`Too many options chosen for ${field.label}.`);
+          errors.push({ key: field.key, message: `Too many options chosen for ${field.label}.` });
           break;
         }
         const allowed = new Set(field.options.map((option) => option.value));
         if (chosen.some((value) => !allowed.has(value))) {
-          errors.push(`Choose from the options for ${field.label}.`);
+          errors.push({ key: field.key, message: `Choose from the options for ${field.label}.` });
         }
         break;
       }
@@ -744,10 +780,22 @@ export function validateSubmission(form: FormDefinition, answers: FormAnswers): 
   }
 
   if (Object.keys(submissionAnswers(form.fields, answers)).length > MAX_ANSWERS) {
-    errors.push('That is more answers than this form accepts.');
+    errors.push({ key: null, message: 'That is more answers than this form accepts.' });
   }
 
   return errors;
+}
+
+/**
+ * The same problems as bare sentences.
+ *
+ * Kept because the Cloud Function's JSON response and its callers only ever
+ * needed the words — a key means nothing across a network boundary to a page
+ * that may have been edited since. Derived rather than duplicated, so the two
+ * can never drift.
+ */
+export function validateSubmission(form: FormDefinition, answers: FormAnswers): string[] {
+  return validateSubmissionFields(form, answers).map((problem) => problem.message);
 }
 
 /**

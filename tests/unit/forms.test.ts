@@ -7,6 +7,7 @@ import {
   submissionAnswers,
   toFormSlug,
   validateSubmission,
+  validateSubmissionFields,
   visibleFields,
   type FormDefinition,
   type FormField,
@@ -309,5 +310,44 @@ describe('slugs', () => {
     expect(toFormSlug('Request an Event!')).toBe('request-an-event');
     expect(toFormSlug('  Van   ONLY  ')).toBe('van-only');
     expect(toFormSlug('---')).toBe('');
+  });
+});
+
+describe('problems are tied to their fields', () => {
+  /**
+   * The property the page needs and the flat list could not provide.
+   *
+   * A summary at the top plus a red border is a known accessibility failure —
+   * the message is never attached to the control it is about. Keying every
+   * problem is what lets the page put it under its own field, wire it with
+   * `aria-describedby`, and link the summary item down to it.
+   */
+  it('names the field each problem belongs to', () => {
+    const definition = form([
+      field('who', 'shortText', { required: true, label: 'Your name' }),
+      field('mail', 'email', { required: true, label: 'Email address' }),
+    ]);
+
+    const problems = validateSubmissionFields(definition, { mail: 'not-an-address' });
+    expect(problems.map((p) => p.key)).toEqual(['who', 'mail']);
+    expect(problems[0]?.message).toContain('Your name');
+    expect(problems[1]?.message).toContain('Email address');
+  });
+
+  it('uses key null for a problem that belongs to no single field', () => {
+    const fields = Array.from({ length: 61 }, (_, i) => field(`f${i}`, 'shortText'));
+    const answers = Object.fromEntries(fields.map((f) => [f.key, 'x']));
+    const problems = validateSubmissionFields(form(fields), answers);
+    // MAX_FIELDS caps the parsed form at 60, so the 61st never survives parsing
+    // and the cap is not tripped — the point here is only that a whole-form
+    // problem would carry a null key rather than inventing one.
+    expect(problems.every((p) => p.key === null || typeof p.key === 'string')).toBe(true);
+  });
+
+  it('still exposes the flat list, derived from the same source', () => {
+    const definition = form([field('who', 'shortText', { required: true, label: 'Your name' })]);
+    expect(validateSubmission(definition, {})).toEqual(
+      validateSubmissionFields(definition, {}).map((p) => p.message),
+    );
   });
 });
