@@ -54,6 +54,9 @@ const CategoryPills = lazy(() =>
 const AddProductTile = lazy(() =>
   import("./EditControls").then((m) => ({ default: m.AddProductTile })),
 );
+const ProductSettings = lazy(() =>
+  import("./EditControls").then((m) => ({ default: m.ProductSettings })),
+);
 
 export { money };
 
@@ -548,6 +551,24 @@ export function Shop({
         )
       )}
 
+      {/*
+        What this screen can and cannot change, said once.
+
+        The first question a volunteer asks here is why the title and the price
+        are not editable, and the honest answer is short: Square owns them,
+        because the till and the card reader read the same record and the next
+        `npm run catalog` would overwrite anything typed in. Saying it once above
+        the shelf is the right altitude — the same reasoning that keeps the error
+        notice here rather than putting an empty error slot on all eleven cards.
+      */}
+      {editing && (
+        <p className="shop-hint">
+          Stock, pictures and categories are edited here. Titles, prices and
+          descriptions come from Square — change those in Square and they arrive
+          on the next sync.
+        </p>
+      )}
+
       {/* One place for every refusal, so no control needs its own error slot. */}
       {editError && (
         <div className="notice notice--alarm" role="alert">
@@ -659,9 +680,26 @@ export function Shop({
 
       {open && (
         <Detail
-          product={open}
+          /*
+           * Re-resolved from the live list every render rather than shown as it
+           * was when the card was clicked.
+           *
+           * `open` is a snapshot, and while editing the whole point is that the
+           * thing on screen changes underneath it — a picture added, a count
+           * nudged, a category filed. Without this the enlarged settings would
+           * go on describing the book as it was when the dialog opened, and a
+           * photograph you had just removed would still be sitting there. Falls
+           * back to the snapshot for the moment between an archive landing and
+           * the dialog closing.
+           */
+          product={products.find((p) => p.slug === open.slug) ?? open}
           inCart={cart[open.slug] ?? 0}
           others={products.filter((p) => p.slug !== open.slug)}
+          editing={editing}
+          doc={docs.get(open.slug)}
+          sections={sections}
+          onChanged={refresh}
+          onError={setEditError}
           onPick={(product) => {
             trackProduct('detail', product.slug);
             setOpen(product);
@@ -1356,6 +1394,11 @@ function Detail({
   product,
   inCart,
   others,
+  editing,
+  doc,
+  sections,
+  onChanged,
+  onError,
   onPick,
   onClose,
   onAdd,
@@ -1364,6 +1407,13 @@ function Detail({
   inCart: number;
   /** The rest of the shelf, for the cross-sell below. */
   others: ShopProduct[];
+  /** Staff are arranging the shop, so this screen holds the settings instead. */
+  editing: boolean;
+  /** The document behind it, for the picture manager. Absent until it lands. */
+  doc: DocOf<Product> | undefined;
+  sections: BookstoreSection[];
+  onChanged: () => void;
+  onError: (message: string) => void;
   onPick: (product: ShopProduct) => void;
   onClose: () => void;
   onAdd: (quantity: number) => void;
@@ -1393,6 +1443,31 @@ function Detail({
             </p>
           )}
 
+          {/*
+            Arranging the shop, not buying from it.
+
+            The buybox is the shopper's question — a quantity and Add to basket —
+            and nobody editing the catalog is also purchasing from it. So while
+            Edit is on this screen becomes the enlarged settings for this one
+            book: the pictures at a size where they can be judged rather than
+            merely counted, and Remove as a word beside each one.
+
+            The title, price and description above stay exactly as they are.
+            Square owns all three, and seeing them is how somebody notices one is
+            wrong — which is a thing to fix in Square, and the panel says so.
+          */}
+          {editing ? (
+            <Suspense fallback={null}>
+              <ProductSettings
+                product={product}
+                doc={doc}
+                sections={sections}
+                onChanged={onChanged}
+                onError={onError}
+                onRemoved={onClose}
+              />
+            </Suspense>
+          ) : (
           <div className="buybox">
             <p className="buybox__price">
               {money(product.amount, product.currency)}
@@ -1452,6 +1527,7 @@ function Detail({
               <p className="buybox__in">{inCart} already in your basket</p>
             )}
           </div>
+          )}
         </div>
       </div>
 

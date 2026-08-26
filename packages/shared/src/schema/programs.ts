@@ -476,6 +476,39 @@ export interface ProgramEventGroup {
 }
 
 /**
+ * The `programId` of a photograph whose ministry has been deleted.
+ *
+ * ## Why a sentinel rather than a dangling id or a flag
+ *
+ * Deleting a ministry does not delete its photographs — see `deleteProgram`. The
+ * parish's only copy of a camp must not go with the document that organised it.
+ * But that leaves pictures naming a program that no longer exists, and something
+ * has to be able to *find* them again or "not deleted" is a technicality.
+ *
+ * Leaving the dead id in place makes them unfindable: the only query that could
+ * locate them is "programId is not any of the live ones", and Firestore's
+ * `not-in` takes at most ten values — a limit the parish would quietly cross one
+ * ministry at a time, at which point the recovery screen would start lying.
+ *
+ * A new `unfiled: true` field would query cleanly and needs a composite index
+ * that is not deployed, and an undeployed index fails at the moment somebody
+ * actually needs the screen. This value rides the `(programId, status, order)`
+ * index that `getProgramMedia` already uses, so the recovery read is exactly as
+ * proven as the ordinary one.
+ *
+ * The two underscores are deliberate: a Firestore document id may not begin with
+ * them by convention here, and no `programs` document is ever created with this
+ * slug, so it cannot collide with a real ministry.
+ *
+ * Note what it does to permission. `firestore.rules` checks
+ * `adminsProgramEvent(resource.data.programId, …)`, so once a picture carries
+ * this value only a full `admin` can move it — a program grant names a program,
+ * and this is deliberately not one. Rogue pictures are the parish's problem, not
+ * a ministry's.
+ */
+export const UNFILED_PROGRAM_ID = '__unfiled';
+
+/**
  * One photograph or clip.
  *
  * Top-level rather than a subcollection of the event, because the two queries
@@ -484,8 +517,25 @@ export interface ProgramEventGroup {
  * from every program at once). Both are one query here and a fan-out otherwise.
  */
 export interface GalleryMedia extends AuditFields {
-  /** Denormalised from the event so the queues above can filter without a join. */
+  /**
+   * Denormalised from the event so the queues above can filter without a join.
+   *
+   * `UNFILED_PROGRAM_ID` when the ministry it named has been deleted. Every
+   * ordinary read filters on a real program id, so such a picture simply does
+   * not appear — which is the point: it belongs to nobody until somebody adopts
+   * it.
+   */
   programId: string;
+  /**
+   * The level it is filed on — or the *program's* id, which means "on the
+   * ministry itself rather than on any level". Both are real destinations; the
+   * top row of `PictureManager` writes the second.
+   *
+   * May also name a level that has since been deleted. Deleting a level moves
+   * its pictures to the ministry first (`deleteProgramEvent`), so this is only
+   * the state of pictures orphaned before that existed — and the ministry page
+   * shows them as its own anyway. See `getGalleryLevel`.
+   */
   programEventId: string;
   /**
    * Legacy: which inline subgroup of `programEventId` this was filed under.

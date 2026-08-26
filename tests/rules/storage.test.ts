@@ -216,3 +216,88 @@ describe('events/ — hero images for the parish calendar', () => {
     await assertFails(deleteObject(ref(asServant(env).storage(), 'events/festival/hero-keep.png')));
   });
 });
+
+/**
+ * `forms/` — a form's own picture, set by staff in the builder.
+ *
+ * World-readable, because it is the photograph on a public card. The reason it
+ * gets a test rather than a line of prose is the create/update/delete split: the
+ * `events/` rule above carries a long comment about a real bug where one
+ * `allow write ... && isImage()` made staff-uploaded photographs impossible to
+ * *remove*, because a delete carries no `request.resource` and so fails
+ * `isImage()`. `rules:check` passed throughout. The last test here is the one
+ * that tells those two policies apart.
+ */
+describe('forms/ — a form’s picture', () => {
+  it('is readable by the world, being a picture on a public page', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `forms/${RUN}-read/pic.png`), png, meta);
+    });
+    await assertSucceeds(getBytes(ref(asAnon(env).storage(), `forms/${RUN}-read/pic.png`)));
+  });
+
+  it('is writable by staff and by nobody below them', async () => {
+    await assertSucceeds(
+      uploadBytes(ref(asStaff(env).storage(), `forms/${RUN}-a/pic.png`), png, meta),
+    );
+    await assertFails(
+      uploadBytes(ref(asServant(env).storage(), `forms/${RUN}-b/pic.png`), png, meta),
+    );
+    await assertFails(
+      uploadBytes(ref(asAnon(env).storage(), `forms/${RUN}-c/pic.png`), png, meta),
+    );
+  });
+
+  it('lets staff DELETE a picture they uploaded', async () => {
+    // The regression guard. Under a single `allow write: if hasRole('staff') &&
+    // isImage()` this fails, because a delete has no incoming object — and the
+    // symptom in the product is a picture that can be replaced in the document
+    // but never removed from a world-readable bucket.
+    const path = `forms/${RUN}-del/pic.png`;
+    await assertSucceeds(uploadBytes(ref(asStaff(env).storage(), path), png, meta));
+    await assertSucceeds(deleteObject(ref(asStaff(env).storage(), path)));
+  });
+});
+
+/**
+ * `formUploads/` — photographs attached by whoever fills in a form.
+ *
+ * The second anonymous write path on this site, and it inherits every property
+ * that makes the first one acceptable. The read test is the load-bearing one:
+ * these are photographs members of the public send the parish, and if they were
+ * world-readable this would be an anonymous file host on the parish's domain
+ * with the submissions queue as decoration.
+ */
+describe('formUploads/ — photographs attached to a submission', () => {
+  it('accepts a photograph from somebody with no account', async () => {
+    await assertSucceeds(
+      uploadBytes(ref(asAnon(env).storage(), `formUploads/van-request/${RUN}-a.png`), png, meta),
+    );
+  });
+
+  it('does NOT let the person who uploaded it read it back', async () => {
+    const path = `formUploads/van-request/${RUN}-b.png`;
+    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await assertFails(getBytes(ref(asAnon(env).storage(), path)));
+  });
+
+  it('refuses an overwrite, so one submitter cannot replace another’s photo', async () => {
+    const path = `formUploads/van-request/${RUN}-c.png`;
+    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await assertFails(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+  });
+
+  it('refuses anything that is not an image', async () => {
+    await assertFails(
+      uploadBytes(ref(asAnon(env).storage(), `formUploads/van-request/${RUN}-d.exe`), png, {
+        contentType: 'application/x-msdownload',
+      }),
+    );
+  });
+
+  it('lets staff read one, which is what the review panel does', async () => {
+    const path = `formUploads/van-request/${RUN}-e.png`;
+    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await assertSucceeds(getBytes(ref(asStaff(env).storage(), path)));
+  });
+});

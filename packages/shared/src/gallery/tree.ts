@@ -507,6 +507,22 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
   options: {
     /** `featuredMediaIds` from the node, or from the program at the root. */
     curated?: readonly string[] | undefined;
+    /**
+     * What "filed directly here" means when `nodeId` is null — the program's own
+     * id.
+     *
+     * The ministry page is the one level with no node of its own, so it had no
+     * id to compare `programEventId` against and its own pool was hard-coded
+     * empty. But a photograph *can* be filed on the ministry rather than on any
+     * level — that is `programEventId === programId`, and `PictureManager` offers
+     * the ministry as a destination precisely so a mis-filed one can be put back
+     * there. Without this, filing a photograph onto the ministry made it vanish
+     * from the only page that could have shown it, which read as a delete.
+     *
+     * Optional because a caller that has no program to hand — a test, or a tree
+     * rendered on its own — still gets the old behaviour.
+     */
+    rootId?: string | undefined;
     max?: number | undefined;
   } = {},
 ): M[] {
@@ -524,7 +540,8 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
       .slice(0, max);
   }
 
-  const own = nodeId === null ? [] : media.filter((item) => item.programEventId === nodeId);
+  const ownId = nodeId ?? options.rootId ?? null;
+  const own = ownId === null ? [] : media.filter((item) => item.programEventId === ownId);
   const children = childrenOf(tree, nodeId);
 
   if (children.length === 0) {
@@ -754,6 +771,8 @@ export function pagePictures<N extends GalleryTreeNode, M extends SummaryMedia>(
     showAll?: boolean | undefined;
     /** Pressed × on, in this block. Applied last, to whichever mode won. */
     hidden?: readonly string[] | undefined;
+    /** The program's id, so the ministry page has an "own" pool. See `nodeSummary`. */
+    rootId?: string | undefined;
     max?: number | undefined;
   },
 ): M[] {
@@ -762,12 +781,12 @@ export function pagePictures<N extends GalleryTreeNode, M extends SummaryMedia>(
     curated === null
       ? page.showAll === true
         ? subtreeMedia(tree, nodeId, media)
-        : nodeSummary(tree, nodeId, media, { max: page.max })
+        : nodeSummary(tree, nodeId, media, { rootId: page.rootId, max: page.max })
       : // Empty short-circuits rather than reaching `nodeSummary`, which reads an
         // empty `curated` as "no list" and would answer with the automatic spread.
         curated.length === 0
         ? []
-        : nodeSummary(tree, nodeId, media, { curated, max: page.max });
+        : nodeSummary(tree, nodeId, media, { curated, rootId: page.rootId, max: page.max });
 
   /*
    * The hidden ones come off last, whichever mode chose the set.

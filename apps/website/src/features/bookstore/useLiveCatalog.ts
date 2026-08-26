@@ -94,6 +94,35 @@ function restBase(): { url: string; key: string } | null {
  * after the last cover run — slow, but visible, which is the whole point.
  * ---------------------------------------------------------------------------
  */
+/**
+ * Whether the build's images survive the swap, given the two counts.
+ *
+ * ---------------------------------------------------------------------------
+ * Exported and tested on its own because getting it wrong is silent and total:
+ * the shop keeps working, the layout does not move, and every cover simply
+ * becomes the title placeholder a moment after the page loads — while the
+ * homepage's server-rendered shelf, which never runs this swap, goes on showing
+ * the photographs. That is precisely the shape the bug took.
+ *
+ * The rule: keep the baked images unless the document *contradicts* them.
+ *
+ *   - No pictures in the document at all → keep. An empty `imagePaths` is not a
+ *     removed photograph; it is what the whole catalog looks like whenever the
+ *     mirror is pointed at a Square account with no images on its items, which
+ *     is the sandbox and therefore today. It says nothing about the book.
+ *   - The same number → keep. Nothing changed, and the baked pair is the
+ *     optimised 800px WebP; the document holds 3105px originals.
+ *   - A different number, and not zero → use the live list. A photograph really
+ *     was added or removed since the build, and slower is better than wrong.
+ *
+ * A product the build never saw has nothing to keep, and falls to Square's URL.
+ * ---------------------------------------------------------------------------
+ */
+export function keepsBakedImages(bakedCount: number, liveCount: number): boolean {
+  if (bakedCount === 0) return false;
+  return liveCount === 0 || liveCount === bakedCount;
+}
+
 function toShopProduct(
   id: string,
   raw: Record<string, unknown>,
@@ -104,14 +133,7 @@ function toShopProduct(
 
   const images = Array.isArray(product.imagePaths) ? product.imagePaths.filter(Boolean) : [];
   const squareCover = images[0] ?? null;
-
-  /*
-   * Keep the build's images when the build had this product *and* the document
-   * still lists the same number of pictures. A changed count means a photograph
-   * was added or removed since the build, and then the live list is the honest
-   * one even though it is slower.
-   */
-  const keepBaked = baked != null && baked.gallery.length === images.length && images.length > 0;
+  const keepBaked = baked != null && keepsBakedImages(baked.gallery.length, images.length);
 
   return {
     id,

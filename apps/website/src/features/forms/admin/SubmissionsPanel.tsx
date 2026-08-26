@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormAnswer, FormDefinition, SubmissionStatus } from '@spsm/shared';
 import { money } from '@/features/bookstore/money';
+import { isFormUploadPath } from '@spsm/shared';
 import type { WithId } from '../data';
+import { readFormPhotoUrl } from '../uploads';
 import { readSubmissions, setSubmissionStatus, type SubmissionRow } from './adminData';
 
 /**
@@ -196,7 +198,13 @@ function SubmissionCard({
           {Object.entries(row.answers).map(([key, answer]) => (
             <div key={key} className="fxs__answer">
               <dt>{labelFor(form, key)}</dt>
-              <dd>{render(form, key, answer)}</dd>
+              <dd>
+                {isFormUploadPath(answer) ? (
+                  <SubmittedPhoto path={answer} />
+                ) : (
+                  render(form, key, answer)
+                )}
+              </dd>
             </div>
           ))}
         </dl>
@@ -239,4 +247,44 @@ function render(
   if (typeof answer === 'boolean') return answer ? 'Yes' : 'No';
   if (typeof answer === 'number') return String(answer);
   return one(answer);
+}
+
+/**
+ * A photograph somebody attached, fetched with the reviewer's own credentials.
+ *
+ * `formUploads/` is readable only by staff, which is the whole point of the
+ * quarantine — so the URL cannot be stored on the submission and cannot be
+ * resolved until a member of staff opens the row. It is fetched here, per photo,
+ * when the row is expanded.
+ *
+ * A failure renders the path as text rather than a broken image. Two things
+ * produce one and they are worth telling apart in the console: the file is
+ * genuinely gone, or `storage.rules` has not been deployed — which on this
+ * project is a live hazard, since that file went undeployed for months.
+ */
+function SubmittedPhoto({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readFormPhotoUrl(path).then((resolved) => {
+      if (cancelled) return;
+      if (resolved) setUrl(resolved);
+      else setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (failed) return <code className="fxs__missing">{path}</code>;
+  if (!url) return <span className="meta">Loading photo…</span>;
+
+  return (
+    <a className="fxs__photo" href={url} target="_blank" rel="noopener noreferrer">
+      <img src={url} alt="" loading="lazy" />
+      <span className="visually-hidden">Open the attached photograph in a new tab</span>
+    </a>
+  );
 }

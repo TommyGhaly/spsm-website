@@ -31,6 +31,11 @@ function field(key, type, label, extra = {}) {
   };
 }
 
+/** A section break. `heading` collects nothing; it exists to split a long form. */
+function section(key, label) {
+  return field(key, 'heading', label);
+}
+
 /** Plain option labels into `{value,label,priceCents}`, values slugged. */
 function options(...labels) {
   return labels.map((label) => ({
@@ -142,8 +147,10 @@ const FORMS = [
       field('policy', 'consent', 'I have read the parish policy for new services', {
         required: true,
       }),
+      section('sec_who', 'Who is asking'),
       field('today', 'date', 'Today’s date', { required: true }),
       ...WHO,
+      section('sec_service', 'The service'),
       field('purpose', 'longText', 'What is the service for?', { required: true }),
       field('servants', 'shortText', 'Which servants will run it?', { required: true }),
       field('audience', 'shortText', 'Who is it for?', { required: true }),
@@ -183,8 +190,10 @@ const FORMS = [
       field('policy', 'consent', 'I have read the parish policy for events', {
         required: true,
       }),
+      section('sec_who', 'Who is asking'),
       field('today', 'date', 'Today’s date', { required: true }),
       ...WHO,
+      section('sec_event', 'The event'),
       field('service', 'select', 'Which service is this for?', {
         required: true,
         options: SERVICES,
@@ -204,6 +213,7 @@ const FORMS = [
       field('duration', 'shortText', 'How long will it run?', { required: true }),
       field('date', 'date', 'Proposed date', { required: true }),
       field('alt_date', 'date', 'Alternative date', { required: true }),
+      section('sec_transport', 'Transport'),
       field('vans', 'select', 'Do you need a church van?', {
         required: true,
         options: options('No vans', '1 van', '2 vans'),

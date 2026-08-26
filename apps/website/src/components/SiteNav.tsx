@@ -26,7 +26,17 @@ import { galleryPathUrl } from '@/features/programs/media';
  * hardcoded prop from the server layout rather than being fetched.
  */
 
-export type NavChild = { href: string; label: string; coverPath?: string | null };
+/*
+ * How long each photograph holds in a menu tile.
+ *
+ * The same 3200ms the shelves on /events use, so a visitor who opens the menu
+ * over that page does not see two slideshows running at different speeds. A
+ * dropdown is looked at for a couple of seconds at a time, so this is a tile
+ * that changes once while you read it rather than a thing that flickers.
+ */
+const NAV_CYCLE_MS = 3200;
+
+export type NavChild = { href: string; label: string; coverPaths?: readonly string[] };
 export type NavItem = { href: string; label: string; children?: readonly NavChild[] };
 
 export function SiteNav({ items }: { items: readonly NavItem[] }) {
@@ -34,6 +44,25 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
   const [open, setOpen] = useState(false);
   /** The href of the top-level item whose dropdown is showing, if any. */
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+
+  /*
+   * Which photograph each tile is showing — one counter for the whole menu,
+   * taken modulo each tile's own number of pictures, exactly as the shelves on
+   * /events do it. One timer per menu rather than one per tile.
+   *
+   * It only runs while a dropdown is open, so a visitor who never touches the
+   * header pays for no interval at all, and a menu that is closed is not
+   * re-rendering behind it. Reduced motion switches it off and leaves the first
+   * picture of each tile up, which is what that setting asks for.
+   */
+  const [shot, setShot] = useState(0);
+
+  useEffect(() => {
+    if (openMenu === null) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setShot((n) => n + 1), NAV_CYCLE_MS);
+    return () => window.clearInterval(timer);
+  }, [openMenu]);
 
   /**
    * Ministries that have been hidden since the last build.
@@ -244,12 +273,14 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </Link>
 
               {/*
-                Tiles, each with its program's own photograph behind the name.
+                Tiles, each cycling through its own program's photographs.
                 
                 A plain list of five names had nothing to look at, and the
                 decorations tried instead — a heading, an ornament rule, a cross
                 per item — were furniture rather than substance. This section is
-                about photographs, so the photographs are the background. A
+                about photographs, so the photographs are the background, and a
+                ministry is not one photograph: a single frozen cover said the
+                same thing about summercamp every time the menu opened. A
                 program with none yet gets a plain warm ground, and the type
                 stays dark either way so a half-filled menu still reads as one
                 thing.
@@ -257,7 +288,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               <ul className="nav__menu" hidden={openMenu !== item.href}>
                 {visibleChildren(item.children).map((child) => (
                   <li key={child.href}>
-                    <NavTile child={child} current={isCurrent(child.href)} />
+                    <NavTile child={child} current={isCurrent(child.href)} shot={shot} />
                   </li>
                 ))}
               </ul>
@@ -343,9 +374,9 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
 }
 
 /**
- * One program in the Events menu.
+ * One program in the Events menu, showing its photographs in turn.
  *
- * The photograph is an `<img>` rather than a CSS `background-image`, and that is
+ * They are `<img>` elements rather than a CSS `background-image`, and that is
  * the whole point of this component existing.
  *
  * A cover tile needs light type, because the type sits on a scrim over a
@@ -355,32 +386,65 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
  * dark tile among four light ones read as *selected*, which is what it looked
  * like on /events where nothing is selected at all.
  *
- * With an element, `onLoad` and `onError` decide. Until a photograph has
- * actually loaded the tile is an ordinary light one with dark type; a tile whose
- * photograph never arrives simply stays that way, indistinguishable from a
+ * With elements, `onLoad` and `onError` decide. Until a photograph has actually
+ * loaded the tile is an ordinary light one with dark type; a tile whose
+ * photographs never arrive simply stays that way, indistinguishable from a
  * program that has none yet — which is the honest thing for it to look like.
+ * That same signal is what the cycle walks, so a broken object is skipped rather
+ * than blanking the tile for its turn.
  */
-function NavTile({ child, current }: { child: NavChild; current: boolean }) {
-  const [loaded, setLoaded] = useState(false);
+function NavTile({
+  child,
+  current,
+  shot,
+}: {
+  child: NavChild;
+  current: boolean;
+  shot: number;
+}) {
+  /*
+   * Which of this tile's pictures have actually arrived.
+   *
+   * The cycle runs over these rather than over everything the build handed
+   * down, so a photograph whose object is missing is skipped instead of
+   * blanking the tile for its turn — the same judgement the single-cover
+   * version made with its one boolean, extended to a set.
+   */
+  const [loaded, setLoaded] = useState<readonly number[]>([]);
+
+  const paths = child.coverPaths ?? [];
+  const showing = loaded.length > 0 ? loaded[shot % loaded.length] : -1;
+
+  const markLoaded = (index: number) =>
+    setLoaded((was) => (was.includes(index) ? was : [...was, index].sort((a, b) => a - b)));
+  const markFailed = (index: number) => setLoaded((was) => was.filter((n) => n !== index));
 
   return (
     <Link
       href={child.href}
       aria-current={current ? 'page' : undefined}
-      className={loaded ? 'has-cover' : undefined}
+      className={loaded.length > 0 ? 'has-cover' : undefined}
     >
-      {child.coverPath && (
+      {/*
+        Every picture is in the DOM at once, stacked, with opacity deciding
+        which is seen — the same construction as the shelf tiles on /events, and
+        for the same reason: swapping one element's `src` shows the ground for
+        however long the new file takes to decode, which reads as a flash.
+      */}
+      {paths.map((path, index) => (
         <img
-          src={galleryPathUrl(child.coverPath)}
+          key={path}
+          className={index === showing ? 'is-current' : undefined}
+          src={galleryPathUrl(path)}
           // Decorative: the name is right on top of it.
           alt=""
           aria-hidden="true"
           loading="lazy"
           decoding="async"
-          onLoad={() => setLoaded(true)}
-          onError={() => setLoaded(false)}
+          onLoad={() => markLoaded(index)}
+          onError={() => markFailed(index)}
         />
-      )}
+      ))}
       <span>{child.label}</span>
     </Link>
   );

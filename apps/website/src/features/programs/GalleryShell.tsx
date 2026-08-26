@@ -684,9 +684,15 @@ function LevelView({
             curated: chosen.length > 0 ? chosen : null,
             showAll: showAll === true,
             hidden,
+            /*
+              What "filed here" means on the ministry page, which has no node of
+              its own. Without it a photograph filed on the ministry is in this
+              page's read and in no pool it draws from. See `nodeSummary`.
+            */
+            rootId: program.id,
             max: MAX_FEATURED,
           }),
-    [tree, nodeId, media, chosen, showAll, hidden, picturesOff],
+    [tree, nodeId, media, chosen, showAll, hidden, picturesOff, program.id],
   );
 
   /**
@@ -709,7 +715,14 @@ function LevelView({
    * photograph rather than removed it.
    */
   const alsoHere = useMemo(() => {
-    if (nodeId === null) return [];
+    /*
+      The ministry counts as a level here too, and its "own" id is the program's.
+      It was excluded outright, on the reasoning that the root has no documents of
+      its own — which is false: filing a photograph on the ministry is what the top
+      row of `PictureManager` does, and this strip is the thing that guarantees a
+      filed photograph is visible *somewhere*.
+    */
+    const ownId = nodeId ?? program.id;
     /*
       Gone with the page's own block, and this is the line that makes Delete mean
       what it says. This strip is whatever the blocks above left out, so with the
@@ -722,12 +735,12 @@ function LevelView({
     const off = new Set(hidden);
     return media.filter(
       (item) =>
-        item.programEventId === nodeId &&
+        item.programEventId === ownId &&
         item.placement.onPage &&
         !shown.has(item.id) &&
         !off.has(item.id),
     );
-  }, [media, nodeId, pictures, hidden]);
+  }, [media, nodeId, pictures, hidden, program.id]);
 
   /*
    * This level's own layout — never its ministry's.
@@ -805,11 +818,12 @@ function LevelView({
             curated: picks,
             showAll: showAll === true,
             hidden: bandHidden,
+            rootId: program.id,
             max: MAX_FEATURED,
           }),
         };
       }),
-    [bands, bandSets, drafts, tree, nodeId, media, showAll],
+    [bands, bandSets, drafts, tree, nodeId, media, showAll, program.id],
   );
 
   /**
@@ -1980,13 +1994,13 @@ function LevelView({
             }),
           onRemove: () =>
             void write(async () => {
-              await deleteProgramEvent(child.id, program.id);
+              await deleteProgramEvent(child.id, program.id, admin.uid);
               refresh();
             }),
           removeWarning:
             inside > 0
               ? `“${child.title}” has ${inside} level${inside === 1 ? '' : 's'} inside it. Remove those first.`
-              : `Remove “${child.title}”? Its photographs stay in the parish's storage and can be re-filed.`,
+              : `Remove “${child.title}”? Its photographs move to ${program.name} and can be filed again from there.`,
         };
       })}
       onAdd={(name) =>

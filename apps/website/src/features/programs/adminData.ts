@@ -49,6 +49,7 @@ import {
   COLLECTIONS,
   CONFIG_DOC_EVENTS,
   GALLERY_SUMMARY_MAX,
+  UNFILED_PROGRAM_ID,
   buildGalleryTree,
   defaultBand,
   resolveBands,
@@ -191,6 +192,75 @@ export async function updateProgram(
 }
 
 /**
+ * Every photograph filed on one level, whatever its status.
+ *
+ * No `status` filter on purpose. The caller is emptying a level that is about to
+ * stop existing, and a pending submission left behind is worse than an approved
+ * one: it keeps a file in quarantine, its queue is about to disappear, and
+ * nobody will ever be able to act on it.
+ *
+ * **`programId` is in the query and cannot come out**, which is not tidiness and
+ * not the same thing as the status filter it looks like. The read rule opens
+ * with `resource.data.status == 'approved'`, and for a *list* Firestore refuses
+ * to evaluate a field the query has not constrained — so `programEventId` alone
+ * is denied outright with "Property status is undefined on object". Naming
+ * `programId` lets `adminsProgramEvent` resolve instead, and the rule's `||`
+ * comes out true without ever reaching `status`. Decision #10 in a new shape:
+ * the query has to *prove* the branch that permits it.
+ * tests/rules/program-galleries.test.ts pins both halves; a compile check cannot
+ * see this at all.
+ */
+async function mediaFiledOn(
+  programId: string,
+  programEventId: string,
+): Promise<DocOf<GalleryMedia>[]> {
+  const snapshot = await getDocs(
+    query(
+      collection(db(), COLLECTIONS.galleryMedia),
+      where('programId', '==', programId),
+      where('programEventId', '==', programEventId),
+    ),
+  );
+  return snapshot.docs.map(docOf<GalleryMedia>);
+}
+
+/** Firestore's ceiling on one `writeBatch`. A camp can exceed it; a level rarely does. */
+const BATCH_MAX = 500;
+
+/**
+ * Re-file a set of photographs, in batches, as one decision.
+ *
+ * `writeBatch` rather than a loop of `updateDoc` because the caller is about to
+ * delete the document these point at: a loop that stops halfway leaves some
+ * pictures moved and the rest naming a level that is gone a moment later. A
+ * batch is all-or-nothing, and the chunking means a week with six hundred
+ * photographs is a small number of atomic writes rather than one impossible one.
+ *
+ * Deliberately *not* touching `order`, `placement` or `layout`. A photograph
+ * that arrives at the ministry keeps the position and the page settings somebody
+ * gave it, so re-filing the level it came from would put it back exactly as it
+ * was.
+ */
+async function refileMedia(
+  items: readonly DocOf<GalleryMedia>[],
+  to: { programId: string; programEventId: string },
+  uid: string | null,
+): Promise<void> {
+  for (let at = 0; at < items.length; at += BATCH_MAX) {
+    const batch = writeBatch(db());
+    for (const item of items.slice(at, at + BATCH_MAX)) {
+      batch.update(doc(db(), COLLECTIONS.galleryMedia, item.id), {
+        programId: to.programId,
+        programEventId: to.programEventId,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+}
+
+/**
  * Remove a program.
  *
  * The occurrences beneath it are **not** cascaded, and that is deliberate
@@ -198,8 +268,26 @@ export async function updateProgram(
  * stop halfway, and the half that survives is a set of galleries pointing at a
  * program that no longer exists. Refusing while any remain keeps the tree
  * consistent and makes the person deleting look at what they are about to lose.
+ *
+ * ## The photographs survive it, and are marked so they can be found
+ *
+ * At Tommy's direction: deleting a ministry must not destroy the parish's
+ * photographs. But by the time this runs every level is gone, so each of those
+ * deletes has already swept its pictures onto the ministry itself — which means
+ * everything the ministry ever held is now filed against a document that is
+ * about to stop existing.
+ *
+ * So they are re-filed to `UNFILED_PROGRAM_ID` first. That is what makes "the
+ * photographs stay" mean something: a picture carrying it is findable in one
+ * query, appears in every ministry's picture manager under "Not in any
+ * ministry", and is one drag away from belonging somewhere again. Left with the
+ * dead id it would be a document nothing in the site could ever list.
+ *
+ * The sweep happens **before** the program document goes, so a failure leaves a
+ * ministry that still exists with its pictures intact, rather than a deleted
+ * ministry and pictures nobody can reach.
  */
-export async function deleteProgram(programId: string): Promise<void> {
+export async function deleteProgram(programId: string, uid: string | null = null): Promise<void> {
   const events = await listProgramEventsForAdmin(programId);
   if (events.length > 0) {
     throw new Error(
@@ -207,6 +295,22 @@ export async function deleteProgram(programId: string): Promise<void> {
         'Remove those first.',
     );
   }
+
+  /*
+   * Everything left in the ministry, which after the rule above is everything
+   * filed on the ministry itself. Read by `programId` rather than by
+   * `programEventId`, so a picture orphaned by an older delete — one that
+   * happened before levels swept their own — is swept too rather than left
+   * behind pointing at a level and a program that are both gone.
+   */
+  const snapshot = await getDocs(
+    query(collection(db(), COLLECTIONS.galleryMedia), where('programId', '==', programId)),
+  );
+  await refileMedia(snapshot.docs.map(docOf<GalleryMedia>), {
+    programId: UNFILED_PROGRAM_ID,
+    programEventId: UNFILED_PROGRAM_ID,
+  }, uid);
+
   await deleteDoc(doc(db(), COLLECTIONS.programs, programId));
 }
 
@@ -349,14 +453,39 @@ export async function updateProgramEvent(
  * visible, which is the right failure, but not what anybody asked for. Refusing
  * makes the person deleting look at what they are about to lose.
  *
- * The photographs filed under it are left alone. They are `galleryMedia`
+ * The photographs filed under it are never destroyed. They are `galleryMedia`
  * documents with their own lifecycle — approved ones have public files behind
  * them — and deleting a level must not quietly destroy the parish's only copy of
- * a camp. They become orphaned, which is recoverable; deleted is not.
+ * a camp.
+ *
+ * ## They move to the ministry, they do not become orphans
+ *
+ * This used to leave them pointing at the deleted level, on the argument that
+ * orphaned is recoverable where deleted is not. True, and not good enough: an
+ * orphan appeared on no page, and the only sign of it was a tile in the picture
+ * manager labelled with a raw document id. "Recoverable" meant somebody had to
+ * already know it had happened.
+ *
+ * So the whole level's worth is re-filed onto the ministry itself first, which
+ * is the one destination that always exists and the one place that shows
+ * everything — see `nodeSummary`'s `rootId`. Tommy's instruction, and it is the
+ * behaviour the delete button already implied: the level goes, the photographs
+ * stay, in the ministry, together.
+ *
+ * Not the parent level, which was the other candidate. A day's pictures landing
+ * on its week reads tidier and scatters them: deleting a week and its days one
+ * by one leaves four different places to look, and the deepest delete happens
+ * first. The top of the tree is where somebody looking for "the pictures that
+ * used to be in Week 1" will actually go.
+ *
+ * The move is committed **before** the level document is deleted. A failure
+ * therefore leaves the level and its pictures exactly as they were, rather than
+ * a deleted level with photographs still naming it.
  */
 export async function deleteProgramEvent(
   programEventId: string,
   programId: string,
+  uid: string | null = null,
 ): Promise<void> {
   const all = await listProgramEventsForAdmin(programId);
   const beneath = descendantsOf(buildGalleryTree(all), programEventId);
@@ -366,6 +495,12 @@ export async function deleteProgramEvent(
         'Remove those first.',
     );
   }
+
+  await refileMedia(await mediaFiledOn(programId, programEventId), {
+    programId,
+    programEventId: programId,
+  }, uid);
+
   await deleteDoc(doc(db(), COLLECTIONS.programEvents, programEventId));
 }
 
@@ -951,6 +1086,40 @@ export async function setMediaNode(
 ): Promise<void> {
   await updateDoc(doc(db(), COLLECTIONS.galleryMedia, mediaId), {
     programEventId,
+    groupId: null,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/**
+ * Give a rogue photograph a ministry.
+ *
+ * The one case `setMediaNode` refuses on purpose — it will not write
+ * `programId`, because between two live ministries that is a change of ownership
+ * dressed up as a filing gesture. Here there is no ownership to change: the
+ * picture carries `UNFILED_PROGRAM_ID`, its ministry was deleted, and it belongs
+ * to nobody until this runs.
+ *
+ * Separate from `setMediaNode` rather than a flag on it, so the dangerous
+ * capability — moving a photograph between programs — exists in exactly one
+ * function whose name says what it is for, and so the rule that guards it is
+ * legible: `firestore.rules` evaluates `adminsProgramEvent` against the *stored*
+ * `programId`, which is the sentinel, so only a full `admin` can do this. A
+ * ministry lead cannot quietly claim the parish's loose photographs.
+ *
+ * `programEventId` is set to the destination program's own id — the ministry
+ * itself, not a level inside it — because that is the only destination that is
+ * certainly correct. Filing it further down is the ordinary drag afterwards.
+ */
+export async function adoptUnfiledMedia(
+  mediaId: string,
+  destination: { programId: string; programEventId: string },
+  uid: string | null,
+): Promise<void> {
+  await updateDoc(doc(db(), COLLECTIONS.galleryMedia, mediaId), {
+    programId: destination.programId,
+    programEventId: destination.programEventId,
     groupId: null,
     updatedAt: serverTimestamp(),
     updatedBy: uid,

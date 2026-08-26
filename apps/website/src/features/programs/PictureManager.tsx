@@ -49,6 +49,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  UNFILED_PROGRAM_ID,
   childrenOf,
   descendantsOf,
   focalPosition,
@@ -59,7 +60,8 @@ import {
 } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { galleryPosterUrl } from './media';
-import { setMediaNode } from './adminData';
+import { adoptUnfiledMedia, setMediaNode } from './adminData';
+import { getUnfiledMedia } from './data';
 import { deleteMediaForever } from './review';
 
 /** How far the pointer travels before a press becomes a drag. */
@@ -87,10 +89,37 @@ export function PictureManager({
   onChanged: () => void;
   onClose: () => void;
 }) {
-  /** `null` is "everything". Otherwise one level's id — the same as the picker. */
+  /**
+   * `null` is "everything". Otherwise one level's id — the same as the picker —
+   * or `UNFILED_PROGRAM_ID` for the parish's rogue pictures, which is a document
+   * id no level can have.
+   */
   const [level, setLevel] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>({ kind: 'no' });
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Photographs whose ministry was deleted, from every ministry in the parish.
+   *
+   * Held here rather than passed in, because they are not this ministry's and
+   * the page that owns `media` has no business reading them. Every manager shows
+   * the same list and any of them can claim from it — see `getUnfiledMedia`.
+   *
+   * Empty is the ordinary state and renders as nothing at all: no row, no
+   * heading. A permanently empty "Not in any ministry" would be a standing
+   * question about a thing that has never happened.
+   */
+  const [unfiled, setUnfiled] = useState<readonly DocOf<GalleryMedia>[]>([]);
+  const loadUnfiled = useCallback(() => {
+    void getUnfiledMedia().then((found) => {
+      setUnfiled(found);
+      // Taking in the last one removes the row that is currently selected, which
+      // would leave the grid empty under a selection nothing points at. Back to
+      // everything, which is where the screen opens.
+      if (found.length === 0) setLevel((at) => (at === UNFILED_PROGRAM_ID ? null : at));
+    });
+  }, []);
+  useEffect(loadUnfiled, [loadUnfiled]);
 
   /**
    * The photograph whose delete has been asked for but not confirmed.
@@ -148,9 +177,20 @@ export function PictureManager({
     ];
   }, [tree, media, programId, programName]);
 
+  /*
+   * "Everything" means everything in *this ministry*, and deliberately excludes
+   * the rogue pictures. They are not filed here — that is what makes them rogue
+   * — and folding them into the ministry's own grid would make the count above
+   * the levels wrong and put pictures from a deleted ministry in among Week 1's.
+   */
   const shown = useMemo(
-    () => (level === null ? media : media.filter((item) => item.programEventId === level)),
-    [media, level],
+    () =>
+      level === null
+        ? media
+        : level === UNFILED_PROGRAM_ID
+          ? unfiled
+          : media.filter((item) => item.programEventId === level),
+    [media, unfiled, level],
   );
 
   /**
@@ -160,13 +200,20 @@ export function PictureManager({
    * this tile could be dropped onto — including the ministry's own row, which is not
    * a node and has no title of its own.
    *
-   * Falls back to the raw id, which is what a photograph filed on a level that has
-   * since been deleted actually has. That is a real state — `deleteProgramEvent`
-   * deliberately orphans rather than cascading — and an unrecognised id shown plainly
-   * is how somebody finds it and files it somewhere.
+   * A rogue picture says so in words. Its `programEventId` is the sentinel, which
+   * as a raw string on a tile would read as a bug.
+   *
+   * Anything else unrecognised falls back to the raw id. That should no longer
+   * happen — `deleteProgramEvent` moves a level's pictures to the ministry before
+   * removing it, and `getGalleryLevel` reads an older orphan as the ministry's —
+   * so an id showing through here means a document arrived by some route neither
+   * of those covers, and showing it plainly is how somebody finds it.
    */
   const whereOf = useCallback(
-    (id: string) => levels.find((one) => one.id === id)?.label ?? id,
+    (id: string) =>
+      id === UNFILED_PROGRAM_ID
+        ? 'Not in any ministry'
+        : (levels.find((one) => one.id === id)?.label ?? id),
     [levels],
   );
 
@@ -175,22 +222,46 @@ export function PictureManager({
 
   /* ---- the two writes ---------------------------------------------------- */
 
+  /**
+   * Two writes behind one gesture, and the difference is which one is allowed.
+   *
+   * Dragging inside the ministry is `setMediaNode`, which will not write
+   * `programId` on purpose. Dragging *in* from the rogue row has to write it —
+   * the picture's ministry was deleted — so it goes through `adoptUnfiledMedia`,
+   * which only a full administrator may do. See both for why the capability is
+   * split rather than shared.
+   *
+   * The gesture is identical either way, and it should be: "this picture belongs
+   * in Week 1" is one thought. What differs is only whether the parish or the
+   * ministry owned it a moment ago.
+   */
   const move = useCallback(
     async (item: DocOf<GalleryMedia>, destination: string) => {
-      if (destination === item.programEventId) return;
+      const rogue = item.programId === UNFILED_PROGRAM_ID;
+      if (destination === item.programEventId && !rogue) return;
       setBusy({ kind: 'moving', id: item.id });
       setError(null);
       try {
-        await setMediaNode(item.id, destination, null);
+        if (rogue) {
+          await adoptUnfiledMedia(item.id, { programId, programEventId: destination }, null);
+          loadUnfiled();
+        } else {
+          await setMediaNode(item.id, destination, null);
+        }
         onChanged();
       } catch (caught) {
         console.error('[galleries] could not refile:', caught);
-        setError('That picture could not be moved. You may not have permission here.');
+        setError(
+          rogue
+            ? 'That picture could not be taken in. Only a parish administrator can ' +
+                'give a loose picture a ministry.'
+            : 'That picture could not be moved. You may not have permission here.',
+        );
       } finally {
         setBusy({ kind: 'no' });
       }
     },
-    [onChanged],
+    [onChanged, programId, loadUnfiled],
   );
 
   const destroy = useCallback(
@@ -200,6 +271,9 @@ export function PictureManager({
       try {
         await deleteMediaForever(item);
         setConfirming(null);
+        // A rogue picture is not in `media`, so the page's re-read cannot take it
+        // off this screen. Its own list has to be read again.
+        if (item.programId === UNFILED_PROGRAM_ID) loadUnfiled();
         onChanged();
       } catch (caught) {
         console.error('[galleries] could not delete:', caught);
@@ -208,7 +282,7 @@ export function PictureManager({
         setBusy({ kind: 'no' });
       }
     },
-    [onChanged],
+    [onChanged, loadUnfiled],
   );
 
   /* ---- the drag ---------------------------------------------------------- */
@@ -234,8 +308,36 @@ export function PictureManager({
 
   const grab = useCallback(
     (event: React.PointerEvent<HTMLElement>, item: DocOf<GalleryMedia>) => {
-      // Left button only, and never on the × — that is a press, not a drag.
+      // Left button only, and never on a control — that is a press, not a drag.
       if (event.button !== 0) return;
+
+      /*
+       * The second half of that sentence was a comment and not a check, and the
+       * cost was the whole of delete.
+       *
+       * `setPointerCapture` below retargets the *click* as well as the pointer
+       * events: with the tile holding the capture, the click that follows is
+       * dispatched at the tile rather than at whatever was actually under the
+       * pointer. So a press on the delete pill captured the pointer for the tile,
+       * the pill's own `onClick` never ran, and `confirming` was never set — the
+       * confirmation never appeared and a photograph could not be deleted at all,
+       * on any tile. Dragging was unaffected, because it reads `pointermove` and
+       * `pointerup` and never needs a click, which is why the screen looked
+       * half-working rather than broken.
+       *
+       * `closest('button')` rather than a class: the delete pill, its confirmation
+       * and anything else this tile grows are all controls, and the rule is the
+       * same for each — a press on one is that button's, not the tile's. It
+       * catches the `svg` inside the pill too, which is what `event.target`
+       * usually is.
+       *
+       * `PictureStrip` has the same drag and not this bug, and the difference is
+       * structural: there the capture is on a `.pstrip__grab` button that wraps
+       * only the photograph, and its × is a *sibling*. Here one div carries the
+       * picture and the buttons, so the guard has to be explicit.
+       */
+      if (event.target instanceof Element && event.target.closest('button')) return;
+
       const tile = event.currentTarget;
       const from = { x: event.clientX, y: event.clientY };
       let started = false;
@@ -365,6 +467,11 @@ export function PictureManager({
             <strong className="manager__error" role="alert">
               {error}
             </strong>
+          ) : level === UNFILED_PROGRAM_ID ? (
+            <>
+              These are from a ministry that was deleted. Drag one onto a level to take it
+              into {programName}.
+            </>
           ) : (
             <>Drag a picture onto a level to file it there. Delete is permanent.</>
           )}
@@ -415,6 +522,32 @@ export function PictureManager({
               <b>{one.count}</b>
             </button>
           ))}
+
+          {/*
+            The parish's loose pictures, under the ministry's own levels and ruled
+            off from them.
+
+            Below rather than above, and only when there are any. It is the least
+            common thing on this screen and it is not part of this ministry — a
+            row at the top would put "a ministry somebody deleted" in front of
+            "Week 1" every time anybody opened the manager to move one picture.
+
+            Not registered in `rows`, so it cannot be dropped *onto*. Filing works
+            one way here: a rogue picture can be taken into a ministry, and a
+            ministry's picture cannot be pushed out into limbo. There is no reason
+            to want the second, and it would be a way to lose a photograph with
+            one careless drag.
+          */}
+          {unfiled.length > 0 && (
+            <button
+              type="button"
+              className={`picker__folder manager__rogue${level === UNFILED_PROGRAM_ID ? ' is-on' : ''}`}
+              onClick={() => setLevel(UNFILED_PROGRAM_ID)}
+            >
+              <span>Not in any ministry</span>
+              <b>{unfiled.length}</b>
+            </button>
+          )}
         </nav>
 
         <div className="picker__pictures">

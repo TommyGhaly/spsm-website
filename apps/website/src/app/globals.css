@@ -21657,10 +21657,23 @@ span.gallery-figure__frame {
   border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
 }
 
-/* A word here, not the dot the card uses — there is room for one, and at this
-   size a 5px mark under a photograph reads as a speck on the photograph. */
+/*
+ * A word here, not the dot the card uses — there is room for one, and at this
+ * size a 5px mark under a photograph reads as a speck on the photograph.
+ *
+ * On the picture rather than under it, because under it the badge is a row that
+ * only the first tile has: it pushed that tile's Remove a line lower than every
+ * other tile's, so the one control a volunteer has to aim at was the one that
+ * did not line up with its neighbours.
+ */
 .bkpix--panel .bkpix__cover {
-  position: static;
+  position: absolute;
+  top: 0.25rem;
+  /* `bottom` is set on the base rule, and leaving it there with `top` also set
+     and `height: auto` stretched the badge into a red bar down the whole side of
+     the photograph. Both offsets on one axis is a stretch, not a position. */
+  bottom: auto;
+  left: 0.25rem;
   width: auto;
   height: auto;
   overflow: visible;
@@ -21730,4 +21743,164 @@ span.gallery-figure__frame {
 .bkpix--panel.is-over .bkpix__add {
   color: var(--color-accent, #992a21);
   border-color: var(--color-accent, #992a21);
+}
+
+/* ---- the form as a surface --------------------------------------------- */
+
+/*
+ * A panel, not floating labels on the page.
+ *
+ * The fields were laid straight onto the page background, which is why the form
+ * read as unfinished however well the individual controls behaved: nothing said
+ * where it began or ended, and on a wide screen the last column ran to the edge
+ * of nothing. A surface with a border and a gold top edge gives it a frame and
+ * matches the notices and cards the rest of the site is built from.
+ */
+.fx {
+  padding: var(--space-lg, 1.75rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+  border-top: 3px solid var(--color-gold, #b08d43);
+}
+
+/* The vehicle form draws its own fieldsets, which would then be panels inside a
+   panel. It keeps the plain background. */
+.fx:has(.fx__driver) {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+@media (max-width: 40rem) {
+  .fx {
+    padding: var(--space-md, 1.1rem);
+  }
+}
+
+/*
+ * A section heading inside the form.
+ *
+ * `heading` has been a field type since the schema was written and nothing used
+ * it, so a sixteen-question form arrived as one undifferentiated run of boxes.
+ * The seeded forms now break at the joints — who is asking, what the event is,
+ * what it needs — and this is what those breaks look like.
+ *
+ * `:first-child` loses the rule and the top margin: a heading at the very top of
+ * the panel does not need separating from anything above it.
+ */
+.fx__heading {
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  padding-top: var(--space-md, 1.15rem);
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+.fx__heading:first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.fx__heading h3 {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide, 0.08em);
+  text-transform: uppercase;
+  color: var(--color-accent, #992a21);
+  margin: 0;
+}
+
+/* Inputs sit on the page colour so they read as wells cut into the panel,
+   rather than as paper on paper. */
+.fx .field input,
+.fx .field select,
+.fx .field textarea {
+  background: var(--color-paper, #f6e8e3);
+  /* 2.75rem min so a finger can land on one; the site's default padding gives
+     about 2.4rem, which is under every platform's target guidance. */
+  min-height: 2.75rem;
+}
+
+/*
+ * A select needs to look like a select.
+ *
+ * The native arrow is drawn by the OS in the OS's own grey, which on this cream
+ * panel reads as a rendering artefact. Replaced with a chevron in the parish
+ * ink, and `appearance: none` is what stops the two being drawn on top of each
+ * other.
+ */
+.fx .field select {
+  appearance: none;
+  padding-inline-end: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b413e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 1.1em;
+}
+
+/* The submit sits below a rule, so the end of the questions is visible. */
+.fx > button[type='submit'] {
+  margin-top: var(--space-sm, 0.5rem);
+  padding-block: 0.85rem;
+}
+
+/* ---- the photo field ---------------------------------------------------- */
+
+.fx__photo {
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fx__photo-preview {
+  width: 100%;
+  max-width: 18rem;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-rule, #e0cac3);
+  display: block;
+}
+
+.fx__photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fx__photo-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ---- attached photos in the review drawer ------------------------------- */
+
+.fxs__photo {
+  display: block;
+  max-width: 14rem;
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  border: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fxs__photo img {
+  width: 100%;
+  display: block;
+}
+
+.fxs__missing {
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  overflow-wrap: anywhere;
+}
+
+/* The builder's picture control: dropdown, upload, thumbnail. */
+.fxb__picture {
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fxb__picture-actions {
+  display: flex;
+  gap: var(--space-xs, 0.4rem);
 }
