@@ -94,6 +94,7 @@ const GRADES = options(
 const FORMS = [
   {
     slug: 'vehicle-registration',
+    image: '/img/stock-parking-lot-1000.webp',
     title: 'Register a vehicle',
     blurb:
       'So the parking team can reach you if your car needs moving. Visitors and guests are welcome to register too — no account needed.',
@@ -113,6 +114,7 @@ const FORMS = [
 
   {
     slug: 'van-request',
+    image: '/img/stock-passenger-van-1000.webp',
     title: 'Request a church van',
     blurb: 'For a service or an event that needs one of the parish vans.',
     icon: 'file',
@@ -131,6 +133,7 @@ const FORMS = [
 
   {
     slug: 'new-service-request',
+    image: '/img/stock-small-group-1000.webp',
     title: 'Request a new service',
     blurb: 'To start a new service or meeting in the parish.',
     icon: 'file',
@@ -171,6 +174,7 @@ const FORMS = [
 
   {
     slug: 'events-request',
+    image: '/img/stock-gathering-1000.webp',
     title: 'Request an event',
     blurb: 'To put an event on the parish calendar and book what it needs.',
     icon: 'calendar',
