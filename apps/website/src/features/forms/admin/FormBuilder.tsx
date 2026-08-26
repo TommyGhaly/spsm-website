@@ -41,34 +41,31 @@ import { writeForm, type WithId } from './adminData';
  */
 
 /**
- * Pictures a form may wear, and why the list is short and hand-written.
+ * Pictures a form may wear.
  *
- * These are the parish's own vetted images, already built into `public/img` by
- * `optimize-assets.mjs`. Staff pick from them rather than typing a URL, because
- * a free text box here is how a form ends up hotlinking a stock photo from
- * somebody else's website.
+ * The four stock photographs first: each one says what a form is *for* — a car
+ * park, a van, a group meeting, a gathering — which is the job a generic
+ * photograph can do honestly. Their licence and photo ids are recorded in
+ * `assets/README.md`, unlike every other stock image this repo inherited.
  *
- * Notable absences, both deliberate:
+ * The parish's own images follow, for a form where they genuinely fit.
  *
- *   - The Crucifixion icon (`icon-crucifixion-1200.webp`). It is genuine and it
- *     is beautiful, and an icon is venerated rather than used as page furniture.
- *     Nobody should meet it at the top of a form about parking a car.
- *   - Anything built from `assets/Coptic_pattern.png`, which is AI-generated —
- *     the "Coptic" in its banners is imitation letterforms spelling nothing.
- *     `optimize-assets.mjs` excludes it for exactly that reason.
+ * A fixed list rather than a free text box, because a box here is how a form
+ * ends up hotlinking a photograph from somebody else's website.
  *
- * Most forms want none of these. The crest on the card is the better answer for
- * a van request, and "No picture" is the default for that reason.
+ * Notable absence: the Crucifixion icon. It is genuine and beautiful, and an
+ * icon is venerated rather than used as page furniture — nobody should meet it
+ * at the top of a form about parking a car.
  */
 const PICTURES: { value: string | null; label: string }[] = [
-  { value: null, label: 'No picture — use the crest' },
-  { value: '/img/home-sanctuary-1000.webp', label: 'The sanctuary' },
-  { value: '/img/cross-coptic-360.webp', label: 'Coptic cross' },
-  { value: '/img/backdrop-domes-800.webp', label: 'Domes' },
-  { value: '/img/backdrop-towers-800.webp', label: 'Towers' },
+  { value: '/img/stock-parking-lot-1000.webp', label: 'Car park' },
+  { value: '/img/stock-passenger-van-1000.webp', label: 'Passenger van' },
+  { value: '/img/stock-small-group-1000.webp', label: 'Small group' },
+  { value: '/img/stock-gathering-1000.webp', label: 'Gathering' },
+  { value: '/img/home-sanctuary-1000.webp', label: 'The sanctuary (ours)' },
+  { value: '/img/cross-coptic-360.webp', label: 'Coptic cross (ours)' },
   { value: '/img/hero-glass-1000.webp', label: 'Stained glass' },
-  { value: '/img/sketch-christ-800.webp', label: 'Icon study — Christ' },
-  { value: '/img/sketch-face-800.webp', label: 'Icon study — face' },
+  { value: null, label: 'No picture' },
 ];
 
 const TYPE_LABELS: Record<FormFieldType, string> = {

@@ -8257,74 +8257,83 @@ main {
  * sentences side by side. Below that a second column just makes both notes
  * wrap to four lines each.
  */
+/*
+ * A list of full-width rows, not a grid of tiles.
+ *
+ * This was `repeat(auto-fit, minmax(19rem, 1fr))` — a card grid, which Tommy
+ * rejected in the plainest terms: "I don't want them like the bookstore." He is
+ * right, and the reason is that the two lists are not the same kind of thing. A
+ * bookstore grid is for *browsing*: many items, chosen by eye, compared against
+ * each other. A parish has four forms and nobody browses them — you arrive
+ * knowing which one you want and you need to find it. A row you can read across
+ * in one line beats four tiles you have to scan.
+ *
+ * It also stops the four-cards-three-columns orphan, where the fourth form sat
+ * alone on its own row looking like an afterthought.
+ */
 .forms {
   display: grid;
-  /*
-   * `auto-fit` with a floor rather than a hard two-column rule at 60rem.
-   *
-   * The old rule was `repeat(2, 1fr)` above 60rem and one column below, which
-   * left a tablet at 50rem showing a single column of very wide, very short
-   * rows — the shape that made this page look like a settings list rather than
-   * a set of cards. A floor of 17rem lets the count follow the space it
-   * actually has, and `minmax(0, …)` because a long unbroken word in a blurb
-   * otherwise widens the track past the viewport.
-   */
-  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
-  gap: var(--space-md, 1.25rem);
+  gap: var(--space-sm, 0.85rem);
   margin: var(--space-md, 1.25rem) 0 var(--space-lg, 2rem);
   padding: 0;
   list-style: none;
 }
 
 /*
- * A card, not a row.
+ * The whole row is the link: picture on the left, words on the right.
  *
- * `display: grid` in a single column with the media panel first, so the whole
- * rectangle is still the link — a card that looks clickable but only is where
- * its title sits is the commonest way a list like this frustrates a thumb.
- * `height: 100%` so cards in a row match when one blurb runs longer.
+ * `grid-template-columns` with a fixed picture track rather than a percentage,
+ * so the text column takes whatever is left and the photograph stays the same
+ * size down the list — a percentage makes the images grow on a wide screen
+ * until the row is mostly decoration.
  */
 .form-card {
   display: grid;
-  grid-template-rows: auto 1fr;
-  height: 100%;
+  grid-template-columns: 13rem minmax(0, 1fr);
+  align-items: stretch;
   overflow: hidden;
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-md, 10px);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
   color: inherit;
   text-decoration: none;
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    transform 180ms ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .form-card:hover {
   border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-rule, #e0cac3));
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.10));
-  /* Two pixels. Enough to register as the card responding, small enough that a
-     grid of them does not appear to wobble as the pointer crosses it. */
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.08));
 }
 
-/* The focus ring belongs to the card, since the card is the link. */
 .form-card:focus-visible {
   outline: 2px solid var(--color-accent, #992a21);
   outline-offset: 3px;
 }
 
-/* ---- the media panel ---------------------------------------------------- */
+/* Stacked below 40rem: a 13rem picture beside text on a 375px phone leaves the
+   words in a column about nine characters wide. */
+@media (max-width: 40rem) {
+  .form-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- the picture -------------------------------------------------------- */
 
 .form-card__media {
   position: relative;
   display: block;
-  /* Wide and short. A form card is read for its title; the picture is there to
-     give the card weight and a place to rest, not to be the subject. */
-  aspect-ratio: 5 / 2;
   overflow: hidden;
-  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper, #f6e8e3);
+  border-inline-end: 1px solid var(--color-rule, #e0cac3);
+}
+
+@media (max-width: 40rem) {
+  .form-card__media {
+    aspect-ratio: 5 / 2;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--color-rule, #e0cac3);
+  }
 }
 
 .form-card__photo {
@@ -8332,120 +8341,35 @@ main {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.form-card:hover .form-card__photo {
-  transform: scale(1.03);
 }
 
 /*
- * The crest — what a form without a photograph wears.
+ * What a form with no picture gets.
  *
- * Drawn entirely in CSS: two soft radial washes in the parish's gold over the
- * cream ground, with the form's icon centred in a gold medallion. No image
- * request, no placeholder grey, and nothing pretending to be a photograph of
- * something that was never photographed.
- *
- * Deliberately NOT built from assets/Coptic_pattern.png, which is the obvious
- * thing to reach for and is AI-generated: the "Coptic" in its banners is
- * imitation letterforms spelling nothing. optimize-assets.mjs excludes it for
- * that reason and a decorative band is not a good enough reason to put counterfeit
- * script on a Coptic Orthodox parish's pages.
+ * A flat tint and the icon — nothing more. The version this replaces layered two
+ * radial gradients and a watermarked seal, and against the cream page the result
+ * read as muddy pink; it was the "weird colors" Tommy objected to. Every seeded
+ * form now carries a photograph, so this is the genuinely-empty case and should
+ * look like one.
  */
-.form-card__crest {
+.form-card__blank {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-accent, #992a21);
-  /*
-   * A warm ground, gold at one corner and the parish red at the other.
-   *
-   * Two earlier versions were wrong in opposite directions and both are worth
-   * recording. The first was two very faint washes and nothing else: a pale
-   * beige rectangle, four cards differing only by a 26px glyph, which is not
-   * meaningfully less bland than the flat rows it replaced. The second set the
-   * parish seal as a `background-image` sized `auto 190%` — which cropped it to
-   * the saints' knees and read as a photograph of a logo rather than a mark in
-   * the paper.
-   *
-   * The seal is now on its own layer below, where its size and opacity can be
-   * stated plainly instead of being emergent from background sizing.
-   */
-  background:
-    radial-gradient(
-      circle at 16% 20%,
-      color-mix(in srgb, var(--color-gold, #b08d43) 32%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      circle at 90% 88%,
-      color-mix(in srgb, var(--color-accent, #992a21) 18%, transparent) 0%,
-      transparent 64%
-    ),
-    linear-gradient(
-      140deg,
-      var(--color-paper-raised, #fdf7f4) 0%,
-      color-mix(in srgb, var(--color-gold, #b08d43) 10%, var(--color-paper, #f6e8e3)) 100%
-    );
+  color: var(--color-gold, #b08d43);
+  background: var(--color-paper, #f6e8e3);
 }
 
-/*
- * The seal, watermarked into the corner.
- *
- * Small, faint, and bled off the bottom-left edge so it reads as an impression
- * in the paper rather than as a badge applied to it. `aria-hidden` is not needed
- * — a pseudo-element is already invisible to assistive technology.
- */
-.form-card__crest::after {
-  content: '';
-  position: absolute;
-  left: -0.75rem;
-  bottom: -1.1rem;
-  width: 5.5rem;
-  height: 5.5rem;
-  background: url('/brand/seal-192.png') center / contain no-repeat;
-  opacity: 0.14;
-  /* Greyed, then tinted by the ground beneath. At full saturation the seal's
-     own blues fight the parish red the rest of the card is built from. */
-  filter: grayscale(1);
-  pointer-events: none;
-}
+/* ---- the words ---------------------------------------------------------- */
 
-/*
- * The medallion the icon sits in.
- *
- * Cream rather than translucent gold, so it stays legible over the darker
- * corner of the wash — a translucent disc disappeared exactly where the accent
- * radial is strongest.
- */
-.form-card__crest::before {
-  content: '';
-  position: absolute;
-  width: 3.4rem;
-  height: 3.4rem;
-  border-radius: var(--radius-full, 999px);
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #2c2320) 12%, transparent);
-}
-
-.form-card__crest svg {
-  position: relative;
-}
-
-/* ---- the body ----------------------------------------------------------- */
-
-/* `min-width: 0` or a long word in the note refuses to wrap and stretches the
-   grid track it sits in. */
 .form-card__body {
   display: grid;
-  align-content: start;
+  align-content: center;
   gap: 0.3rem;
   min-width: 0;
-  padding: var(--space-md, 1.15rem);
+  padding: var(--space-md, 1.15rem) var(--space-lg, 1.4rem);
 }
 
 .form-card__title {
@@ -8467,19 +8391,11 @@ main {
   color: var(--color-ink-soft, #4b413e);
 }
 
-/*
- * The affordance, in words.
- *
- * `margin-top: auto` pins it to the bottom of the card so a row of cards has
- * its call to action on one line regardless of how long each blurb runs —
- * which is most of the difference between a grid that looks designed and one
- * that looks like it was filled in.
- */
 .form-card__go {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  margin-top: var(--space-sm, 0.7rem);
+  margin-top: 0.15rem;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   font-weight: 600;
@@ -8488,11 +8404,6 @@ main {
   color: var(--color-accent, #992a21);
 }
 
-/*
- * The arrow moves rather than appearing: a glyph that fades in on hover is
- * invisible to anyone reading with a finger, and this card needs to look like a
- * link before it is touched.
- */
 .form-card__arrow {
   flex-shrink: 0;
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -8502,18 +8413,12 @@ main {
   transform: translateX(4px);
 }
 
-/* Honour a reduced-motion preference: the lift and the slide are decoration,
-   and this whole page is reachable without either. */
 @media (prefers-reduced-motion: reduce) {
   .form-card,
-  .form-card__photo,
   .form-card__arrow {
     transition: none;
   }
-  .form-card:hover {
-    transform: none;
-  }
-  .form-card:hover .form-card__photo {
+  .form-card:hover .form-card__arrow {
     transform: none;
   }
 }
@@ -20123,6 +20028,31 @@ span.gallery-figure__frame {
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/*
+ * What editing this screen can and cannot change, said once above the shelf.
+ *
+ * The first question anybody asks here is why the title and the price are not
+ * editable. Answering it on each card would be eleven copies of a sentence that
+ * is true of the whole shop; answering it here is the same altitude the single
+ * error notice already sits at.
+ *
+ * A left rule rather than a tinted box: a filled panel across the top of the
+ * shop would out-weigh the shop, and this is a footnote that happens to come
+ * first.
+ */
+.shop-hint {
+  /* Space under it as well as over: without it the sentence sits against the
+     first card and reads as a caption for that book rather than for the shop. */
+  margin: var(--space-sm, 0.6rem) 0 var(--space-md, 1rem);
+  padding-left: var(--space-sm, 0.6rem);
+  border-left: 2px solid color-mix(in srgb, var(--color-accent, #992a21) 35%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.45;
+  color: var(--color-ink-faint, #6f5f5a);
+  max-width: 46ch;
+}
+
 /* ---- the settings on a card --------------------------------------------- */
 
 /*
@@ -20188,12 +20118,20 @@ span.gallery-figure__frame {
  * at exactly the moment somebody was watching them change.
  */
 .bkedit.is-busy {
-  opacity: 0.62;
   pointer-events: none;
 }
 
+/* The dim is on the controls, not on the block — `.bkedit__state` is a child, so
+   fading the parent would fade the one thing that is supposed to be readable at
+   exactly that moment. */
+.bkedit.is-busy > .bkedit__field,
+.bkedit.is-busy > .bkedit__remove,
+.bkedit.is-busy > .bkedit__confirm {
+  opacity: 0.62;
+}
+
 /*
- * "Saving…" and "Saved", over the block's own hairline.
+ * "Saving…" and "Saved", in the free corner of the block.
  *
  * ---------------------------------------------------------------------------
  * Absolutely positioned, and that is the point rather than a detail: this block
@@ -20207,17 +20145,26 @@ span.gallery-figure__frame {
  * a round trip with an upload in it. Between the press and the change there was
  * nothing but a slight dim, and a volunteer pressing + twice because the first
  * press "did not work" is how a shelf ends up with the wrong count.
+ *
+ * **Bottom right, not top right.** It sat above the block's hairline first,
+ * which put it straight on top of the "Unavailable" that a sold-out book shows
+ * at the right of its price row — measured on `Be Prepared`, which is sold out
+ * in the seed. The last line of this block is `Remove this product`, which is
+ * `justify-self: start`, so the corner beside it is the one piece of the card
+ * that is reliably empty.
  * ---------------------------------------------------------------------------
  */
 .bkedit__state {
   position: absolute;
-  top: -0.62rem;
   right: 0;
-  padding: 0 0.3rem;
+  bottom: 0;
+  padding: 0 0.2rem;
   font-size: var(--type-micro, 0.8125rem);
-  line-height: 1.2;
-  /* On the card, not on the rule it crosses. */
+  line-height: 1.3;
+  /* Legible over the confirmation panel, which is the one thing that can be
+     underneath it — removal is a write like any other and reports like one. */
   background: var(--color-paper, #fffefb);
+  border-radius: var(--radius-sm, 0.35rem);
   opacity: 0;
   transition: opacity 160ms ease;
   pointer-events: none;
@@ -20377,18 +20324,64 @@ span.gallery-figure__frame {
 
 /* ---- pictures ------------------------------------------------------------ */
 
+/*
+ * The picture row, which is also a drop target.
+ *
+ * A photograph of a book is on somebody's desktop, and dragging it onto the card
+ * is the gesture they reach for first. The row already occupies the right patch
+ * of the card for that, so it becomes the target rather than growing a separate
+ * dashed box below it — which would be a second thing to look at on every card,
+ * empty of purpose for the ten seconds a year anyone drags a file.
+ *
+ * Padded and negatively margined so the highlight has a little room around the
+ * thumbnails without the row taking any more space when nothing is being
+ * dragged. The picker button stays: a drag has no keyboard equivalent and none
+ * at all on a phone, so it can never be the only way in.
+ */
 .bkpix {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   align-items: center;
+  /* Vertical only. A negative *horizontal* margin here made the row 6.4px wider
+     than the card it sits in — measured — which is how a shelf of eleven cards
+     grows a horizontal scrollbar nobody can find the source of. */
+  margin: -0.2rem 0;
+  padding: 0.2rem;
+  border: 1px dashed transparent;
+  border-radius: var(--radius-sm, 0.35rem);
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
+.bkpix.is-over {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 7%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+}
+
+/* Only where there is nothing yet — a book that already has its picture does not
+   need telling twice, and eleven copies of the sentence is what would make this
+   block noisy. */
+.bkpix__hint {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkpix.is-over .bkpix__hint {
+  color: var(--color-accent, #992a21);
+}
+
+/*
+ * Bigger than they were (1.8rem → 2.4rem).
+ *
+ * At 1.8rem a book cover is 29 pixels and every one of them is an unreadable
+ * smudge — which defeats the only question this control has to answer, namely
+ * *which* picture you are about to remove. Still small enough that four sit on
+ * one line of a card.
+ */
 .bkpix__one {
   position: relative;
   display: block;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 2.4rem;
+  height: 2.4rem;
 }
 
 .bkpix__one img {
@@ -20448,8 +20441,8 @@ span.gallery-figure__frame {
 .bkpix__add {
   display: grid;
   place-items: center;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 2.4rem;
+  height: 2.4rem;
   font-size: var(--type-small, 0.9375rem);
   line-height: 1;
   color: var(--color-ink-faint, #6f5f5a);
@@ -21180,7 +21173,13 @@ span.gallery-figure__frame {
 .fx__banner {
   position: relative;
   width: 100%;
-  max-width: var(--measure, 68ch);
+  /*
+   * Full width, matching the form beneath it.
+   *
+   * It was capped at `--measure` like the form used to be, so once the fields
+   * spread across the page the banner stayed half as wide and sat against the
+   * left edge — a picture visibly not belonging to the thing under it.
+   */
   height: clamp(5.5rem, 18vw, 9rem);
   margin-bottom: var(--space-md, 1.25rem);
   overflow: hidden;
@@ -21330,23 +21329,6 @@ span.gallery-figure__frame {
   display: block;
 }
 
-/*
- * The hub's band is shorter than a form's and spans the full reading column.
- *
- * Shorter because it sits above a grid of cards rather than above one question:
- * the thing that must stay on screen is the first card, and on a phone that is
- * a tighter budget than the first field of a form.
- */
-.fx__banner--hub {
-  height: clamp(4.5rem, 14vw, 7rem);
-  margin-bottom: var(--space-sm, 0.75rem);
-}
-
-.fx__banner picture {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
 
 /*
  * Fields on a built form fill the column.
@@ -21436,4 +21418,316 @@ span.gallery-figure__frame {
 .fx .field,
 .fx .fx__group {
   scroll-margin-top: 6rem;
+}
+
+/* ---- a built form fills the page ---------------------------------------- */
+
+/*
+ * `.form` caps itself at `--measure` — a *reading* width, about 68 characters.
+ *
+ * That is right for prose and wrong for a form, and on a 1440px screen it left
+ * the van request 710px wide against the left edge with 570px of dead page
+ * beside it. Tommy's words: "I want the form to cover the width of the screen."
+ *
+ * The fix is not simply to remove the cap. A single column of full-width inputs
+ * at 1280px is worse than the narrow version — a text box the width of a desk is
+ * hard to aim at and harder to scan, and the skill's own guidance keeps *text*
+ * to 65-75ch for the same reason. So the form takes the full column and lays its
+ * fields out in tracks: two or three questions to a row, each one a sane width.
+ */
+.fx {
+  max-width: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-md, 1.15rem) var(--space-md, 1.25rem);
+  align-items: start;
+}
+
+/*
+ * Things that must not sit in a column: the error summary, section headings,
+ * the running total, the button, and anything the person writes a paragraph in.
+ * `1 / -1` spans every track whatever the count resolves to.
+ */
+.fx > .fx__errors,
+.fx > .fx__heading,
+.fx > .fx__total,
+.fx > .fx__done,
+.fx > button,
+.fx > .notice,
+.fx > .meta,
+.fx > .field:has(textarea),
+.fx > .fx__group {
+  grid-column: 1 / -1;
+}
+
+/* The button is a control, not a banner — it should not stretch to 1280px just
+   because its row does. */
+.fx > button[type='submit'] {
+  justify-self: start;
+  min-width: 14rem;
+}
+
+/*
+ * A checkbox group gets its own row but not its own full width: a row of option
+ * tiles spread across 1280px puts the last one a screen away from the question.
+ */
+.fx > .fx__group {
+  max-width: var(--measure, 68ch);
+}
+
+/*
+ * Consent sits alone on its line. It is a sentence, not a field, and pairing it
+ * beside a text input makes it look like a label for the box next to it.
+ */
+.fx > .field--check {
+  grid-column: 1 / -1;
+}
+
+/* The narrow types keep their cap and stop stretching to a full track. */
+.fx > .field:has(input[type='number']),
+.fx > .field:has(input[type='date']) {
+  max-width: 20rem;
+}
+
+/* One column on a phone, where "fills the width" is the only option anyway. */
+@media (max-width: 40rem) {
+  .fx {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The vehicle form is hand-written and already groups its own fields inside
+   fieldsets, so it wants the single stacked column it was designed with. */
+.fx:has(.fx__driver) {
+  grid-template-columns: 1fr;
+  max-width: var(--measure, 68ch);
+}
+
+/* ---- the enlarged settings, in the product's own dialog ------------------ */
+
+/*
+ * A single product's settings, at the size a photograph needs.
+ *
+ * ---------------------------------------------------------------------------
+ * Where the buybox goes while Edit is on, and shaped like it on purpose: same
+ * sunken panel, same gold hairline, same corner. That is the slot in this screen
+ * which means "the thing you came here to do with this book", and a volunteer
+ * arranging the shop came here to do a different thing with it — so it is the
+ * same slot holding different work, not a new region competing with the old one.
+ *
+ * Why this is not the properties column that was rejected as "way too
+ * confusing": that column stood permanently down the side of the window and
+ * described whichever card had last been clicked, so you looked away from the
+ * shelf to read it and away from it to see what it described. This is the
+ * product's own screen — opened deliberately, holding one book, closing back to
+ * the shelf. The card keeps its compact controls and remains the fast path.
+ * ---------------------------------------------------------------------------
+ */
+.bkpanel {
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+  width: 100%;
+  margin-top: var(--space-sm, 0.75rem);
+  padding: var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent);
+}
+
+/* As on the card: the dim is on the controls, never on the thing reporting. */
+.bkpanel.is-busy {
+  pointer-events: none;
+}
+
+.bkpanel.is-busy > .bkpanel__block {
+  opacity: 0.62;
+}
+
+/* Holds the save state, which is `position: absolute` against this rather than
+   against the whole panel — at the top, where a heading's own baseline gives it
+   somewhere to sit that is not on top of a control. */
+.bkpanel__head {
+  position: relative;
+  display: flex;
+  gap: var(--space-sm, 0.6rem);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.bkpanel__title {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink, #2f2723);
+}
+
+/* In the head, where it has a line of its own — the card's version has to hide
+   in a corner because a card has no spare line. Here it does. */
+.bkpanel__head .bkedit__state {
+  position: static;
+  padding: 0;
+  background: none;
+}
+
+.bkpanel__note {
+  margin: -0.35rem 0 0;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.45;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkpanel__block {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
+/* A rule above the one destructive control, so it is not simply the next item in
+   a list of four ordinary ones. */
+.bkpanel__block--last {
+  margin-top: 0.15rem;
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
+}
+
+.bkpanel__label {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkpanel__aside {
+  margin: 0;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkpanel__select {
+  width: auto;
+  min-width: 10rem;
+  padding: 0.2rem 1.1rem 0.2rem 0.4rem;
+  background-color: var(--color-paper, #fffefb);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 15%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+/*
+ * The pictures, as pictures.
+ *
+ * `auto-fill` rather than a fixed column count: the dialog's right-hand column
+ * is one width on a laptop and the full sheet on a phone, and a book with one
+ * photograph should not leave three empty cells either way. 7rem is about the
+ * smallest a book cover can be and still be recognised across the room, which is
+ * the only question this control exists to answer.
+ */
+.bkpix--panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: var(--space-sm, 0.6rem);
+  width: 100%;
+  margin: 0;
+  padding: var(--space-xs, 0.4rem);
+}
+
+.bkpix--panel .bkpix__one {
+  display: grid;
+  gap: 0.3rem;
+  width: auto;
+  height: auto;
+  justify-items: center;
+}
+
+.bkpix--panel .bkpix__one img {
+  width: 100%;
+  height: 7rem;
+  /* `contain`, not `cover`: a portrait book cropped square loses the top of its
+     title, and knowing which picture this is is the whole job here. */
+  object-fit: contain;
+  background: var(--color-paper, #fffefb);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
+}
+
+/* A word here, not the dot the card uses — there is room for one, and at this
+   size a 5px mark under a photograph reads as a speck on the photograph. */
+.bkpix--panel .bkpix__cover {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  text-indent: 0;
+  padding: 0 0.4rem;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.4;
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-radius: var(--radius-full, 999px);
+  transform: none;
+}
+
+/* Always visible, never revealed on hover: a touchscreen has no hover, and a
+   destructive control nobody can find is not "quiet", it is missing. */
+.bkpix__off {
+  padding: 0.1rem 0.5rem;
+  font: inherit;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.bkpix__off:hover:not(:disabled),
+.bkpix__off:focus-visible {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+.bkpix__off:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The add tile is a cell of the same grid, so it lands where the next picture
+   would rather than sitting beside the row like a toolbar. */
+.bkpix--panel .bkpix__add {
+  display: grid;
+  gap: 0.2rem;
+  place-items: center;
+  width: auto;
+  height: 100%;
+  min-height: 7rem;
+  padding: var(--space-xs, 0.4rem);
+  align-content: center;
+  text-align: center;
+}
+
+.bkpix__addmark {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.bkpix__addword {
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.3;
+}
+
+/* The whole grid answers a drag, not just the tile under the pointer — the
+   target is "this book's pictures", and a file dropped on a thumbnail means the
+   same thing as one dropped on the empty cell beside it. */
+.bkpix--panel.is-over .bkpix__add {
+  color: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
 }

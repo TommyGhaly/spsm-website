@@ -37,6 +37,10 @@ table records what is known; **unknown is not the same as cleared.**
 | `Coptic_Church_Verse.jpg` | Unknown, likely stock | **Not this parish's building.** Verse text cropped out in the derivative. |
 | `Donation.png` | Unknown, likely stock | Generic "helping hands" stock. |
 | `Coptic_pattern.png` | AI-generated | Not used. See below. |
+| `stock/stock-parking-lot.jpg` | Unsplash `photo-1506521781263-d8422e82f27a`, 2026-08-26 | **Unsplash License** — commercial use, no permission needed, attribution not required. Vehicle registration. |
+| `stock/stock-passenger-van.jpg` | Unsplash `photo-1746985094087-e703bf52c71b`, 2026-08-26 | **Unsplash License.** Van request. |
+| `stock/stock-small-group.jpg` | Unsplash `photo-1529070538774-1843cb3265df`, 2026-08-26 | **Unsplash License.** New service request. |
+| `stock/stock-gathering.jpg` | Unsplash `photo-1517457373958-b7bdd4587205`, 2026-08-26 | **Unsplash License.** Events request. |
 | `Festival.jpg` | Parish | Not used. Past event. |
 | `SPSM-Church-Image.jpg` | Old Wix site | Not used. 176×176 thumbnail. |
 | `brand/instagram.svg`, `brand/facebook.svg`, `brand/youtube.svg` | Official brand marks | Third-party trademarks. See below. |
@@ -196,3 +200,29 @@ error a parishioner who reads Coptic notices immediately.
 The build strips EXIF from every derivative. Phone photographs carry GPS
 coordinates, and the parish should not publish the home addresses of the people
 who took its pictures.
+
+### `assets/stock/` — the forms photographs
+
+Four stock photographs, one per form on `/forms`, added 2026-08-26.
+
+**These are the only images in this directory whose licence anyone recorded.**
+Every other "likely stock" row above says *Unknown*, which is the state this is
+meant not to repeat: the photo id is in the table, so the source of each one can
+be checked years from now without guessing. Unsplash's licence permits
+commercial use without permission or attribution.
+
+None of them is this parish, and none should ever be mistaken for it. They
+illustrate what a form is *for* — a van, a car park, a group meeting, a
+gathering — which is a job a generic photograph can do honestly. A stock
+photograph standing in for the parish's own building or people is the failure
+mode; see the backdrops note above, which exists for the same reason.
+
+They were chosen against two rejected candidates worth recording:
+
+- a close-up of a bible embossed **HOLY BIBLE**, which is evangelical-Protestant
+  visual language and the wrong register for a Coptic Orthodox parish;
+- a dense car park of brightly coloured cars, which fights the site's palette.
+
+The derivatives are cropped to 5:2 in `optimize-assets.mjs` rather than by CSS,
+because both places that show them — the card and the form banner — want a wide,
+short frame, and a phone should not download a 3:2 file to crop away a third.

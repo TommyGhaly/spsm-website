@@ -775,6 +775,50 @@ for (const [source, slug] of [
   }
 }
 
+// ── Stock photographs for the forms ─────────────────────────────────────────
+// Four licensed stock photographs, one per parish form, added 2026-08-26 at
+// Tommy's request after the crest tiles were rejected.
+//
+// **These are the first images in this repo with a licence anyone recorded.**
+// Unsplash License: free for commercial use, no permission needed, attribution
+// appreciated but not required. Photo ids are in assets/README.md so the source
+// of each one stays traceable — compare the "Unknown, likely stock" rows above
+// it, which is exactly the state this is meant not to repeat.
+//
+// None of them is this parish. They illustrate what a form is *for* — a van, a
+// car park, a group meeting, a gathering — and that is the whole job. Anything
+// that could be mistaken for a photograph of St Philopater's own building or
+// people would be worse than useless; see the note on the backdrops above.
+//
+// Cropped to 5:2 here rather than in CSS. The card and the form banner both
+// want a wide, short frame, and doing it in the pipeline means the phone
+// downloads a 5:2 file instead of a 3:2 file it will crop anyway.
+{
+  for (const name of [
+    'stock-parking-lot',
+    'stock-passenger-van',
+    'stock-small-group',
+    'stock-gathering',
+  ]) {
+    const source = join(SRC, `stock/${name}.jpg`);
+    const meta = await sharp(source).metadata();
+
+    // Centre band at 5:2. `Math.min` guards a source that is already wider.
+    const height = Math.min(meta.height, Math.round(meta.width * 0.4));
+    const extract = {
+      left: 0,
+      top: Math.round((meta.height - height) / 2),
+      width: meta.width,
+      height,
+    };
+
+    // 1000 covers a card on a retina phone and the banner on a laptop; 500 is
+    // the card at 1x. Nothing here is ever shown large enough to want more.
+    write(join(PUBLIC, `img/${name}-1000.webp`), await webp(source, { width: 1000, quality: 74, extract }));
+    write(join(PUBLIC, `img/${name}-500.webp`), await webp(source, { width: 500, quality: 72, extract }));
+  }
+}
+
 // ── Deliberately not built ──────────────────────────────────────────────────
 // Coptic_cross_top_church.jpeg
 //                       381×524, which is too small for anything this site
