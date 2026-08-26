@@ -54,10 +54,38 @@ interface BreezeSetup {
   headers: Record<string, string>;
 }
 
+/**
+ * The value that means "there is no key yet".
+ *
+ * ---------------------------------------------------------------------------
+ * Why a placeholder exists at all, rather than the secret simply being absent.
+ *
+ * `firebase deploy` resolves **every** secret declared anywhere in the codebase
+ * during its discovery step — not just the ones belonging to the functions being
+ * deployed. So with `BREEZE_API_KEY` missing, even
+ * `--only functions:formSubmit` fails:
+ *
+ *     Error: In non-interactive mode but have no value for the secret: BREEZE_API_KEY
+ *
+ * That is a hard coupling: an optional, unconfigured integration blocks the
+ * deploy of every unrelated function. The options were to stop using Secret
+ * Manager for this key — unacceptable, it reads the parish's entire member
+ * database including addresses and giving records — or to let the secret exist
+ * while holding nothing usable. This is the second.
+ *
+ * So `BREEZE_API_KEY` is set to `unset` until the parish has a real key. Both
+ * Breeze endpoints then answer 503 with a sentence explaining what to add, which
+ * is exactly what they did when the secret was genuinely absent. Replacing it is
+ * an ordinary `firebase functions:secrets:set BREEZE_API_KEY`; the new version
+ * supersedes this one and nothing here needs changing.
+ * ---------------------------------------------------------------------------
+ */
+const NO_KEY_YET = 'unset';
+
 function breezeSetup(): BreezeSetup | null {
-  const key = BREEZE_API_KEY.value();
+  const key = BREEZE_API_KEY.value().trim();
   const subdomain = BREEZE_SUBDOMAIN.value().trim();
-  if (!key || !subdomain) return null;
+  if (!key || key === NO_KEY_YET || !subdomain) return null;
 
   return {
     base: `https://${subdomain}.breezechms.com/api`,
