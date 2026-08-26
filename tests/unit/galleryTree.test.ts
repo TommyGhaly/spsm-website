@@ -473,6 +473,32 @@ describe('nodeSummary', () => {
   it('is empty rather than throwing when nothing is filed anywhere', () => {
     expect(nodeSummary(tree, null, [])).toEqual([]);
   });
+
+  /**
+   * The ministry page has no node of its own, so its own pool was hard-coded
+   * empty — and a photograph filed *on the ministry* (`programEventId ===
+   * programId`, which is what dropping one on the top row of `PictureManager`
+   * writes) appeared on no page in the parish. It was still approved and still in
+   * Firestore; it simply had nowhere to be, which read as the drop having deleted
+   * it.
+   */
+  it('gives the ministry page its own directly-filed pictures a turn', () => {
+    const media = [shot('on-ministry', 'summercamp'), shot('from-day', 'day-1')];
+
+    expect(nodeSummary(tree, null, media).map((one) => one.id)).not.toContain('on-ministry');
+    expect(
+      nodeSummary(tree, null, media, { rootId: 'summercamp' }).map((one) => one.id).sort(),
+    ).toEqual(['from-day', 'on-ministry']);
+  });
+
+  /** A ministry with no levels at all is a leaf, and shows its own gallery. */
+  it('shows a ministry with no levels everything filed on it', () => {
+    const bare = buildGalleryTree<Node>([]);
+    const media = [shot('a', 'summercamp'), shot('b', 'summercamp', HIDDEN)];
+    expect(
+      nodeSummary(bare, null, media, { rootId: 'summercamp' }).map((one) => one.id),
+    ).toEqual(['a']);
+  });
 });
 
 describe('summariseChildren', () => {
@@ -600,6 +626,14 @@ describe('pagePictures', () => {
   it('falls back to the automatic summary', () => {
     const media = [shot('a', 'day-1'), shot('b', 'the-hike')];
     expect(pagePictures(tree, 'week-1', media, {})).toHaveLength(2);
+  });
+
+  /** The block a ministry page draws has to include what is filed on the ministry. */
+  it('passes the ministry’s own id through to the summary', () => {
+    const media = [shot('on-ministry', 'summercamp'), shot('from-day', 'day-1')];
+    expect(
+      pagePictures(tree, null, media, { rootId: 'summercamp' }).map((one) => one.id),
+    ).toContain('on-ministry');
   });
 });
 

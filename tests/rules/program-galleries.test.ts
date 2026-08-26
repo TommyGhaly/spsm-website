@@ -41,6 +41,8 @@ let env: RulesTestEnvironment;
 
 const SUMMERCAMP = 'summercamp';
 const SENIORS = 'st-simon';
+/** `UNFILED_PROGRAM_ID`, spelled out: the rules see a string, not an import. */
+const UNFILED = '__unfiled';
 const WEEK_1 = 'week-1-2027';
 const WEEK_2 = 'week-2-2027';
 
@@ -119,6 +121,16 @@ beforeEach(async () => {
     await setDoc(doc(db, 'galleryMedia', 'pending-1'), media());
     await setDoc(doc(db, 'galleryMedia', 'week2-approved'), media({
       status: 'approved', programEventId: WEEK_2,
+    }));
+
+    /*
+     * A photograph whose ministry was deleted. `deleteProgram` writes exactly
+     * this shape — see UNFILED_PROGRAM_ID — and the whole recovery story rests
+     * on what the rules then permit, which is why it is a fixture and not a
+     * comment.
+     */
+    await setDoc(doc(db, 'galleryMedia', 'rogue-1'), media({
+      status: 'approved', programId: UNFILED, programEventId: UNFILED,
     }));
 
     // The grants themselves. Written here through the bypass because in
@@ -405,6 +417,160 @@ describe('anonymous submission', () => {
     const db = asAnon(env).firestore();
     await assertFails(updateDoc(doc(db, 'galleryMedia', 'pending-1'), { caption: 'mine' }));
     await assertFails(deleteDoc(doc(db, 'galleryMedia', 'pending-1')));
+  });
+});
+
+/**
+ * Photographs that outlived their ministry.
+ *
+ * Deleting a ministry re-files everything it held to `UNFILED_PROGRAM_ID` rather
+ * than destroying it or leaving a dangling id. Two properties follow from the
+ * rules alone, and the picture manager's whole "Not in any ministry" section
+ * assumes both:
+ *
+ *  1. Anybody may *list* them, because they are approved and the public read is
+ *     `status == 'approved'`. So the section works for whoever opens the manager
+ *     rather than only for the one account that can act on it.
+ *  2. Only a full `admin` may *move* one. `adminsProgramEvent` is evaluated
+ *     against the stored `programId`, which is the sentinel — and a program
+ *     grant names a real program, so it cannot match. A ministry lead therefore
+ *     cannot quietly claim the parish's loose photographs, which is the reason
+ *     `adoptUnfiledMedia` is a separate function from `setMediaNode`.
+ */
+describe('photographs whose ministry was deleted', () => {
+  it('lets anybody list them, which is what the recovery section reads', async () => {
+    for (const ctx of [asAnon(env), asProgramLead(env)]) {
+      await assertSucceeds(
+        getDocs(query(
+          collection(ctx.firestore(), 'galleryMedia'),
+          where('programId', '==', UNFILED),
+          where('status', '==', 'approved'),
+          orderBy('order', 'asc'),
+        )),
+      );
+    }
+  });
+
+  it('lets a parish administrator give one a ministry', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(env).firestore(), 'galleryMedia', 'rogue-1'), {
+        programId: SUMMERCAMP, programEventId: WEEK_1, groupId: null,
+      }),
+    );
+  });
+
+  it('denies a program lead taking one into their own ministry', async () => {
+    await assertFails(
+      updateDoc(doc(asProgramLead(env).firestore(), 'galleryMedia', 'rogue-1'), {
+        programId: SUMMERCAMP, programEventId: WEEK_1, groupId: null,
+      }),
+    );
+  });
+
+  it('denies a stranger claiming one', async () => {
+    await assertFails(
+      updateDoc(doc(asOutsider(env).firestore(), 'galleryMedia', 'rogue-1'), {
+        programId: SUMMERCAMP, programEventId: WEEK_1, groupId: null,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asAnon(env).firestore(), 'galleryMedia', 'rogue-1'), {
+        programId: SUMMERCAMP, programEventId: WEEK_1, groupId: null,
+      }),
+    );
+  });
+
+  it('denies a program lead deleting one for good', async () => {
+    await assertFails(deleteDoc(doc(asProgramLead(env).firestore(), 'galleryMedia', 'rogue-1')));
+    await assertSucceeds(deleteDoc(doc(asAdmin(env).firestore(), 'galleryMedia', 'rogue-1')));
+  });
+});
+
+/**
+ * Emptying a level before deleting it, which is what `deleteProgramEvent` does
+ * now. The write is a `programEventId` change on every picture filed there,
+ * pointed at the ministry's own id.
+ */
+describe('re-filing a level onto the ministry', () => {
+  it('lets a program lead move a photograph onto the ministry itself', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asProgramLead(env).firestore(), 'galleryMedia', 'approved-1'), {
+        programEventId: SUMMERCAMP, groupId: null,
+      }),
+    );
+  });
+
+  /**
+   * The pending ones move too — a submission left on a deleted level has a file
+   * in quarantine and a queue that is about to vanish.
+   */
+  it('lets a program lead move a pending submission with them', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asProgramLead(env).firestore(), 'galleryMedia', 'pending-1'), {
+        programEventId: SUMMERCAMP,
+      }),
+    );
+  });
+
+  /**
+   * The unfiltered read the sweep issues. It cannot carry `status == 'approved'`
+   * — pending ones are exactly what it must not leave behind — so it relies on
+   * `adminsProgramEvent` matching per document, which is a different clause of
+   * the same rule and worth its own assertion.
+   */
+  it('lets a program lead list a level regardless of status', async () => {
+    const db = asProgramLead(env).firestore();
+
+    /*
+     * **`programId` has to be in the query, and that is not belt and braces.**
+     *
+     * `where('programEventId','==',…)` alone is denied outright, with "Property
+     * status is undefined on object" — the read rule opens with
+     * `resource.data.status == 'approved'`, and for a list Firestore will only
+     * evaluate a field the query has constrained. Adding `programId` lets
+     * `adminsProgramEvent` resolve, and the whole `||` then comes out true
+     * without ever needing `status`.
+     *
+     * Which is decision #10 wearing a different hat: the fix is not a status
+     * filter (a sweep must see the pending ones) but proving the *other*
+     * disjunct. `mediaFiledOn` issues exactly this pair.
+     */
+    await assertSucceeds(
+      getDocs(query(
+        collection(db, 'galleryMedia'),
+        where('programId', '==', SUMMERCAMP),
+        where('programEventId', '==', WEEK_1),
+      )),
+    );
+
+    /** The ministry-wide version, which `deleteProgram` sweeps with. */
+    await assertSucceeds(
+      getDocs(query(collection(db, 'galleryMedia'), where('programId', '==', SUMMERCAMP))),
+    );
+
+    await assertFails(
+      getDocs(query(
+        collection(asAnon(env).firestore(), 'galleryMedia'),
+        where('programId', '==', SUMMERCAMP),
+        where('programEventId', '==', WEEK_1),
+      )),
+    );
+  });
+
+  /**
+   * The volunteer case, stated because it is the one that reads as a bug. A
+   * grant on Week 1 lets them empty Week 1 — the check is against the level the
+   * photograph is *on* — and does not let them put it back afterwards, because
+   * by then it is on the ministry. See the note in firestore.rules.
+   */
+  it('lets a week volunteer empty their own week but not undo it', async () => {
+    const db = asWeekVolunteer(env).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'galleryMedia', 'approved-1'), { programEventId: SUMMERCAMP }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'galleryMedia', 'approved-1'), { programEventId: WEEK_1 }),
+    );
   });
 });
 

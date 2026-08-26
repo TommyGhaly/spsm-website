@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   MAX_FIELDS,
   isChoiceField,
@@ -15,6 +15,7 @@ import {
   type FormOption,
 } from '@spsm/shared';
 import { FieldInput } from '../FormFields';
+import { uploadFormPicture } from '../uploads';
 import { writeForm, type WithId } from './adminData';
 
 /**
@@ -80,6 +81,7 @@ const TYPE_LABELS: Record<FormFieldType, string> = {
   checkboxes: 'Choose any',
   consent: 'Agreement tickbox',
   heading: 'Section heading',
+  photo: 'Photo upload',
 };
 
 export function FormBuilder({
@@ -263,34 +265,8 @@ function Settings({
         <small>One or two sentences, shown on the card and above the form.</small>
       </label>
 
-      <label className="field">
-        <span>Picture</span>
-        <select
-          value={draft.image ?? ''}
-          onChange={(event) => edit({ image: event.target.value || null })}
-        >
-          {PICTURES.map((picture) => (
-            <option key={picture.label} value={picture.value ?? ''}>
-              {picture.label}
-            </option>
-          ))}
-        </select>
-        <small>Shown on the card on /forms, and as a band above the form itself.</small>
-      </label>
+      <PicturePicker draft={draft} edit={edit} />
 
-      {/*
-        A live thumbnail, at the card's own 5:2 crop.
-
-        Without it the picker is a list of words, and "Domes" is not something
-        anyone can picture. Showing it at the aspect ratio the card actually
-        uses also makes the one real failure mode visible before it ships: a tall
-        image whose subject is cropped out entirely by a wide, short box.
-      */}
-      {draft.image && (
-        <span className="fxb__thumb">
-          <img src={draft.image} alt="" />
-        </span>
-      )}
 
       <div className="field-row">
         <label className="field">
@@ -477,6 +453,98 @@ function Settings({
             what a page displays can never change what a card is charged.
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Choosing or uploading the form's picture.
+ *
+ * The dropdown is the shortlist — the four stock photographs and the parish's
+ * own images. The upload beside it is the answer to "none of those is my van":
+ * a parish that has a photograph of its own hall should not be limited to a
+ * list a developer wrote months ago.
+ *
+ * The thumbnail is shown at the card's real 5:2 crop, which is the only way the
+ * one genuine failure is visible before it ships: a tall photograph whose
+ * subject is cropped out entirely by a wide, short box.
+ */
+function PicturePicker({
+  draft,
+  edit,
+}: {
+  draft: FormDraft & { id?: string };
+  edit: (patch: Partial<FormDraft>) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+
+  /* An uploaded picture is a URL that is not in the list, so the select would
+     otherwise fall back to showing the first option and misreport what the form
+     is actually wearing. */
+  const known = PICTURES.some((picture) => picture.value === (draft.image ?? null));
+
+  async function upload(chosen: File | undefined) {
+    if (!chosen) return;
+    setFailed(null);
+    setBusy(true);
+    const result = await uploadFormPicture(draft.slug || draft.id || 'form', chosen);
+    setBusy(false);
+    if (!result.ok) {
+      setFailed(result.reason);
+      return;
+    }
+    edit({ image: result.url });
+  }
+
+  return (
+    <div className="fxb__picture">
+      <label className="field">
+        <span>Picture</span>
+        <select
+          value={known ? draft.image ?? '' : '__uploaded'}
+          onChange={(event) => edit({ image: event.target.value || null })}
+        >
+          {!known && <option value="__uploaded">Uploaded picture</option>}
+          {PICTURES.map((picture) => (
+            <option key={picture.label} value={picture.value ?? ''}>
+              {picture.label}
+            </option>
+          ))}
+        </select>
+        <small>Shown on the card on /forms, and as a band above the form itself.</small>
+      </label>
+
+      <div className="fxb__picture-actions">
+        <button
+          type="button"
+          className="button button--ghost"
+          disabled={busy}
+          onClick={() => file.current?.click()}
+        >
+          {busy ? 'Uploading…' : 'Upload a photo…'}
+        </button>
+        <input
+          ref={file}
+          type="file"
+          accept="image/*"
+          className="visually-hidden"
+          onChange={(event) => void upload(event.target.files?.[0])}
+        />
+      </div>
+
+      {failed && (
+        <div className="notice notice--alarm" role="alert">
+          <p>{failed}</p>
+        </div>
+      )}
+
+      {draft.image && (
+        <span className="fxb__thumb">
+          <img src={draft.image} alt="" />
+        </span>
       )}
     </div>
   );

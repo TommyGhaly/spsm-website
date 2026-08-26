@@ -72,6 +72,17 @@ export type FormFieldType =
   /** Any of many. */
   | 'checkboxes'
   /**
+   * A photograph the person filling in the form attaches.
+   *
+   * The stored answer is a **Storage path**, not a URL and not the image — a
+   * `formUploads/<slug>/<file>` string. The upload happens before submit so the
+   * page can show a thumbnail and a failed upload can be fixed before anything
+   * is sent; `formSubmit` then checks the path really is under that prefix,
+   * because a path in a request body is otherwise a way to make the parish's
+   * own review panel point at any object in the bucket.
+   */
+  | 'photo'
+  /**
    * A single box that must be ticked — a policy acknowledgement.
    *
    * Distinct from a one-option `checkboxes` because `required` means something
@@ -81,6 +92,29 @@ export type FormFieldType =
   | 'consent'
   /** Not an input. A section break with a title, so long forms have joints. */
   | 'heading';
+
+/** The prefix every attached photograph must live under. */
+export const FORM_UPLOAD_PREFIX = 'formUploads';
+
+/**
+ * Whether a stored answer is a photograph path we are willing to trust.
+ *
+ * Checked in the browser to draw a thumbnail and again in `formSubmit` before
+ * anything is written. The second is the one that matters: without it, a
+ * hand-made request could put `clergy/Father-Armia.jpg` — or any other object in
+ * the bucket — into a submission, and the staff review panel would dutifully
+ * render it as though a member of the public had attached it.
+ *
+ * Deliberately strict about what a segment may contain. No `..`, no nested
+ * directories, no query string.
+ */
+export function isFormUploadPath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^formUploads\/[a-z0-9-]{1,60}\/[A-Za-z0-9._-]{1,120}$/.test(value) &&
+    !value.includes('..')
+  );
+}
 
 /** Types that carry `options`. */
 const CHOICE_TYPES = new Set<FormFieldType>(['select', 'radio', 'checkboxes']);
@@ -339,7 +373,7 @@ export interface FormSubmission {
 
 const FIELD_TYPES = new Set<FormFieldType>([
   'shortText', 'longText', 'email', 'phone', 'number', 'date',
-  'select', 'radio', 'checkboxes', 'consent', 'heading',
+  'select', 'radio', 'checkboxes', 'consent', 'heading', 'photo',
 ]);
 
 function str(value: unknown, fallback = ''): string {
@@ -757,6 +791,16 @@ export function validateSubmissionFields(
         // page or a hand-crafted request. Both are rejected the same way.
         if (!field.options.some((option) => option.value === asText)) {
           errors.push({ key: field.key, message: `Choose one of the options for ${field.label}.` });
+        }
+        break;
+      }
+
+      case 'photo': {
+        if (!isFormUploadPath(asText)) {
+          errors.push({
+            key: field.key,
+            message: `The photograph for ${field.label} did not upload. Please try again.`,
+          });
         }
         break;
       }

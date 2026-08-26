@@ -391,7 +391,7 @@ export function ProgramDetails({
         onAsk={() => setConfirmDelete(true)}
         onKeep={() => setConfirmDelete(false)}
         busy={busy}
-        note="Its gatherings have to be removed first."
+        note="Its gatherings have to be removed first. The photographs are not deleted — they become the parish's, and any ministry can take them in from “Not in any ministry” in its picture manager."
         onRemove={() =>
           void (async () => {
             setBusy(true);
@@ -598,7 +598,7 @@ export function LevelDetails({
         onAsk={() => setConfirmDelete(true)}
         onKeep={() => setConfirmDelete(false)}
         busy={busy}
-        note="The photographs filed here are not deleted — they stay in the parish's storage and can be re-filed. Anything nested inside this has to be removed first."
+        note="The photographs filed here are not deleted — they move up to the ministry, where they can be filed again. Anything nested inside this has to be removed first."
         onRemove={() =>
           void (async () => {
             setBusy(true);

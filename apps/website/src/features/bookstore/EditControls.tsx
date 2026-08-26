@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -77,6 +78,81 @@ interface Drag {
  */
 
 /* -------------------------------------------------------------------------- */
+/* Writing, shared by both sizes of the same controls                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Run a write, and report on it.
+ *
+ * ---------------------------------------------------------------------------
+ * Lifted out of `BookControls` when the enlarged settings arrived, because the
+ * card and the dialog are the *same four settings at two sizes* — and the part
+ * worth not writing twice is not the markup, it is this: the boolean a refusal
+ * returns, the busy flag, and the timing of the acknowledgement. Two copies of
+ * that would drift, and the way they would drift is that one of them quietly
+ * stops putting a refused value back.
+ *
+ * The boolean is not decoration. Controls here show the new value immediately —
+ * the stepper especially, which has to feel like a stepper — so a refusal has to
+ * be able to put the old one back. Without it a failed save leaves a card
+ * reading "8 in stock" when Square still holds four, which is worse than the
+ * error message it sits next to.
+ * ---------------------------------------------------------------------------
+ */
+function useWriter(onChanged: () => void, onError: (message: string) => void) {
+  const [busy, setBusy] = useState(false);
+  /*
+   * Whether this product has just saved something, and the timer that clears it.
+   *
+   * See `.bkedit__state` in globals.css for why it is worth the state: every
+   * write here is either debounced (the stepper, by 700ms) or slow (a photograph
+   * going to Square and back), so the gap between pressing a control and
+   * anything happening is long enough for a volunteer to press it again.
+   * "Saving…" while it is in flight and "Saved" for a moment afterwards is the
+   * difference between a control that answers and one that appears to be dead.
+   */
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
+
+  const write = async (run: () => Promise<void>): Promise<boolean> => {
+    setBusy(true);
+    try {
+      await run();
+      onChanged();
+      /* Only a write that landed says so. A refusal has its own notice above the
+         shelf, and a "Saved" flashing beside it would contradict it. */
+      setSaved(true);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 1800);
+      return true;
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : 'That change was refused.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return { busy, saved, write };
+}
+
+/** "Saving…", then "Saved", then nothing. Absolutely positioned; costs no layout. */
+function SaveState({ busy, saved }: { busy: boolean; saved: boolean }) {
+  return (
+    <span
+      className={busy ? 'bkedit__state is-working' : saved ? 'bkedit__state is-saved' : 'bkedit__state'}
+      aria-live="polite"
+    >
+      {busy ? 'Saving…' : saved ? 'Saved' : ''}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* One book                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -95,38 +171,24 @@ export function BookControls({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const { busy, saved, write } = useWriter(onChanged, onError);
 
   // Reset if this card becomes a different book — a half-opened confirmation
   // must not carry over to the next one.
   useEffect(() => setConfirming(false), [product.slug]);
 
-  /**
-   * Run a write and say whether it landed.
-   *
-   * The boolean is not decoration. Controls here show the new value immediately
-   * — the stepper especially, which has to feel like a stepper — so a refusal
-   * has to be able to put the old one back. Without it a failed save leaves a
-   * card reading "8 in stock" when Square still holds four, which is worse than
-   * the error message it sits next to.
-   */
-  const write = async (run: () => Promise<void>): Promise<boolean> => {
-    setBusy(true);
-    try {
-      await run();
-      onChanged();
-      return true;
-    } catch (cause) {
-      onError(cause instanceof Error ? cause.message : 'That change was refused.');
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className={busy ? 'bkedit is-busy' : 'bkedit'}>
+      {/*
+        The one thing on this card that reports back. Absolutely positioned, so
+        it costs no layout at all: this block was deliberately rewritten to half
+        its old height, and buying feedback with a permanent empty row would give
+        that back. `aria-live` so it is announced rather than only seen — a
+        stepper that says nothing for 700ms is worse without sight, not better.
+      */}
+      <SaveState busy={busy} saved={saved} />
+
       <Field label="In stock">
         <StockStepper product={product} busy={busy} onWrite={write} />
       </Field>
@@ -160,47 +222,230 @@ export function BookControls({
         </Field>
       )}
 
-      {/*
-        Nothing destructive without a second step, and the second step says what
-        actually happens — "remove" reads as "delete" and this is an archive.
-      */}
-      {confirming ? (
-        <div className="bkedit__confirm">
-          <p>Off the website and out of the Square register. Past orders keep it.</p>
-          <div className="bkedit__confirmrow">
-            <button
-              type="button"
-              className="bkedit__keep"
-              disabled={busy}
-              onClick={() => setConfirming(false)}
-            >
-              Keep it
-            </button>
-            <button
-              type="button"
-              className="bkedit__gone"
-              disabled={busy}
-              onClick={() =>
-                void write(async () => {
+      <RemoveProduct
+        product={product}
+        busy={busy}
+        confirming={confirming}
+        onConfirming={setConfirming}
+        onWrite={write}
+      />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The same four settings, enlarged                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A single product's settings, at the size a photograph needs.
+ *
+ * ---------------------------------------------------------------------------
+ * Asked for directly: *"I also want to enlarge the settings by clicking on a
+ * specific product and I should be able to remove pictures and add pictures as
+ * necessary."*
+ *
+ * This is **not** the properties column that was rejected as *"way too
+ * confusing"*, and the difference is worth being exact about, because from a
+ * distance they look like the same idea.
+ *
+ *   - That column stood permanently down the side of the window and described
+ *     whichever card you had last clicked. You had to look away from the shelf
+ *     to see it, and away from it to see what it was describing.
+ *   - This is the product's own screen — the same dialog a shopper opens, which
+ *     already shows this book at full size and nothing else. It is opened
+ *     deliberately, it holds one book, and closing it puts you back on the
+ *     shelf. There is no selection to keep track of and nothing is displaced.
+ *
+ * The card keeps its compact controls, which remain the fast path: adjusting a
+ * count on six books in a row should not mean opening and closing six dialogs.
+ * This is the slow path, for the one job the card genuinely cannot do — looking
+ * at a photograph while deciding whether to keep it.
+ *
+ * The buybox is what this replaces in the dialog, which is right: a quantity
+ * stepper and Add to basket are the shopper's question, and nobody arranging the
+ * shop is also buying from it.
+ * ---------------------------------------------------------------------------
+ */
+export function ProductSettings({
+  product,
+  doc,
+  sections,
+  onChanged,
+  onError,
+  onRemoved,
+}: {
+  product: ShopProduct;
+  doc: DocOf<Product> | undefined;
+  sections: BookstoreSection[];
+  onChanged: () => void;
+  onError: (message: string) => void;
+  /** Close the dialog: the book it was describing is no longer on the shop. */
+  onRemoved: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const { busy, saved, write } = useWriter(onChanged, onError);
+
+  useEffect(() => setConfirming(false), [product.slug]);
+
+  return (
+    <div className={busy ? 'bkpanel is-busy' : 'bkpanel'}>
+      <div className="bkpanel__head">
+        <h3 className="bkpanel__title">Shop settings</h3>
+        <SaveState busy={busy} saved={saved} />
+      </div>
+
+      <p className="bkpanel__note">
+        Square owns the title, the price and the description — this screen holds
+        the four things the parish sets.
+      </p>
+
+      <div className="bkpanel__block">
+        <h4 className="bkpanel__label">Pictures</h4>
+        <Pictures
+          product={product}
+          doc={doc}
+          busy={busy}
+          variant="panel"
+          onWrite={write}
+          onError={onError}
+        />
+        {/*
+          Said here and not on the card, because here it is actionable: the
+          pictures are large enough to compare, so which one leads is a decision
+          somebody can actually make. Ordering them is Square's, for now.
+        */}
+        {doc && doc.imagePaths.length > 1 && (
+          <p className="bkpanel__aside">
+            The first is the cover the shop shows. Reorder them in Square.
+          </p>
+        )}
+        {!doc && (
+          <p className="bkpanel__aside">Reading this product’s pictures…</p>
+        )}
+      </div>
+
+      <div className="bkpanel__block">
+        <h4 className="bkpanel__label">In stock</h4>
+        <StockStepper product={product} busy={busy} onWrite={write} />
+      </div>
+
+      {sections.length > 0 && (
+        <div className="bkpanel__block">
+          <h4 className="bkpanel__label">Category</h4>
+          <select
+            className="bkedit__select bkpanel__select"
+            value={product.section ?? ''}
+            aria-label={`Category for ${product.name}`}
+            disabled={busy}
+            onChange={(event) => {
+              const next = event.target.value || null;
+              void write(async () => {
+                const { setProductSection } = await import('./adminData');
+                await setProductSection(product.slug, next);
+              });
+            }}
+          >
+            <option value="">— none —</option>
+            {sections.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="bkpanel__block bkpanel__block--last">
+        <RemoveProduct
+          product={product}
+          busy={busy}
+          confirming={confirming}
+          onConfirming={setConfirming}
+          onWrite={write}
+          /* Leaving the dialog open on an archived book would show a screen for
+             something the shop no longer has, with controls that all fail. */
+          onDone={onRemoved}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Taking a product off the shop                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Nothing destructive without a second step, and the second step says what
+ * actually happens — "remove" reads as "delete" and this is an archive.
+ *
+ * The confirmation is held by the caller rather than here, so that opening the
+ * enlarged settings for a different book closes a confirmation left open on the
+ * last one. A half-pressed Remove must never carry across products.
+ */
+function RemoveProduct({
+  product,
+  busy,
+  confirming,
+  onConfirming,
+  onWrite,
+  onDone,
+}: {
+  product: ShopProduct;
+  busy: boolean;
+  confirming: boolean;
+  onConfirming: (next: boolean) => void;
+  onWrite: (run: () => Promise<void>) => Promise<boolean>;
+  onDone?: () => void;
+}) {
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        className="bkedit__remove"
+        disabled={busy}
+        onClick={() => onConfirming(true)}
+      >
+        Remove this product
+      </button>
+    );
+  }
+
+  return (
+    <div className="bkedit__confirm">
+      <p>Off the website and out of the Square register. Past orders keep it.</p>
+      <div className="bkedit__confirmrow">
+        <button
+          type="button"
+          className="bkedit__keep"
+          disabled={busy}
+          onClick={() => onConfirming(false)}
+        >
+          Keep it
+        </button>
+        <button
+          type="button"
+          className="bkedit__gone"
+          disabled={busy}
+          onClick={() =>
+            void (async () => {
+              // Only on success: a refused archive leaves the book on the shop,
+              // and closing the screen would say it had gone.
+              if (
+                await onWrite(async () => {
                   const { archiveProduct } = await import('./adminData');
                   await archiveProduct(product.slug);
                 })
+              ) {
+                onDone?.();
               }
-            >
-              {busy ? 'Removing…' : 'Remove'}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="bkedit__remove"
-          disabled={busy}
-          onClick={() => setConfirming(true)}
+            })()
+          }
         >
-          Remove this product
+          {busy ? 'Removing…' : 'Remove'}
         </button>
-      )}
+      </div>
     </div>
   );
 }
@@ -315,7 +560,7 @@ function StockStepper({
           aria-label="Start counting this product"
           onClick={() => void save(0)}
         >
-          count it
+          start counting
         </button>
       </span>
     );
@@ -352,7 +597,7 @@ function StockStepper({
         aria-label="Stop counting this product"
         onClick={() => void save(null)}
       >
-        stop
+        stop counting
       </button>
       {/* Zero is the one state worth a word — it takes the product off the shop.
           Beside the stepper rather than as a badge on its own line. */}
@@ -361,21 +606,50 @@ function StockStepper({
   );
 }
 
-/** Add a photograph, or take one off. Square holds both. */
+/**
+ * Add a photograph, or take one off. Square holds both.
+ *
+ * ---------------------------------------------------------------------------
+ * Two sizes of one control, told apart by `variant`, and the reason they are one
+ * component rather than two is that the *behaviour* is where all the difficulty
+ * is: the drag counter, clearing the picker so a retry after a failure fires
+ * `change` again, the downscale before upload, refusing a dropped PDF. None of
+ * that differs between a card and a dialog, and two copies of it would be two
+ * places to fix the next thing found wrong with it.
+ *
+ *   `row`   — on the card, in the space beside the "Pictures" label. Small
+ *             thumbnails, the × revealed on hover.
+ *   `panel` — in the enlarged settings, where there is room for the photograph
+ *             to be looked at rather than merely counted, and where Remove is a
+ *             word rather than a mark that has to be discovered.
+ * ---------------------------------------------------------------------------
+ */
 function Pictures({
   product,
   doc,
   busy,
+  variant = 'row',
   onWrite,
   onError,
 }: {
   product: ShopProduct;
   doc: DocOf<Product> | undefined;
   busy: boolean;
+  variant?: 'row' | 'panel';
   onWrite: (run: () => Promise<void>) => Promise<boolean>;
   onError: (message: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  /*
+   * A file is being dragged over this card's picture row.
+   *
+   * Counted rather than held as a boolean: `dragleave` fires every time the
+   * pointer crosses into a *child* of the drop zone — the thumbnails, the add
+   * button — so a plain flag flickers off the moment the file passes over one of
+   * them, and the zone stops looking like a target exactly while it is being
+   * aimed at. Counting enters against leaves survives the child boundaries.
+   */
+  const [over, setOver] = useState(0);
   const picker = useRef<HTMLInputElement>(null);
   const images = doc?.imagePaths ?? [];
 
@@ -397,10 +671,54 @@ function Pictures({
     }
   };
 
+  /*
+   * A photograph of a book is almost always already on the desktop, and the
+   * gesture a volunteer reaches for is to drag it onto the card. The file picker
+   * stays — dragging is an addition, never the only way in, because it has no
+   * keyboard equivalent and no equivalent at all on a phone.
+   *
+   * `preventDefault` on dragover is not optional: without it the browser's
+   * default handling wins, `drop` never fires, and the file opens as a page —
+   * which navigates away from the shop mid-edit.
+   */
+  const accept = (event: ReactDragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return false;
+    event.preventDefault();
+    return true;
+  };
+
+  const remove = (url: string) =>
+    void onWrite(async () => {
+      const { removeProductImage } = await import('./adminData');
+      await removeProductImage(product.slug, url);
+    });
+
+  const panel = variant === 'panel';
+  const Box = panel ? 'div' : 'span';
+  const Tile = panel ? 'div' : 'span';
+
   return (
-    <span className="bkpix">
+    <Box
+      className={`${panel ? 'bkpix bkpix--panel' : 'bkpix'}${over > 0 ? ' is-over' : ''}`}
+      onDragEnter={(event) => {
+        if (accept(event)) setOver((n) => n + 1);
+      }}
+      onDragOver={accept}
+      onDragLeave={() => setOver((n) => Math.max(0, n - 1))}
+      onDrop={(event) => {
+        if (!accept(event)) return;
+        setOver(0);
+        if (uploading || busy) return;
+        const file = Array.from(event.dataTransfer.files).find((one) =>
+          one.type.startsWith('image/'),
+        );
+        // Said rather than ignored: a dropped PDF looks like it worked otherwise.
+        if (!file) onError('That file is not a picture.');
+        else void upload(file);
+      }}
+    >
       {images.map((url, index) => (
-        <span className="bkpix__one" key={url}>
+        <Tile className="bkpix__one" key={url}>
           {/* A plain `img`: these are Square CDN URLs the export build knows
               nothing about, and `next/image` would need every host in
               `remotePatterns` for a thumbnail this size. */}
@@ -408,33 +726,65 @@ function Pictures({
           {/* The first is what the shop shows, and saying so is the difference
               between "why is that one the cover" and knowing. */}
           {index === 0 && <span className="bkpix__cover">cover</span>}
+          {/*
+            On the card this is a × that appears on approach, because a row of
+            badges over every thumbnail is what made that block look busy. In the
+            panel it is a word: there is room for one, the pictures are large
+            enough that the mark would look like part of the photograph, and
+            "discoverable on hover" is not a property a destructive control on a
+            touchscreen can have.
+          */}
           <button
             type="button"
-            className="bkpix__del"
+            className={panel ? 'bkpix__off' : 'bkpix__del'}
             disabled={busy}
-            aria-label="Remove this picture"
+            aria-label={`Remove picture ${index + 1} of ${images.length} from ${product.name}`}
             title="Remove this picture"
-            onClick={() =>
-              void onWrite(async () => {
-                const { removeProductImage } = await import('./adminData');
-                await removeProductImage(product.slug, url);
-              })
-            }
+            onClick={() => remove(url)}
           >
-            ×
+            {panel ? 'Remove' : '×'}
           </button>
-        </span>
+        </Tile>
       ))}
 
       <button
         type="button"
         className="bkpix__add"
         disabled={uploading || busy}
-        title="Add a picture"
+        title="Add a picture — or drag one in"
+        aria-label={`Add a picture to ${product.name}`}
         onClick={() => picker.current?.click()}
       >
-        {uploading ? '…' : '+'}
+        {panel ? (
+          <>
+            <span className="bkpix__addmark" aria-hidden="true">
+              {uploading ? '…' : '+'}
+            </span>
+            <span className="bkpix__addword">
+              {uploading ? 'Sending…' : over > 0 ? 'Drop it here' : 'Add a picture'}
+            </span>
+          </>
+        ) : uploading ? (
+          '…'
+        ) : (
+          '+'
+        )}
       </button>
+
+      {/*
+        The empty state carries the instruction, and only the empty state.
+        A book that already has its picture does not need to be told twice how to
+        add another, and eleven copies of the sentence is what would make this
+        block noisy. Hidden from assistive technology because the button beside
+        it already says the same thing.
+
+        The panel's add tile says all of this on its own face, so it gets none.
+      */}
+      {!panel && images.length === 0 && !uploading && (
+        <span className="bkpix__hint" aria-hidden="true">
+          {over > 0 ? 'Drop it here' : 'or drop one here'}
+        </span>
+      )}
 
       <input
         ref={picker}
@@ -446,7 +796,7 @@ function Pictures({
           if (file) void upload(file);
         }}
       />
-    </span>
+    </Box>
   );
 }
 

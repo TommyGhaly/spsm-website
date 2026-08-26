@@ -50,6 +50,18 @@ service firebase.storage {
       allow delete: if hasRole('staff');
     }
 
+    // A form's own picture, uploaded by staff from the builder on /forms.
+    //
+    // Same create/update/delete split as `events/` above, and for the same
+    // reason: `write` covers delete, and on a delete `request.resource` is null
+    // so `isImage()` is false. Collapsing these three back into one `write`
+    // would let staff upload a picture they could then never replace or remove.
+    match /forms/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if hasRole('staff') && isImage();
+      allow delete: if hasRole('staff');
+    }
+
     match /clergy/{allPaths=**} {
       allow read: if true;
       allow write: if hasRole('admin') && isImage();
@@ -129,6 +141,36 @@ service firebase.storage {
     match /submissions/{programEventId}/{fileName} {
       allow read: if hasRole('staff');
       allow create: if isSubmittable() && resource == null;
+      allow update, delete: if hasRole('staff');
+    }
+
+    // Photographs attached to a form submission, by whoever is filling it in.
+    //
+    // ---------------------------------------------------------------------
+    // The second anonymous write path on this site, and it is modelled on the
+    // first — `submissions/` above — deliberately rather than by coincidence.
+    //
+    //   - **create only, never overwrite.** `resource == null` is what makes
+    //     that true. Without it, anyone who learned a path could replace the
+    //     photograph a parishioner attached with one of their own, and the
+    //     form's record would still point at the same file.
+    //   - **no anonymous read, and no list.** A person can put a file here and
+    //     cannot get it back, or discover anybody else's. These are photographs
+    //     the public sends the parish; a world-readable quarantine would make
+    //     every one of them findable by anyone who guessed a path.
+    //   - **images only, and small.** 8MB via `isImage()`, not the 250MB the
+    //     gallery allows: that path takes video from a parish festival, this one
+    //     takes a photograph of a dented wing.
+    //
+    // Nothing sweeps abandoned files. Someone can attach a photograph and never
+    // press submit, and that upload stays. Worth a lifecycle rule on the bucket
+    // rather than a Function — but it is a real cost of uploading before
+    // submit, and uploading before submit is what lets the page show a
+    // thumbnail and a failed upload be fixed before anything is sent.
+    // ---------------------------------------------------------------------
+    match /formUploads/{formSlug}/{fileName} {
+      allow read: if hasRole('staff');
+      allow create: if isImage() && resource == null;
       allow update, delete: if hasRole('staff');
     }
 

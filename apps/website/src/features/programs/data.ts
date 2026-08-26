@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  UNFILED_PROGRAM_ID,
   buildGalleryTree,
   hasRenderableFile,
   resolveTrail,
@@ -377,9 +378,106 @@ export async function getGalleryLevel(
   if (found === null) return null;
 
   const node = found[found.length - 1] ?? null;
-  const media = await getSubtreeMedia(programId, subtreeIds(tree, node?.id ?? null));
+
+  /*
+   * A level reads its subtree. The ministry reads the whole program, and the
+   * difference is not an optimisation.
+   *
+   * `subtreeIds` returns nodes, and the ministry is not one — so a photograph
+   * filed on the ministry itself (`programEventId === programId`, which is what
+   * dropping one on the top row of `PictureManager` writes) was in no page's
+   * read at all. It was still in Firestore and still approved; it simply had
+   * nowhere left to appear, including the manager it was moved from, so filing a
+   * picture there looked exactly like deleting it.
+   *
+   * Adding the program's own id to the `in` list fixed that and could not fix
+   * the other half: a photograph left on a level that has since been deleted
+   * names an id that is in no list, so no query built out of the tree can ever
+   * return it. Reading the program instead returns everything in it — filed,
+   * on the ministry, or orphaned — which is what `healOrphans` below then needs.
+   *
+   * The cost is the cap. The `in` branch is exact and uncapped for a ministry of
+   * thirty levels or fewer; this is capped at `PROGRAM_PAGE_WINDOW`. That is the
+   * same approximation a wider ministry already lives with, on the same page,
+   * and it buys the guarantee that a photograph in this ministry appears
+   * *somewhere* — which nothing else here provides.
+   */
+  const media =
+    node === null
+      ? healOrphans(await getProgramPageMedia(programId), tree, programId)
+      : await getSubtreeMedia(programId, subtreeIds(tree, node.id));
 
   return { tree, trail: found, node, media };
+}
+
+/**
+ * A photograph whose level was deleted reads as one filed on the ministry.
+ *
+ * Deleting a level now moves its pictures up first — see `deleteProgramEvent` —
+ * so nothing new becomes an orphan. This is for the ones already out there,
+ * stranded by a delete that happened before that was true, and for any that
+ * arrive by a route nobody has thought of: a level removed in the Firestore
+ * console, a half-finished migration.
+ *
+ * **Rewritten in the objects this function returns, not in Firestore.** A read
+ * that repairs the database is a read that needs write permission, and this one
+ * runs for every visitor on a public page. So the document keeps its dead id and
+ * every surface behaves as though it says the ministry's — which is enough,
+ * because the moment an administrator drags the picture anywhere at all the fix
+ * becomes permanent through the ordinary write.
+ *
+ * A draft level counts as live. An administrator's tree includes unpublished
+ * nodes and a visitor's does not, so a picture filed on a level nobody has
+ * published yet would otherwise be "orphaned" for the public and correctly filed
+ * for staff — two different answers about one document, differing by who is
+ * looking. Reading it as its own level's in both cases keeps it off the ministry
+ * page either way, which is what an unpublished level is *for*.
+ */
+function healOrphans(
+  media: readonly DocOf<GalleryMedia>[],
+  tree: GalleryTree<DocOf<ProgramEvent>>,
+  programId: string,
+): DocOf<GalleryMedia>[] {
+  const live = new Set(subtreeIds(tree, null));
+  return media.map((item) =>
+    live.has(item.programEventId) || item.programEventId === programId
+      ? item
+      : { ...item, programEventId: programId },
+  );
+}
+
+/**
+ * Photographs whose ministry was deleted — the parish's loose pictures.
+ *
+ * One equality query on the sentinel `deleteProgram` writes, riding the same
+ * `(programId, status, order)` index as every ordinary program read. See
+ * `UNFILED_PROGRAM_ID` for why it is a sentinel and not a dangling id.
+ *
+ * Approved only, and that is both a permission fact and a design one. The rules
+ * let anybody read an approved photograph, so this read needs no special grant
+ * to *return* — while a pending one is readable only through
+ * `adminsProgramEvent`, which no longer matches anybody once the program is
+ * gone. It is also the only kind this is for: the screen that shows these files
+ * pictures into galleries, and a submission whose queue no longer exists is a
+ * different problem with a different answer.
+ */
+export async function getUnfiledMedia(max = 200): Promise<DocOf<GalleryMedia>[]> {
+  return readOrEmpty(
+    'unfiled media',
+    async () => {
+      const snapshot = await getDocs(
+        query(
+          collection(db(), COLLECTIONS.galleryMedia),
+          where('programId', '==', UNFILED_PROGRAM_ID),
+          APPROVED,
+          orderBy('order', 'asc'),
+          limit(max),
+        ),
+      );
+      return snapshot.docs.map(docOf<GalleryMedia>);
+    },
+    [],
+  );
 }
 
 /**

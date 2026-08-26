@@ -1,3 +1,4 @@
+import { SUMMARY_COVERS } from '@spsm/shared';
 import { getProgramMedia, getPrograms } from './data';
 import { programHref } from './route';
 
@@ -31,33 +32,43 @@ export type ProgramNavChild = {
   href: string;
   label: string;
   /**
-   * Storage path of a photograph to sit behind the name, or null.
+   * Up to `SUMMARY_COVERS` photographs for the tile to cycle through, in
+   * gallery order. Empty for a program with no approved pictures yet.
    *
-   * A path rather than a URL: the bucket host differs between production and
+   * Paths rather than URLs: the bucket host differs between production and
    * the emulators, and only the browser knows which it is talking to. `media.ts`
-   * turns it into a URL at render time.
+   * turns them into URLs at render time.
    */
-  coverPath: string | null;
+  coverPaths: readonly string[];
 };
 
 export async function programNavChildren(): Promise<ProgramNavChild[]> {
   const programs = await getPrograms();
 
   /*
-   * A cover each, fetched in parallel at build time.
+   * A handful of pictures each, fetched in parallel at build time.
    *
    * This is the only reason the menu costs more than one query, and it costs it
-   * once per build rather than once per visitor. A program with no approved
-   * photographs yields null and its tile falls back to a plain ground — which
-   * is every program today, and progressively fewer as the galleries fill.
+   * once per build rather than once per visitor. Asking for `SUMMARY_COVERS`
+   * instead of one costs the same number of queries — a `limit` of five reads
+   * five documents in the query that was already being run — and it is what
+   * lets each tile show the ministry rather than one frozen moment of it.
+   *
+   * A program with no approved photographs yields an empty list and its tile
+   * falls back to a plain ground; one with a single photograph simply holds it,
+   * because the cycling in `NavTile` is driven by how many arrived.
    */
   const covers = await Promise.all(
-    programs.map(async (program) => (await getProgramMedia(program.id, 1))[0]?.renditionPath ?? null),
+    programs.map(async (program) =>
+      (await getProgramMedia(program.id, SUMMARY_COVERS))
+        .map((media) => media.renditionPath)
+        .filter((path): path is string => path !== null),
+    ),
   );
 
   return programs.map((program, index) => ({
     href: programHref(program.slug),
     label: program.name,
-    coverPath: covers[index] ?? null,
+    coverPaths: covers[index] ?? [],
   }));
 }

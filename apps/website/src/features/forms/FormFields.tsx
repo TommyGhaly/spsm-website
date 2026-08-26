@@ -7,7 +7,10 @@ import {
   type FormAnswers,
   type FormField,
 } from '@spsm/shared';
+import { useEffect, useRef, useState } from 'react';
 import { money } from '@/features/bookstore/money';
+import { Icon } from '@/components/Icon';
+import { uploadFormPhoto } from './uploads';
 
 /**
  * One field, drawn.
@@ -98,6 +101,22 @@ export function FieldInput({
         {field.help && <small id={helpId}>{field.help}</small>}
         <FieldError id={errorId} message={error} />
       </label>
+    );
+  }
+
+  if (field.type === 'photo') {
+    return (
+      <PhotoField
+        field={field}
+        id={id}
+        helpId={helpId}
+        errorId={errorId}
+        described={described}
+        error={error}
+        value={value}
+        label={label}
+        onChange={onChange}
+      />
     );
   }
 
@@ -353,3 +372,154 @@ export function pairable(field: FormField): boolean {
 }
 
 export type { FormAnswers };
+
+/**
+ * A photograph, uploaded as soon as it is chosen.
+ *
+ * ---------------------------------------------------------------------------
+ * Uploaded on pick, not on submit, and the thumbnail is local.
+ *
+ * Two decisions worth stating. **Upload immediately**, because a photograph
+ * that only leaves the device when the form is submitted turns one slow moment
+ * into a submit button that appears to hang for thirty seconds on parish wifi —
+ * and if it fails, it fails at the worst possible time, after everything else
+ * has been filled in. Doing it on pick means a failure is visible and fixable
+ * while the person is still looking at that field.
+ *
+ * **The preview is a local `blob:` URL**, never a round trip. `formUploads/` is
+ * deliberately unreadable to the person who just wrote to it, so there is no URL
+ * to fetch back — and even if there were, re-downloading an image the browser
+ * already has in memory would be pure waste.
+ *
+ * The object URL is revoked on unmount. Without that, every photograph picked
+ * during a session stays in memory until the tab closes.
+ * ---------------------------------------------------------------------------
+ */
+function PhotoField({
+  field,
+  id,
+  helpId,
+  errorId,
+  described,
+  error,
+  value,
+  label,
+  onChange,
+}: {
+  field: FormField;
+  id: string;
+  helpId: string;
+  errorId: string;
+  described: string | undefined;
+  error: string | null;
+  value: FormAnswer | undefined;
+  label: React.ReactNode;
+  onChange: (value: FormAnswer) => void;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const objectUrl = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    },
+    [],
+  );
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setFailed(null);
+    setBusy(true);
+
+    // Shown before the upload finishes, so the person can see they picked the
+    // right picture while it is still going up.
+    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    objectUrl.current = URL.createObjectURL(file);
+    setPreview(objectUrl.current);
+
+    const result = await uploadFormPhoto(formSlugFor(), file);
+    setBusy(false);
+
+    if (!result.ok) {
+      setFailed(result.reason);
+      onChange('');
+      return;
+    }
+    onChange(result.path);
+  }
+
+  /*
+   * The slug comes off the address bar rather than being threaded down through
+   * every component between here and the page. It is the same value the shell
+   * used to load this form, so it cannot disagree with it, and `formSubmit`
+   * checks the stored path against the form it is actually saving to anyway.
+   */
+  function formSlugFor(): string {
+    const match = /^\/forms\/([^/]+?)(?:\.html)?\/?$/.exec(window.location.pathname);
+    return match?.[1] ?? 'form';
+  }
+
+  const has = typeof value === 'string' && value.length > 0;
+
+  return (
+    <div className={cls('field fx__photo', error !== null && 'is-invalid')}>
+      {label}
+
+      {preview && (
+        <img className="fx__photo-preview" src={preview} alt="" />
+      )}
+
+      <div className="fx__photo-actions">
+        <button
+          type="button"
+          className="button button--ghost"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+        >
+          <Icon name={has ? 'check' : 'plus'} size={16} />
+          {busy ? 'Uploading…' : has ? 'Choose a different photo' : 'Add a photo'}
+        </button>
+
+        {has && !busy && (
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => {
+              if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+              objectUrl.current = null;
+              setPreview(null);
+              onChange('');
+            }}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      {/*
+        The real input is hidden and driven by the button above. A bare
+        `<input type="file">` cannot be styled and reads "No file chosen" in the
+        browser's own words, which is the one string on the page nobody wrote.
+        It stays in the DOM and keeps its id, so the label still names it and the
+        keyboard still reaches it through the button.
+      */}
+      <input
+        ref={input}
+        id={id}
+        type="file"
+        accept="image/*"
+        className="visually-hidden"
+        aria-describedby={described}
+        aria-invalid={error !== null || undefined}
+        onChange={(event) => void pick(event.target.files?.[0])}
+      />
+
+      {field.help && <small id={helpId}>{field.help}</small>}
+      {failed && <small className="fx__error">{failed}</small>}
+      <FieldError id={errorId} message={error} />
+    </div>
+  );
+}

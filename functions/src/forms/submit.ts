@@ -3,7 +3,9 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
+  FORM_UPLOAD_PREFIX,
   computeTotalCents,
+  isFormUploadPath,
   identifySubmitter,
   parseFormDefinition,
   submissionAnswers,
@@ -185,6 +187,33 @@ export const formSubmit = onRequest(
     const problems = validateSubmission(form, answers);
     if (problems.length > 0) {
       res.status(400).json({ errors: problems });
+      return;
+    }
+
+    /*
+     * Attached photographs are checked against this form's own folder.
+     *
+     * `validateSubmission` already refuses anything that is not a well-formed
+     * `formUploads/<slug>/<file>` path, which stops the obvious abuse — putting
+     * `clergy/Father-Armia.jpg` in a submission and having the staff panel
+     * render it as though a parishioner had attached it. This is the second
+     * half: the slug in the path must be *this* form's.
+     *
+     * Without it a path is still trusted across forms, so a photograph uploaded
+     * to an open public form could be attached to a submission on a different
+     * one. That is a small hole and an easy one to close.
+     */
+    const misfiled = form.fields
+      .filter((field) => field.type === 'photo')
+      .map((field) => answers[field.key])
+      .filter((value) => typeof value === 'string' && value.length > 0)
+      .filter((value) => !isFormUploadPath(value) || !String(value).startsWith(`${FORM_UPLOAD_PREFIX}/${form.slug}/`));
+
+    if (misfiled.length > 0) {
+      console.error(`[forms] rejected a photograph path outside ${form.slug}`, misfiled);
+      res.status(400).json({
+        errors: ['A photograph on this form could not be verified. Please attach it again.'],
+      });
       return;
     }
 

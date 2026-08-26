@@ -374,7 +374,7 @@ function ProgramRail() {
             void (async () => {
               setSaving(true);
               try {
-                await deleteProgram(program.id);
+                await deleteProgram(program.id, admin.uid);
                 reload();
               } catch (error) {
                 console.error('[programs] could not remove the ministry:', error);
