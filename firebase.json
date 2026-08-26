@@ -69,6 +69,10 @@
         "function": "squareArchiveProduct"
       },
       {
+        "source": "/api/square/catalog-refresh",
+        "function": "refreshSquareCatalog"
+      },
+      {
         "source": "/api/square/stats-refresh",
         "function": "refreshBookstoreStats"
       },
