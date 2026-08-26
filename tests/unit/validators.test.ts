@@ -92,7 +92,6 @@ describe('validateVehicle', () => {
 function prayer(overrides: Partial<PrayerRequestInput> = {}): PrayerRequestInput {
   return {
     body: 'Please pray for my mother.',
-    visibility: 'public',
     anonymous: false,
     authorName: 'Mina',
     contactEmail: null,
@@ -163,12 +162,6 @@ describe('validatePrayerRequest', () => {
     ).toEqual([]);
   });
 
-  it('rejects a visibility outside the allowed set', () => {
-    expect(
-      validatePrayerRequest(prayer({ visibility: 'clergy-only' as unknown as 'clergy' })),
-    ).toHaveLength(1);
-    expect(validatePrayerRequest(prayer({ visibility: 'clergy' }))).toEqual([]);
-  });
 });
 
 describe('prayers and commemorations are different requests', () => {

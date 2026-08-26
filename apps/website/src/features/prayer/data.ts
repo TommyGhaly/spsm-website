@@ -40,7 +40,6 @@ export async function submitPrayerRequest(input: PrayerRequestInput): Promise<Su
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         body: input.body,
-        visibility: input.visibility,
         anonymous: input.anonymous,
         // Both null when anonymous. The Function enforces this again; sending
         // them would not help anyone and there is no reason to transmit a name

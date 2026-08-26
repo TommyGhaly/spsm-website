@@ -4,12 +4,10 @@ import {
   COLLECTIONS,
   COMMEMORATION_WHEN,
   PRAYER_KINDS,
-  PRAYER_VISIBILITIES,
   validatePrayerRequest,
   type CommemorationWhen,
   type PrayerKind,
   type PrayerRequestInput,
-  type PrayerVisibility,
 } from '@spsm/shared';
 import { callerOf, hasRole, inGroup } from '../httpAuth.js';
 import { PRAYER_KEY, open, seal, sealRoundTrips, sealingAvailable } from './seal.js';
@@ -92,18 +90,10 @@ export const prayerSubmit = onRequest(
         ? (whenRaw as CommemorationWhen)
         : null;
 
-    const visibilityRaw = String(body['visibility'] ?? 'clergy');
-    const visibility: PrayerVisibility = PRAYER_VISIBILITIES.includes(
-      visibilityRaw as PrayerVisibility,
-    )
-      ? (visibilityRaw as PrayerVisibility)
-      : 'clergy';
-
     const anonymous = body['anonymous'] === true;
 
     const input: PrayerRequestInput = {
       body: text(body['body'], 2000),
-      visibility,
       anonymous,
       authorName: anonymous ? null : text(body['authorName'], 100) || null,
       contactEmail: text(body['contactEmail'], 254) || null,
@@ -166,7 +156,6 @@ export const prayerSubmit = onRequest(
            */
           kind: input.kind,
           commemoration: input.commemoration,
-          visibility: input.visibility,
           anonymous: input.anonymous,
           status: 'active',
 
@@ -243,7 +232,6 @@ export const prayerList = onRequest(
             contactEmail: open(data['contactEmail'] as string | null),
             kind: (data['kind'] as string) ?? 'prayer',
             commemoration: (data['commemoration'] as string | null) ?? null,
-            visibility: (data['visibility'] as string) ?? 'clergy',
             anonymous: data['anonymous'] === true,
             status: (data['status'] as string) ?? 'active',
             createdAt:

@@ -35,7 +35,6 @@ import { submitPrayerRequest } from './data';
 
 const EMPTY: PrayerRequestInput = {
   body: '',
-  visibility: 'clergy',
   anonymous: false,
   authorName: null,
   contactEmail: null,
@@ -218,16 +217,16 @@ export function PrayerForm() {
           </small>
         </label>
 
-        <label className="field">
-          <span>Who should see this?</span>
-          <select
-            value={input.visibility}
-            onChange={(e) => set('visibility', e.target.value as PrayerRequestInput['visibility'])}
-          >
-            <option value="clergy">The fathers only</option>
-            <option value="public">The fathers and the prayer team</option>
-          </select>
-        </label>
+        {/*
+          "Who should see this?" used to be asked here, offering "the fathers
+          only" or "the fathers and the prayer team".
+
+          The parish has no prayer team. The question was a choice between one
+          real audience and one that does not exist, and the wrong answer implied
+          to a parishioner that a congregation would read what they wrote. Asking
+          nothing is more honest than asking that, and the disclosure above
+          already says who reads these.
+        */}
       </fieldset>
 
       <fieldset>
