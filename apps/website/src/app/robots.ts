@@ -28,7 +28,19 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/parking', '/prayer', '/welcome'],
+      /*
+       * `/forms/*` joins them, and `/form` with it.
+       *
+       * Individual forms are fetched in the browser through one shell page, so
+       * there is no per-form HTML for a crawler to index in the first place —
+       * this line makes that state deliberate rather than incidental. A crawler
+       * that followed a link to `/forms/summer-camp` would otherwise index a
+       * page whose only content is the word "Loading…".
+       *
+       * `/forms` itself stays crawlable. The hub is the page worth finding, and
+       * it explains what each form is for before anybody opens one.
+       */
+      disallow: ['/parking', '/prayer', '/welcome', '/form', '/forms/'],
     },
     sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     host: SITE_ORIGIN,

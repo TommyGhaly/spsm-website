@@ -1,3 +1,33 @@
+/**
+ * SUPERSEDED — nothing renders this any more.
+ *
+ * ---------------------------------------------------------------------------
+ * Vehicle registration moved to `features/forms`, and writes to Taksis.
+ *
+ * `/parking` and `/forms/vehicle-registration` both render
+ * `features/forms/VehicleForm.tsx` now. That form collects a different set of
+ * answers (a repeating driver list, a fixed twelve-colour picker, no state
+ * field) and posts them through `formSubmit`, which pushes a
+ * `pending_registrations` record into the Taksis project.
+ *
+ * The parking team works from Taksis. A second list of who may park here is not
+ * a backup — it is a list that disagrees with the first one six months later,
+ * with no rule for which wins.
+ *
+ * ## Why this is still here
+ *
+ * The `vehicles` collection holds the registrations already taken through this
+ * form, and they are a record of something that happened. Deleting the code
+ * that describes their shape would leave that data with nothing to read it.
+ * `schema/vehicles.ts`, its validator, its tests and the `vehicles` rules all
+ * stay for the same reason.
+ *
+ * Do not wire this back up to a page. If the parish ever wants a local copy of
+ * a registration again, that is a decision to re-open deliberately — see the
+ * note in `functions/src/forms/taksis.ts` for what was traded away and why.
+ * ---------------------------------------------------------------------------
+ */
+
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { COLLECTIONS, normalizePlate, type VehicleInput } from '@spsm/shared';
 import { db } from '@/lib/firebase';

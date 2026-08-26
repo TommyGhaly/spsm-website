@@ -40,6 +40,7 @@ import {
 } from '../packages/shared/dist/index.js';
 import { toFieldMap } from './lib/firestore-rest.mjs';
 import { collectPages } from './lib/content-files.mjs';
+import { seedForms } from './lib/form-definitions.mjs';
 import { webpSize } from './lib/webp-size.mjs';
 
 const PROJECT = 'spsm-database';
@@ -322,6 +323,26 @@ if (breeze && isAllowedEmbedUrl(breeze)) {
     manageUrl: '',
     updatedAt: new Date(),
   });
+}
+
+// --- forms ------------------------------------------------------------------
+
+/*
+ * The parish's forms, from the same definitions `seed-forms.mjs` writes to the
+ * real project.
+ *
+ * Imported rather than retyped, deliberately. Two copies of a form definition
+ * is how the local /forms and the real one start disagreeing about which
+ * questions a form asks — which is precisely the sort of difference nobody
+ * notices until a conditional field behaves one way on a laptop and another way
+ * on Sunday.
+ *
+ * Everything is published here, including the three Breeze rebuilds that are
+ * drafts in production. Locally the point is to be able to open them.
+ */
+const forms = seedForms();
+for (const form of forms) {
+  await put(`forms/${form.slug}`, { ...form, published: true, ...audit() });
 }
 
 // --- content ----------------------------------------------------------------
@@ -852,6 +873,7 @@ console.log(`Seeded the emulators at ${FIRESTORE}:
     clipBytes ? '' : '\n  the clip has no video file — install ffmpeg to seed one'
   }
   ${products.length} bookstore products (+1 unpublished draft)
+  ${forms.length} forms at /forms (all published locally; three are drafts in production)
   config/parish, config/integrations, and config/theme
   ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}
 

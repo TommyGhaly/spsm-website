@@ -8846,8 +8846,10 @@ main {
   border-color: color-mix(in srgb, var(--color-deep, #481010) 30%, transparent);
 }
 
-/* The photograph, behind the scrim and the name. Hidden until the tile says it
-   loaded, so a slow image cannot flash dark type over a half-painted picture. */
+/* The photographs, stacked behind the scrim and the name — several per tile,
+   cycled by NavTile. Hidden until the tile says one loaded, so a slow image
+   cannot flash dark type over a half-painted picture, and every one that is not
+   the current shot stays at zero so the stack reads as a single plate. */
 .nav__menu a img {
   position: absolute;
   inset: 0;
@@ -8855,9 +8857,12 @@ main {
   height: 100%;
   object-fit: cover;
   opacity: 0;
+  /* Long enough to read as a dissolve, comfortably shorter than the 3200ms hold
+     — a fade longer than the hold never finishes before the next one starts. */
+  transition: opacity 500ms ease;
 }
 
-.nav__menu a.has-cover img {
+.nav__menu a.has-cover img.is-current {
   opacity: 1;
 }
 
@@ -8897,6 +8902,12 @@ main {
   .nav__menu a:hover {
     transition: none;
     transform: none;
+  }
+
+  /* The cycling is already switched off in JS; this is the cut for the first
+     picture appearing, which would otherwise still fade in. */
+  .nav__menu a img {
+    transition: none;
   }
 }
 
@@ -12519,6 +12530,46 @@ main {
 .manager__error {
   color: var(--color-accent, #992a21);
   font-weight: 600;
+}
+
+/*
+ * The parish's loose pictures, at the foot of the ministry's levels.
+ *
+ * Ruled off and pushed to the bottom the same way `.picker__kinds` is, for the
+ * same reason: it is a different kind of thing from the rows above it, and the
+ * rule is what says so without a second heading. `margin-top: auto` pins it to
+ * the bottom of a short list of levels and lets it follow a long one.
+ *
+ * Italic and faint rather than coloured. It is not a warning — a rogue picture
+ * is a normal consequence of retiring a ministry — and red here would compete
+ * with the delete pill on every tile to the right.
+ *
+ * Under 52rem `.picker__folders` becomes a horizontal scrolling row, where
+ * `margin-top: auto` means nothing and a top border would draw across the wrong
+ * axis. So the rule moves to the inline start and the row keeps its place at the
+ * end of the strip.
+ */
+.manager__rogue {
+  margin-top: auto;
+  padding-top: var(--space-sm, 0.6rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.manager__rogue.is-on {
+  color: var(--color-ink-inverse, #fff);
+}
+
+@media (max-width: 52rem) {
+  .manager__rogue {
+    margin-top: 0;
+    padding-top: var(--space-sm, 0.5rem);
+    border-top: 0;
+    border-inline-start: 1px solid var(--color-rule, #e0cac3);
+    padding-inline-start: var(--space-sm, 0.7rem);
+    white-space: nowrap;
+  }
 }
 
 .picker__tile:hover {
@@ -20324,4 +20375,570 @@ span.gallery-figure__frame {
 .book--add .bknew__price {
   flex: none;
   width: 100%;
+}
+
+/* ==== parish forms ======================================================= */
+
+/*
+ * Everything a form needs beyond `.form` / `.field`, which it reuses.
+ *
+ * Prefixed `fx` (public form), `fxb` (builder), `fxa` (admin list), `fxs`
+ * (submissions). Deliberately ugly prefixes: this project has one global
+ * stylesheet and no modules, so a `.option` or a `.total` here would reach into
+ * every other page that ever defines one — which is exactly how `.shelf` from
+ * the programs panel flattened the whole bookstore.
+ *
+ * Tokens are used with fallbacks throughout, matching the rest of this file:
+ * they are supplied by the runtime theme rather than declared here, and a
+ * misspelled custom property falls through to its fallback silently and looks
+ * like a design choice.
+ */
+
+.fx {
+  width: 100%;
+}
+
+/* A section break inside a long form. */
+.fx__heading {
+  width: 100%;
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  padding-top: var(--space-md, 1.25rem);
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+.fx__heading h3 {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+  margin: 0;
+}
+
+/* Radio and checkbox groups. `.form fieldset` already gives it the frame. */
+.fx__group {
+  width: 100%;
+}
+
+.fx__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.4rem);
+}
+
+/*
+ * An option is a whole tappable tile, not a 13px circle with a word beside it.
+ *
+ * The forms this was built for are filled in on phones in a car park and a
+ * church hall, and a native radio's hit area is well under the 44px everyone
+ * recommends. The input stays in the DOM — it is what the keyboard, the screen
+ * reader, and the form state all use — and is visually replaced.
+ */
+.fx__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.45rem);
+  padding: 0.6rem 0.85rem;
+  min-height: 2.75rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper, #f6e8e3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.fx__option:hover {
+  border-color: var(--color-accent, #992a21);
+}
+
+.fx__option.is-on {
+  border-color: var(--color-accent, #992a21);
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-ink, #1c1614);
+}
+
+/* The tile carries the focus ring, since the input inside it is the target. */
+.fx__option:focus-within {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+}
+
+.fx__option input {
+  /* Not `display:none` — a hidden input is skipped by some screen readers and
+     cannot be reached by keyboard. Kept in the layer, sized to the tile. */
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fx__option-price {
+  color: var(--color-accent, #992a21);
+  font-variant-numeric: tabular-nums;
+}
+
+.fx__unit {
+  color: var(--color-accent, #992a21);
+}
+
+/* The running total, directly above the button. */
+.fx__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+  width: 100%;
+  padding: var(--space-sm, 0.75rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  margin: 0;
+}
+
+.fx__total strong {
+  font-size: var(--type-h4, 1.25rem);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A control that failed the last submit. */
+.fx .is-invalid input,
+.fx .is-invalid select,
+.fx .is-invalid textarea {
+  border-color: var(--color-accent, #992a21);
+  box-shadow: 0 0 0 3px var(--color-accent-soft, #f6d8d0);
+}
+
+.fx__pay {
+  display: grid;
+  gap: var(--space-md, 1.25rem);
+}
+
+.fx__back {
+  justify-self: start;
+}
+
+/* ---- the vehicle registration ------------------------------------------ */
+
+.fx__plate {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fx__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.fx__swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.45rem);
+  padding: 0.55rem 0.8rem;
+  min-height: 2.75rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper, #f6e8e3);
+  font: inherit;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+.fx__swatch[aria-pressed='true'] {
+  border-color: var(--color-accent, #992a21);
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-ink, #1c1614);
+}
+
+.fx__chip {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  /* An outline, so white and beige are still discs rather than nothing. */
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 25%, transparent);
+  flex: none;
+}
+
+.fx__driver {
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-md, 1rem);
+  display: grid;
+  gap: var(--space-md, 1rem);
+  width: 100%;
+}
+
+.fx__driver-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.fx__driver-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--color-accent, #992a21);
+  color: var(--color-paper, #f6e8e3);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 700;
+  flex: none;
+}
+
+.fx__driver-remove {
+  margin-inline-start: auto;
+}
+
+.fx__add-driver {
+  width: 100%;
+}
+
+/* ---- the builder and the review drawer --------------------------------- */
+
+/*
+ * These live inside `.sheet--drawer`, which is 30rem wide on a desktop and full
+ * width under 60rem. Everything below is built for the narrow case first: a
+ * builder that needs a wide viewport is a builder nobody uses on a Sunday.
+ */
+
+.fxb {
+  display: grid;
+  gap: var(--space-md, 1.25rem);
+}
+
+.fxb__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+  position: sticky;
+  /* Below `.sheet__bar`, which is the drawer's own pinned header. Save must stay
+     reachable from the bottom of a long form without scrolling back up. */
+  top: 0;
+  z-index: 1;
+  padding-block: var(--space-xs, 0.4rem);
+  background: var(--color-paper, #f6e8e3);
+}
+
+.fxb__dirty {
+  margin-inline: auto;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fxb__tabs {
+  display: flex;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.fxb__section {
+  display: grid;
+  gap: var(--space-md, 1rem);
+}
+
+.fxb__section h3 {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  padding-bottom: var(--space-xs, 0.4rem);
+  margin: var(--space-sm, 0.5rem) 0 0;
+}
+
+.fxb__fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fxb__field {
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.fxb__field-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  padding-inline-end: var(--space-xs, 0.4rem);
+}
+
+.fxb__field-open {
+  flex: 1;
+  /* `min-width: 0` so a long label truncates instead of pushing the move and
+     delete buttons off the edge of a 30rem drawer. */
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs, 0.45rem);
+  padding: var(--space-sm, 0.6rem) var(--space-sm, 0.7rem);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink, #1c1614);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxb__field-type,
+.fxb__req,
+.fxb__cond {
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fxb__req,
+.fxb__cond {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fxb__field-moves {
+  display: flex;
+  gap: 0.15rem;
+  flex: none;
+}
+
+.fxb__field-moves button {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-ink-faint, #6f5f5a);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.fxb__field-moves button:hover {
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-ink, #1c1614);
+}
+
+.fxb__field-body {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-md, 1rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fxb__options {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.fxb__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  font-weight: 500;
+}
+
+.fxb__option-row {
+  display: grid;
+  /* `minmax(0, 1fr)` rather than `1fr`: a text input's intrinsic width is wider
+     than it looks, and a plain `1fr` lets it push the row past the drawer edge
+     without top-level `scrollWidth` ever showing it. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-xs, 0.4rem);
+  align-items: center;
+}
+
+.fxb__option-row input[type='number'] {
+  width: 5.5rem;
+}
+
+.fxb__option-row button {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-ink-faint, #6f5f5a);
+  cursor: pointer;
+}
+
+.fxb__condition {
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+  padding: var(--space-sm, 0.7rem);
+  border: 1px dashed var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.fxb__preview {
+  display: grid;
+  gap: var(--space-md, 1rem);
+}
+
+/* ---- the forms list ---------------------------------------------------- */
+
+.fxa__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fxa__row {
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+  padding: var(--space-sm, 0.75rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+}
+
+.fxa__row-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.fxa__row-title {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxa__row-meta {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  overflow-wrap: anywhere;
+}
+
+.fxa__row-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md, 1rem);
+}
+
+.fxa__flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+.fxa__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.4rem);
+}
+
+/* ---- submissions ------------------------------------------------------- */
+
+.fxs {
+  display: grid;
+  gap: var(--space-md, 1rem);
+}
+
+.fxs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fxs__row {
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-sm, 0.75rem);
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+}
+
+/*
+ * An unread submission carries a bar down its leading edge.
+ *
+ * Colour alone would be the whole signal, which fails for anyone who cannot
+ * distinguish it — so the status is also spelled out in the select beside it.
+ * This is the glance, not the answer.
+ */
+.fxs__row.is-new {
+  border-inline-start: 3px solid var(--color-accent, #992a21);
+}
+
+.fxs__row.is-archived {
+  opacity: 0.6;
+}
+
+.fxs__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.5rem);
+}
+
+.fxs__who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink, #1c1614);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fxs__meta {
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fxs__answers {
+  display: grid;
+  gap: var(--space-xs, 0.35rem);
+  margin: 0;
+  padding-top: var(--space-xs, 0.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+}
+
+.fxs__answers dt {
+  color: var(--color-ink-faint, #6f5f5a);
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+.fxs__answers dd {
+  margin: 0 0 var(--space-xs, 0.35rem);
+  color: var(--color-ink, #1c1614);
+  overflow-wrap: anywhere;
 }

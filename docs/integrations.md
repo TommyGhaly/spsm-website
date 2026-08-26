@@ -6,8 +6,9 @@ SaaS that predates this repo and was documented nowhere until 2026-08-12.
 | Integration | Direction | Where | Status |
 |---|---|---|---|
 | Weekly announcements | **read only** | `weeklyannouncements-1d046` | **live** — read directly at build time |
-| Taksis pending vehicles | **write only** | `taksis-a8ba7` | credentials verified, **still blocked** on record shape |
+| Taksis pending vehicles | **write only** | `taksis-a8ba7` | **live** — pushed by `formSubmit`; shape pinned in `schema/taksis.ts` |
 | Servants schedule | **embed only** | Breeze ChMS | **live** — framed on `/servants` behind sign-in |
+| Breeze forms | **read only** | Breeze ChMS API | inert — needs `BREEZE_API_KEY`; import only, Breeze cannot accept a submission |
 
 ## Breeze ChMS — the servants schedule
 
@@ -137,7 +138,12 @@ If so, everything above changes:
   generates a new key every time, so idempotency needs an explicit
   deterministic key via `.child(key).set(...)`.
 
-**This is why the Taksis path is blocked rather than guessed at.**
+~~**This is why the Taksis path is blocked rather than guessed at.**~~ —
+**resolved, Aug 25 2026.** It is Firestore, not Realtime Database, and it is
+confirmed rather than inferred: the standalone form at
+`~/Desktop/vehicle_registration/index.html` has been writing these records
+through the **Firestore REST API**. Everything in this section about RTDB is now
+historical.
 
 ---
 
@@ -159,19 +165,58 @@ an overwrite. Either dedupe happens on the Taksis side, or the role needs
 settling before the sync is written rather than after it duplicates a
 registration.
 
-Still open, and the one that actually blocks the code:
+~~3. The shape of one existing record.~~ — **answered, Aug 25 2026, and not by
+asking.** A working standalone form (`~/Desktop/vehicle_registration/index.html`)
+writes these records directly through the Firestore REST API, which settles the
+structure exactly rather than approximately. It is now pinned in
+`packages/shared/src/schema/taksis.ts`, with tests in `tests/unit/taksis.test.ts`
+that exist specifically because a create-only identity cannot read back what it
+wrote — a misspelled field name produces a document Taksis silently ignores and
+nothing on our side ever reports it.
 
-3. The **shape of one existing record**, field names included. Please redact any
-   real personal data; I need the structure, not the contents. This is the last
-   hard blocker — we cannot read the collection to infer it ourselves, which is
-   the write-only design working as intended.
+```
+pending_registrations/<auto-id>
+  church   "St. Philopater and St. Mina, Wayland, MA"   <- their spelling; do not tidy
+  license  "1ABC23"                                     <- uppercased; there is NO state field
+  drivers  [ { name, phone, has_taksis: bool }, … ]      <- up to 5; snake_case is theirs
+  present  false
+  status   "pending"
+  make?    "Toyota"      <- omitted entirely when blank, never sent as ""
+  model?   "Camry"
+  color?   "blue"        <- one of twelve fixed values; free text will not match
+```
+
+**Dedupe: settled by choosing `add()`.** A deterministic id would be idempotent,
+but the account has `create` and not `update`, so `set()` against an existing id
+is an overwrite it may not be permitted to make — and we cannot read to find out.
+`add()` always creates. A double-tap therefore produces two pending
+registrations for one plate, which Taksis's own review queue can see and dismiss.
+That is a duplicate in front of a person rather than a silent failure in nobody's
+logs, which is the better of the two available outcomes.
+
 4. Whether Taksis **watches that path** for new entries (a trigger/listener), or
-   polls it, or whether a human reviews it. This decides whether we need to
-   signal anything beyond the write.
-5. Does Taksis already have its own vehicle registration? Your requirements doc
-   flagged this and it's still open — if the answer is yes, writing pending
-   vehicles into their branch may be the *whole* feature and our `vehicles`
-   collection becomes a local cache rather than the source of truth.
+polls it, or whether a human reviews it. Still open, and still not blocking: the
+record is written either way, and `status: 'pending'` says what it is. Worth
+knowing only if a write needs to be signalled beyond itself.
+
+~~5. Does Taksis already have its own vehicle registration?~~ — **decided
+Aug 25 2026, in the direction this question anticipated.** Writing pending
+vehicles into their collection is the whole feature. Our `vehicles` collection is
+not even a local cache any more: `/parking` and `/forms/vehicle-registration`
+write to Taksis and **nowhere else**.
+
+Tommy chose that with the trade-off on the table — a Taksis outage loses the
+submission, where the "write ours first, then push outward" plan further down
+would have queued it. What it buys is one answer to "who may park here". The
+failure mode of writing both is not an outage; it is two databases disagreeing
+six months later with no rule for which wins, and a parking team reading
+whichever one is in front of them.
+
+The cost is paid visibly rather than hidden: `formSubmit` returns the failure,
+and the page keeps the answers on screen and says nothing was saved. It never
+shows a confirmation for a write that did not land. `features/parking/` is kept
+but rendered by nothing — the `vehicles` collection still holds the registrations
+taken before the switch, and they are a record of something that happened.
 
 ### For weekly announcements
 
@@ -277,8 +322,18 @@ One property worth noting: because the output is static HTML, an outage over
 there cannot break the live site. It can only make the *next build* miss the
 bulletin section — and that build logs why rather than failing.
 
-**Taksis: write our record first, then push outward.** This half is unchanged
-and the reasoning still holds. We write our own `vehicles` document, then mirror
-it to Taksis, so a Taksis outage cannot lose a parishioner's registration. The
-mirrored record carries the external id so a failed push is detectable rather
-than silently indistinguishable from a successful one.
+~~**Taksis: write our record first, then push outward.**~~ — **superseded
+Aug 25 2026. Read this as history, not as the design.**
+
+The plan was: write our own `vehicles` document, then mirror it to Taksis, so a
+Taksis outage could not lose a parishioner's registration.
+
+What ships instead is **Taksis only, no local copy** — chosen deliberately, with
+this paragraph's argument put to Tommy first. The reasoning above is not wrong
+about outages; it is outweighed. Two lists of who may park here do not stay in
+step, and the version that costs the parish something is not the one where a
+write fails loudly, it is the one where two databases disagree quietly.
+
+The obligation that came with choosing it is that a failure must be visible, and
+that is honoured: `formSubmit` reports it and the submitter is told nothing was
+saved. See `functions/src/forms/taksis.ts`.

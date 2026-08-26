@@ -30,6 +30,8 @@
     "content": "npm run build --workspace @spsm/shared && node scripts/seed-content.mjs",
     "//programs": "Creates the five standing programs (Summercamp, St. Simon, College & YP, Mother of Mercy, Iconography) if they are missing. Never overwrites \u2014 admins edit these in the console. Dry run by default; -- --write applies.",
     "programs": "npm run build --workspace @spsm/shared && node scripts/seed-programs.mjs",
+    "//forms": "Creates the parish's four forms if they are absent, and never overwrites one that exists \u2014 staff edit these in the drawer on /forms. Vehicle registration is created published (it replaces the old /parking form); the three rebuilt Breeze forms are drafts until the parish takes the Breeze originals down.",
+    "forms": "npm run build --workspace @spsm/shared && node scripts/seed-forms.mjs",
     "//catalog": "Mirror the Square bookstore catalog into Firestore products.",
     "catalog": "npm run build --workspace @spsm/shared && node scripts/sync-catalog.mjs",
     "//orders:backfill": "Gives every existing order a lowercased contactEmailLower, which is the field the buyer-facing order lookup queries. Orders taken before that field existed are otherwise invisible to it. Dry run by default; --write applies.",

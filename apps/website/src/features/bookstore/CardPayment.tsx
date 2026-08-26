@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { looksLikeEmail } from '@spsm/shared';
 import { money } from './Shop';
+import { loadSquareSdk, type SquareCard } from './squareSdk';
 
 /**
  * The card form, and the request that charges it.
@@ -30,21 +31,6 @@ type Status = 'loading' | 'ready' | 'paying' | 'done' | 'unavailable';
 interface CartLine {
   slug: string;
   quantity: number;
-}
-
-/** The slice of Square's card instance this component uses. */
-interface SquareCard {
-  attach: (target: string | HTMLElement) => Promise<void>;
-  tokenize: () => Promise<{ status: string; token?: string; errors?: { message: string }[] }>;
-  destroy?: () => Promise<void>;
-}
-
-declare global {
-  interface Window {
-    Square?: {
-      payments: (appId: string, locationId: string) => { card: () => Promise<SquareCard> };
-    };
-  }
 }
 
 export function CardPayment({
@@ -391,28 +377,4 @@ export function CardPayment({
       )}
     </div>
   );
-}
-
-/** Load Square's SDK once, and only when someone actually reaches checkout. */
-function loadSquareSdk(sandbox: boolean): Promise<void> {
-  const src = sandbox
-    ? 'https://sandbox.web.squarecdn.com/v1/square.js'
-    : 'https://web.squarecdn.com/v1/square.js';
-
-  if (window.Square) return Promise.resolve();
-
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Square SDK failed to load.')));
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Square SDK failed to load.'));
-    document.head.appendChild(script);
-  });
 }

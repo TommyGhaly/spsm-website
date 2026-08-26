@@ -187,26 +187,37 @@ scope:
   through, never mirrored: one source of truth, no copy to fall behind, no
   `syncedAt` to reason about. Read from two places now — the build, and the
   `bulletin` Function (decision #12).
-- Taksis — **write only**, receiving pending vehicle registrations. Unimplemented
-  pending a schema.
+- Taksis — **write only**, receiving pending vehicle registrations. **Live since
+  Aug 25 2026**, and it is now the *only* home for a registration: `/parking` and
+  `/forms/vehicle-registration` write there and nowhere else. Our own `vehicles`
+  collection is no longer written to at all.
 
 Shared plumbing is built
 ([`functions/src/external/secondaryApp.ts`](../functions/src/external/secondaryApp.ts)).
 See [`docs/integrations.md`](integrations.md).
 
-**Still open, and consequential:**
+**All three resolved, Aug 25 2026.** Kept rather than deleted, because each one
+was answered by a fact rather than a preference and the fact is the useful part.
 
-- **Is the Taksis store Realtime Database or Firestore?** "A root branch in the
-  database" sounds like RTDB. This changes the admin API *and* how write-only is
-  enforced (RTDB security rules vs. Firestore IAM). Blocked on a walkthrough.
-- **Dedupe under write-only.** A create-only identity can't check for an existing
-  record or use a transaction. Either dedupe on the Taksis side, use a
-  deterministic id (which needs `update` too, slightly widening the role), or
-  grant read access and give up write-only. Genuine trade-off.
-- **Does Taksis already do vehicle registration?** Flagged in the original
-  requirements, still unverified, and now more urgent: if yes, writing to their
-  branch may be the entire feature and our `vehicles` collection becomes a local
-  cache rather than the source of truth.
+- ~~**Is the Taksis store Realtime Database or Firestore?**~~ — **Firestore.**
+  Not inferred from the `datastore.*` permissions this time but demonstrated: a
+  working standalone form has been writing these records through the Firestore
+  REST API. The record shape came from the same place and is pinned in
+  `packages/shared/src/schema/taksis.ts`.
+- ~~**Dedupe under write-only.**~~ — **`add()`, and accept duplicates.** A
+  deterministic id would be idempotent but needs `update`, which the account does
+  not have and which widens the role; and we cannot read to check first. So a
+  double-tap makes two pending registrations for one plate, which Taksis's review
+  queue can see and dismiss. A duplicate in front of a person beats a silent
+  failure in nobody's logs.
+- ~~**Does Taksis already do vehicle registration?**~~ — **Yes, and writing to
+  their collection is the entire feature.** This went further than the sentence
+  anticipated: `vehicles` is not a local cache either, it is simply no longer
+  written. Tommy chose Taksis-only knowing an outage loses the submission,
+  against the alternative of two lists of who may park here that disagree six
+  months later. The obligation that comes with it — a failure must be *visible*,
+  never a confirmation screen for a write that did not land — is met in
+  `functions/src/forms/taksis.ts`.
 
 ---
 
