@@ -884,7 +884,10 @@ function Preview({ form }: { form: FormDraft }) {
             key={field.key}
             field={field}
             value={answers[field.key]}
-            invalid={false}
+            /* The preview never validates — it exists to check wording and
+               conditions, and a preview that argues with the person building
+               the form is noise. */
+            error={null}
             onChange={(value) =>
               setAnswers((previous) => ({ ...previous, [field.key]: value as never }))
             }

@@ -27,17 +27,39 @@ import { money } from '@/features/bookstore/money';
 export function FieldInput({
   field,
   value,
-  invalid,
+  error,
   onChange,
+  onBlur,
 }: {
   field: FormField;
   value: FormAnswer | undefined;
-  /** Marks the control after a failed submit, so the message beside it has an anchor. */
-  invalid: boolean;
+  /**
+   * The problem with this field's answer, or null.
+   *
+   * A message rather than a boolean, and that is the whole fix: the previous
+   * version took `invalid` and painted a red border, leaving the actual sentence
+   * in a summary at the top of the page. A border is not an error message — it
+   * is invisible to a screen reader, it says nothing about *what* is wrong, and
+   * on a sixteen-question form it means holding the summary in your head while
+   * you scroll. The message now lives under the input it is about and is wired
+   * to it with `aria-describedby`.
+   */
+  error: string | null;
   onChange: (value: FormAnswer) => void;
+  /** Validates this one field once the person leaves it. */
+  onBlur?: () => void;
 }) {
   const id = `f-${field.key}`;
-  const described = field.help ? `${id}-help` : undefined;
+  const invalid = error !== null;
+  const errorId = `${id}-error`;
+  const helpId = `${id}-help`;
+  /*
+   * Both, in reading order, when both exist. `aria-describedby` takes a list —
+   * announcing the error and dropping the hint that explains the format is a
+   * common way this gets half-done.
+   */
+  const described =
+    [field.help ? helpId : null, invalid ? errorId : null].filter(Boolean).join(' ') || undefined;
 
   if (field.type === 'heading') {
     return (
@@ -73,7 +95,8 @@ export function FieldInput({
           onChange={(event) => onChange(event.target.checked)}
         />
         {label}
-        {field.help && <small id={described}>{field.help}</small>}
+        {field.help && <small id={helpId}>{field.help}</small>}
+        <FieldError id={errorId} message={error} />
       </label>
     );
   }
@@ -83,11 +106,14 @@ export function FieldInput({
       <ChoiceField
         field={field}
         id={id}
+        helpId={helpId}
+        errorId={errorId}
         described={described}
-        invalid={invalid}
+        error={error}
         value={value}
         label={label}
         onChange={onChange}
+        onBlur={onBlur}
       />
     );
   }
@@ -106,6 +132,7 @@ export function FieldInput({
       {field.type === 'longText' ? (
         <textarea
           {...common}
+          onBlur={onBlur}
           rows={4}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
@@ -113,6 +140,7 @@ export function FieldInput({
       ) : (
         <input
           {...common}
+          onBlur={onBlur}
           type={inputType(field)}
           /*
            * `autoComplete` by field *type*, so the browser can fill a name and
@@ -137,10 +165,11 @@ export function FieldInput({
           }
         />
       )}
-      {field.help && <small id={described}>{field.help}</small>}
+      {field.help && <small id={helpId}>{field.help}</small>}
       {field.type === 'number' && field.unitPriceCents > 0 && (
         <small className="fx__unit">{money(field.unitPriceCents)} each</small>
       )}
+      <FieldError id={errorId} message={error} />
     </label>
   );
 }
@@ -148,20 +177,29 @@ export function FieldInput({
 function ChoiceField({
   field,
   id,
+  helpId,
+  errorId,
   described,
-  invalid,
+  error,
   value,
   label,
   onChange,
+  onBlur,
 }: {
   field: FormField;
   id: string;
+  helpId: string;
+  errorId: string;
   described: string | undefined;
-  invalid: boolean;
+  error: string | null;
   value: FormAnswer | undefined;
   label: React.ReactNode;
   onChange: (value: FormAnswer) => void;
+  /* `| undefined` explicitly: the project runs `exactOptionalPropertyTypes`, so
+     an optional prop does not implicitly accept an undefined value passed in. */
+  onBlur?: (() => void) | undefined;
 }) {
+  const invalid = error !== null;
   if (field.type === 'select') {
     return (
       <label className={cls('field', invalid && 'is-invalid')}>
@@ -172,6 +210,7 @@ function ChoiceField({
           aria-invalid={invalid || undefined}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
         >
           {/*
             An empty first option, always, even when the field is required.
@@ -187,7 +226,8 @@ function ChoiceField({
             </option>
           ))}
         </select>
-        {field.help && <small id={described}>{field.help}</small>}
+        {field.help && <small id={helpId}>{field.help}</small>}
+        <FieldError id={errorId} message={error} />
       </label>
     );
   }
@@ -230,8 +270,30 @@ function ChoiceField({
           );
         })}
       </div>
-      {field.help && <small id={described}>{field.help}</small>}
+      {field.help && <small id={helpId}>{field.help}</small>}
+      <FieldError id={errorId} message={error} />
     </fieldset>
+  );
+}
+
+/**
+ * One field's error, under the field.
+ *
+ * Always rendered into the DOM at the same place, present or not, so the
+ * `aria-describedby` target exists before it is referenced and the layout does
+ * not jump by a line when a message appears.
+ *
+ * No `role="alert"` here, deliberately. There is one on the summary at the top
+ * of the form, and a page that fires an alert per invalid field announces "Your
+ * name is required. Phone number is required. Email address is required…" over
+ * the top of itself. The summary is the announcement; these are what you find
+ * when you get there.
+ */
+function FieldError({ id, message }: { id: string; message: string | null }) {
+  return (
+    <small className="fx__error" id={id} hidden={message === null}>
+      {message}
+    </small>
   );
 }
 

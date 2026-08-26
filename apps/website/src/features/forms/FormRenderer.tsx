@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeTotalCents,
-  isDecorative,
   submissionAnswers,
   validateSubmission,
+  validateSubmissionFields,
   visibleFields,
+  type FieldProblem,
   type FormAnswer,
   type FormAnswers,
   type FormDefinition,
@@ -43,41 +44,93 @@ type Stage =
 
 export function FormRenderer({ form }: { form: FormDefinition }) {
   const [answers, setAnswers] = useState<FormAnswers>({});
-  const [errors, setErrors] = useState<string[]>([]);
-  /** Keys that failed the last submit, so the controls themselves can be marked. */
-  const [badKeys, setBadKeys] = useState<Set<string>>(new Set());
+  const [problems, setProblems] = useState<FieldProblem[]>([]);
   const [stage, setStage] = useState<Stage>({ kind: 'filling' });
+  /** The summary, so focus can be moved to it after a failed submit. */
+  const summary = useRef<HTMLDivElement>(null);
+  /**
+   * Bumped on each rejected submit, and the only thing that moves focus.
+   *
+   * A counter rather than "problems is non-empty", because problems also appear
+   * on blur — and a form that yanks focus to the top of the page every time you
+   * tab out of an empty box is unusable. Only a submit steals focus, and a
+   * second identical submit still bumps the count, so the summary is re-focused
+   * rather than silently ignored.
+   */
+  const [rejectedAt, setRejectedAt] = useState(0);
+
+  useEffect(() => {
+    /*
+     * In an effect, not in the submit handler.
+     *
+     * The handler runs before React has rendered the summary, so focusing there
+     * finds nothing. The first attempt deferred with `requestAnimationFrame`,
+     * which is worse than it looks: it works in a browser and never fires in a
+     * hidden or backgrounded document, so the focus move silently does not
+     * happen in exactly the cases where it is hardest to notice. An effect runs
+     * after commit, always.
+     */
+    if (rejectedAt > 0) summary.current?.focus();
+  }, [rejectedAt]);
+
+  /** Message per field key, for the inline errors. */
+  const messages = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const problem of problems) {
+      if (problem.key && !byKey.has(problem.key)) byKey.set(problem.key, problem.message);
+    }
+    return byKey;
+  }, [problems]);
 
   const shown = useMemo(() => visibleFields(form.fields, answers), [form.fields, answers]);
   const total = useMemo(() => computeTotalCents(form, answers), [form, answers]);
 
   function set(key: string, value: FormAnswer) {
     setAnswers((previous) => ({ ...previous, [key]: value }));
-    // Clear this field's error mark as soon as it is touched. Leaving it red
-    // while someone is actively fixing it is the form arguing with them.
-    setBadKeys((previous) => {
-      if (!previous.has(key)) return previous;
-      const next = new Set(previous);
-      next.delete(key);
-      return next;
-    });
+    // Clear this field's error the moment it is touched. Leaving it red while
+    // someone is actively fixing it is the form arguing with them.
+    setProblems((previous) =>
+      previous.some((problem) => problem.key === key)
+        ? previous.filter((problem) => problem.key !== key)
+        : previous,
+    );
+  }
+
+  /**
+   * Check one field when the person leaves it.
+   *
+   * On blur rather than on every keystroke: validating as someone types tells
+   * them their email is invalid when they have got as far as "m@", which is
+   * true and useless. This only ever *adds* a problem for the field being left
+   * — it cannot clear another field's error or introduce one for a box the
+   * person has not reached yet.
+   */
+  function checkOne(key: string) {
+    const found = validateSubmissionFields(form, answers).filter(
+      (problem) => problem.key === key,
+    );
+    setProblems((previous) => [...previous.filter((problem) => problem.key !== key), ...found]);
   }
 
   /** Validate, and either take a payment or send it straight off. */
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    const found = validateSubmission(form, answers);
-    setErrors(found);
+    const found = validateSubmissionFields(form, answers);
+    setProblems(found);
     if (found.length > 0) {
-      setBadKeys(keysWithErrors(form, answers));
-      // The summary is at the top and the page may be scrolled well past it.
-      // Announcing errors somewhere nobody is looking is the same as not
-      // announcing them.
-      document.querySelector('.fx__errors')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      /*
+       * Move focus to the summary, not just scroll to it.
+       *
+       * Scrolling helps whoever is looking at the page and nobody else: a
+       * keyboard or screen-reader user is left wherever they pressed submit,
+       * with the announcement happening somewhere they are not. Focusing the
+       * container both scrolls it into view and puts the caret at the top of
+       * the list, so the next Tab walks into the first broken field.
+       */
+      setRejectedAt((n) => n + 1);
       return;
     }
-    setBadKeys(new Set());
 
     if (total > 0) {
       setStage({ kind: 'paying' });
@@ -97,7 +150,13 @@ export function FormRenderer({ form }: { form: FormDefinition }) {
     });
 
     if (!result.ok) {
-      setErrors(result.errors);
+      /*
+       * The server's objections have no field keys — it answers with sentences,
+       * because a key means nothing to a page that may have been edited since.
+       * They go in the summary unattached, which is right: these are usually
+       * about the submission as a whole rather than about one box.
+       */
+      setProblems(result.errors.map((message) => ({ key: null, message })));
       // Back to the form, not back to the card. A rejected submission is
       // usually a validation disagreement, and the card step has nothing to
       // say about a missing phone number.
@@ -144,12 +203,34 @@ export function FormRenderer({ form }: { form: FormDefinition }) {
 
   return (
     <form className="form fx" onSubmit={onSubmit} noValidate>
-      {errors.length > 0 && (
-        <div className="notice notice--alarm fx__errors" role="alert">
-          <h2>Please check the following</h2>
+      {problems.length > 0 && (
+        /*
+         * A summary that is reachable, announced, and linked.
+         *
+         * `tabIndex={-1}` makes it focusable by script without putting it in the
+         * tab order; `role="alert"` announces it when it appears. Each item that
+         * belongs to a field is an anchor to that field, so the list is a way to
+         * get to the problem rather than a description of it — which is the
+         * difference between a summary that helps on a sixteen-question form and
+         * one that makes you hunt.
+         */
+        <div
+          className="notice notice--alarm fx__errors"
+          role="alert"
+          tabIndex={-1}
+          ref={summary}
+          aria-labelledby="fx-errors-title"
+        >
+          <h2 id="fx-errors-title">Please check the following</h2>
           <ul>
-            {errors.map((message) => (
-              <li key={message}>{message}</li>
+            {problems.map((problem) => (
+              <li key={`${problem.key ?? ''}:${problem.message}`}>
+                {problem.key ? (
+                  <a href={`#f-${problem.key}`}>{problem.message}</a>
+                ) : (
+                  problem.message
+                )}
+              </li>
             ))}
           </ul>
         </div>
@@ -160,8 +241,9 @@ export function FormRenderer({ form }: { form: FormDefinition }) {
           key={field.key}
           field={field}
           value={answers[field.key]}
-          invalid={badKeys.has(field.key)}
+          error={messages.get(field.key) ?? null}
           onChange={(value) => set(field.key, value)}
+          onBlur={() => checkOne(field.key)}
         />
       ))}
 
@@ -197,30 +279,4 @@ export function FormRenderer({ form }: { form: FormDefinition }) {
       )}
     </form>
   );
-}
-
-/**
- * Which fields the error list is about.
- *
- * `validateSubmission` returns sentences for people, not keys for code — that is
- * the right shape for the summary and the wrong one for marking a control. Re-
- * running the check per field recovers the keys without the validator having to
- * return two parallel structures that could disagree.
- *
- * The solo copy has `showWhen` cleared. It has to: with one field in the list,
- * `visibleFields` resolves that field's condition against an empty answer set,
- * so every conditional field would look hidden and silently never be marked —
- * the exact fields most likely to be got wrong. Visibility was already decided
- * by the loop above; clearing the condition stops it being decided twice, badly.
- */
-function keysWithErrors(form: FormDefinition, answers: FormAnswers): Set<string> {
-  const bad = new Set<string>();
-
-  for (const field of visibleFields(form.fields, answers)) {
-    if (isDecorative(field.type)) continue;
-    const solo = validateSubmission({ ...form, fields: [{ ...field, showWhen: null }] }, answers);
-    if (solo.length > 0) bad.add(field.key);
-  }
-
-  return bad;
 }
