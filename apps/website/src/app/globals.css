@@ -21274,3 +21274,37 @@ span.gallery-figure__frame {
   width: 100%;
   height: 100%;
 }
+
+/*
+ * Fields on a built form fill the column.
+ *
+ * `.form` is `display: grid` with `justify-items: start`, which sizes every
+ * direct child to its content. That is right for the submit button — a button
+ * as wide as the reading column looks like a banner — and wrong for everything
+ * else, but it never showed on the hand-written forms because their fields sit
+ * inside a `fieldset`, which is a block and stretches.
+ *
+ * A form built in the drawer has no fieldsets: its fields are direct children of
+ * `.form`, so every text box collapsed to about 130px and a sixteen-question
+ * form rendered as a column of little stubs. Stated as an explicit width rather
+ * than by removing `justify-items`, so the button keeps the behaviour it wants.
+ */
+.fx > .field,
+.fx > .fx__group,
+.fx > .fx__heading,
+.fx > .notice,
+.fx > .fx__total {
+  width: 100%;
+}
+
+/*
+ * A number is not a paragraph.
+ *
+ * "How many people?" as a full-width box invites a sentence. Capped so the box
+ * looks like the size of the answer it wants — the same reasoning as
+ * `.field--narrow`, applied by type rather than by hand.
+ */
+.fx > .field:has(input[type='number']),
+.fx > .field:has(input[type='date']) {
+  max-width: 16rem;
+}
