@@ -99,8 +99,37 @@ if (process.env.NODE_ENV === 'development') {
    * mirror of the rewrites in firebase.json; add to both together.
    */
   nextConfig.rewrites = async () => ({
-    beforeFiles: [],
+    /*
+     * `/forms/<slug>` → the `/form` shell, mirroring the Hosting rewrite in
+     * firebase.json. Without it every individual form is a 404 under `next dev`,
+     * because there is no `app/forms/[slug]` route — deliberately; see
+     * `app/form/page.tsx`.
+     *
+     * `beforeFiles`, not `afterFiles`, and it matters: `/forms` is a real route
+     * in this app, and an `afterFiles` rewrite runs only when nothing matched,
+     * which is fine — but `beforeFiles` keeps this next to the reasoning rather
+     * than depending on the order the app's own routes happen to resolve in.
+     * The pattern has one segment, so `/forms` itself never matches and the hub
+     * is untouched.
+     */
+    beforeFiles: [{ source: '/forms/:slug', destination: '/form' }],
     afterFiles: [
+      /*
+       * The forms endpoints. `submit` is the one every form posts to; the two
+       * Breeze ones are staff-only and inert until BREEZE_API_KEY is set.
+       */
+      {
+        source: '/api/forms/submit',
+        destination: `${origin}/${project}/${region}/formSubmit`,
+      },
+      {
+        source: '/api/forms/breeze-list',
+        destination: `${origin}/${project}/${region}/breezeListForms`,
+      },
+      {
+        source: '/api/forms/breeze-import',
+        destination: `${origin}/${project}/${region}/breezeImportForm`,
+      },
       {
         source: '/api/square/checkout',
         destination: `${origin}/${project}/${region}/squareCheckout`,

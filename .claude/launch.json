@@ -1,7 +1,7 @@
 {
   "version": "0.0.1",
-  "//": "Attach-only: `next dev` refuses a second server for the same directory, and the emulated server is normally already running from `npm run dev:emulated`. Start that in a terminal first; this config just points the preview at it.",
-  "//website-dev": "Starts `next dev` itself, for when nothing is already running. The entry above attaches to a server you started; this one owns the process, so do not leave both in play \u2014 `next dev` refuses a second server for the same directory. Stop this one before starting your own in a terminal.",
+  "//": "Attach-only, and it no longer implies the emulators: as of Aug 25 2026 :3000 is normally `npm run dev` against the real project. `next dev` refuses a second server for the same directory, so this entry just points the preview at whatever is already there \u2014 read the server's env before assuming which, `ps eww <pid> | tr ' ' '\\n' | grep NEXT_PUBLIC_USE_EMULATORS`.",
+  "//website-dev": "The default now: `next dev` against the real Firestore, Auth and Storage. It owns the process, so do not leave it and a terminal server both in play \u2014 `next dev` refuses a second server for the same directory. Sign-in here is the real Microsoft popup, and `/api/*` (bulletin, live, Square) has nothing to reach unless the Functions emulator is running.",
   "configurations": [
     {
       "name": "website-dev",
@@ -27,7 +27,18 @@
         "dev:emulated:second"
       ],
       "port": 3100
+    },
+    {
+      "name": "website-emulated-3200",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emulated:third"
+      ],
+      "port": 3200
     }
   ],
-  "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. The only way to see the edit-in-place controls \u2014 the real project grants no role to a browser here."
+  "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. Needs the emulator suite running (`npm run emulators`, then `npm run seed:emulator`); it is the way to try a destructive action without doing it to the parish, and the way to hold a signed-in role without the Microsoft popup.",
+  "//website-emulated-3200": "Same as -3100, one port along. Peer sessions edit this tree at the same time and :3100 is often already taken; this is the spare rather than a reason to stop somebody else's server."
 }

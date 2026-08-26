@@ -11,6 +11,19 @@
     "//rewrites": "Still no catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status \u2014 which is what src/app/not-found.tsx emits it for. The /events/** entry below is the ONE deliberate exception and is scoped to that prefix for exactly that reason. It works because Hosting resolves in a fixed order \u2014 redirects, then exact static files, then rewrites \u2014 so /events and /events/some-liturgy are served from disk and never reach it; only a path with no file falls through. Order matters within this array too: it is first-match, so the three /api entries must stay ABOVE the glob or checkout would render a gallery shell. /api/bulletin is the homepage schedule's live read: it follows config/active_bulletin in the announcements project, because the section is baked into static HTML at build time and would otherwise never change until a redeploy.",
     "rewrites": [
       {
+        "//forms": "The forms endpoints. `submit` is what every parish form posts to \u2014 it validates against the stored definition, prices the answers server-side, takes the Square payment, and pushes a vehicle registration into the Taksis project. The two Breeze entries are staff-only and answer 503 until BREEZE_API_KEY is set. All three stay ABOVE the /forms/** glob below, for the first-match reason the note at the top of this array gives for the /api entries.",
+        "source": "/api/forms/submit",
+        "function": "formSubmit"
+      },
+      {
+        "source": "/api/forms/breeze-list",
+        "function": "breezeListForms"
+      },
+      {
+        "source": "/api/forms/breeze-import",
+        "function": "breezeImportForm"
+      },
+      {
         "source": "/api/square/checkout",
         "function": "squareCheckout"
       },
@@ -61,6 +74,11 @@
       {
         "source": "/events/**",
         "destination": "/gallery.html"
+      },
+      {
+        "//forms-shell": "The second deliberate exception to the no-catch-all rule, and it works for exactly the reason the /events/** entry above does: Hosting resolves redirects, then exact static files, then rewrites, so /forms is served from out/forms.html and never reaches this line \u2014 only /forms/<slug>, which has no file, falls through. That is the point. Individual forms are deliberately not exported: staff publish one from the drawer on /forms and it is reachable immediately, with no deploy and nobody with deploy rights involved. The shell reads the slug from the address bar. robots.ts disallows /forms/ so the 200 this returns is never indexed as duplicate content.",
+        "source": "/forms/**",
+        "destination": "/form.html"
       }
     ],
     "//redirects": "REMOVED: /calendar -> /events. It was written when /calendar was only a Wix URL, and then this site grew a real /calendar page. Hosting evaluates redirects BEFORE it looks for static files, so the redirect won and the Calendar link in the main nav 301'd away from the page it points at — in production only, because `next dev` knows nothing about this file. Anything added here from now on must be checked against apps/website/src/app for a route of the same name. Every URL below is one the Wix site published, taken from its sitemap while it was still up \u2014 after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Titles lie, so each destination was checked by loading the page: /team-3 is titled 'Calendar & Events' and is the activities page, NOT the clergy page it sounds like \u2014 the clergy bios are on /who-we-are. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) but all three are empty Wix templates with no content; they land on /welcome because that is where a newcomer following an old link should end up, not because there is anything to preserve. Wix filed ministries and past events alike under `projects` \u2014 /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line. The last entry is not a Wix URL: /clergy was a page on this site until the biographies moved into the homepage as disclosures, and anyone who typed it, bookmarked it, or linked it during development should land on the section rather than on a 404.",

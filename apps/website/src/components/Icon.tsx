@@ -220,9 +220,31 @@ const ICONS = {
       <path d="M10.5 8l4 2.5-4 2.5z" fill="currentColor" stroke="none" />
     </>
   ),
+  /** A form or a document. The default for a form card with no icon chosen. */
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * Whether a string names an icon that exists.
+ *
+ * Needed because icon names are no longer all written by hand: a form card
+ * carries whichever name is stored on its Firestore document, and staff choose
+ * it. An unknown name is not a crash — `ICONS[name]` is simply `undefined` and
+ * the component renders an empty `<svg>`, which is a card with a blank square
+ * where its icon should be and no error anywhere to explain it. Callers reading
+ * a name from data should narrow through this and fall back.
+ */
+export function isIconName(name: string): name is IconName {
+  return Object.prototype.hasOwnProperty.call(ICONS, name);
+}
 
 export function Icon({
   name,

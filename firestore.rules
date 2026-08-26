@@ -513,6 +513,21 @@ service cloud.firestore {
     // ---- forms ------------------------------------------------------------
 
     match /forms/{formId} {
+      /*
+       * A form definition is public once published, and staff-only before.
+       *
+       * `isPublished` is doing real work here rather than hiding a draft for
+       * tidiness: a form is built over several sittings in the drawer on
+       * /forms, and a half-finished registration that anyone can find and fill
+       * in produces submissions the parish then has to explain away.
+       *
+       * Note there is no `open` check. A *closed* form is still readable — the
+       * page has to be able to say "registration closed on the 14th" rather
+       * than 404, which is the difference between a form that has ended and a
+       * link somebody mistyped. Whether a closed form can be *submitted* to is
+       * decided in the Function, not here, because nothing writes submissions
+       * from a client at all. See below.
+       */
       allow read: if isPublished(resource.data);
       allow read: if hasRole('staff');
       allow write: if hasRole('staff');
@@ -523,20 +538,40 @@ service cloud.firestore {
       // person's registration from being readable by the next.
       allow read: if hasRole('staff');
 
-      // CLOSED, deliberately, until the forms feature exists.
-      //
-      // This used to be `if request.resource.data.formId is string`, which
-      // validated one field and nothing else: no size bound, no field
-      // whitelist, no check that the referenced form exists or is open, and no
-      // authentication. That is an unauthenticated writer creating arbitrary
-      // documents of arbitrary size, on a billed project, for a feature that
-      // has no schema, no route, and no UI. Nothing legitimate used it.
-      //
-      // The honest fix is not a tighter guess at a shape nobody has designed.
-      // `forms` and `formSubmissions` have collection names and rules and no
-      // TypeScript type; when that type is written, this rule gets written
-      // beside it and can validate against something real. Until then the
-      // collection behaves like every other unopened one in this file.
+      /*
+       * STILL CLOSED — and now for a better reason than "no schema exists".
+       *
+       * The previous note here said: "`forms` and `formSubmissions` have
+       * collection names and rules and no TypeScript type; when that type is
+       * written, this rule gets written beside it and can validate against
+       * something real."
+       *
+       * That type is now written — `packages/shared/src/schema/forms.ts`. The
+       * conclusion it leads to is not the validating create rule that sentence
+       * anticipated, so this is worth stating plainly rather than leaving the
+       * next reader to wonder whether the work was forgotten.
+       *
+       * **Every submission goes through the `formSubmit` Function.** Three of
+       * the things a submission has to do cannot be done from a browser at all:
+       *
+       *   1. Price it. A form charges a base fee plus per-option and per-unit
+       *      prices, and the total must be computed from the *stored* definition
+       *      by something the submitter cannot edit. A client write would mean
+       *      the amount charged is a number the browser supplied.
+       *   2. Take the payment. The Square access token lives in the Functions
+       *      runtime and goes nowhere near a page.
+       *   3. Reach Taksis. The vehicle form writes to a different Firebase
+       *      project, which a browser holding our credentials cannot touch no
+       *      matter what any rule says.
+       *
+       * Given the Function has to exist for those, routing the free forms
+       * through it too costs one round trip and buys a single path — one place
+       * that validates, one place that notifies, and no unauthenticated write
+       * surface on a billed project. Rules cannot rate-limit; a Function can.
+       *
+       * The Admin SDK bypasses these rules, so `formSubmit` is unaffected by
+       * this line. A create arriving here is by definition not from us.
+       */
       allow create: if false;
 
       allow update, delete: if hasRole('staff');

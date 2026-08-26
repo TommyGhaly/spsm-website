@@ -127,7 +127,8 @@ npm run verify:scopes
 Not a formality. It caught an `ANNOUNCEMENTS_DATABASE_ID` set to a project's
 *display name* — which fails as a bare `5 NOT_FOUND` that reads like a missing
 collection — and it is the only thing standing behind the claim that the Taksis
-key genuinely cannot read Taksis's data.
+key genuinely cannot read Taksis's data. That claim now carries weight it did
+not before: the push is live, so the key is in use rather than merely present.
 
 Nothing secret is committed. `.gitignore` denies all `.env*` by default and adds
 back only `.env.example`, and matches key material by shape (`*-key.json`,
@@ -175,8 +176,12 @@ Next, roughly in order:
 - [ ] Decide whether the bulletin's `days[].events[]` should also populate
       `events` — otherwise the same liturgy can appear twice once staff start
       adding events. See [`docs/integrations.md`](docs/integrations.md).
-- [ ] Taksis push — blocked on the shape of one `pending_registrations` record.
-      We cannot read it ourselves; that is the write-only design working.
+- [x] Taksis push — **done**, Aug 25 2026. The record shape came from a working
+      standalone form rather than a guess, and is pinned in
+      `packages/shared/src/schema/taksis.ts` with tests. `/parking` and
+      `/forms/vehicle-registration` both write it through `formSubmit`. Note the
+      deliberate choice recorded there: no local copy is kept, so a Taksis
+      outage is reported to the submitter rather than queued.
 - [ ] Square: replace the **sandbox** values now in Secret Manager with
       production ones at go-live. They were set only so the webhook stub could
       deploy.

@@ -31,6 +31,8 @@ export * from './schema/theme.js';
 export * from './schema/commerce.js';
 export * from './schema/analytics.js';
 export * from './schema/vehicles.js';
+export * from './schema/forms.js';
+export * from './schema/taksis.js';
 
 export * from './payments/provider.js';
 export * from './payments/squareCatalog.js';

@@ -41,6 +41,21 @@ export {
 // the door for the exceptions to it, and it records who made one and why.
 export { squareRefund } from './refunds.js';
 
+/*
+ * Parish forms.
+ *
+ * `formSubmit` is what every native form posts to: it validates against the
+ * stored definition, prices the answers server-side, takes the Square payment
+ * when there is one, and pushes a vehicle registration into the Taksis project.
+ * `firestore.rules` keeps `formSubmissions` closed to clients precisely so that
+ * this is the only way in — see the note above that rule.
+ *
+ * The two Breeze endpoints are staff-only and answer 503 until BREEZE_API_KEY
+ * and BREEZE_SUBDOMAIN are set. Nothing else depends on them.
+ */
+export { formSubmit } from './forms/submit.js';
+export { breezeListForms, breezeImportForm } from './forms/breeze.js';
+
 // Bookstore statistics. The shop writes one document per view and cart change
 // rather than incrementing a counter — a counter tops out near one write per
 // second and would fail first on the most popular book — so all the arithmetic
