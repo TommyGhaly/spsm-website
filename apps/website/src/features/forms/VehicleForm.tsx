@@ -8,6 +8,7 @@ import {
   type TaksisDriver,
   type VehicleRegistrationInput,
 } from '@spsm/shared';
+import { Icon } from '@/components/Icon';
 import { submitForm } from './data';
 
 /**
@@ -125,7 +126,10 @@ export function VehicleForm({ slug, confirmation }: { slug: string; confirmation
 
   if (status.kind === 'sent') {
     return (
-      <div className="notice">
+      <div className="fx__done" role="status">
+        <span className="fx__done-mark" aria-hidden="true">
+          <Icon name="check" size={26} />
+        </span>
         <h2>Registration submitted</h2>
         <p>{confirmation}</p>
       </div>

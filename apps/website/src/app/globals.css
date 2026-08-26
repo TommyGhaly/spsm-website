@@ -8259,36 +8259,39 @@ main {
  */
 .forms {
   display: grid;
-  gap: var(--space-sm, 0.75rem);
+  /*
+   * `auto-fit` with a floor rather than a hard two-column rule at 60rem.
+   *
+   * The old rule was `repeat(2, 1fr)` above 60rem and one column below, which
+   * left a tablet at 50rem showing a single column of very wide, very short
+   * rows — the shape that made this page look like a settings list rather than
+   * a set of cards. A floor of 17rem lets the count follow the space it
+   * actually has, and `minmax(0, …)` because a long unbroken word in a blurb
+   * otherwise widens the track past the viewport.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+  gap: var(--space-md, 1.25rem);
   margin: var(--space-md, 1.25rem) 0 var(--space-lg, 2rem);
   padding: 0;
   list-style: none;
 }
 
-@media (min-width: 60rem) {
-  .forms {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 /*
- * The whole row is the link.
+ * A card, not a row.
  *
- * `display: flex` on an anchor rather than a card containing one, so the target
- * is the full rectangle — a card that looks clickable but only is where its
- * title happens to sit is the commonest way a list like this frustrates a
- * thumb. `height: 100%` so two cards in a row match even when one note is
- * longer than the other.
+ * `display: grid` in a single column with the media panel first, so the whole
+ * rectangle is still the link — a card that looks clickable but only is where
+ * its title sits is the commonest way a list like this frustrates a thumb.
+ * `height: 100%` so cards in a row match when one blurb runs longer.
  */
 .form-card {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-md, 1rem);
+  display: grid;
+  grid-template-rows: auto 1fr;
   height: 100%;
-  padding: var(--space-md, 1.25rem);
+  overflow: hidden;
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md, 10px);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
   color: inherit;
   text-decoration: none;
@@ -8299,37 +8302,155 @@ main {
 }
 
 .form-card:hover {
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, var(--color-rule, #e0cac3));
-  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.08));
-  /* One pixel. Enough to register as the card responding, small enough that a
-     column of them does not appear to wobble as the pointer crosses it. */
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-rule, #e0cac3));
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.10));
+  /* Two pixels. Enough to register as the card responding, small enough that a
+     grid of them does not appear to wobble as the pointer crosses it. */
+  transform: translateY(-2px);
 }
 
-/* The same gold medallion the homepage quick-facts row uses, so a visitor who
-   has seen one recognises the other as the same kind of thing. */
-.form-card__icon {
-  display: inline-flex;
+/* The focus ring belongs to the card, since the card is the link. */
+.form-card:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+/* ---- the media panel ---------------------------------------------------- */
+
+.form-card__media {
+  position: relative;
+  display: block;
+  /* Wide and short. A form card is read for its title; the picture is there to
+     give the card weight and a place to rest, not to be the subject. */
+  aspect-ratio: 5 / 2;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.form-card__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.form-card:hover .form-card__photo {
+  transform: scale(1.03);
+}
+
+/*
+ * The crest — what a form without a photograph wears.
+ *
+ * Drawn entirely in CSS: two soft radial washes in the parish's gold over the
+ * cream ground, with the form's icon centred in a gold medallion. No image
+ * request, no placeholder grey, and nothing pretending to be a photograph of
+ * something that was never photographed.
+ *
+ * Deliberately NOT built from assets/Coptic_pattern.png, which is the obvious
+ * thing to reach for and is AI-generated: the "Coptic" in its banners is
+ * imitation letterforms spelling nothing. optimize-assets.mjs excludes it for
+ * that reason and a decorative band is not a good enough reason to put counterfeit
+ * script on a Coptic Orthodox parish's pages.
+ */
+.form-card__crest {
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--radius-full, 999px);
-  color: var(--color-gold, #b08d43);
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+  color: var(--color-accent, #992a21);
+  /*
+   * A warm ground, gold at one corner and the parish red at the other.
+   *
+   * Two earlier versions were wrong in opposite directions and both are worth
+   * recording. The first was two very faint washes and nothing else: a pale
+   * beige rectangle, four cards differing only by a 26px glyph, which is not
+   * meaningfully less bland than the flat rows it replaced. The second set the
+   * parish seal as a `background-image` sized `auto 190%` — which cropped it to
+   * the saints' knees and read as a photograph of a logo rather than a mark in
+   * the paper.
+   *
+   * The seal is now on its own layer below, where its size and opacity can be
+   * stated plainly instead of being emergent from background sizing.
+   */
+  background:
+    radial-gradient(
+      circle at 16% 20%,
+      color-mix(in srgb, var(--color-gold, #b08d43) 32%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 90% 88%,
+      color-mix(in srgb, var(--color-accent, #992a21) 18%, transparent) 0%,
+      transparent 64%
+    ),
+    linear-gradient(
+      140deg,
+      var(--color-paper-raised, #fdf7f4) 0%,
+      color-mix(in srgb, var(--color-gold, #b08d43) 10%, var(--color-paper, #f6e8e3)) 100%
+    );
 }
 
-/* `min-width: 0` or the note refuses to wrap and stretches the grid track. */
+/*
+ * The seal, watermarked into the corner.
+ *
+ * Small, faint, and bled off the bottom-left edge so it reads as an impression
+ * in the paper rather than as a badge applied to it. `aria-hidden` is not needed
+ * — a pseudo-element is already invisible to assistive technology.
+ */
+.form-card__crest::after {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  bottom: -1.1rem;
+  width: 5.5rem;
+  height: 5.5rem;
+  background: url('/brand/seal-192.png') center / contain no-repeat;
+  opacity: 0.14;
+  /* Greyed, then tinted by the ground beneath. At full saturation the seal's
+     own blues fight the parish red the rest of the card is built from. */
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+/*
+ * The medallion the icon sits in.
+ *
+ * Cream rather than translucent gold, so it stays legible over the darker
+ * corner of the wash — a translucent disc disappeared exactly where the accent
+ * radial is strongest.
+ */
+.form-card__crest::before {
+  content: '';
+  position: absolute;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--color-ink, #2c2320) 12%, transparent);
+}
+
+.form-card__crest svg {
+  position: relative;
+}
+
+/* ---- the body ----------------------------------------------------------- */
+
+/* `min-width: 0` or a long word in the note refuses to wrap and stretches the
+   grid track it sits in. */
 .form-card__body {
   display: grid;
-  gap: 0.2rem;
+  align-content: start;
+  gap: 0.3rem;
   min-width: 0;
+  padding: var(--space-md, 1.15rem);
 }
 
 .form-card__title {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
+  font-size: var(--type-subheading, 1.1875rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #2c2320);
   transition: color 150ms ease;
@@ -8347,24 +8468,54 @@ main {
 }
 
 /*
- * The arrow is the affordance, and it moves rather than appearing: a glyph that
- * fades in on hover is invisible to anyone reading with a finger, and this row
- * needs to look like a link before it is touched.
+ * The affordance, in words.
  *
- * `margin-top` rather than `align-self: center` — centred against a two-line
- * note it floats away from the title it belongs to.
+ * `margin-top: auto` pins it to the bottom of the card so a row of cards has
+ * its call to action on one line regardless of how long each blurb runs —
+ * which is most of the difference between a grid that looks designed and one
+ * that looks like it was filled in.
+ */
+.form-card__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: var(--space-sm, 0.7rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--color-accent, #992a21);
+}
+
+/*
+ * The arrow moves rather than appearing: a glyph that fades in on hover is
+ * invisible to anyone reading with a finger, and this card needs to look like a
+ * link before it is touched.
  */
 .form-card__arrow {
   flex-shrink: 0;
-  margin-top: 0.55rem;
-  margin-left: auto;
-  color: var(--color-ink-faint, #7c746a);
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms ease;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .form-card:hover .form-card__arrow {
-  transform: translateX(3px);
-  color: var(--color-accent, #992a21);
+  transform: translateX(4px);
+}
+
+/* Honour a reduced-motion preference: the lift and the slide are decoration,
+   and this whole page is reachable without either. */
+@media (prefers-reduced-motion: reduce) {
+  .form-card,
+  .form-card__photo,
+  .form-card__arrow {
+    transition: none;
+  }
+  .form-card:hover {
+    transform: none;
+  }
+  .form-card:hover .form-card__photo {
+    transform: none;
+  }
 }
 
 /* The last line on the page, and the one that stops a short list reading as
@@ -20941,4 +21092,185 @@ span.gallery-figure__frame {
   margin: 0 0 var(--space-xs, 0.35rem);
   color: var(--color-ink, #1c1614);
   overflow-wrap: anywhere;
+}
+
+/* ---- forms: the picture band and richer sections ----------------------- */
+
+/*
+ * The picture at the top of a form.
+ *
+ * Capped height and `object-fit: cover`, which together are what keep it a band
+ * rather than a hero. `/livestream` is the precedent: a full header band there
+ * pushed the player below the fold and was cut. On a form the point is the first
+ * question, so the cap is deliberately mean — 9rem on a desktop, less on a phone.
+ */
+.fx__banner {
+  position: relative;
+  width: 100%;
+  max-width: var(--measure, 68ch);
+  height: clamp(5.5rem, 18vw, 9rem);
+  margin-bottom: var(--space-md, 1.25rem);
+  overflow: hidden;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--color-rule, #e0cac3);
+  /* A hairline of parish gold along the top, the same mark the sunken bands
+     use, so the band reads as belonging to this site rather than as a stray
+     photograph. */
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+.fx__banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /*
+   * Favour the upper third of the frame.
+   *
+   * The sanctuary shot is 2.6:1 and this band is nearer 7:1, so `cover` throws
+   * away most of the height — and centred, what survives is the middle: heads,
+   * music stands, and the backs of chairs. 32% keeps the iconostasis and the
+   * altar, which is the part of the photograph worth showing at all.
+   */
+  object-position: center 32%;
+  display: block;
+}
+
+/*
+ * A warm scrim, so the photograph belongs to this page.
+ *
+ * Without it the band is a rectangle of someone else's colour temperature
+ * dropped into a cream page — technically a photograph of the parish, visually
+ * a hole. The gradient is the parish's own paper colour at low opacity, heavier
+ * at the edges than the centre, which lets the altar stay legible while the
+ * crop lines soften into the page.
+ */
+.fx__banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--color-paper, #f6e8e3) 55%, transparent) 0%,
+    color-mix(in srgb, var(--color-paper, #f6e8e3) 12%, transparent) 45%,
+    color-mix(in srgb, var(--color-accent, #992a21) 22%, transparent) 100%
+  );
+}
+
+/*
+ * Fieldsets as panels, with the legend sitting on the rule rather than inside
+ * the box.
+ *
+ * `.form fieldset` already draws the frame. What was missing is any sense of
+ * where one section ends and the next begins on a long form — the events request
+ * is sixteen questions, and as one undifferentiated column of boxes it reads as
+ * a tax return. The gold rule under each legend is the whole change, and it is
+ * the same gold as the band above.
+ */
+.fx fieldset > legend,
+.form fieldset > legend {
+  position: relative;
+  padding-bottom: 0.35rem;
+}
+
+.fx fieldset > legend::after,
+.form fieldset > legend::after {
+  content: '';
+  position: absolute;
+  left: var(--space-xs, 0.4rem);
+  right: var(--space-xs, 0.4rem);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--color-gold, #b08d43),
+    color-mix(in srgb, var(--color-gold, #b08d43) 15%, transparent)
+  );
+}
+
+/*
+ * The confirmation, once something has been sent.
+ *
+ * It was a plain `.notice` — the same grey box the page uses for "please check
+ * the following", which meant success and failure looked identical at a glance.
+ * A submission is the one moment on this page worth marking, so it gets the gold
+ * edge and a tick.
+ */
+.fx__done {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-lg, 1.75rem) var(--space-md, 1.25rem);
+  text-align: center;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-radius: var(--radius-md, 10px);
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--color-paper-raised, #fdf7f4);
+}
+
+.fx__done-mark {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-full, 999px);
+  color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+}
+
+.fx__done h2 {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-h4, 1.3rem);
+  color: var(--color-ink, #2c2320);
+}
+
+.fx__done p {
+  margin: 0;
+  color: var(--color-ink-soft, #4b413e);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.55);
+}
+
+/* The builder's picture preview, at the card's own 5:2 crop so a bad choice is
+   visible before it ships rather than after. */
+.fxb__thumb {
+  display: block;
+  aspect-ratio: 5 / 2;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fxb__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The hub's band is shorter than a form's and spans the full reading column.
+ *
+ * Shorter because it sits above a grid of cards rather than above one question:
+ * the thing that must stay on screen is the first card, and on a phone that is
+ * a tighter budget than the first field of a form.
+ */
+.fx__banner--hub {
+  height: clamp(4.5rem, 14vw, 7rem);
+  margin-bottom: var(--space-sm, 0.75rem);
+}
+
+.fx__banner picture {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

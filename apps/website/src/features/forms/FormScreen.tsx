@@ -114,6 +114,25 @@ export function FormScreen() {
     <>
       <PageHeader title={form.title} />
       <PageBody>
+        {/*
+          The picture, when the parish chose one, and deliberately a BAND rather
+          than a hero.
+
+          `/livestream` is the precedent and it was learned the hard way: a full
+          header band there pushed the player below the fold and Tommy cut it.
+          The same argument applies with more force to a form, where the point is
+          the first question — so this is capped at 9rem and cropped wide, which
+          is enough to set the tone and not enough to move the first field off a
+          phone screen.
+
+          Most forms have no picture and get nothing here. An empty decorative
+          box would be worse than none.
+        */}
+        {form.image && (
+          <div className="fx__banner">
+            <img src={form.image} alt="" aria-hidden="true" loading="eager" decoding="async" />
+          </div>
+        )}
         {form.blurb && <p className="note">{form.blurb}</p>}
         <FormBody form={form} />
       </PageBody>

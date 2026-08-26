@@ -226,6 +226,7 @@ export function seedForms() {
     title: form.title,
     blurb: form.blurb,
     icon: form.icon,
+    image: form.image ?? null,
     order: form.order,
     published: form.published ?? false,
     open: true,

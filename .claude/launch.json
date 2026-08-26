@@ -37,8 +37,19 @@
         "dev:emulated:third"
       ],
       "port": 3200
+    },
+    {
+      "name": "website-real-3300",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:real:spare"
+      ],
+      "port": 3300
     }
   ],
   "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. Needs the emulator suite running (`npm run emulators`, then `npm run seed:emulator`); it is the way to try a destructive action without doing it to the parish, and the way to hold a signed-in role without the Microsoft popup.",
-  "//website-emulated-3200": "Same as -3100, one port along. Peer sessions edit this tree at the same time and :3100 is often already taken; this is the spare rather than a reason to stop somebody else's server."
+  "//website-emulated-3200": "Same as -3100, one port along. Peer sessions edit this tree at the same time and :3100 is often already taken; this is the spare rather than a reason to stop somebody else's server.",
+  "//website-real-3300": "The real project on :3300. The default `website-dev` entry owns :3000, which a peer session usually already has; this is the spare that needs no emulator suite."
 }
