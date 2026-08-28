@@ -81,11 +81,24 @@ export interface BulletinEvent {
   color: string | null;
   image: string | null;
   /**
-   * Shape unknown — every sample observed so far has been empty, so this is
-   * passed through rather than modelled. Type it properly once a non-empty one
-   * turns up instead of guessing now.
+   * Who to ask about this event.
+   *
+   * This used to be `unknown[]`, with a note saying to type it properly once a
+   * non-empty one turned up. One has: the High School Bible Study for the week
+   * of 2026-08-24 carries
+   * `[{ name: 'Servant Michael', phone: '(508) 555-0142' }]`.
+   *
+   * Still parsed defensively — the source app can put whatever it likes here,
+   * and an entry that is not an object with a name is dropped rather than
+   * rendered as `[object Object]`.
    */
-  contacts: unknown[];
+  contacts: BulletinContact[];
+}
+
+/** A name, and a phone number if the editor gave one. */
+export interface BulletinContact {
+  name: string;
+  phone: string | null;
 }
 
 export interface BulletinMultiDayEvent extends BulletinEvent {
@@ -140,6 +153,22 @@ function str(value: unknown): string | null {
 }
 
 /**
+ * Contacts, keeping only the entries that are actually a person.
+ *
+ * A name is the minimum — a contact with only a phone number is a number
+ * nobody can attribute, and rendering it would be worse than omitting it.
+ */
+function contacts(value: unknown): BulletinContact[] {
+  return asArray(value)
+    .map((entry) => {
+      const record = asRecord(entry);
+      const name = str(record?.['name']);
+      return name === null ? null : { name, phone: str(record?.['phone']) };
+    })
+    .filter((entry): entry is BulletinContact => entry !== null);
+}
+
+/**
  * The source stores timestamps as ISO 8601 strings. Parsed to `Date` rather
  * than a Firestore `Timestamp` so this module stays free of any SDK — it runs
  * in the Next build, and could run in the browser or in Functions without
@@ -170,7 +199,7 @@ function parseEvent(raw: unknown, index: number): BulletinEvent | null {
     notes: str(record['notes']),
     color: str(record['color']),
     image: str(record['image']),
-    contacts: asArray(record['contacts']),
+    contacts: contacts(record['contacts']),
   };
 }
 
@@ -437,7 +466,7 @@ function reviveEvent(value: unknown, index: number): BulletinEvent | null {
     notes: str(record['notes']),
     color: str(record['color']),
     image: str(record['image']),
-    contacts: asArray(record['contacts']),
+    contacts: contacts(record['contacts']),
   };
 }
 

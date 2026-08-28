@@ -19,6 +19,15 @@ export const COLLECTIONS = {
   /** Servants calendar — staff-gated. */
   servantEvents: 'servantEvents',
   /**
+   * The two things staff may add to a schedule assembled from sources the
+   * parish maintains elsewhere: entries of their own, and annotations on
+   * everybody else's. Kept apart so that "you may only delete what you added"
+   * is a path check rather than a flag somebody could set. See
+   * schema/scheduleAdmin.ts.
+   */
+  scheduleEntries: 'scheduleEntries',
+  calendarDetails: 'calendarDetails',
+  /**
    * The parish's standing programs, their occurrences, and the photographs
    * parishioners send in. Reached through `/events` but deliberately a separate
    * shape — see docs/program-galleries.md.
@@ -41,8 +50,6 @@ export const COLLECTIONS = {
   servantsConfig: 'servantsConfig',
   /** Member profiles. Mirrors Firebase Auth uid as the doc id. */
   members: 'members',
-  /** Prayer requests. See docs/decisions.md #1 for the privacy model. */
-  prayerRequests: 'prayerRequests',
   /** Bookstore catalog. */
   products: 'products',
   /** Bookstore orders, keyed to the Square order id. */

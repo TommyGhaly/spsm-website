@@ -19,7 +19,7 @@ export function ServiceTimes({ services }: { services: ServiceTime[] }) {
         <h2>Service times aren&apos;t published yet</h2>
         <p>
           The weekly schedule hasn&apos;t been added to the site. This week&apos;s
-          services are listed on the homepage, and the parish office can confirm the
+          services are listed on the homepage, and the church office can confirm the
           regular times.
         </p>
       </div>

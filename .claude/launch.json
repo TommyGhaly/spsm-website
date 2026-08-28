@@ -47,9 +47,53 @@
         "dev:real:spare"
       ],
       "port": 3300
+    },
+    {
+      "name": "website-real-3500",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:real:spare3"
+      ],
+      "port": 3500
+    },
+    {
+      "name": "website-real-3400",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:real:spare2"
+      ],
+      "port": 3400
+    },
+    {
+      "name": "website-real-3600",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:real:spare4"
+      ],
+      "port": 3600
+    },
+    {
+      "name": "website-real-3700",
+      "cwd": "apps/website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:real:spare5"
+      ],
+      "port": 3700
     }
   ],
   "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. Needs the emulator suite running (`npm run emulators`, then `npm run seed:emulator`); it is the way to try a destructive action without doing it to the parish, and the way to hold a signed-in role without the Microsoft popup.",
   "//website-emulated-3200": "Same as -3100, one port along. Peer sessions edit this tree at the same time and :3100 is often already taken; this is the spare rather than a reason to stop somebody else's server.",
-  "//website-real-3300": "The real project on :3300. The default `website-dev` entry owns :3000, which a peer session usually already has; this is the spare that needs no emulator suite."
+  "//website-real-3300": "The real project on :3300. The default `website-dev` entry owns :3000, which a peer session usually already has; this is the spare that needs no emulator suite.",
+  "//website-real-3400": "The real project on :3400, one port past website-real-3300. All of :3000, :3100 and :3300 were held by peer sessions at once; this is the next spare.",
+  "//website-real-3500": "One port past that again. :3400 was taken too, on Aug 27.",
+  "//website-real-3600": "One port past 3500. Peer sessions held 3000, 3300 and 3500 at once on Aug 27; this is the next spare.",
+  "//website-real-3700": "One port past 3600. Every port from :3000 to :3600 was held by a peer session on Aug 28; this is the next spare against the real project."
 }

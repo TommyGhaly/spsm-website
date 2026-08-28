@@ -52,7 +52,7 @@ export default function ParkingPage() {
           confirmation={
             'Your vehicle is registered and waiting to be approved. Once it has been, ' +
             'your license plate is recognised at the lot — there is no sticker to collect. ' +
-            'Contact the parish office with any questions.'
+            'Contact the church office with any questions.'
           }
         />
       </PageBody>

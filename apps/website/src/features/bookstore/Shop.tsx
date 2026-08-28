@@ -763,7 +763,7 @@ export function Shop({
               {/* The fulfilment they chose, stated back to them. */}
               <p className="done__lede">
                 {receipt.shipping
-                  ? 'It will be delivered to you. Allow a few days — the parish packs orders by hand.'
+                  ? 'It will be delivered to you. Allow a few days — the church packs orders by hand.'
                   : 'It will be waiting for you at the bookstore. Collect it after any Liturgy.'}
               </p>
 
@@ -1478,7 +1478,7 @@ function Detail({
                 soldOut ? "buybox__stock buybox__stock--out" : "buybox__stock"
               }
             >
-              {soldOut ? "Out of stock" : "In stock at the parish bookstore"}
+              {soldOut ? "Out of stock" : "In stock at the church bookstore"}
             </p>
 
             {!soldOut && (

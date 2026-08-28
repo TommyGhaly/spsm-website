@@ -397,7 +397,7 @@ function RefundDialog({
 
         <p className="bkmodal__note">
           The whole order goes back to the card it was paid with, including delivery. The
-          parish does not take returns, so this is an exception — say why, and your name
+          church does not take returns, so this is an exception — say why, and your name
           is recorded against it.
         </p>
 

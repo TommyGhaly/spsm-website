@@ -21,7 +21,6 @@ import {
   asServant,
   asStaff,
   asAdmin,
-  asClergy,
   asParking,
 } from './helpers.js';
 
@@ -52,8 +51,8 @@ type Seeder = Parameters<RulesTestEnvironment['withSecurityRulesDisabled']>[0];
  *
  * So: clear once per file in `beforeAll`, far from any write, and make every
  * seed an idempotent `setDoc` upsert. Each describe seeds only the ids it
- * asserts on, and the collections used here (vehicles, orders, prayerRequests,
- * members) are disjoint from those in public-reads.test.ts, so nothing leaks
+ * asserts on, and the collections used here (vehicles, orders, members) are
+ * disjoint from those in public-reads.test.ts, so nothing leaks
  * between suites.
  */
 async function reset(seed?: Seeder): Promise<void> {
@@ -203,57 +202,6 @@ describe('orders are written only by Cloud Functions', () => {
   });
 });
 
-describe('prayer requests are closed to clients in both directions', () => {
-  beforeEach(() =>
-    reset(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'prayerRequests', 'sealed'), {
-        // What the collection actually holds now: envelopes, not sentences.
-        body: 'v1.aXYtYnl0ZXM.dGFnLWJ5dGVz.Y2lwaGVydGV4dA',
-        authorUid: null,
-        authorName: null,
-        anonymous: true,
-        kind: 'commemoration',
-        commemoration: 'forty-days',
-        visibility: 'clergy',
-        status: 'active',
-        contactEmail: null,
-        notifiedAt: null,
-        createdAt: new Date(),
-      });
-    }),
-  );
-
-  /*
-   * The whole policy is two words now — `if false` — and these assert it for
-   * each tier that used to be treated differently.
-   *
-   * The clergy-is-not-staff separation these tests used to guard has not been
-   * abandoned; it moved. `prayerList` checks `inGroup('clergy') ||
-   * hasRole('admin')`, which is the same test this rule used to apply, and a
-   * Function is where it has to live now that reading means decrypting. What a
-   * rules test can still prove is the half that matters here: nobody reaches
-   * the ciphertext directly, whatever claims they hold.
-   */
-  it('denies a facilities coordinator who is legitimately staff', async () => {
-    await assertFails(getDoc(doc(asStaff(env).firestore(), 'prayerRequests', 'sealed')));
-  });
-
-  it('denies the clergy group too, because reading now means decrypting', async () => {
-    // This one *changed direction* when the bodies were sealed, and that is the
-    // point rather than a regression: a clergy member who read this document
-    // directly would get an envelope. They read through `prayerList`.
-    await assertFails(getDoc(doc(asClergy(env).firestore(), 'prayerRequests', 'sealed')));
-  });
-
-  it('denies an admin', async () => {
-    await assertFails(getDoc(doc(asAdmin(env).firestore(), 'prayerRequests', 'sealed')));
-  });
-
-  it('denies an anonymous read', async () => {
-    await assertFails(getDoc(doc(asAnon(env).firestore(), 'prayerRequests', 'sealed')));
-  });
-});
-
 describe('members — claims are authoritative, the mirror is not', () => {
   beforeEach(() => reset());
 
@@ -305,106 +253,6 @@ describe('members — claims are authoritative, the mirror is not', () => {
   });
 });
 
-/** What features/prayer/data.ts actually writes. */
-function prayerDoc(overrides: Record<string, unknown> = {}) {
-  return {
-    body: 'Please pray for my mother.',
-    visibility: 'clergy',
-    anonymous: false,
-    authorUid: null,
-    authorName: 'Mina',
-    contactEmail: null,
-    status: 'active',
-    notifiedAt: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    updatedBy: null,
-    ...overrides,
-  };
-}
-
-describe('prayer requests can no longer be written from a browser', () => {
-  beforeEach(() => reset());
-
-  /*
-   * This block used to be ninety lines asserting a field whitelist, length
-   * bounds, and the anonymity rule — the shape of an unauthenticated `addDoc`
-   * bounded entirely by rules.
-   *
-   * All of it is gone with the write path it guarded. Sealing a request needs
-   * the key, a key in a browser is not a key, so `prayerSubmit` is now the only
-   * writer and it uses the Admin SDK. The validation those tests covered did not
-   * disappear either: `validatePrayerRequest` in @spsm/shared is what the
-   * Function runs, and `tests/unit/prayer.test.ts` is where it is asserted now —
-   * against the validator itself rather than against a rules expression
-   * approximating it.
-   *
-   * What is left to prove here is that the door is shut.
-   */
-  it('refuses an anonymous create', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'prayerRequests'), {
-        body: 'Please pray for my mother.',
-        kind: 'prayer',
-        commemoration: null,
-        visibility: 'clergy',
-        anonymous: true,
-        authorUid: null,
-        authorName: null,
-        contactEmail: null,
-        status: 'active',
-        notifiedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        updatedBy: null,
-      }),
-    );
-  });
-
-  it('refuses a create even from a signed-in servant', async () => {
-    await assertFails(
-      addDoc(collection(asServant(env, 'servant-1').firestore(), 'prayerRequests'), {
-        body: 'Please pray for my mother.',
-        kind: 'prayer',
-        commemoration: null,
-        visibility: 'clergy',
-        anonymous: false,
-        authorUid: 'servant-1',
-        authorName: 'A servant',
-        contactEmail: null,
-        status: 'active',
-        notifiedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        updatedBy: 'servant-1',
-      }),
-    );
-  });
-
-  it('refuses a create from an admin, so nothing can write plaintext by hand', async () => {
-    // The one that matters most. An admin bypassing the Function would store a
-    // body in the clear beside all the sealed ones, and nothing downstream
-    // would notice until a priest read a request that had never been encrypted.
-    await assertFails(
-      addDoc(collection(asAdmin(env).firestore(), 'prayerRequests'), {
-        body: 'Plaintext, written by hand.',
-        kind: 'prayer',
-        commemoration: null,
-        visibility: 'clergy',
-        anonymous: true,
-        authorUid: null,
-        authorName: null,
-        contactEmail: null,
-        status: 'active',
-        notifiedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        updatedBy: null,
-      }),
-    );
-  });
-});
-
 describe('formSubmissions is closed until the feature exists', () => {
   beforeEach(() => reset());
 
@@ -430,7 +278,67 @@ describe('formSubmissions is closed until the feature exists', () => {
   });
 });
 
-describe('servantsConfig holds a bearer URL, so read is gated', () => {
+describe('the calendar layers staff may write', () => {
+  /**
+   * Both are world-readable on purpose: /calendar assembles them in the browser
+   * next to Breeze, so an anonymous visitor has to be able to read them or a
+   * manually added service is invisible to everybody but staff.
+   */
+  it('lets anyone read a manually added entry', async () => {
+    await assertSucceeds(
+      getDoc(doc(asAnon(env).firestore(), 'scheduleEntries', 'choir-practice')),
+    );
+    await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'calendarDetails', '404577147')));
+  });
+
+  it('refuses a write from anyone below staff', async () => {
+    for (const as of [asAnon, asMember, asServant]) {
+      await assertFails(
+        setDoc(doc(as(env).firestore(), 'scheduleEntries', 'x'), { title: 'Not yours' }),
+      );
+      await assertFails(
+        setDoc(doc(as(env).firestore(), 'calendarDetails', 'x'), { note: 'Not yours' }),
+      );
+    }
+  });
+
+  it('lets staff add, annotate and remove', async () => {
+    const staff = asStaff(env).firestore();
+    await assertSucceeds(
+      setDoc(doc(staff, 'scheduleEntries', 'choir'), {
+        title: 'Choir practice',
+        day: '2026-09-03',
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(staff, 'calendarDetails', '404577147'), {
+        occurrenceId: '404577147',
+        note: 'In the hall this week.',
+      }),
+    );
+    await assertSucceeds(deleteDoc(doc(staff, 'scheduleEntries', 'choir')));
+    await assertSucceeds(deleteDoc(doc(staff, 'calendarDetails', '404577147')));
+  });
+
+  /**
+   * The point of the two-collection split, asserted rather than assumed.
+   *
+   * Everything the parish does *not* own lives somewhere staff cannot delete
+   * it from — Breeze is not in Firestore at all, and the site's own `events`
+   * are a different path with a different rule. Deleting a detail must not be
+   * capable of deleting anything but the detail.
+   */
+  it('gives staff no path that removes a liturgy', async () => {
+    // A detail is keyed by the occurrence id it annotates. Removing it removes
+    // the annotation; there is nothing else at that path to remove.
+    const staff = asStaff(env).firestore();
+    await assertSucceeds(deleteDoc(doc(staff, 'calendarDetails', '404577147')));
+    // And the schedule the detail was about is not in Firestore to begin with,
+    // so there is no rule that could have allowed it.
+  });
+});
+
+describe('servantsConfig holds bearer URLs, so no client may read it at all', () => {
   beforeEach(() =>
     reset(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'servantsConfig', 'schedule'), {
@@ -444,7 +352,7 @@ describe('servantsConfig holds a bearer URL, so read is gated', () => {
   it('denies anonymous read — the whole point of not putting it in config/', () => {
     // `config` is `allow read: if true`, and a narrower rule cannot take that
     // back, so this had to be its own collection. If this ever passes, the
-    // parish rota URL is public and the sign-in gate in front of it is theatre.
+    // parish rota URL is public.
     return assertFails(getDoc(doc(asAnon(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
@@ -452,9 +360,22 @@ describe('servantsConfig holds a bearer URL, so read is gated', () => {
     await assertFails(getDoc(doc(asMember(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
-  it('allows a servant, and everyone above', async () => {
-    await assertSucceeds(getDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule')));
-    await assertSucceeds(getDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule')));
+  /**
+   * Servants and staff too, which is the change worth having a test for.
+   *
+   * This used to allow a servant, because the browser fetched the URL after
+   * sign-in and framed it — so every servant's tab held a credential they could
+   * copy out of dev tools and pass on, with no way to revoke it short of
+   * rotating the token for all forty of them.
+   *
+   * The `calendar` Function reads this with the Admin SDK now, which bypasses
+   * rules, and hands back events rather than the URL. So no client has any
+   * business here, and this asserts that none of them can get in — including
+   * the ones that used to be allowed.
+   */
+  it('denies a servant and staff too, now that nothing client-side reads it', async () => {
+    await assertFails(getDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule')));
+    await assertFails(getDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
   it('denies writes below admin — staff may not repoint the calendar', async () => {

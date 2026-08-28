@@ -22,20 +22,30 @@
  * it to the world while showing a sign-in form on top — security theatre, and
  * strictly worse than the Wix password it replaces.
  *
- * So it is read at runtime, from a collection only a signed-in servant may
- * read, and the built HTML never contains it.
+ * So it lives here, and **only the `calendar` Cloud Function ever reads it**,
+ * through the Admin SDK. The URL does not reach a browser at all: the Function
+ * calls Breeze, reduces the answer to the fields in `schema/calendar.ts`, and
+ * sends the schedule rather than the credential.
  *
- * ## What this does and does not buy
+ * ## What changed, and what that bought
  *
- * Be honest about the ceiling: a signed-in servant can open dev tools, copy the
- * URL, and send it to anyone. Breeze's embed is a bearer URL and nothing we do
- * on our side changes that. What this *does* fix is that access is now per
- * person and revocable — disable someone's account and they lose the page —
- * rather than one password that everybody knows and nobody can rotate without
- * telling forty people.
+ * This used to be fetched by the *browser* after sign-in and assigned to an
+ * iframe `src` — which was a real improvement on the shared Wix password, but
+ * left the ceiling in plain sight: a signed-in servant could open dev tools,
+ * copy the URL, and hand the parish rota to anyone, permanently, with no way to
+ * tell it had happened short of rotating the token for everybody.
  *
- * If the calendar ever needs to be genuinely private, that is a conversation
- * with Breeze about their sharing model, not something this schema can solve.
+ * Serving the *events* instead of the *URL* removes that. A servant now
+ * receives 7 or 42 days of JSON, scoped to what they asked for, from an
+ * endpoint that checks their ID token on every request. There is no bearer
+ * credential in the client to leak, revoking an account revokes access
+ * immediately rather than until the next rotation, and the servants calendar
+ * stops being something the site merely declines to show.
+ *
+ * What it does not change: Breeze still serves that URL to anyone who has it,
+ * so the token remains a credential and must never be committed or logged. It
+ * is now a credential held in one place by one service account, which is the
+ * whole difference.
  */
 import type { AuditFields } from './common.js';
 
@@ -44,10 +54,30 @@ export const SERVANTS_DOC_SCHEDULE = 'schedule';
 
 export interface ServantsSchedule extends Partial<AuditFields> {
   /**
-   * Full embed URL, including its query string. Empty until someone sets it,
-   * and the page says so plainly rather than rendering a blank frame.
+   * The **servants** calendar's embed URL, query string included.
+   *
+   * Still named `embedUrl` rather than `servantsEmbedUrl`: it is the field
+   * `set-servants-schedule.mjs` writes, the field `firestore.rules` and
+   * `docs/integrations.md` name, and the one already in the emulator seed. A
+   * rename would be three edits and a migration to buy a better name for a
+   * value whose meaning has not changed.
    */
   embedUrl: string;
+
+  /**
+   * The **parish** calendar's embed URL — the public church schedule.
+   *
+   * A second URL rather than a second document, because they are one setting:
+   * both are Breeze embed tokens for the same subdomain, rotated in the same
+   * sitting, and read by the same Function in the same request.
+   *
+   * Worth being clear that this one is not a secret in the way the other is.
+   * The parish calendar is the public schedule; the token grants exactly what
+   * the website publishes anyway. It lives here regardless, because the
+   * Function is the only thing that needs it and a value no browser ever
+   * receives cannot be scraped out of the exported HTML.
+   */
+  parishEmbedUrl: string;
 
   /** Shown to servants so an out-of-date rota has somewhere to be reported. */
   note: string;
@@ -68,6 +98,7 @@ export interface ServantsSchedule extends Partial<AuditFields> {
  */
 export const DEFAULT_SERVANTS_SCHEDULE: ServantsSchedule = {
   embedUrl: '',
+  parishEmbedUrl: '',
   note: '',
   manageUrl: '',
 };
@@ -75,10 +106,13 @@ export const DEFAULT_SERVANTS_SCHEDULE: ServantsSchedule = {
 /**
  * Only ever allow an https URL, and only on the host we expect.
  *
- * This value is rendered as an `iframe src`, so a bad edit is not a broken
- * layout — it is arbitrary third-party content inside a page our servants
- * trust, and `javascript:` in an src attribute is a script running as us. The
- * check is deliberately an allowlist rather than a blocklist.
+ * This value is now fetched server-side rather than rendered as an `iframe
+ * src`, which changes what a bad edit costs but not whether the check is
+ * needed. A URL nobody validated is a server-side request to wherever the last
+ * person to write this document pointed it — the Function runs with the parish's
+ * service-account identity and will happily fetch an internal metadata endpoint
+ * if told to. An allowlist of one host is the whole defence, and it is why this
+ * is an allowlist rather than a blocklist.
  */
 const ALLOWED_EMBED_HOSTS = ['breezechms.com'];
 
@@ -99,11 +133,13 @@ export function isAllowedEmbedUrl(value: string): boolean {
 export function parseServantsSchedule(raw: unknown): ServantsSchedule {
   const doc = asRecord(raw);
   const embedUrl = str(doc?.['embedUrl']) ?? '';
+  const parishEmbedUrl = str(doc?.['parishEmbedUrl']) ?? '';
 
   return {
     // A URL that fails the allowlist is discarded rather than passed through,
     // so the page renders "not set up yet" instead of framing something unknown.
     embedUrl: isAllowedEmbedUrl(embedUrl) ? embedUrl : '',
+    parishEmbedUrl: isAllowedEmbedUrl(parishEmbedUrl) ? parishEmbedUrl : '',
     note: str(doc?.['note']) ?? DEFAULT_SERVANTS_SCHEDULE.note,
     manageUrl: str(doc?.['manageUrl']) ?? DEFAULT_SERVANTS_SCHEDULE.manageUrl,
   };

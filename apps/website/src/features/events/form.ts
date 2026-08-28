@@ -402,7 +402,7 @@ export const CATEGORY_LABELS: Record<EventCategory, string> = {
 };
 
 export const AUDIENCE_LABELS: Record<EventAudience, string> = {
-  parish: 'The whole parish',
+  parish: 'The whole church',
   servants: 'Servants only',
 };
 

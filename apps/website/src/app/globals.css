@@ -655,6 +655,22 @@ main {
   min-width: 0;
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
+  /*
+   * One line, at every width. Tommy: *"make philopater mercurius one line."*
+   *
+   * It is a name, and a name that breaks is read as two things. Left to wrap it
+   * broke in whichever place the column happened to end — "St. Philopater
+   * Mercurius / & St. Mina" on a wide phone, and at 375px the worse one, "St.
+   * Philopater / Mercurius & St. Mina", which splits the saint's name across
+   * lines beside a seal that does not.
+   *
+   * `nowrap` alone would overflow the bar, so it is half of a pair: the other
+   * half is the fluid `font-size` under the changeover below, which is what
+   * guarantees the line fits the space it has. **Both are load-bearing.**
+   * Setting a fixed size here again brings back a name running off the right
+   * edge of a phone instead of a name on two lines, which is the worse failure.
+   */
+  white-space: nowrap;
   font-weight: 600;
   letter-spacing: var(--tracking-tight, -0.01em);
   transition: color 150ms ease;
@@ -683,10 +699,69 @@ main {
 }
 
 /*
+ * ---- the wordmark under the changeover ---------------------------------- *
+ *
+ * 78rem, in step with the two other `78rem` queries in this file — the one that
+ * swaps the nav for the toggle and the one that hides the sign-in circle.
+ * Change one, change all three.
+ *
+ * Below it the bar is the wordmark and one button, and the name has to fit on
+ * one line between them. Three things make the room, and the arithmetic below
+ * assumes all three:
+ *
+ *   the gap between the two          `--space-xl` → `--space-md`   24px
+ *   the button's label               shown → screen-reader only    63px
+ *   the name's own size              fixed → fluid, capped         —
+ *
+ * The measurement the fluid size is built on: the name sets **17.65em wide** in
+ * the display serif at 600 weight with `--tracking-tight`, measured with
+ * `canvas.measureText` at 15px and confirmed against the rendered line. It is a
+ * multiple of the font size rather than a pixel count, so it holds at every
+ * size and through a theme that changes the type scale. 17.8 is used, which
+ * leaves a hair of slack.
+ *
+ * What is left for the name is the bar minus its gutters, the seal (3.25rem
+ * tall, 70:64, so 3.55rem wide), two gaps of 1rem, and the icon-only button
+ * (2.25rem square) — 7.8rem plus the gutters. Divided by 17.8em that is the
+ * largest size the line can take, and `min()` keeps it from exceeding the size
+ * it would otherwise have had.
+ *
+ *     481px   17.2px   the tightest width this block covers
+ *     600px   17.5px   fluid `--type-subheading` is itself still climbing here
+ *     780px   17.9px
+ *    1247px   18.9px   one pixel below the changeover
+ *
+ * Measured, not predicted — every row above was read off the rendered line. The
+ * name is full size or within a point of it across the whole range, on one line,
+ * and no width in it overflows. Below 481px the phone block further down takes
+ * over with its own smaller geometry.
+ *
+ * `100cqi`, not `100vw`, and that matters twice: it is the same container the
+ * nav's changeover reads, and in edit mode this bar is 22rem narrower than the
+ * window — a name sized off the viewport would overflow it.
+ */
+@container masthead (max-width: 78rem) {
+  .masthead__inner {
+    gap: var(--space-md, 1rem);
+  }
+
+  .wordmark__name {
+    font-size: min(
+      var(--type-subheading, 1.125rem),
+      calc((100cqi - 2 * var(--space-gutter, 1.5rem) - 7.8rem) / 17.8)
+    );
+  }
+
+  /* The button's own two rules are in the navigation section's copy of this
+     query, beside `display: flex` — they have to be *after* `.nav-toggle`'s base
+     rule to win, and this block sits above it. */
+}
+
+/*
  * On a phone the parish name is the thing worth the space, and the Menu button
- * must be reachable. So the subtitle goes and the name shrinks enough to sit on
- * two lines beside a smaller seal. The full name and the subtitle are both in
- * the footer of every page.
+ * must be reachable. So the subtitle goes and the name sits on one line beside a
+ * smaller seal. The full name and the subtitle are both in the footer of every
+ * page.
  *
  * This block must stay *after* the `.wordmark__name span` rule above. Both have
  * the same specificity, so source order decides — placed before it, the
@@ -707,10 +782,31 @@ main {
     height: 2.5rem;
   }
 
-  /* Set on `.wordmark__name` rather than `.wordmark`, which no longer carries a
-     font size of its own — the name and the subtitle each set their own. */
+  /*
+   * Set on `.wordmark__name` rather than `.wordmark`, which no longer carries a
+   * font size of its own — the name and the subtitle each set their own.
+   *
+   * The same `min()` as the block above the phone one, with this block's
+   * geometry: the seal is 2.5rem tall (2.73rem wide), the two gaps are
+   * `--space-sm`, and the button is still 2.25rem square — 6rem plus the
+   * gutters, rather than 7.8rem.
+   *
+   *     430px   15.0px  →  capped at 0.9375rem
+   *     390px   14.5px
+   *     375px   13.7px
+   *     320px   10.6px
+   *
+   * The name is smaller at 375 than it was — 13.7px against 15 — and on one line
+   * rather than two, which is the trade that was asked for. 320px is the oldest
+   * phone still in use and the only width where this gets genuinely small; it is
+   * still legible, still one line, and still not overflowing, which is the most
+   * that width allows.
+   */
   .wordmark__name {
-    font-size: var(--type-small, 0.9375rem);
+    font-size: min(
+      var(--type-small, 0.9375rem),
+      calc((100cqi - 2 * var(--space-gutter, 1.5rem) - 6rem) / 17.8)
+    );
   }
 
   .wordmark__name span {
@@ -751,6 +847,18 @@ main {
    */
   gap: var(--space-xs, 0.25rem);
   margin-left: auto;
+  /*
+   * Full height of the masthead's content box, so the section menus can be
+   * placed off it: `.nav__group` stretches inside this, which puts the bottom of
+   * a trigger exactly one `--space-md` above the bar's gold hairline and makes
+   * the drawer's `top` a calculation instead of a guess. See `.nav__group`.
+   *
+   * Costs the row nothing — `align-items: center` above still centres the links
+   * inside the taller box, and a taller hover target under each word is the
+   * strip a pointer travelling down into an open menu now crosses without
+   * leaving the group.
+   */
+  align-self: stretch;
   /*
    * 96% of `--type-small`, not the token itself — about 15px becoming 14.4.
    *
@@ -964,6 +1072,32 @@ main {
 
   .nav-toggle {
     display: flex;
+    /* Square once the label has gone, rather than a pill with a hole in it. */
+    gap: 0;
+    padding: var(--space-sm, 0.5rem);
+  }
+
+  /*
+   * The button keeps its glyph and loses its word — clipped, not `display:
+   * none`, so the word stays the button's accessible name and a screen reader
+   * still announces "Menu".
+   *
+   * Those 63px — the button measures 36px wide instead of 99 — are part of what
+   * the parish's name is set on one line with; see
+   * the wordmark's own copy of this query above. The three-line glyph is the one
+   * icon on the web that needs no caption, and this is the width at which every
+   * other site on a parishioner's phone drops the same label.
+   */
+  .nav-toggle__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   /*
@@ -1362,26 +1496,15 @@ main {
 }
 
 /*
- * The links, above the rule the role chip used to carry.
+ * The one row in the card.
  *
- * The division in this card is between "who you are" and "where you can go",
- * and the rule now sits on that line rather than under the role.
+ * There used to be a list of destinations above this, and the shape of a menu
+ * row was shared between them. The list is gone — see the top of HeaderAuth —
+ * so this is the whole of it: a full-width row under the identity block.
+ *
+ * `gap` still sets the glyph off the label at a fixed distance, which is the
+ * thing that makes it look built rather than assembled.
  */
-.header-auth__links {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-xs, 0.35rem) 0 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
-  display: grid;
-  gap: 1px;
-}
-
-/*
- * Rows, not links-in-a-list. `gap` puts the icon a fixed distance from the
- * label so the two rows align on their text regardless of glyph width, which is
- * the thing that makes a menu look built rather than assembled.
- */
-.header-auth__links a,
 .header-auth__signout {
   display: flex;
   align-items: center;
@@ -1413,28 +1536,26 @@ main {
 
 /* The glyph is secondary to its label until the row is hovered, when both come
    up together — one state change, not two. */
-.header-auth__links a svg,
 .header-auth__signout svg {
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 120ms ease;
 }
 
-.header-auth__links a:hover,
 .header-auth__signout:hover {
   background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
   color: var(--color-gold, #b08d43);
 }
 
-.header-auth__links a:hover svg,
 .header-auth__signout:hover svg {
   opacity: 1;
 }
 
 /*
  * Sign out sits below a rule, in the card's padding rather than flush to its
- * edge — it is the one row that undoes something, and a hairline is enough to
- * stop a thumb aiming for "Admin" landing on it.
+ * edge. The rule is what keeps the card from reading as a single block that
+ * happens to end in a button: above it is who you are, below it is the one
+ * thing this menu does.
  */
 .header-auth__signout {
   margin-top: var(--space-xs, 0.35rem);
@@ -5936,6 +6057,170 @@ main {
   font-style: normal;
 }
 
+/* ---- /contact: the details beside the map ------------------------------- */
+
+/*
+ * The address, phone and email in a column, with the map filling the rest.
+ *
+ * ---------------------------------------------------------------------------
+ * This replaces the address stacked *above* the map, which was the wrong shape
+ * twice over.
+ *
+ * `.details` is a two-column definition list with a 7–9rem label gutter, built
+ * for a page-width block. Run across the full measure with three short rows in
+ * it, it read as a lot of empty paper with "ADDRESS" stranded on the left — and
+ * then the map repeated the same fact underneath at four times the size. Beside
+ * each other they are one statement: here is where we are, here is how to reach
+ * us, here is the map.
+ *
+ * The labels stack over their values in this column. That is a container
+ * question, not a viewport one — `.details`' own 34rem breakpoint is measuring
+ * the wrong box here, because at 1280px wide the viewport is huge and this
+ * column is 20rem.
+ * ---------------------------------------------------------------------------
+ *
+ * Applied to the band's `.wrap`, so it inherits the shell width and the gutter
+ * and only adds the columns.
+ */
+.contact-band {
+  display: grid;
+  /*
+   * `minmax(0, …)` on both, and on the fixed column too. A grid column defaults
+   * to `min-width: auto`, so a long unbroken value — an email address, which is
+   * exactly what lives here — sets a floor the column cannot go below and pushes
+   * the whole band off a phone. That failure does not show up in the document's
+   * own scrollWidth, which is how it ships.
+   */
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  /* `xl` (2.5rem), not `xxl`. At 4rem the two halves stopped reading as one
+     statement and started reading as two things that happened to be level. */
+  gap: var(--space-xl, 2.5rem);
+  align-items: start;
+}
+
+/* One column below the point where 22rem of labels and a map stop both fitting.
+   A container query would be truer, but this band is always the page's full
+   width, so the viewport is a faithful proxy for once. */
+@media (max-width: 62rem) {
+  .contact-band {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-xl, 2rem);
+  }
+}
+
+.contact-band__facts {
+  min-width: 0;
+}
+
+/* The column is narrower than the reading measure, so the cap does nothing but
+   fight the grid. */
+.contact-band__facts .details {
+  max-width: none;
+}
+
+.contact-band__facts .details > div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xs, 0.25rem);
+}
+
+/* Long values that must not push the column wider: an email address has no
+   spaces to break at, and a `tel:` link is one token. */
+.contact-band__facts .details dd {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The gold mark before each label. See ContactDetails.
+ *
+ * `1em` boxes on a `--type-micro` label, aligned to the cap height rather than
+ * the baseline — an icon sitting on the baseline of small caps hangs visibly
+ * low, because the label has no descenders for it to line up against.
+ */
+.details--marked dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.details__icon {
+  color: var(--color-gold, #b08d43);
+  flex-shrink: 0;
+}
+
+/*
+ * The form's band.
+ *
+ * Capped well inside the shell, and the cap is the point. `.fx` lays its fields
+ * out with `repeat(auto-fit, minmax(20rem, 1fr))`, so across the full 96rem
+ * shell a five-question form becomes four columns of stubs — which is both
+ * ugly and genuinely harder to fill in, because the eye has to find where the
+ * next question went. At this width it settles into two, which is the shape the
+ * field pairs were written for.
+ */
+.contact-write {
+  max-width: 52rem;
+}
+
+/* ---- the map on /contact ------------------------------------------------ */
+
+/*
+ * A Google Maps embed — an iframe. See features/parish/ParishMap for why the
+ * map moved off Leaflet and OpenStreetMap.
+ *
+ * Almost nothing to style, which is the point: everything inside the frame is
+ * Google's and unreachable from here. What is left is the frame around it.
+ */
+.pmap {
+  display: grid;
+  /* `1fr auto` so the map takes the height the row gives it and the buttons keep
+     their own. Without it a stretched second row leaves the buttons floating in
+     the middle of a gap when the details column beside them is taller. */
+  grid-template-rows: 1fr auto;
+  gap: var(--space-sm, 0.75rem);
+  min-width: 0;
+}
+
+.pmap__canvas {
+  /*
+   * A minimum rather than a fixed height. In the two-column band the map is a
+   * grid item that stretches to whatever the details column needs, and a fixed
+   * height there leaves a cream gap under it; on a phone the band is one column
+   * and this is the height it actually gets.
+   */
+  min-height: clamp(18rem, 60vw, 26rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-lg, 16px);
+  /* The radius has to clip the frame, which paints its own square corners. */
+  overflow: hidden;
+  position: relative;
+  /* Shows in the moment before Google's frame paints: a warm panel rather than
+     the browser's white, which reads as a hole in the page. */
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow: var(--shadow-md, 0 4px 16px -2px rgba(28, 22, 20, 0.1));
+}
+
+/*
+ * Absolute, not `width: 100%; height: 100%`. The canvas is a grid item with a
+ * *minimum* height, so it has no definite height for a percentage to resolve
+ * against — the frame would collapse to its 150px default and float in the
+ * middle of the panel.
+ */
+.pmap__canvas iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.pmap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.75rem);
+  margin: 0;
+}
+
 /* ---- responsive video embed -------------------------------------------- */
 
 .embed {
@@ -6615,153 +6900,2399 @@ main {
   font-style: normal;
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
+  color: color-mix(in srgb, var(--sched-tone) 55%, var(--color-ink, #1c1614));
+}
+
+/* ---- /giving hero ------------------------------------------------------ *
+ *
+ * The offering band from the homepage, rebuilt as the top of its own page and
+ * around a different photograph. Not a modifier of `.giving`, because almost
+ * nothing carries over: that block frames a wide, dark photograph of hands with
+ * the text beside them; this one opens a page under the masthead, over a pale
+ * sky, and its crop changes shape on a phone.
+ */
+
+.give-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /*
+   * Deeper than `.band`'s `--space-section`, and the reason is that this band is
+   * first on the page. A section in the middle of a page is bounded by the
+   * sections above and below it; this one has the masthead hard against its top
+   * edge, and at 4rem the heading sat in the header's lap.
+   *
+   * Bounded rather than a bare `vh`: a hero measured in viewport height is a
+   * full screen of photograph on a laptop and a letterbox on a phone in
+   * landscape, and the content here is four short lines either way.
+   */
+  padding-block: clamp(3.5rem, 8vw, 6.5rem);
+}
+
+/*
+ * `display: contents` so the `<picture>` is not itself a box.
+ *
+ * The `<img>` inside is absolutely positioned against `.give-hero`, which it can
+ * only be if nothing between them establishes a containing block — and a
+ * `<picture>` is `inline` by default, which would also contribute a line box and
+ * a stray descender's worth of height to the band.
+ */
+.give-hero picture {
+  display: contents;
+}
+
+.give-hero__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /*
+   * Centred, unlike `.giving__photo`, because the framing is already decided:
+   * both crops are cut to the subject in `scripts/optimize-assets.mjs`, so what
+   * is left for `cover` to do here is the difference between the band's aspect
+   * and the file's, which is small. Re-aim the crop there, not here.
+   */
+  object-position: center;
+}
+
+/*
+ * A stronger veil than the homepage band's, and mirrored.
+ *
+ * Stronger because of what is underneath: the hands shot is dark across its left
+ * half, so 78% of `deep` sufficed there, while this is a dome against a
+ * blown-out midday sky and a sunlit tree — the palest ground on the site. At the
+ * homepage's numbers the gold eyebrow measured under 3:1.
+ *
+ * Mirrored because the text is on the right here, not the left. Same division of
+ * labour as `.giving__veil` otherwise: one gradient weights the column the words
+ * occupy, one takes the whole frame down a little. The left end stays light on
+ * purpose — that is where the dome and the cross are, and the point of putting a
+ * photograph behind a band is to be able to see it.
+ */
+.give-hero__veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+      to left,
+      color-mix(in srgb, var(--color-deep, #481010) 88%, transparent) 0%,
+      color-mix(in srgb, var(--color-deep, #481010) 80%, transparent) 34%,
+      color-mix(in srgb, var(--color-deep, #481010) 40%, transparent) 62%,
+      color-mix(in srgb, var(--color-deep, #481010) 6%, transparent) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-deep, #481010) 22%, transparent),
+      color-mix(in srgb, var(--color-deep, #481010) 8%, transparent)
+    );
+}
+
+/*
+ * Nearly even, once the text spans the band.
+ *
+ * A one-sided veil is only correct while the words are on one side. At the width
+ * where `.give-hero__body` stops being a right-hand column, a line of text runs
+ * from the strongest part of that gradient to the weakest — which is exactly how
+ * the eyebrow and the citation ended up unreadable over the sky. So the floor
+ * comes up to something every line can sit on, and the left keeps a little more
+ * weight because that is still where the heading starts.
+ *
+ * The dome is dimmer here than on a wide screen. That is the trade, taken
+ * knowingly: a photograph nobody can read the page over is worth less than a
+ * dimmer one they can.
+ */
+@media (max-width: 76rem) {
+  .give-hero__veil {
+    background:
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--color-deep, #481010) 84%, transparent) 0%,
+        color-mix(in srgb, var(--color-deep, #481010) 72%, transparent) 55%,
+        color-mix(in srgb, var(--color-deep, #481010) 58%, transparent) 100%
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--color-deep, #481010) 18%, transparent),
+        color-mix(in srgb, var(--color-deep, #481010) 6%, transparent)
+      );
+  }
+}
+
+/*
+ * Two elements, and the split matters.
+ *
+ * `.give-hero__inner` is the shell-width `.wrap` and carries no measure of its
+ * own — a `max-width` here would narrow the auto-margined box and re-centre the
+ * whole column in the window rather than moving it, which is a mistake this
+ * stylesheet has made before (see the note on `.wrap`).
+ *
+ * `__body` is the measure, and `margin-inline-start: auto` is what puts it at
+ * the right-hand end of the wrap. 38rem rather than `.giving__inner`'s 46rem
+ * because there is no prose in this band — an eyebrow, a heading, a verse and a
+ * button — and a measure sized for paragraphs would strand the button a long way
+ * from the words that introduce it.
+ */
+.give-hero__inner {
+  position: relative;
+}
+
+.give-hero__body {
+  max-width: 38rem;
+  margin-inline-start: auto;
+}
+
+/*
+ * One column, at the start of the wrap, once the band no longer has two halves.
+ *
+ * `76rem`, and the number is arithmetic rather than taste: the measure is 38rem,
+ * so below about twice that the column is most of the wrap and "the right-hand
+ * half" stops meaning anything. Pushing it right anyway looks identical and
+ * costs the veil its whole reason for being one-sided — which is the bug this
+ * fixes. At 700px the eyebrow and the citation were sitting over bare sunlit
+ * sky at 20% veil and could not be read.
+ *
+ * Deliberately *not* tied to the `43rem` where the portrait crop takes over.
+ * That switch is about the shape of the photograph; this one is about whether
+ * the text fits beside its subject, and they do not happen at the same width.
+ */
+@media (max-width: 76rem) {
+  .give-hero__body {
+    margin-inline-start: 0;
+  }
+}
+
+/*
+ * Title size, not heading size. It is an `h2` because `PageHeader` owns the
+ * page's hidden `h1`, but it is the first visible words on the page and reads as
+ * its title, so it is set like one.
+ */
+.give-hero h2 {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+  text-shadow: 0 1px 12px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+/*
+ * The verse takes a gold rule down its left edge rather than across its top.
+ *
+ * `.giving__verse` sits at the end of the homepage band and a rule above it
+ * closes the section off. Here the verse is between the heading and the button,
+ * where a horizontal rule would cut the one group of four lines in half — and,
+ * placed directly under an `h2`, would read as an underline for the heading.
+ */
+.give-hero__verse {
+  margin: var(--space-md, 1.25rem) 0 0;
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-lede, 1.125rem);
+  font-style: italic;
+  line-height: var(--leading-snug, 1.4);
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 26%, var(--color-ink-inverse, #f9efec));
+  text-shadow: 0 1px 10px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+.give-hero__verse cite {
+  display: block;
+  margin-top: var(--space-xs, 0.35rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-style: normal;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
   color: var(--color-gold, #b08d43);
 }
 
-/* ---- month calendar ---------------------------------------------------- */
+.give-hero__actions {
+  margin-top: var(--space-lg, 1.75rem);
+}
 
 /*
- * The scroll container for a month grid. See the note in app/calendar/page.tsx:
- * the overflow has to be on the table's parent, because a table cannot be its
- * own scroll container.
- *
- * `min-width` on the table rather than a narrower grid on phones, because seven
- * columns squeezed into 320px gives cells one word wide — a calendar you cannot
- * read is worse than one you have to push sideways.
+ * The one action on the page, so it is larger than a button elsewhere on the
+ * site. `.band--deep` has already turned it gold — see the note there; red on
+ * oxblood is the quietest thing in the band — and this only changes its size.
  */
-.calendar-scroll {
+.give-hero__actions .button {
+  font-size: var(--type-body, 1rem);
+  padding: var(--space-sm, 0.85rem) var(--space-xl, 2.5rem);
+  font-weight: 600;
+}
+
+.give-hero__note {
+  margin-top: var(--space-md, 1rem);
+  max-width: 32rem;
+  /* `.meta` is a warm grey for paper and disappears over the photograph. This is
+     the line that says where the card number goes, so it has to be read. */
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 74%, transparent);
+  text-shadow: 0 1px 8px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
+}
+
+/* ---- the store badges -------------------------------------------------- *
+ *
+ * `.give-apps__note` used to live here, styling a sentence written directly into
+ * the /giving band. That band shows `ParishAppCard` now and the sentence is the
+ * card's own `.app-card__what`, so the rule went with it.
+ */
+
+/*
+ * Renamed from `.give-apps__stores` when the markup became a component two
+ * pages share — see components/StoreBadges.tsx. Nothing about the rule changed.
+ */
+.store-badges {
+  /*
+   * The height both black pills are drawn at, and the only number to change if
+   * they ever want to be bigger. Each badge's own rule derives from it, because
+   * the two files do not measure the same way — see `--store-badge-play-box`.
+   */
+  --store-badge-height: 2.75rem;
+
+  /*
+   * Google's file is not the badge. It is the badge sitting inside its own
+   * mandated clear space: the shipped PNG is 646x250 and the black pill occupies
+   * 564x168 of it, inset 41px on every edge. So the pill is 168/250 of the
+   * file's height, and an `img` height of H shows a pill of 0.672H.
+   *
+   * Measured, not assumed. This rule used to put the padding at "about 9%" and
+   * set the box to 3.3125rem, which drew a 2.23rem pill beside Apple's 2.75rem
+   * one — 19% shorter, and the pair read as two different sizes, which is
+   * exactly what the compensation existed to prevent.
+   */
+  --store-badge-play-box: calc(var(--store-badge-height) * (250 / 168));
+  --store-badge-play-pad: calc(var(--store-badge-play-box) * (41 / 250));
+  --store-badge-play-width: calc(var(--store-badge-play-box) * (646 / 250));
+
+  display: flex;
+  flex-wrap: wrap;
+  /*
+   * Centred, which it could not be while the two boxes disagreed. Both `img`
+   * elements now occupy exactly their visible pill in layout — Google's padding
+   * is taken back out below — so their middles are the pills' middles, and the
+   * old baseline hack (`flex-end`, which only lined up because the padding
+   * happened to fall under the pill) is no longer holding anything up.
+   */
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  margin: var(--space-lg, 1.75rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * No hover recolour, no filter, no border, no radius of ours. Both vendors
+ * publish rules against modifying their badge, and every one of those would be
+ * a modification. A small lift is the whole affordance.
+ */
+.store-badge {
+  display: block;
+  transition: transform 150ms ease;
+}
+
+.store-badges a:hover .store-badge {
+  transform: translateY(-1px);
+}
+
+/* Apple's artwork fills its viewBox edge to edge, so the box is the pill, and
+   `width: auto` off the 119.664x40 viewBox is the whole rule. */
+.store-badge--apple {
+  height: var(--store-badge-height);
+  width: auto;
+}
+
+/*
+ * Taller than Apple's in the file, the same size as Apple's on screen.
+ *
+ * The box is scaled up so the pill inside it lands on `--store-badge-height`,
+ * and then the clear space that scaling multiplied is taken back out of the
+ * layout with a negative margin. The image still paints its full self — nothing
+ * is cropped, and Google's padding is not touched — but the space it *claims*
+ * is the pill, so the flex row can centre the two badges against each other and
+ * the `gap` measures pill to pill instead of pill to transparency.
+ *
+ * Do not "fix" this by setting both heights to the same number: that is the bug
+ * this replaced. And do not crop the padding out of the PNG — the clear space is
+ * Google's requirement, and 1rem of `gap` is still wider than the 0.69rem it
+ * asks for at this size.
+ */
+.store-badge--play {
+  height: var(--store-badge-play-box);
+  /*
+   * Written out rather than left to `width: auto`, and that is not belt and
+   * braces — it is the bug this rule hit. A negative inline margin feeds back
+   * into an `auto` width: the browser sized the image to the box the margins had
+   * already shrunk and drew a 148x65 badge instead of a 169x65 one, squashing
+   * Google's artwork 13% narrower. Squashing it is precisely what their terms
+   * forbid, and it is the kind of wrong that looks like a slightly odd font.
+   */
+  width: var(--store-badge-play-width);
+  /*
+   * Exempt from the blanket `img { max-width: 100% }` at the top of this file,
+   * and it has to be, because here that rule closes a loop: the negative margin
+   * shrinks the `li` this image is measured against, and `max-width: 100%` then
+   * clamps the image to the smaller `li`. The image is meant to overflow its
+   * layout box — that overflow is the transparent clear space — so the ceiling
+   * has to come off. Nothing is at risk: the width is a `rem` multiple of
+   * `--store-badge-height`, which the phone rule below already brings down.
+   */
+  max-width: none;
+  margin: calc(var(--store-badge-play-pad) * -1);
+}
+
+/*
+ * Smaller on a phone, both of them together.
+ *
+ * At the full size the pair measures 296px side by side, and `.app-card` at
+ * 375px offers 307 — two badges and eleven pixels of room, which is the kind of
+ * margin that becomes a wrapped line the first time a padding token moves. At
+ * 2.5rem the pair is 270px, and neither page is asking a 375px screen to give
+ * half its width to two black buttons.
+ */
+@media (max-width: 30rem) {
+  .store-badges {
+    --store-badge-height: 2.5rem;
+  }
+}
+
+/*
+ * The /giving band shows one of these cards, and one is not three.
+ *
+ * `/apps` stacks three at the shell's full width, where the repetition is what
+ * makes them read as a list. Alone, a card 1070px wide holding a 64px icon and
+ * two badges is mostly empty paper with a rule around it — it reads as a banner
+ * that failed to load rather than as a card. 40rem is about where the sentence
+ * inside it sets to two lines.
+ *
+ * `max-width` on the card, never on the `.wrap` around it: narrowing the wrap
+ * re-centres the whole column in the window, which is a bug this file has been
+ * bitten by before. The card is a block in a full-width wrap, so it simply stays
+ * at the left edge of the measure like everything else in the band.
+ */
+.give-apps .app-card {
+  max-width: 40rem;
+}
+
+/* ---- /apps: the parish's apps ------------------------------------------ *
+ *
+ * A stacked list, not a grid. Each card is a name, a sentence and two badges
+ * whose height the vendors fix, so three side by side would be three tall
+ * columns of mostly air. See features/apps/ParishAppList.tsx.
+ */
+
+.app-cards {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin: var(--space-lg, 1.75rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Not a link, unlike `.form-card`. The card contains two or three links that go
+ * to different places — two stores and sometimes a page here — so the card
+ * itself cannot be one, and it takes no hover or focus styling for that reason.
+ */
+.app-card {
+  padding: var(--space-lg, 1.75rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+}
+
+/*
+ * The icon beside the words.
+ *
+ * Grid rather than flex so the text column is a real track — `minmax(0, 1fr)`,
+ * which is what stops a long unbroken word in the sentence from pushing the card
+ * wider than the page. That failure has happened here before, on the admin at
+ * 375px.
+ *
+ * Every card takes this, including the one with no icon: it gets an empty
+ * outline instead, so the three names start in the same place. See the note in
+ * ParishAppList.
+ */
+.app-card--iconed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-md, 1rem);
+  align-items: start;
+}
+
+/*
+ * The corner is rounded here and not in the file.
+ *
+ * Every store draws an app icon with the corner rounded and every artwork file
+ * ships square, because the rounding is the platform's, not the artist's. Doing
+ * it in CSS is the same arrangement: the bytes in `public/img/` are the icon as
+ * published, and this is presentation. 22.5% is Apple's own ratio.
+ *
+ * The hairline matters more than it looks: Taksis's icon is a photograph of an
+ * icon with a pale ground, and against paper its top-left corner simply
+ * disappeared without an edge to sit in.
+ */
+.app-card__icon {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 22.5%;
+  border: 1px solid var(--color-rule, #e0cac3);
+  /* The source files are opaque squares; this keeps a future transparent one
+     from showing the card through it. */
+  background: var(--color-paper, #f6e8e3);
+}
+
+/* The empty one. Dashed and unfilled, which is the ordinary way of drawing a
+   slot with nothing in it yet — and it cannot be mistaken for a mark. */
+.app-card__icon--none {
+  display: block;
+  background: none;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-rule, #e0cac3) 80%, transparent);
+}
+
+.app-card__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.1875rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #2c2320);
+}
+
+/* Sans, small and soft: it is a footnote to the name, not part of it. */
+.app-card__by {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.app-card__what {
+  margin: var(--space-sm, 0.5rem) 0 0;
+  max-width: 42rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * Where the badges would be, on an app that has none.
+ *
+ * Deliberately quiet — no pill, no accent colour, no "coming soon" badge of our
+ * own. It is a sentence saying there is nothing to install, and dressing it up
+ * as an announcement would make an unbuilt app look like a released one.
+ */
+.app-card__unreleased {
+  margin: var(--space-md, 1rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: italic;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.app-card__more {
+  margin: var(--space-md, 1rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/*
+ * Less padding on a phone, and it is the badges that ask for it.
+ *
+ * At 375px a card padded by `--space-lg` leaves 283px of usable width, which was
+ * two pixels short of the badge pair and dropped the Play badge onto its own
+ * line on the most common phone there is. This gives it 307. The pair is 270px
+ * at this width — see the `--store-badge-height` override beside `.store-badge`,
+ * which is the other half of the same fix.
+ */
+@media (max-width: 30rem) {
+  .app-card {
+    padding: var(--space-md, 1rem);
+  }
+
+  /* Smaller with it, and a tighter gap: 64px of icon plus 1rem either side is a
+     third of a 375px card, and the sentence beside it was setting four words to
+     the line. */
+  .app-card__icon {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .app-card--iconed {
+    gap: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  }
+
+  /*
+   * On a phone the icon keeps the name company and nothing else.
+   *
+   * A 48px icon and its gap take 56px out of a 307px card, which leaves 251 for
+   * the two store badges — they need 270 side by side, so they were dropping one
+   * under the other and the card grew a third of its height for nothing.
+   *
+   * `display: contents` lifts the body's children into the card's own grid so
+   * the sentence and the badges can span both columns, sitting under the icon
+   * rather than beside it. The alternative was a second wrapper element in the
+   * markup that exists only below 30rem.
+   */
+  .app-card__body {
+    display: contents;
+  }
+
+  /* Centred against the icon rather than aligned to its top edge: the name is
+     one short line and a 48px square, and top-aligning them leaves the word
+     riding high above the middle of the picture. */
+  .app-card__name {
+    align-self: center;
+  }
+
+  .app-card__what,
+  .app-card__unreleased,
+  .app-card__more,
+  .app-card .store-badges {
+    grid-column: 1 / -1;
+  }
+
+  /* The body's own top margins did the spacing when it was a block; as grid
+     items the `gap` does, and both together is a gap and a half. */
+  .app-card__what,
+  .app-card .store-badges {
+    margin-top: 0;
+  }
+}
+
+/* The badges sit under the sentence; on the first card of a stack the list's own
+   top margin is enough, so nothing extra is added here. */
+
+/* ---- /more: the links the header keeps in one menu ---------------------- *
+ *
+ * The touch fallback for the "More" dropdown, and the same three links. Card
+ * shaped like `.form-card` without its picture — the whole card is one link, so
+ * hover, focus and the arrow all belong to it.
+ */
+
+.more-cards {
+  display: grid;
+  gap: var(--space-sm, 0.85rem);
+  margin: var(--space-lg, 1.75rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.more-card {
+  display: grid;
+  gap: 0.2rem;
+  padding: var(--space-md, 1rem) var(--space-lg, 1.75rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.more-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-rule, #e0cac3));
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.08));
+}
+
+.more-card:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+.more-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.1875rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #2c2320);
+  transition: color 150ms ease;
+}
+
+.more-card:hover .more-card__title {
+  color: var(--color-accent, #992a21);
+}
+
+/*
+ * Two arrows, one glyph. The link that stays on the site gets the arrow the rest
+ * of the site uses; the one that leaves gets it turned up and out, which is the
+ * conventional mark for "this opens elsewhere". Neither carries the meaning on
+ * its own — the words "(opens in a new tab)" are in the link for a screen
+ * reader, because an icon cannot say that.
+ */
+.more-card__arrow,
+.more-card__out {
+  flex-shrink: 0;
+  color: var(--color-accent, #992a21);
+  transition: transform 180ms ease;
+}
+
+.more-card__out {
+  transform: rotate(-45deg);
+}
+
+.more-card:hover .more-card__arrow {
+  transform: translateX(3px);
+}
+
+.more-card:hover .more-card__out {
+  transform: rotate(-45deg) translateX(3px);
+}
+
+.more-card__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ---- the giving overlay ------------------------------------------------ *
+ *
+ * The frame Tithe.ly's form is rendered in. `give.js` ships a stylesheet for
+ * this and we do not load it — see the long note on `GiveButton`: their script
+ * declines to open a modal at all on Chrome, on Safari, or on a phone, so the
+ * overlay is ours and so are its styles.
+ *
+ * No `z-index` anywhere in here. It is a `<dialog>` opened with `showModal`,
+ * which puts it in the top layer — above the sticky masthead and everything else
+ * this stylesheet stacks, regardless of what those stack at.
+ */
+
+.give-modal {
+  /*
+   * `border: 0` because a dialog has a default 2px inset one, and `padding: 0`
+   * because the iframe has to reach the panel's edge — Tithe.ly's page brings
+   * its own margins and a second set inside ours reads as a mistake.
+   */
+  border: 0;
+  padding: 0;
+  /* A dialog's default `max-width` is `calc(100% - 6px - 2em)` and its default
+     margin is `auto`, which centres it; both are kept. What is not is the
+     default `width: fit-content`, which for an iframe is zero. */
+  width: min(38rem, calc(100% - 2rem));
+  height: min(46rem, calc(100% - 2rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-paper-raised, #fdf6f3);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--color-deep, #481010) 45%, transparent);
+}
+
+.give-modal::backdrop {
+  /*
+   * Custom properties do not inherit into `::backdrop` in every engine that
+   * supports the pseudo-element — it is not a descendant of anything — so this
+   * is one of the few places in the stylesheet where a literal colour is right
+   * rather than lazy. It is `--color-deep` at 72%.
+   */
+  background: rgb(72 16 16 / 72%);
+}
+
+/*
+ * The strip above the form: the escape hatch on one side, Close on the other.
+ *
+ * The escape hatch is not decoration. Tithe.ly's own script sends Chrome and
+ * Safari to a top-level page rather than a frame, and this overlay overrides
+ * that for everyone — so the path they prefer has to stay one click away for
+ * anyone whose card, wallet, or browser will not cooperate inside the frame.
+ */
+.give-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  background: var(--color-paper-sunken, #eeddd7);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.give-modal__escape {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.give-modal__close {
+  flex: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  padding: var(--space-xs, 0.35rem) var(--space-sm, 0.75rem);
+  background: transparent;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+.give-modal__close:hover {
+  border-color: var(--color-ink-faint, #6f5f5a);
+}
+
+.give-modal__frame {
+  flex: 1;
+  /*
+   * `min-height: 0` on a flex child that is an iframe. An iframe's intrinsic
+   * height is 150px and `flex: 1` alone will not shrink it below that, so on a
+   * short window the form overflowed the panel it is supposed to fill. The same
+   * bug `minmax(0, 1fr)` fixes in the admin grids.
+   */
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  /* The form's own ground is white; matching it means no flash of paper-beige
+     while it loads. */
+  background: #fff;
+}
+
+/*
+ * Full screen on a phone. A donation form is a column of inputs with a keyboard
+ * under it, and 1rem of backdrop down each side of that buys nothing.
+ */
+@media (max-width: 32rem) {
+  .give-modal {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+  }
+}
+
+/* ---- the church calendar ------------------------------------------------
+ *
+ * Two views of one schedule — `sched-week` and `sched-month` — plus the bar
+ * that switches between them. See features/calendar/.
+ *
+ * The prefix is `schedule`/`sched-` and not `cal`/`week`/`month`, which is not
+ * fussiness: there is one stylesheet for the whole site and no CSS modules, so
+ * a generic class name is a site-wide claim. `.week` and `.week__day` were
+ * already taken — by the homepage bulletin and by the service times — and
+ * reusing them would have restyled the front page from here.
+ */
+
+/* ---- the bar: view switch, stepper, today ------------------------------- */
+
+.schedule {
+  display: grid;
+  /*
+   * `minmax(0, 1fr)` and not the implicit `auto`, which is the whole reason
+   * this line is spelled out.
+   *
+   * A grid item's `min-width` defaults to `auto`, meaning "never narrower than
+   * my content" — and one of the children here is the month view, a 44rem table
+   * inside a horizontal scroller. Left implicit, the column widened to the
+   * table and the *document* scrolled sideways at 375px instead of the grid
+   * scrolling inside it: measured at `documentElement.scrollWidth` 667 against
+   * a 375 viewport, with no single element reported as overflowing, because
+   * every wide element was correctly inside the scroller. The scroller itself
+   * was the wrong width.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg, 1.5rem);
+}
+
+.schedule__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+  padding-bottom: var(--space-md, 1rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+}
+
+/*
+ * The Week/Month switch, as one segmented control rather than two buttons.
+ *
+ * A shared border with a divider between the halves says "pick one of these
+ * two"; two separate buttons say "here are two actions", which is the wrong
+ * reading — switching view does not *do* anything, it changes what you are
+ * looking at.
+ */
+.schedule__views {
+  display: inline-flex;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  padding: 3px;
+}
+
+.schedule__view {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.45rem 1.1rem;
+  border-radius: var(--radius-full, 999px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 500;
+  color: var(--color-ink-soft, #4b413e);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.schedule__view:hover {
+  color: var(--color-ink, #1c1614);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+}
+
+.schedule__view--on,
+.schedule__view--on:hover {
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.schedule__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.25rem);
+}
+
+.schedule__step {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 2.5rem square: the arrows sit between two other controls and are the most
+     likely thing on this page to be tapped by mistake on a phone. */
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink-soft, #4b413e);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.schedule__step:hover:not(:disabled) {
+  background: var(--color-paper-sunken, #eeddd7);
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  color: var(--color-ink, #1c1614);
+}
+
+.schedule__step:disabled,
+.schedule__today:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/*
+ * The range heading. `min-width` rather than a fixed one, so stepping from
+ * "August 2026" to "May 2026" does not shuffle the arrows sideways by the
+ * width difference of the two month names — a stepper whose buttons move as
+ * you use it is a stepper you have to re-aim at every click.
+ */
+.schedule__range {
+  margin: 0;
+  min-width: 15ch;
+  text-align: center;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.1875rem);
+  font-weight: 500;
+  color: var(--color-ink, #1c1614);
+}
+
+.schedule__today {
+  appearance: none;
+  cursor: pointer;
+  margin-left: var(--space-xs, 0.25rem);
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.schedule__today:hover:not(:disabled) {
+  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink, #1c1614);
+}
+
+.schedule__loading {
+  margin: 0;
+  padding: var(--space-xl, 2.5rem) 0;
+  text-align: center;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+/* ---- the servants band -------------------------------------------------- */
+
+/*
+ * Only rendered for a signed-in servant, so it is allowed to look like
+ * something that was switched on rather than like part of the furniture.
+ * Azure, which is the palette's one non-liturgical colour and is used here for
+ * exactly the reason it exists: this is *not* a parish-facing distinction.
+ */
+.schedule__servants {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs, 0.25rem) var(--space-md, 1rem);
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  border-left: 3px solid var(--color-azure, #2f5d8a);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  background: var(--color-azure-soft, #e9eff6);
+}
+
+.schedule__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  cursor: pointer;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 500;
+  color: var(--color-azure-deep, #16304d);
+}
+
+.schedule__switch input {
+  /* The theme's own accent would tint this liturgical red, which is the one
+     colour that must not mark a servants-only control. */
+  accent-color: var(--color-azure, #2f5d8a);
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.schedule__servants-note {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-azure-deep, #16304d);
+  opacity: 0.85;
+}
+
+/* ---- the legend --------------------------------------------------------- */
+
+.schedule__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.schedule__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.35rem);
+}
+
+.schedule__swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: var(--radius-full, 999px);
+}
+
+/*
+ * The three kinds, and the servants marking.
+ *
+ * Liturgical red for the services, because that is what the colour means in
+ * this church and nowhere else on the site does it mean anything else. Gold for
+ * teaching, azure for gathering — the palette's one colour that is not
+ * liturgical, which is exactly right for the volleyball tournament.
+ */
+.schedule__swatch--liturgy {
+  background: var(--color-accent, #992a21);
+}
+
+.schedule__swatch--study {
+  background: var(--color-gold, #b08d43);
+}
+
+.schedule__swatch--gathering {
+  background: var(--color-azure, #2f5d8a);
+}
+
+/* A ring rather than a fill: "servants only" sits *on top of* a kind, so it
+   must not read as a fourth kind. */
+.schedule__swatch--servants {
+  background: transparent;
+  border: 2px dashed var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the week view ------------------------------------------------------ */
+
+/* ---- the week wheel ------------------------------------------------------ */
+
+/*
+ * An iOS-picker wheel: the centred day sharp and full, its neighbours tilted
+ * away, faded, and collapsed to a line, with pips down the side.
+ *
+ *   --wheel-slot  how tall one day is. **Set from JavaScript**, because it is
+ *                 whatever height the grid below settled on — the busiest day
+ *                 in the week. The fallback is only for the first paint.
+ *   --wheel-peek  how much of the day above and below shows. One collapsed line
+ *                 plus its padding.
+ */
+.sched-wheel-frame {
+  --wheel-slot: 14rem;
+  /* Tighter now that a peek is a date and a row of dots rather than a sentence. */
+  --wheel-peek: 2.25rem;
+  position: relative;
+  /* Room down the right for the pips, which are positioned into it. */
+  padding-right: 2.25rem;
+}
+
+/*
+ * The band across the middle, behind the wheel.
+ *
+ * Two hairlines rather than a filled strip: a picker's selection band on an
+ * opaque ground is a fill, but here it sits over the page's own paper and a
+ * fill would put a second background behind the centred card. The rules alone
+ * say "this row is the one" and nothing else.
+ */
+.sched-wheel-frame::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 2.25rem;
+  top: var(--wheel-peek);
+  height: var(--wheel-slot);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* The viewport: exactly one slot, plus a strip of the day either side. */
+.sched-wheel {
+  position: relative;
+  z-index: 1;
+  height: calc(var(--wheel-slot) + 2 * var(--wheel-peek));
+  overflow-y: auto;
+  /*
+   * `mandatory` is safe because every slot is exactly one row tall and rows are
+   * uniform, so a slot always fits the snapport. An oversized snap area is what
+   * traps a reader partway down a long day, and there is no such area here.
+   */
+  scroll-snap-type: y mandatory;
+  /* The perspective the tilt below is rendered in. On the scroller rather than
+     on each slot, so all seven share one vanishing point instead of each
+     rotating about its own. */
+  perspective: 60rem;
+  perspective-origin: center center;
+  /*
+   * Fades the wheel out at both ends instead of cutting it off square, which is
+   * most of what makes a picker look like a wheel rather than a list in a box.
+   */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--wheel-peek),
+    #000 calc(100% - var(--wheel-peek)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--wheel-peek),
+    #000 calc(100% - var(--wheel-peek)),
+    transparent 100%
+  );
+  /* The scrollbar is noise on a wheel — the pips say it scrolls, and a bar down
+     the side of a picker is not a thing. */
+  scrollbar-width: none;
+}
+
+.sched-wheel::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * The track, and the one declaration the whole layout rests on.
+ *
+ * `grid-auto-rows: 1fr` in a grid whose own height is indefinite sizes every
+ * flexible row to the *largest* row's max-content height. So all seven slots
+ * come out identical and as tall as the busiest day — uniform, which the wheel
+ * needs, and never clipped, which a fixed guess could not promise.
+ *
+ * The height must stay indefinite for that to hold. Give this element a height
+ * and `1fr` starts dividing that height between the rows instead, which is a
+ * different behaviour that looks almost right until a day overflows.
+ */
+.sched-wheel__track {
+  display: grid;
+  grid-auto-rows: 1fr;
+  list-style: none;
+  margin: 0;
+  /*
+   * The padding is what lets the first and last days reach the centre. Without
+   * it Monday can never be centred — there is nothing above it to scroll — and
+   * the wheel opens jammed against its top.
+   */
+  padding: var(--wheel-peek) 0;
+}
+
+.sched-wheel__track:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent, #992a21) 55%, transparent);
+  outline-offset: -2px;
+  border-radius: var(--radius-lg, 16px);
+}
+
+/*
+ * One day.
+ *
+ * Only `transform` and `opacity` respond to the distance from the centre, and
+ * that is deliberate: both are composited, so neither can change the layout and
+ * feed back into which slot is centred.
+ */
+.sched-wheel__slot {
+  scroll-snap-align: center;
+  /*
+   * One day per gesture, however hard the flick.
+   *
+   * With `mandatory` snapping alone a single trackpad swipe carries through
+   * three or four days and lands wherever the momentum ran out, which is what
+   * made the wheel feel twitchy — a small movement and a large one were hard to
+   * tell apart. `always` makes the container stop at the next snap point rather
+   * than passing it, so the wheel steps a day at a time and the pips can be
+   * used for anything further.
+   */
+  scroll-snap-stop: always;
+  /*
+   * One grid cell with both forms of the day stacked in it — see the note in
+   * WeekView.tsx. The card is what sizes the row and it is always in flow; the
+   * peek is laid over it.
+   */
+  display: grid;
+  grid-template-areas: 'day';
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  transform:
+    rotateX(calc(var(--wheel-offset, 0) * -14deg))
+    translateZ(calc(var(--wheel-depth, 0) * -2rem))
+    scale(calc(1 - var(--wheel-depth, 0) * 0.04));
+  opacity: max(0.2, calc(1 - var(--wheel-depth, 0) * 0.42));
+  transition:
+    transform 220ms ease-out,
+    opacity 220ms ease-out;
+}
+
+.sched-wheel__slot.is-centred {
+  transform: none;
+  opacity: 1;
+}
+
+/* Somebody who has asked not to be moved gets the wheel as a plain list: no
+   tilt, no depth, and the fade alone to mark the centre. */
+@media (prefers-reduced-motion: reduce) {
+  .sched-wheel__slot {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ---- the centred day ----------------------------------------------------- */
+
+.sched-wheel__card {
+  grid-area: day;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.4rem;
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: var(--shadow-md, 0 2px 8px rgba(28, 22, 20, 0.08));
+}
+
+.sched-wheel__slot.is-today .sched-wheel__card {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+  box-shadow:
+    inset 3px 0 0 var(--color-accent, #992a21),
+    var(--shadow-md, 0 2px 8px rgba(28, 22, 20, 0.08));
+}
+
+.sched-wheel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.5rem);
+  padding-bottom: var(--space-sm, 0.5rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 70%, transparent);
+}
+
+.sched-wheel__weekday {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.1875rem);
+  font-weight: 500;
+  color: var(--color-ink, #1c1614);
+}
+
+.sched-wheel__slot.is-today .sched-wheel__weekday {
+  color: var(--color-accent, #992a21);
+}
+
+.sched-wheel__date {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-wheel__num {
+  font-size: var(--type-subheading, 1.1875rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * The only cap left on how tall a day may be.
+ *
+ * Rows size themselves to the busiest day, so without this a day with twenty
+ * things on it would make all seven slots twenty things tall and the wheel
+ * would be taller than the screen. Past this the centred list scrolls, which on
+ * real data does not happen — the parish's busiest day is six.
+ */
+.sched-wheel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.sched-wheel__list > li + li {
+  margin-top: 2px;
+}
+
+.sched-wheel__badge {
+  display: inline-block;
+  margin-left: var(--space-sm, 0.5rem);
+  padding: 0.1rem 0.5rem;
+  vertical-align: 0.15em;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+}
+
+.sched-wheel__none {
+  margin: 0;
+  align-self: center;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- a day above or below the centre ------------------------------------- */
+
+/*
+ * The collapsed line sits at the edge of its slot nearest the centre — the
+ * bottom of the slot above, the top of the slot below — because that strip is
+ * the only part of a neighbour that is ever on screen.
+ */
+/*
+ * `visibility`, not `display`, on both sides of the swap.
+ *
+ * A `display: none` card contributes no height, and the row is sized from the
+ * card — so hiding it that way would collapse every slot that is not centred
+ * and put the uniformity back where it started. Hidden-but-present is the
+ * whole trick.
+ */
+.sched-wheel__slot:not(.is-centred) .sched-wheel__card {
+  visibility: hidden;
+}
+
+.sched-wheel__slot.is-centred .sched-wheel__peek {
+  visibility: hidden;
+}
+
+.sched-wheel__slot.is-above .sched-wheel__peek {
+  align-self: end;
+  padding-bottom: var(--space-sm, 0.5rem);
+}
+
+.sched-wheel__slot.is-below .sched-wheel__peek {
+  align-self: start;
+  padding-top: var(--space-sm, 0.5rem);
+}
+
+.sched-wheel__peek {
+  grid-area: day;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0;
+  padding: 0 var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+  /* One line, whatever the title's length — the wheel's neighbours are a hint,
+     and a wrapped one would sit unevenly against the slot's edge. */
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sched-wheel__peek-day {
+  flex: none;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-wheel__peek-day.is-today {
+  color: var(--color-accent, #992a21);
+}
+
+.sched-wheel__peek-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sched-wheel__peek-today {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+}
+
+.sched-wheel__peek-more {
+  flex: none;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-wheel__dot {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-rule, #e0cac3);
+}
+
+.sched-wheel__dot--liturgy {
+  background: var(--color-accent, #992a21);
+}
+
+.sched-wheel__dot--study {
+  background: var(--color-gold, #b08d43);
+}
+
+.sched-wheel__dot--gathering {
+  background: var(--color-azure, #2f5d8a);
+}
+
+/* ---- the pips ------------------------------------------------------------ */
+
+/*
+ * Seven circles down the right, biggest at the centre.
+ *
+ * They are the wheel's only visible sign that it scrolls — the scrollbar is
+ * hidden, because a bar down the side of a picker is not a thing — and they say
+ * where in the week you are without having to read the date.
+ */
+.sched-pips {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: calc(var(--wheel-slot) + 2 * var(--wheel-peek));
+  width: 2.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.sched-pips__pip {
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-full, 999px);
+  /*
+   * Size falls away with distance from the centre — 0.75rem at the middle down
+   * to 0.33rem three days out, which is the gradient that makes a column of
+   * circles read as a wheel position rather than as a list of bullets.
+   */
+  width: calc(0.75rem - var(--pip-depth, 0) * 0.14rem);
+  height: calc(0.75rem - var(--pip-depth, 0) * 0.14rem);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 38%, transparent);
+  transition:
+    width 180ms ease-out,
+    height 180ms ease-out,
+    background-color 180ms ease-out;
+}
+
+/* A day with nothing on it is hollow, so the column also reads as how busy the
+   week is. */
+.sched-pips__pip.is-quiet {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 45%, transparent);
+}
+
+.sched-pips__pip.is-today {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 55%, transparent);
+}
+
+.sched-pips__pip.is-centred {
+  background: var(--color-accent, #992a21);
+}
+
+.sched-pips__pip:hover {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.sched-pips__pip:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+}
+
+/* ---- an entry in the week view ------------------------------------------ */
+
+/*
+ * One row per entry: time, title, photograph.
+ *
+ * This was a three-deep stack — end time under start time, then the location,
+ * the note and the contact each on their own line — and it made a Saturday 320
+ * pixels tall inside a wheel that has to be as tall as the busiest day. Flat is
+ * about half that, and the trailing detail is not lost: it runs on after the
+ * title, dimmed, and takes no height when it is absent.
+ */
+.sched-entry {
+  --sched-tone: var(--color-rule, #e0cac3);
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  padding: 0.3rem 0.4rem 0.3rem var(--space-sm, 0.5rem);
+  border-left: 3px solid var(--sched-tone);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  transition: background-color 120ms ease;
+}
+
+/* A whisper of the entry's own colour on hover — enough to confirm which row
+   the cursor is on in a list of five, and not enough to be a highlight. */
+.sched-entry:hover {
+  background: color-mix(in srgb, var(--sched-tone) 7%, transparent);
+}
+
+/*
+ * Colour by kind, carried on a left rule rather than a background wash.
+ *
+ * A rule is enough to group a week by eye and leaves the paper alone; a wash on
+ * every row puts a tint behind every line of text on the page and drags the
+ * contrast down with it. `--sched-tone` is set per kind and read by the rule,
+ * the start time and the hover — so a kind is one declaration, not four.
+ */
+.sched-entry--liturgy {
+  --sched-tone: var(--color-accent, #992a21);
+}
+
+.sched-entry--study {
+  --sched-tone: var(--color-gold, #b08d43);
+}
+
+.sched-entry--gathering {
+  --sched-tone: var(--color-azure, #2f5d8a);
+}
+
+/* No colour claim: the classifier could not place the title, and a wrong colour
+   is worse than none. A neutral rule still separates the row. */
+.sched-entry--other {
+  --sched-tone: var(--color-rule, #e0cac3);
+}
+
+/*
+ * Servants-only, as a marking on top of a kind rather than a kind of its own.
+ *
+ * Dashed, so it reads as internal and provisional, and so it composes with
+ * whichever colour the entry already has — a servants-only liturgy is still red.
+ */
+.sched-entry--servants {
+  border-left-style: dashed;
+  border-left-color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-entry__when {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  /* Tabular figures are the entire reason the times line up, and the reason a
+     day can be scanned down its left edge instead of read. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sched-entry__start {
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  /* Mixed toward the ink rather than set to the tone outright: gold at full
+     strength on paper fails contrast for text this size, and a time nobody can
+     read is worse than a time that is merely warm. */
+  color: color-mix(in srgb, var(--sched-tone) 55%, var(--color-ink, #1c1614));
+}
+
+.sched-entry__allday {
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--sched-tone) 55%, var(--color-ink, #1c1614));
+}
+
+/*
+ * Title and trailing detail on one line — wrapping to a second only if the
+ * title needs it.
+ *
+ * The title used to be clipped with an ellipsis to hold every row to one line.
+ * That is the wrong thing to spend: a truncated service name is not a shorter
+ * version of the event, it is an unidentifiable one. The row grows only when a
+ * title genuinely does not fit, which at this measure is almost never — 0 of 19
+ * on a real week.
+ *
+ * The trailing detail is still clipped, below. A note or a contact is
+ * supplementary and the dialog has all of it; the title is the event.
+ */
+.sched-entry__what {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.45rem;
+}
+
+.sched-entry__title {
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-body, 1.0625rem);
+  line-height: var(--leading-snug, 1.3);
+  color: var(--color-ink, #1c1614);
+  /* `normal`, for the reason set out on the month chip's title: `break-word`
+     does not reliably keep a word whole even when it would fit. */
+  overflow-wrap: normal;
+}
+
+.sched-entry__title a {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.sched-entry__title a:hover {
+  color: var(--color-accent, #992a21);
+  text-decoration-color: currentColor;
+}
+
+.sched-entry__meta,
+.sched-entry__contact {
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-entry__contact a {
+  color: var(--color-accent, #992a21);
+  text-decoration-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+/*
+ * The servants marker. Azure, which is the palette's one non-liturgical colour,
+ * used here for exactly the reason it exists: this is an internal distinction
+ * and must not borrow the accent red that means "the Church".
+ */
+.sched-entry__tag {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-azure, #2f5d8a);
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+}
+
+/*
+ * The bulletin's photograph, at the height of the row it sits in.
+ *
+ * 2rem rather than the 3.5rem it was: the row is a single line now, and a
+ * thumbnail taller than the line would set the row's height and undo the whole
+ * point. Hidden below 30rem, where the column is the full measure and a picture
+ * beside it leaves the title three words wide.
+ */
+.sched-entry__thumb {
+  display: none;
+}
+
+/* Titles wrap everywhere now, so all a phone needs is a narrower time column
+   and the rows aligned to the first line rather than centred on two. */
+@media (max-width: 29.999rem) {
+  .sched-entry {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    align-items: baseline;
+  }
+}
+
+@media (min-width: 30rem) {
+  .sched-entry__thumb {
+    display: block;
+    width: 2rem;
+    height: 2rem;
+    object-fit: cover;
+    border-radius: var(--radius-sm, 4px);
+    border: 1px solid var(--color-rule, #e0cac3);
+    background: var(--color-paper-sunken, #eeddd7);
+  }
+}
+
+/* ---- the month view ----------------------------------------------------- */
+
+/*
+ * The scroll container, on the table's *parent*: a table cannot be its own
+ * scroll container, and `overflow-x` on the table itself does nothing.
+ *
+ * Note that this is also why the day detail is a panel *below* the grid rather
+ * than a popover inside it — `overflow-x: auto` resolves the other axis to
+ * `auto` too, so anything absolutely positioned in a cell is clipped. See the
+ * note in MonthView.tsx.
+ */
+.sched-month-scroll {
   overflow-x: auto;
-  /* Room for the focus ring on a link in the leftmost column, which a plain
+  /* Room for the focus ring on a day in the leftmost column, which a plain
      `overflow-x: auto` would otherwise clip. */
   padding: 2px;
   margin-inline: -2px;
 }
 
-.calendar {
+.sched-month {
   width: 100%;
-  min-width: 44rem;
+  /* Narrower than the old 44rem: the cells hold a date and a few dots now, not
+     four lines of text, so they fit a phone with room to spare and the grid
+     mostly stops needing to be pushed sideways at all. */
+  min-width: 21rem;
   border-collapse: collapse;
-  /* Fixed, so seven equal columns are seven equal columns regardless of whether
-     one Wednesday has four events in it and the rest have none. Without this a
-     single long event title widens its column and skews the whole month. */
+  /* Fixed, so seven equal columns stay seven equal columns regardless of
+     whether one Wednesday has five entries in it and the rest have none. */
   table-layout: fixed;
 }
 
-.calendar + .calendar-scroll,
-.calendar-scroll + .calendar-scroll {
-  margin-top: var(--space-xl, 2.5rem);
-}
-
-/*
- * The month name. A `<caption>` rather than an `<h2>` above the table, so the
- * heading is bound to the table it names — a screen reader announces it on
- * entering the grid, which is exactly when "August 2026" is needed.
- */
-.calendar__caption {
-  caption-side: top;
-  text-align: left;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.25rem);
-  color: var(--color-ink, #1c1614);
-  padding-bottom: var(--space-sm, 0.75rem);
-}
-
-.calendar th {
+.sched-month th {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
-  font-weight: 500;
-  color: var(--color-ink-faint, #6f5f5a);
-  text-align: left;
-  padding: 0 0 var(--space-xs, 0.4rem) var(--space-xs, 0.4rem);
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink, #1c1614));
+  text-align: center;
+  padding: 0 0 var(--space-xs, 0.35rem);
   border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
 }
 
 /* The dotted underline browsers put under `<abbr title>` reads as a mistake in
-   a table header. The full name is still in the title attribute for anything
-   that surfaces it. */
-.calendar th abbr {
+   a table header. The full name is still in the title attribute. */
+.sched-month th abbr {
   text-decoration: none;
 }
 
-.calendar__cell {
-  vertical-align: top;
+.sched-month__cell {
   width: calc(100% / 7);
-  height: 6.5rem;
-  padding: var(--space-xs, 0.4rem);
-  border: 1px solid var(--color-rule, #e0cac3);
-  /* Only the outer edge of the grid should read as an edge; the inner lines are
-     the grid itself. Collapsed borders give one shared hairline throughout. */
-  border-top: 0;
-}
-
-/* Days outside the month are ruled but blank — the shape of the month is
-   information, so the cells stay rather than being dropped. */
-.calendar__cell--empty {
-  background: color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 45%, transparent);
-}
-
-.calendar__cell--has {
-  background: var(--color-paper-raised, #fdf7f4);
-}
-
-.calendar__day {
-  display: block;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-  margin-bottom: var(--space-xs, 0.3rem);
-}
-
-/* A day with something on it says so before you read the entry. */
-.calendar__cell--has .calendar__day {
-  color: var(--color-accent, #992a21);
-  font-weight: 600;
-}
-
-.calendar__events {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.calendar__event {
-  display: block;
-  padding: 3px 5px;
-  border-radius: var(--radius-sm, 4px);
-  border-left: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 10%, transparent);
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  line-height: var(--leading-snug, 1.3);
-  color: var(--color-ink, #1c1614);
-  text-decoration: none;
-}
-
-.calendar__event:hover {
-  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
-}
-
-.calendar__time {
-  display: block;
-  color: var(--color-ink-faint, #6f5f5a);
-  font-variant-numeric: tabular-nums;
+  /*
+   * `height: 1px` with `height: 100%` on the child is the long-standing way to
+   * make a table cell's contents fill the cell.
+   *
+   * A row's cells are already equal height — that is what a table row is — but
+   * the *box inside* each was sized to its own contents, so in a week where
+   * Saturday has six services and Wednesday has one, Wednesday's hover
+   * background was a third the height of its neighbour's and the opened row
+   * looked ragged. The 1px is never used: the row expands to its content
+   * regardless, and it exists only to give the percentage something definite to
+   * resolve against.
+   */
+  height: 1px;
+  padding: 2px;
+  /* No cell borders at all any more. Thirty-five ruled boxes was most of what
+     made the grid loud; the dates and the dots carry the structure on their
+     own, and the row rhythm comes from the cells' own even height. */
+  border: 0;
 }
 
 /*
- * Titles are clamped to two lines. A cell is a fixed height, and one event
- * called "Divine Liturgy for the feast of St. Marina the nun" would otherwise
- * push its row to three times the height of every other row in the month.
+ * The whole of a day, as one target.
+ *
+ * A `<button>` on the days that have something and a `<span>` on the ones that
+ * do not — same box either way, so the grid does not go ragged. `width: 100%`
+ * and a fixed height because a table cell will not stretch its child otherwise,
+ * and a hover target that is only as big as the date is a hover target nobody
+ * hits.
  */
-.calendar__title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+.sched-month__pick {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: var(--space-xs, 0.35rem) 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.sched-month__pick--empty {
+  cursor: default;
+}
+
+/* Marks the one day the cursor is actually on, inside the opened row. */
+.sched-month__cell--has .sched-month__pick:hover {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 70%, transparent);
+}
+
+.sched-month__num {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-soft, #4b413e);
+  line-height: 1;
+}
+
+/* A day with something on it says so before you read the dots. */
+.sched-month__cell--has .sched-month__num {
+  color: var(--color-ink, #1c1614);
+  font-weight: 600;
+}
+
+/*
+ * Days from the months either side read exactly like the rest.
+ *
+ * They were at 40% opacity, which greyed out a third of the first and last
+ * rows — and those days are as real as any other. A week that straddles two
+ * months is still one week, and half of it being faded made the row look
+ * broken rather than adjacent. Which month you are looking at is what the
+ * heading above the grid is for.
+ */
+
+/*
+ * Today: a filled disc behind the date, which is the one convention every
+ * calendar shares and the only place on this grid that earns the accent.
+ */
+.sched-month__cell--today .sched-month__num {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: -0.2rem 0;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-weight: 700;
+}
+
+/* ---- the dots ----------------------------------------------------------- */
+
+.sched-month__dots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  /* Reserves the row so a day with no entries is the same height as one with
+     five, which is what keeps the grid from going lumpy. */
+  min-height: 0.5rem;
+}
+
+.sched-month__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-rule, #e0cac3);
+}
+
+.sched-month__dot--liturgy {
+  background: var(--color-accent, #992a21);
+}
+
+.sched-month__dot--study {
+  background: var(--color-gold, #b08d43);
+}
+
+.sched-month__dot--gathering {
+  background: var(--color-azure, #2f5d8a);
+}
+
+
+/* ---- an opened week ------------------------------------------------------ */
+
+.sched-month-frame {
+  position: relative;
+}
+
+/*
+ * Closed rows are compact; the open one grows to hold its entries.
+ *
+ * The first attempt reserved the open height on every row so the grid could
+ * never move. It never moved and it looked terrible — five weeks of nearly
+ * empty boxes with a date floating in the middle of each, which is not
+ * "subtle", it is abandoned.
+ *
+ * Growing on hover turns out to be safe, which the reserved version was written
+ * to avoid and did not need to be. Expanding a row only moves the rows *below*
+ * it, so the row you are pointing at never moves out from under the cursor:
+ * enter a row from above and it grows downward; enter it from below and the row
+ * you just left collapses above it, which moves it *up*, further under the
+ * pointer rather than away from it. There is no arrangement that hands the
+ * cursor back to the row it came from.
+ */
+.sched-month__pick {
+  min-height: 3.25rem;
+  justify-content: center;
+}
+
+.sched-month tr.is-open .sched-month__pick {
+  min-height: 4.5rem;
+  justify-content: flex-start;
+  align-items: stretch;
+  background: var(--color-paper-raised, #fdf7f4);
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+}
+
+.sched-month tr.is-open .sched-month__num {
+  text-align: center;
+}
+
+.sched-month__entries {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  min-width: 0;
+}
+
+/*
+ * The time and the title on one run of text that wraps.
+ *
+ * Three arrangements, in the order they were tried and why the last one wins.
+ * The time *above* the title doubled the height of every chip, and with no cap
+ * on entries a six-service Saturday made its row 416px tall. Side by side in
+ * two columns halved that, but the title then had about 110px to live in and
+ * was cut off mid-word — "St Philopater & St Mina Online Bible Study" is not
+ * recoverable from "St Philopater & St M…".
+ *
+ * Inline is both: the time is a run of bold text and the title follows it, so a
+ * long one wraps to a second line using the *whole* width of the cell rather
+ * than a column beside the time. Nothing is ever cut off, and a chip only grows
+ * when it has something to say — most of them stay one line.
+ */
+.sched-month__entry {
+  --sched-tone: var(--color-rule, #e0cac3);
+  display: block;
+  min-width: 0;
+  padding: 1px 3px 1px 4px;
+  border-left: 2px solid var(--sched-tone);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  background: color-mix(in srgb, var(--sched-tone) 9%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  /*
+   * `--type-small`, the same size as the date at the top of the cell.
+   *
+   * This walked up from 11px through 12 and 13, each of them still reading as
+   * fine print against the dates. At 15 the entries and the date they sit under
+   * are one piece of text rather than a heading with a footnote — which is what
+   * the month grid is for, now that it shows every event rather than a sample.
+   */
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.4;
+  text-align: left;
+  /* A title that wraps should indent its continuation under itself rather than
+     running back under the time, which reads as a second entry. */
+  text-indent: -0.75rem;
+  padding-left: calc(4px + 0.75rem);
+}
+
+.sched-month__entry--liturgy {
+  --sched-tone: var(--color-accent, #992a21);
+}
+
+.sched-month__entry--study {
+  --sched-tone: var(--color-gold, #b08d43);
+}
+
+.sched-month__entry--gathering {
+  --sched-tone: var(--color-azure, #2f5d8a);
+}
+
+.sched-month__entry-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--sched-tone) 55%, var(--color-ink, #1c1614));
+  /* Keeps "7:30 PM" from breaking across the wrap. */
+  white-space: nowrap;
+}
+
+.sched-month__entry-time::after {
+  content: ' ';
+}
+
+/*
+ * Wraps rather than being cut off.
+ *
+ * It was clipped with an ellipsis, which kept every chip exactly one line tall
+ * and cost more than it saved: a truncated service name is not a shorter
+ * version of the event, it is an unidentifiable one. Wrapping costs a line only
+ * on the titles that need it.
+ */
+.sched-month__entry-title {
+  color: var(--color-ink, #1c1614);
+  /*
+   * Plain `normal` — no `overflow-wrap` at all, and this was arrived at the
+   * hard way.
+   *
+   * `anywhere` was tried first and split ordinary words. `break-word` was tried
+   * next on the understanding that it only breaks a word too long for a line of
+   * its own — and inside a `table-layout: fixed` cell it does not honour that.
+   * Measured directly: the cell gives a line 128px, "Transfiguration" is 104px
+   * and fits, and with `break-word` Chrome still rendered "Transfigurat / ion
+   * Feast" rather than moving the word down. Setting `normal` on the same
+   * element put the whole word on one line.
+   *
+   * What `normal` gives up is protection against a word longer than the column,
+   * which would overflow instead of breaking. Nothing in a parish calendar is:
+   * the longest word here is 104px against 128px of room. A rare overflow is a
+   * far smaller wart than every long title being split.
+   */
+  overflow-wrap: normal;
+}
+
+/* ---- the schedule's foot, and the staff controls ------------------------ */
+
+.schedule__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+}
+
+.sched-add__open {
+  flex: none;
+}
+
+/* The title is a button now, so it has to be un-buttoned back into text. */
+button.sched-entry__title {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-weight: inherit;
+}
+
+button.sched-entry__title:hover {
+  color: var(--color-accent, #992a21);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+button.sched-entry__title:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Same, for an entry inside an opened month cell. */
+/*
+ * Un-buttoning the chip, *without* `font: inherit`.
+ *
+ * That shorthand is what was here, and it quietly undid the type. `font` sets
+ * every font longhand including `font-size`, and `button.sched-month__entry`
+ * out-specifies the `.sched-month__entry` rule that asks for 0.6875rem — so
+ * every chip inherited the cell's 17px body size instead of rendering at 11px.
+ * The chips were half again as tall as intended and "Transfiguration" no longer
+ * fitted a column, which is what made the titles break mid-word.
+ *
+ * Only the family needs inheriting; the class supplies the rest.
+ */
+button.sched-month__entry {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+button.sched-month__entry:hover {
+  background: color-mix(in srgb, var(--sched-tone) 20%, transparent);
+}
+
+button.sched-month__entry:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+}
+
+/* An entry somebody here added, as opposed to one read from a source. Gold,
+   not azure — azure means "servants only", which is a different claim. */
+.sched-entry__tag--manual {
+  background: var(--color-gold, #b08d43);
+}
+
+/* ---- the event dialog ---------------------------------------------------- */
+
+/*
+ * A native `<dialog>`: the top layer, focus handling, Escape and inertness all
+ * come with the element. The calendar's wheel has a 3D transform in it, which
+ * creates a containing block for positioned descendants — a hand-rolled overlay
+ * would have had to escape that, and the top layer is not subject to it at all.
+ */
+.sched-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: min(42rem, calc(100vh - 3rem));
+  padding: 0;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #1c1614);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(28, 22, 20, 0.16));
   overflow: hidden;
+}
+
+/* The add form is a column of short fields; the event dialog holds a
+   photograph. They do not want the same measure. */
+.sched-dialog--add {
+  width: min(28rem, calc(100vw - 2rem));
+}
+
+/* Inside a dialog the form supplies the padding, so it drops its own frame. */
+.sched-dialog--add .sched-add {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-lg, 1.5rem);
+  max-height: inherit;
+  overflow-y: auto;
+}
+
+.sched-dialog::backdrop {
+  /* A literal colour, not a token: `::backdrop` is in the top layer and does
+     not inherit from the page, so a `var()` here resolves to nothing. */
+  background: rgba(28, 22, 20, 0.45);
+}
+
+.sched-dialog__inner {
+  max-height: inherit;
+  overflow-y: auto;
+  padding: var(--space-lg, 1.5rem);
+  display: grid;
+  gap: var(--space-md, 1rem);
+}
+
+.sched-dialog__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+}
+
+.sched-dialog__title {
+  --sched-tone: var(--color-rule, #e0cac3);
+  margin: 0;
+  padding-left: var(--space-sm, 0.5rem);
+  border-left: 3px solid var(--sched-tone);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  font-weight: 500;
+  line-height: var(--leading-snug, 1.3);
+}
+
+.sched-dialog__title--liturgy {
+  --sched-tone: var(--color-accent, #992a21);
+}
+
+.sched-dialog__title--study {
+  --sched-tone: var(--color-gold, #b08d43);
+}
+
+.sched-dialog__title--gathering {
+  --sched-tone: var(--color-azure, #2f5d8a);
+}
+
+.sched-dialog__when {
+  margin: 0.35rem 0 0 var(--space-sm, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-dialog__close {
+  appearance: none;
+  flex: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.sched-dialog__close:hover {
+  background: var(--color-paper-sunken, #eeddd7);
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * The whole picture, not a crop of it.
+ *
+ * `object-fit: cover` in a 12rem band took a letterbox out of the middle of
+ * every one of these and cut the heads off the icons — which, for a photograph
+ * of a saint, is worse than showing it small. `contain` on a taller box shows
+ * whatever the parish uploaded, whatever shape it is, and the tinted ground
+ * fills whatever is left over rather than leaving a ragged edge.
+ */
+.sched-dialog__image {
+  width: 100%;
+  max-height: 18rem;
+  object-fit: contain;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.sched-dialog__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.4rem var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.sched-dialog__facts:empty {
+  display: none;
+}
+
+.sched-dialog__facts dt {
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.sched-dialog__facts dd {
+  margin: 0;
+  color: var(--color-ink, #1c1614);
+}
+
+.sched-dialog__facts a {
+  color: var(--color-accent, #992a21);
+  text-underline-offset: 2px;
+}
+
+.sched-dialog__bare {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the two staff forms ------------------------------------------------- */
+
+/*
+ * One set of rules for the detail form in the dialog and the add form under the
+ * calendar. They are the same kind of thing — a short stack of labelled fields
+ * a member of staff fills in — and giving them separate styles would be two
+ * places to keep in step for no gain.
+ */
+.sched-dialog__form,
+.sched-add {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid var(--color-gold, #b08d43);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 7%, transparent);
+}
+
+.sched-add {
+  flex: 1 1 22rem;
+}
+
+.sched-dialog__form h3,
+.sched-add h3 {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink, #1c1614));
+}
+
+.sched-dialog__form label,
+.sched-add label {
+  display: grid;
+  gap: 0.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.sched-dialog__form input,
+.sched-dialog__form textarea,
+.sched-add input,
+.sched-add textarea {
+  /* `minmax(0, …)` on the grid columns below and `min-width: 0` here: a date
+     input has an intrinsic width that will otherwise push a two-column row
+     wider than its container, which took a whole admin screen off a phone
+     once. */
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+}
+
+.sched-dialog__form input[aria-invalid='true'] {
+  border-color: var(--color-accent, #992a21);
+}
+
+.sched-dialog__pair,
+.sched-add__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-sm, 0.5rem);
+}
+
+.sched-add__kinds {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem var(--space-md, 1rem);
+}
+
+.sched-add__kinds legend {
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.sched-add__kind {
+  display: flex !important;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.sched-add__kind input {
+  accent-color: var(--color-accent, #992a21);
+}
+
+.sched-add__swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-rule, #e0cac3);
+}
+
+.sched-add__swatch--liturgy {
+  background: var(--color-accent, #992a21);
+}
+
+.sched-add__swatch--study {
+  background: var(--color-gold, #b08d43);
+}
+
+.sched-add__swatch--gathering {
+  background: var(--color-azure, #2f5d8a);
+}
+
+.sched-dialog__actions,
+.sched-add__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.5rem);
+  margin-top: 0.2rem;
+}
+
+.sched-dialog__problem {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-accent-strong, #731d16);
 }
 
 /* ---- empty / notice states -------------------------------------------- */
@@ -6809,7 +9340,16 @@ main {
 .footer {
   background: var(--color-deep, #481010);
   color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 72%, transparent);
-  padding-block: var(--space-section, 3rem);
+  /*
+   * `--space-xl`, not `--space-section`.
+   *
+   * The section token is the rhythm *between bands of a page* and resolves to
+   * 76px at a laptop width — 152px of the footer's 459 was empty space above and
+   * below four columns 220px tall. This is chrome rather than a band, and 40px
+   * either side reads as deliberate rather than as a gap somebody forgot to
+   * fill. Worth 72px on every page of the site.
+   */
+  padding-block: var(--space-xl, 2.5rem);
   /* The homepage's closing call-to-action is also on `deep`, so without this the
      two run together into one 1000px slab of dark. A gold hairline reads as a
      deliberate join rather than as a missing background. */
@@ -6822,15 +9362,69 @@ main {
 }
 
 /*
- * 13rem, not 15rem. At the shell's full width the four columns plus their gaps
- * came to 1080px against 1072px available — eight pixels short, which dropped
- * "Parish" onto a row of its own and left the footer looking unfinished. A
- * narrower minimum leaves room for the track count to be right.
+ * Four blocks, and the first one is wider than the rest on purpose.
+ *
+ * ---------------------------------------------------------------------------
+ * This was `repeat(auto-fit, minmax(min(100%, 13rem), 1fr))` — equal tracks,
+ * however many fitted. Equal is what put the parish's name on two lines: the
+ * name needs about 335px at its full size and an equal share of this row is 208.
+ *
+ * Explicit tracks instead, in three steps, and the brand block gets 1.7 of them.
+ * The other three columns are `minmax(0, 1fr)` rather than `1fr` for the reason
+ * that always applies to a grid holding text: a `1fr` track will not go below the
+ * intrinsic width of its content, so one long email address would push the row
+ * wider than the page instead of wrapping inside its column.
+ *
+ * The steps are 34rem — below it there is no arranging four blocks, they stack —
+ * and 60rem, where the brand can have a column to itself instead of a row.
+ * ---------------------------------------------------------------------------
  */
 .footer__inner {
   display: grid;
-  gap: var(--space-xl, 2.5rem);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  /* Rows tighter than columns: 2.5rem between two columns is a gutter, and
+     2.5rem between two stacked blocks on a phone is a hole. */
+  gap: var(--space-lg, 1.75rem) var(--space-xl, 2.5rem);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Stacked, on a phone, the four blocks are the tallest thing on most pages —
+   tighter rows and less padding either side are worth about 60px of scrolling
+   past something nobody came for. */
+@media (max-width: 34rem) {
+  .footer {
+    padding-block: var(--space-lg, 1.75rem);
+  }
+
+  .footer__inner {
+    row-gap: var(--space-md, 1rem);
+  }
+}
+
+@media (min-width: 34rem) {
+  .footer__inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Across the top while there are only two columns — the name would be back on
+     two lines in half of a 544px window. */
+  .footer__brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 60rem) {
+  /*
+   * Three blocks: who and where, when, and where to go next. The first is
+   * widest because the parish's name has to fit on one line inside it; the last
+   * is wider than the middle because it splits into two columns of links.
+   */
+  .footer__inner {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.35fr);
+  }
+
+  .footer__brand {
+    grid-column: auto;
+  }
 }
 
 .footer h2 {
@@ -6864,6 +9458,26 @@ main {
 }
 
 /*
+ * Eight links in two columns rather than one stack of eight.
+ *
+ * The footer is as tall as its tallest block, and eight rows made this the
+ * tallest by some way. `auto-fit` with a 9rem floor rather than a hard two:
+ * where the block is narrow — a half-column between 34rem and 60rem, or a
+ * middling laptop where the third track is 290px — it falls back to one column
+ * instead of setting "Weekly announcements" over two lines in a 137px track.
+ *
+ * Filling across rather than down, which is the default and is left alone
+ * deliberately: `grid-auto-flow: column` would read in the order the list is
+ * written, but it needs a fixed row count, and this list does not have one —
+ * `FOOTER_SECTIONS` adds up to two more entries when the church publishes the
+ * pages behind them.
+ */
+.footer__links--split {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+}
+
+/*
  * The brand block: seal, name, kicker, social row.
  *
  * `gap` is tighter than the old 1rem and the name/kicker pair is bound together
@@ -6874,12 +9488,73 @@ main {
   display: grid;
   gap: var(--space-sm, 0.6rem);
   justify-items: start;
+  /*
+   * A size container, so the name below can be sized against this column rather
+   * than against the window. It is the only element on the page that knows how
+   * much room the name actually has — the track width comes from the grid above
+   * and changes at both steps.
+   */
+  container-type: inline-size;
 }
 
+/* The seal beside the name and kicker rather than above them. Two rows of the
+   footer's height become one, and the mark reads as a lockup the way the
+   masthead's does. */
+.footer__lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+}
+
+/*
+ * The address, phone and email as one block of lines.
+ *
+ * An `<address>` rather than three paragraphs: it is the church's contact
+ * details, which is exactly what the element is for, and a `display: grid` on it
+ * gives the same rhythm three `<p>`s did without three margins to cancel.
+ * `font-style` because a browser italicises `address` by default.
+ */
+.footer__contact {
+  display: grid;
+  gap: 0.15rem;
+  font-style: normal;
+}
+
+/* The phone number and the email address share a line, with a dot between them
+   that is `aria-hidden` in the markup — a screen reader reading "phone dot
+   email" is worse than the two links running together. */
+.footer__reach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-sm, 0.5rem);
+}
+
+.footer__directions {
+  margin: 0;
+}
+
+.footer__directions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.footer__directions svg {
+  /* Gold, so the line reads as the one link in a block of plain facts. */
+  color: var(--color-gold, #b08d43);
+  transition: transform 180ms ease;
+}
+
+.footer__directions a:hover svg {
+  transform: translateX(3px);
+}
+
+/* 2.75rem, not 3.5: it stands beside the name and its kicker now rather than
+   above them, so it is sized to that pair rather than to a column. */
 .footer__seal {
-  height: 3.5rem;
+  height: 2.75rem;
   width: auto;
-  margin-bottom: var(--space-xs, 0.35rem);
+  flex-shrink: 0;
 }
 
 /*
@@ -6896,13 +9571,38 @@ main {
  */
 .footer__name {
   font-family: var(--font-display, Georgia, serif);
-  font-size: var(--type-subheading, 1.125rem);
   color: var(--color-ink-inverse, #f9efec);
   line-height: var(--leading-snug, 1.25);
   letter-spacing: -0.005em;
-  text-wrap: balance;
-  max-width: 20ch;
   margin: 0;
+  /*
+   * One line, like the masthead's, and by the same pair of declarations — see
+   * the long note above `.wordmark__name`. `nowrap` alone would overflow the
+   * column; the fluid size is what guarantees the line fits it.
+   *
+   * The divisor is the same 17.8em the masthead measured, and the numerator is
+   * this column's own width rather than the window's, which is what
+   * `container-type` on `.footer__brand` is for. No gutters to subtract: unlike
+   * the masthead this element has the whole track.
+   *
+   *     1280px window   brand track 436px   19.0px, capped
+   *     1024px window   brand track 342px   15.4px
+   *      375px window   brand track 339px   15.2px
+   *      320px window   brand track 284px   12.1px
+   *
+   * Measured, not predicted, and only the top row is capped — below about
+   * 1150px the column is the binding constraint rather than the type scale.
+   *
+   * `text-wrap: balance` and `max-width: 20ch` came out with the wrap they were
+   * managing. Both were fixes for a second line that no longer happens.
+   */
+  white-space: nowrap;
+  /*
+   * `- 4.25rem` for the seal beside it and the gap: the name no longer has the
+   * whole column, it has what the lockup leaves. Without that term it sets one
+   * line too big for the row it is in and overflows the column to the right.
+   */
+  font-size: min(var(--type-subheading, 1.125rem), calc((100cqi - 4.25rem) / 17.8));
 }
 
 /* "Coptic Orthodox Church" — the same small-caps treatment the masthead gives
@@ -6913,6 +9613,66 @@ main {
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
   color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/*
+ * The weekly schedule, in the footer of every page.
+ *
+ * One line per service where the column allows it and two where it does not —
+ * the service's name follows the time inline, quieter and smaller, and wraps
+ * under it when there is no room. Forced onto its own line it cost three rows
+ * of footer for three services that mostly fit; forced onto one it broke the
+ * time range across lines, which is the one place a schedule must not break.
+ * `white-space: nowrap` on the day-and-time is what protects that.
+ */
+.footer__services {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+}
+
+/* Not `display: grid` any more, which is what forced the service's name onto a
+   row of its own whether or not it fitted beside the time. Inline, it wraps only
+   when it must — one line for Tuesday and Saturday, two for Sunday. */
+.footer__services li {
+  line-height: var(--leading-snug, 1.3);
+}
+
+.footer__service-when {
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+  /* "Sunday · 8:00 – 11:30 AM" stays whole. The name after it is what gives, and
+     it can wrap to the next line without hurting anything. */
+  white-space: nowrap;
+}
+
+.footer__service-name {
+  font-size: var(--type-micro, 0.8125rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 58%, transparent);
+}
+
+/* The calendar link that closes the column: these are the times that hold every
+   week, and the calendar is where a feast that breaks them is written down. */
+.footer__services-more {
+  margin: var(--space-md, 1rem) 0 0;
+}
+
+.footer__services-more a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.footer__services-more svg {
+  /* Gold, so the line reads as the one link in a column of plain text. The
+     underline on hover belongs to `.footer a:hover` and covers the word only. */
+  color: var(--color-gold, #b08d43);
+  transition: transform 180ms ease;
+}
+
+.footer__services-more a:hover svg {
+  transform: translateX(3px);
 }
 
 /* ---- footer social ------------------------------------------------------ */
@@ -6998,7 +9758,7 @@ main {
 }
 
 .footer__bottom {
-  margin-top: var(--space-xl, 2.5rem);
+  margin-top: var(--space-md, 1rem);
   padding-top: var(--space-md, 1rem);
   border-top: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 15%, transparent);
   font-size: var(--type-micro, 0.8125rem);
@@ -8726,46 +11486,108 @@ main {
    width — so the case that override existed for no longer arises. */
 
 /* ---------------------------------------------------------------------------
- * The Events dropdown
+ * The section menus — About's five parts, Events' ministries
  *
- * A full-width band under the masthead rather than a card floating beside it,
- * and in the masthead's own colours rather than the page's. A white panel
- * hanging off a deep red bar reads as a different piece of software; this reads
- * as the bar opening.
+ * The menu is made of the masthead, and that is the whole idea.
  *
- * Horizontal, because five ministries in a vertical stack is a column of text
- * where the eye has to travel down to compare — laid across, they are five
- * choices taken in at once.
+ * Three attempts got this wrong in the same way, by making the menu out of the
+ * page instead of out of the bar. A pale panel floating 6px below the masthead
+ * was "a random floating box". Pushed flush against the bar it read *worse*,
+ * because a wide pale rectangle under a red bar is a wide pale rectangle under a
+ * red bar however close it sits. Carving the trigger into a paper tab joined the
+ * two properly — and looked, in Tommy's words, disgusting: a white notch punched
+ * through the vestment red, which is a browser chrome device and not a thing
+ * this parish's header should ever contain.
+ *
+ * So the panel is oxblood. It hangs from the bar in the bar's own colours, with
+ * the parish's gold down its edges, and it covers the masthead's hairline for
+ * its own width so the two are one silhouette — the bar swelling downward rather
+ * than a sheet hanging off it. This is exactly what `.nav-panel--open` already
+ * does on a phone, and for the reason written there: the panel is the same
+ * navigation, unfolded.
+ *
+ * **The old objection to drawing it dark does not survive the geometry.** It was
+ * "a second bar under the first, and there was no seeing where the header ended"
+ * — written when this was a full-width band, where it was completely true. At
+ * 18rem centred under one word it cannot read as a bar; it reads as a drawer,
+ * which is what the shadow and the rounded bottom corners are for.
+ *
+ * The photographs are the point of the menu and they are better off here: a
+ * cover tile is light type on a scrim, which is at home on oxblood and never was
+ * on paper.
  * ------------------------------------------------------------------------ */
 
-/* `relative`, so the panel below is positioned against this item rather than
-   the masthead — which is what lets it centre on the word "Events" instead of
-   hanging off an edge of the window. It was `static` while the panel was a
-   full-width band. */
+/* `relative`, so the panel below is positioned against this item rather than the
+   masthead — which is what lets it centre on the word "Events" instead of hanging
+   off an edge of the window. */
 .nav__group {
   position: relative;
   display: inline-flex;
   align-items: center;
+  /*
+   * Full height of the bar's content box. It is what makes the panel's `top` a
+   * calculation off a known edge rather than a guess — `100%` now ends exactly
+   * one `--space-md`, the masthead's own `padding-block`, above the hairline —
+   * and it gives a pointer travelling down from the word a full-height target to
+   * leave from.
+   *
+   * Needs `align-self: stretch` on `.nav` as well, or this stretches only to the
+   * height of the tallest link. Both are load-bearing; see the note there.
+   */
+  align-self: stretch;
 }
 
-
-/* Set 6px below the bar rather than flush against it, so the panel reads as a
-   thing hanging off the masthead and not as a second bar. That 6px is a strip
-   of nothing between the word and the tiles, and a pointer crossing it leaves
-   the group and starts the close timer — see the bridge on `::after` below,
-   which is what makes the gap visual only. */
 /*
- * The Events menu: five names in a panel, and nothing else.
+ * The open word: the hover pill, held down for as long as the menu is, and the
+ * gold marker with it.
  *
- * It has been a full-width band (1280x136 of furniture for five short names), a
- * 51px letterbox of plain text, and a titled block with the parish's cross and
- * a footer link — which was more panel than the contents ask for. The word
- * "Events" above it already says what these are, and it links to the page that
- * lists them, so the menu only has to be a good list.
+ * `.nav` on the front so this outweighs `.nav a:hover` and
+ * `.nav a[aria-current='page']`, each of which is one class heavier than the
+ * obvious selector — without it the word is drawn one way under a pointer and
+ * another way under keyboard focus, and a third way again on the section you are
+ * already in.
+ *
+ * Nothing more elaborate is needed now that the panel is the same material as
+ * the bar. The word is lit, the drawer is directly beneath it, and both are
+ * oxblood: there is no seam left for the eye to have to cross.
  */
+.nav .nav__group--open > a {
+  color: var(--color-ink-inverse, #f9efec);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 14%, transparent);
+}
+
+.nav__group--open > a::after {
+  transform: translateX(-50%) scaleX(1);
+}
+
+/*
+ * The strip of masthead between the word and the drawer.
+ *
+ * A pointer travelling from "Events" down into the menu crosses the bar's own
+ * bottom padding, which is outside the group — so without this it leaves the
+ * group and starts the close timer on the way in. The bridge makes the trigger
+ * and the panel one hover target, which is the geometric half of the repair the
+ * 450ms delay is the other half of. Invisible: it is over the bar, and the bar
+ * is what it is made of.
+ */
+.nav__group--open::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 18rem;
+  max-width: calc(100vw - 1.5rem);
+  height: var(--space-md, 1rem);
+  transform: translateX(-50%);
+}
+
 .nav__menu {
   position: absolute;
-  top: calc(100% + 6px);
+  /* Exactly the masthead's bottom padding, which lands the panel *on* the gold
+     hairline rather than under it. Covering the line for the panel's width is
+     what joins the two into one shape; leave the line showing and the drawer is
+     a separate object again. */
+  top: calc(100% + var(--space-md, 1rem));
   left: 50%;
   transform: translateX(-50%);
   /* One column. "College and Young Professionals" still sets the floor — the
@@ -8778,73 +11600,47 @@ main {
   /* A single column, in the order an administrator set them. */
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.25rem;
+  gap: 0.3rem;
   margin: 0;
-  padding: 0.4rem;
+  padding: 0.45rem;
   list-style: none;
 
-  /* The page's own paper, not the masthead's red: drawn dark this was a second
-     bar under the first and there was no seeing where the header ended. The
-     gold edge is what ties it back to the bar. A shade of warmth down the panel
-     so it is not a flat white rectangle. */
+  /* The bar's own gradient, running the other way: lifted at the top where it
+     meets the masthead, settling into `deep` as it falls. */
   background: linear-gradient(
     170deg,
-    var(--color-paper-raised, #fdf7f4) 0%,
-    var(--color-paper, #f6e8e3) 100%
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 16%, var(--color-deep, #481010)) 0%,
+    var(--color-deep, #481010) 72%
   );
-  color: var(--color-ink, #2b2118);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
-  border-radius: var(--radius-md, 6px);
-  box-shadow: 0 10px 26px rgba(72, 16, 16, 0.18);
+  color: var(--color-ink-inverse, #f9efec);
+  /* Gold on three sides. No top edge and square top corners: the panel begins
+     inside the bar, and a line across that join would cut one shape into two. */
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md, 6px) var(--radius-md, 6px);
+  /* Deeper and darker than a panel on paper needs. This one is dark, over a
+     photograph as often as not, and the shadow is the only thing separating it
+     from the hero behind it. */
+  box-shadow: 0 18px 34px rgba(30, 8, 8, 0.45);
+  animation: nav-menu-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Opening reads as the drawer coming down out of the bar rather than a box
+   appearing over the page. Short, and it travels only over the page — the panel
+   is already below the masthead. */
+@keyframes nav-menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .nav__menu[hidden] {
   display: none;
-}
-
-/* The notch. A panel floating loose under a bar reads as unrelated to it; a
-   point aimed at the word that opened it does not. */
-.nav__menu::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  width: 11px;
-  height: 11px;
-  transform: translateX(-50%) rotate(45deg);
-  background: var(--color-paper-raised, #fdf7f4);
-  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
-  border-left: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
-}
-
-/*
- * The bridge over the gap. Invisible, and the reason the menu survives the trip
- * down to it.
- *
- * The panel sits 6px below the word that opens it, and those 6px belong to the
- * masthead: a pointer travelling from "Events" to a tile leaves `.nav__group`
- * there, which fires mouseleave and starts the close timer. The timer is
- * generous enough to cover the crossing, but it should not have to — a menu
- * that depends on how fast you move is a menu that will shut on somebody.
- *
- * A pseudo-element is hit-tested as its originating element, so this strip is
- * part of `.nav__menu` as far as the pointer and React are concerned, and the
- * trigger and the panel become one continuous hover target. It spans the full
- * width of the panel, not the width of the word, because the panel is 18rem and
- * the word is 65px: the natural path to the first or last tile is a diagonal
- * that leaves the word's column almost immediately.
- *
- * Exactly 6px tall, and no taller: the nav links either side end where this
- * begins, and an over-generous bridge would sit over their bottom edge and eat
- * clicks meant for Calendar or Forms.
- */
-.nav__menu::after {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 0;
-  right: 0;
-  height: 6px;
 }
 
 /*
@@ -8852,8 +11648,9 @@ main {
  *
  * `min-height` and not just padding: a row of tiles is only a row if they are
  * the same size, and a photograph needs some height to be a photograph rather
- * than a stripe. The plain ground below is what an empty gallery gets, and it is
- * warm rather than grey so a menu of five of them still looks intentional.
+ * than a stripe. A ministry with no approved pictures gets the ground below —
+ * the bar's red, lifted a little — so an empty gallery is a tile in the same
+ * material as its neighbours rather than a hole in the menu.
  */
 .nav__menu a {
   position: relative;
@@ -8861,51 +11658,56 @@ main {
   align-items: center;
   justify-content: center;
   text-align: center;
-  min-height: 2.6rem;
-  padding: 0.4rem 0.7rem;
+  min-height: 2.7rem;
+  padding: 0.45rem 0.7rem;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
-  border-radius: var(--radius-md, 6px);
-  background:
-    linear-gradient(
-      150deg,
-      var(--color-paper-raised, #fdf7f4) 0%,
-      color-mix(in srgb, var(--color-paper-sunken, #eeddd7) 55%, var(--color-paper-raised, #fdf7f4)) 100%
-    );
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
+  border-radius: var(--radius-sm, 5px);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 30%, var(--color-deep, #481010)) 0%,
+    color-mix(in srgb, var(--color-accent-strong, #731d16) 10%, var(--color-deep, #481010)) 100%
+  );
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease;
   /* The serif the program cards set names in, so the menu and the page it opens
      agree about what a name is. */
   font-family: var(--font-display, Georgia, serif);
   font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.3;
-  color: var(--color-ink, #1c1614);
+  /* Light on red, at 11:1 — and the same colour a cover tile needs, so a menu
+     where two ministries have photographs and three do not is still one menu
+     with one kind of type in it. */
+  color: var(--color-ink-inverse, #f9efec);
   text-decoration: none;
   /* Nav links inherit `nowrap` from the bar, and the longest name does not fit
-     a third of the panel on one line at every width. */
+     the panel on one line at every width. */
   white-space: normal;
 }
 
+/* `.nav a::after` is the short gold bar the bar puts under the page you are on,
+   and inside the menu it is in the way: the tiles mark the current page with
+   their border instead, and a cover tile needs this pseudo-element for its
+   scrim. Off by default, on as the scrim. */
+.nav__menu a::after {
+  display: none;
+}
+
 /*
- * With a photograph behind it, the name needs its own ground or it lands on
- * whatever the picture happens to be — dark hair, bright sky, anything. A
- * gradient scrim darkens only the bottom strip where the words are, so the
- * photograph survives above it.
- */
-/*
- * `has-cover` is set by the tile itself, once its photograph has loaded — see
- * NavTile. No dark fallback ground is needed any more: a tile whose picture
- * never arrives never becomes a cover tile, so its type stays dark on the light
- * ground it already had.
+ * `has-cover` is set by the tile itself, once a photograph has actually loaded —
+ * see NavTile. A tile whose pictures never arrive never becomes a cover tile and
+ * simply keeps the red ground above, which is why nothing here has to guess.
  */
 .nav__menu a.has-cover {
-  border-color: color-mix(in srgb, var(--color-deep, #481010) 30%, transparent);
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
 }
 
 /* The photographs, stacked behind the scrim and the name — several per tile,
-   cycled by NavTile. Hidden until the tile says one loaded, so a slow image
-   cannot flash dark type over a half-painted picture, and every one that is not
-   the current shot stays at zero so the stack reads as a single plate. */
+   cycled by NavTile. Every one that is not the current shot stays at zero, so
+   the stack reads as a single plate. */
 .nav__menu a img {
   position: absolute;
   inset: 0;
@@ -8922,38 +11724,64 @@ main {
   opacity: 1;
 }
 
+/*
+ * The scrim. Centred type needs it across the whole tile, not only along the
+ * bottom edge, and it is tinted with the panel's own red rather than neutral
+ * black so a photograph sits in the drawer instead of on top of it.
+ */
 .nav__menu a.has-cover::after {
+  display: block;
   content: '';
   position: absolute;
   inset: 0;
-  /* Centred type needs the scrim across the middle, not only along the bottom
-     edge where the name used to sit. Lighter than it was, but still enough that
-     light type holds on a bright photograph. */
-  background: linear-gradient(to top, rgba(50, 14, 11, 0.62) 0%, rgba(50, 14, 11, 0.44) 100%);
+  /*
+   * **These four resets are the whole scrim.** This pseudo-element is not new —
+   * it is `.nav a::after`, the 1.25rem x 2px gold bar the masthead draws under
+   * the current page, which arrives here already sized, already rounded, and
+   * already `scaleX(0)`. `inset: 0` does not undo a `width`, and nothing undoes
+   * a `transform`, so the scrim has been a zero-width sliver in the corner of
+   * the tile for as long as it has existed: light type has been sitting straight
+   * on the photograph, unreadable over a bright sky, and no one saw it because
+   * no gallery has an approved picture yet. Take any of these out and it goes
+   * back to that.
+   */
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  transform: none;
+  /*
+   * Heavier than it looks like it should be, and measured against the worst
+   * photograph rather than a nice one: a sunlit sky. The name sits in the middle
+   * of the tile, where the scrim is about 0.73, which puts light type at 5.2:1
+   * over white. At the 0.46 this used to specify it was 3.2:1 — unreadable, and
+   * never noticed because the scrim was never drawing at all (see above).
+   *
+   * The picture is not lost. At 17rem by 2.7rem it is a strip, not something you
+   * study; it tells you which ministry this is by its colour and shape, and the
+   * tile is still visibly a photograph rather than a plate.
+   */
+  background: linear-gradient(to top, rgba(50, 14, 11, 0.8) 0%, rgba(50, 14, 11, 0.66) 100%);
 }
 
 .nav__menu a.has-cover > span {
   position: relative;
-  color: var(--color-ink-inverse, #f9efec);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
 }
 
-
-/* Lift rather than a colour change: a tile carrying a photograph cannot be
-   recoloured on hover without fighting the picture. */
+/* Lift and a gold edge rather than a colour change: a tile carrying a
+   photograph cannot be recoloured on hover without fighting the picture. */
 .nav__menu a:hover,
 .nav__menu a:focus-visible {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(72, 16, 16, 0.22);
-}
-
-.nav__menu a:not(.has-cover):hover,
-.nav__menu a:not(.has-cover):focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 40%, transparent);
-  color: var(--color-accent, #992a21);
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 75%, transparent);
+  box-shadow: 0 8px 18px rgba(20, 5, 5, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nav__menu {
+    animation: none;
+  }
+
   .nav__menu a,
   .nav__menu a:hover {
     transition: none;
@@ -8967,16 +11795,30 @@ main {
   }
 }
 
-/* The page you are on, marked — otherwise the menu says nothing about where the
-   reader already is, which is most of what a menu is for. */
-/* 700 rather than 600, now that every name is 600 — otherwise the weight said
-   nothing and only the outline marked the page. */
+/*
+ * The page you are on, marked — otherwise the menu says nothing about where the
+ * reader already is, which is most of what a menu is for.
+ *
+ * Gold, which is the header's second colour and the one it already marks the
+ * current section in. The border carries it on every tile, because a tile may be
+ * a photograph and gold type would be lost on one; the type turns gold only
+ * where there is a plain ground to turn it against.
+ */
 .nav__menu a[aria-current='page'] {
   font-weight: 700;
-  /* A gold rule rather than red type: the type may be sitting on a photograph,
-     where a colour change would be invisible. */
-  outline: 2px solid var(--color-gold, #b08d43);
-  outline-offset: -1px;
+  border-color: var(--color-gold, #b08d43);
+}
+
+/*
+ * The flat ground is a contrast fix, not a flourish. Gold measures 4.49:1 on the
+ * lifted top of the tile gradient — a hair under the 4.5 this size of type has to
+ * clear — and 4.98:1 on `deep`. Dropping the lift is what lets the current tile
+ * be gold at all, and it reads as the tile pressed in, which is the right thing
+ * for the page you are already on.
+ */
+.nav__menu a[aria-current='page']:not(.has-cover) {
+  color: var(--color-gold, #b08d43);
+  background: var(--color-deep, #481010);
 }
 
 
@@ -18177,211 +21019,6 @@ span.gallery-figure__frame {
 }
 
 /* ---------------------------------------------------------------------------
- * Parish events — /staff/events.
- *
- * The list, not an editor. It exists for the one thing that cannot be done on an
- * event's own page: making one, which has no page until the next build.
- * See features/events/StaffEvents.tsx.
- *
- * Deliberately plain. Everything here is a way *to* the editor, and a list that
- * competes for attention with the thing it leads to is a list somebody has to
- * read twice.
- * ------------------------------------------------------------------------ */
-.staff-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-md, 1rem);
-}
-
-.staff-head h1 {
-  margin-bottom: var(--space-xs, 0.35rem);
-}
-
-.staff-head__note {
-  max-width: var(--measure, 68ch);
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.staff-head .button {
-  /* Holds the button to its own height in an `align-items: start` row, so it
-     lines up with the heading rather than stretching to the note's height. */
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.staff-group__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm, 0.5rem);
-  margin: 0 0 var(--space-xs, 0.35rem);
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide, 0.03em);
-  text-transform: uppercase;
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.staff-group__count {
-  padding: 0.05rem 0.45rem;
-  border-radius: var(--radius-full, 999px);
-  background: var(--color-paper-sunken, #eeddd7);
-  letter-spacing: 0;
-  color: var(--color-ink-soft, #4b413e);
-}
-
-.staff-group__hint {
-  margin: 0 0 var(--space-sm, 0.6rem);
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.staff-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 10px);
-  background: var(--color-paper-raised, #fdf7f4);
-  overflow: hidden;
-}
-
-.staff-list > li + li {
-  border-top: 1px solid var(--color-rule, #e0cac3);
-}
-
-.staff-list > li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm, 0.5rem);
-  padding-inline-end: var(--space-md, 0.9rem);
-}
-
-/*
- * The row is the button, and the whole row.
- *
- * `flex: 1` so the target is the width of the list rather than the width of the
- * words — a list where you have to hit the title is a list that is annoying on a
- * phone and unusable for anyone with a tremor.
- */
-.staff-row {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-sm, 0.75rem);
-  padding: var(--space-md, 0.9rem);
-  border: 0;
-  background: transparent;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  color: var(--color-ink, #1c1614);
-  cursor: pointer;
-  text-align: start;
-}
-
-.staff-row:hover {
-  background: var(--color-paper-sunken, #eeddd7);
-}
-
-.staff-row__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--type-small, 0.9375rem);
-  font-weight: 600;
-}
-
-.staff-row__when {
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-  white-space: nowrap;
-}
-
-/* Rotated, because the glyph points down and this one means "onward". */
-.staff-row__go {
-  display: grid;
-  place-items: center;
-  color: var(--color-ink-faint, #6f5f5a);
-  transform: rotate(-90deg);
-}
-
-.staff-row__view {
-  flex: none;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-faint, #6f5f5a);
-  white-space: nowrap;
-}
-
-/* On a phone the date and the link would squeeze the name to nothing. The date
-   moves under the name; the link goes, since the row still opens the editor and
-   the page is one press further on. */
-@media (max-width: 34rem) {
-  .staff-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .staff-row__name {
-    white-space: normal;
-  }
-
-  .staff-row__when {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .staff-row__go {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
-  .staff-row__view {
-    display: none;
-  }
-}
-
-/* ---- making one ---------------------------------------------------------- */
-
-.staff-new {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md, 1rem);
-  padding: var(--space-lg, 1.5rem);
-  /* Gold rather than the ordinary rule, so the thing that has just appeared is
-     visibly the thing that has just appeared. */
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
-  border-radius: var(--radius-md, 10px);
-  background: var(--color-paper-raised, #fdf7f4);
-}
-
-.staff-new h2 {
-  margin: 0;
-}
-
-.staff-new__note {
-  max-width: var(--measure, 68ch);
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-.staff-new__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm, 0.5rem);
-}
-
-/* ---------------------------------------------------------------------------
  * Editing the ministries, on /events.
  *
  * Tommy on the state this replaces: *"the ui is also just crap"*, with four
@@ -21903,4 +24540,83 @@ span.gallery-figure__frame {
 .fxb__picture-actions {
   display: flex;
   gap: var(--space-xs, 0.4rem);
+}
+
+
+/* --------------------------------------------------------------------------
+ * The About index — the five parts of About, on /about.
+ *
+ * Class names are prefixed `about-` rather than being `.index` or `.parts`,
+ * because there is one stylesheet for the whole site and no CSS modules: a
+ * generic name written here reaches the bookstore, the galleries and the admin
+ * drawers as well. That has happened before.
+ *
+ * Deliberately not the tile grid the header menu and /events use. Those tiles
+ * are the size they are so a photograph can be a photograph; these five have no
+ * photographs and never will, so a grid of picture-shaped boxes with nothing in
+ * them would be a page of empty frames. A list, with the line that says what
+ * each one is, which is the thing a reader is actually choosing between.
+ * -------------------------------------------------------------------------- */
+
+.about-index {
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+  margin: var(--space-lg, 1.5rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.about-index a {
+  display: grid;
+  gap: 0.2rem;
+  padding: var(--space-sm, 0.85rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-paper-raised, #fdf7f4);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.about-index a:hover,
+.about-index a:focus-visible {
+  border-left-color: var(--color-accent, #992a21);
+  box-shadow: 0 4px 14px rgba(72, 16, 16, 0.12);
+  transform: translateY(-1px);
+}
+
+.about-index__name {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.15rem);
+  font-weight: 600;
+  color: var(--color-ink, #2b2118);
+}
+
+.about-index a:hover .about-index__name,
+.about-index a:focus-visible .about-index__name {
+  color: var(--color-accent, #992a21);
+}
+
+.about-index__note {
+  font-size: var(--type-small, 0.9rem);
+  line-height: 1.45;
+  color: var(--color-ink-soft, #5c4a44);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-index a,
+  .about-index a:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* The way back to the index from one of the five. Quiet — it is a way out, not
+   a call to action, and it sits under content of unknown length. */
+.about-page__back {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-size: var(--type-small, 0.9rem);
 }

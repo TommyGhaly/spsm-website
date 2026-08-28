@@ -215,7 +215,7 @@ function Heading() {
     <SectionHeading
       id="activities-heading"
       eyebrow="Our activities"
-      title="The life of the parish"
+      title="The life of the church"
       note="The standing ministries — choose one to see its gatherings."
     />
   );

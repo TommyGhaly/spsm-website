@@ -1,62 +1,106 @@
 import type { Metadata } from 'next';
-import {
-  getUpcomingEvents,
-  groupEventsByDay,
-  monthsWithEvents,
-  MonthGrid,
-} from '@/features/events';
-import { EmptyState } from '@/components/Notice';
+import { occurrenceOfEvent, toDate, type CalendarOccurrence } from '@spsm/shared';
+import { getAllEvents } from '@/features/events';
+import { ChurchCalendar } from '@/features/calendar';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
+import { PARISH_TIME_ZONE } from '@/lib/dates';
 
 export const metadata: Metadata = {
-  title: 'Parish Calendar',
+  title: 'Church Calendar',
   description:
-    'The month-by-month calendar of liturgies, feasts, classes, and gatherings at St. Philopater Mercurius & St. Mina in Wayland, MA.',
+    'The week-by-week and month-by-month calendar of liturgies, feasts, classes, and gatherings at St. Philopater Mercurius & St. Mina in Wayland, MA.',
 };
 
 /**
- * The calendar, laid out as months.
+ * The church calendar.
  *
- * This and `/events` are two views of one collection, which is the distinction
- * to keep straight when editing either: **this page answers "what is on the
- * 24th?", `/events` answers "what is coming up?"** One is a grid you scan by
- * date, the other a list you read in order. Neither is a subset of the other and
- * neither should grow into the other.
+ * ---------------------------------------------------------------------------
+ * Two views of one schedule, and the schedule is Breeze
  *
- * Only months that actually contain something are rendered. A parish calendar
- * with an empty November grid in it looks like a page that failed to load; the
- * months present are the months with services in them.
+ * This page used to render `events` — the site's own Firestore collection — as
+ * a stack of month grids, one per month that had anything in it. In production
+ * that collection is **empty**, and it was always going to be: the parish keeps
+ * its calendar in Breeze ChMS, where the office already maintains it, and
+ * nobody is ever going to retype eight hundred liturgies a year into a website
+ * admin so that a second copy can drift from the first.
+ *
+ * So the schedule is read from Breeze at request time, through
+ * `/api/calendar`, and rendered in the parish's own design. What the `events`
+ * collection is still *for* is the handful of things that deserve a page —
+ * summer camp, the festival, an iconography class — and those are merged in
+ * below, keeping their links. See features/calendar/data.ts.
+ *
+ * The relationship with `/events` is unchanged and still worth keeping
+ * straight: **this page answers "what is on the 24th?", `/events` answers "what
+ * is coming up?"** One is a grid you scan by date, the other a list you read in
+ * order. Neither is a subset of the other.
+ * ---------------------------------------------------------------------------
+ *
+ * The servants schedule is here too, for whoever signs in — it is no longer a
+ * page of its own. `ChurchCalendar` explains that at more length.
  */
 export default async function CalendarPage() {
-  // The same 100-event window `/events` reads, so the two views can never
-  // disagree about what is published.
-  const events = await getUpcomingEvents(100);
-  const byDay = groupEventsByDay(events);
-  const months = monthsWithEvents(byDay);
+  /*
+   * The site's own events, whole, at build time.
+   *
+   * `getAllEvents` rather than `getUpcomingEvents`: the reader can step
+   * backwards through the months from here, and a filter applied at build time
+   * would decide what "upcoming" meant on the deploy machine's clock and then
+   * bake it. There are a few dozen of these; the schedule they are merged into
+   * is the thing that needs a range.
+   */
+  const features: CalendarOccurrence[] = (await getAllEvents())
+    .map((event) => {
+      const startAt = toDate(event.startAt);
+      if (!startAt) return null;
+
+      return occurrenceOfEvent(
+        {
+          slug: event.slug,
+          title: event.title,
+          startAt,
+          endAt: toDate(event.endAt),
+          allDay: event.allDay,
+          location: event.location?.name ?? '',
+          summary: event.summary,
+          timeZone: event.timeZone,
+        },
+        PARISH_TIME_ZONE,
+      );
+    })
+    .filter((occurrence): occurrence is CalendarOccurrence => occurrence !== null);
 
   return (
     <>
-      <PageHeader title="Parish Calendar" />
+      {/*
+        Back to the hidden `h1`, and the description line is gone with it.
 
-      <PageBody>
-        <p className="note">Liturgies, feasts, classes, and gatherings, month by month. Times are shown in Eastern Time.</p>
-        {months.length === 0 ? (
-          <EmptyState what="events" collection="events" />
-        ) : (
-          months.map((monthKey) => (
-            /*
-              `overflow-x: auto` lives on this wrapper rather than on the table:
-              a scroll container has to be the table's *parent*, and putting the
-              overflow on the table itself does nothing. Seven columns of events
-              do not fit a 320px phone, and squeezing them to fit produces cells
-              one word wide.
-            */
-            <div className="calendar-scroll reveal" key={monthKey}>
-              <MonthGrid monthKey={monthKey} byDay={byDay} />
-            </div>
-          ))
-        )}
+        Both were added when this page opened on a grey line of small print hard
+        against the masthead, and a heading was the right fix for that. It is
+        not the right fix any more: the page now opens on the day picker, which
+        is a substantial thing in its own right, and the ninety pixels of
+        heading above it were pushing the week down for no one's benefit — the
+        masthead already says which site this is and the nav already says which
+        page. Same reasoning `PageHeader` itself gives for having been cut down
+        to nothing, and the same reasoning that took the band off /livestream.
+
+        The `h1` stays, invisible: it is the accessible name of the page, what a
+        screen reader announces, and what a search result shows.
+      */}
+      <PageHeader title="Church Calendar" />
+
+      {/*
+        `wide`, which lifts the 80rem shell.
+
+        The calendar is not prose — it is seven columns of dates and a schedule,
+        and both want width. The month grid in particular was giving each day
+        about 130px, which is where "St Philopater & St Mina Online Bible Study"
+        turns into three lines of two words. Same reasoning the galleries use it
+        for: the thing on the page *is* the page.
+      */}
+      <PageBody flush wide>
+        <ChurchCalendar features={features} />
       </PageBody>
     </>
   );

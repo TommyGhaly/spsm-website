@@ -12,7 +12,7 @@ import { PageBody } from '@/components/PageBody';
 
 export const metadata: Metadata = {
   title: 'Bookstore',
-  description: 'Books, icons, and church goods from the parish bookstore.',
+  description: 'Books, icons, and church goods from our bookstore.',
 };
 
 /**

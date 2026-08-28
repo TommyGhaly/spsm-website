@@ -7,10 +7,10 @@ import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 
 /**
- * One route for About / Our Faith / Clergy / Contact.
+ * One route for Our Faith / Ministries / Welcome.
  *
  * This is a dynamic segment at the root, so it would in principle also match
- * `/events`, `/prayer`, and the rest. Next resolves static routes before
+ * `/events`, `/forms`, and the rest. Next resolves static routes before
  * dynamic ones, so those win — but the real guard is `generateStaticParams`
  * below, which only ever emits the five known content sections.
  */
@@ -35,8 +35,14 @@ type Params = { section: string };
  * nothing links to it, and emitting `/misc` produced a page for nobody. The
  * section still exists so a page can be filed there without inventing a
  * section; it just does not get a URL of its own.
+ *
+ * `about` joined them when About grew its five parts. It has a real route at
+ * `app/about/page.tsx` now, because it has to render an index of those parts and
+ * this template has no way to. Same collision as `contact`: two pages writing
+ * `/about` under `output: 'export'`. The `about` section itself is untouched —
+ * that page reads it, and prose filed there still appears.
  */
-const NOT_A_PAGE: readonly string[] = ['contact', 'clergy', 'misc'];
+const NOT_A_PAGE: readonly string[] = ['contact', 'clergy', 'misc', 'about'];
 
 export async function generateStaticParams(): Promise<Params[]> {
   return CONTENT_SECTIONS.filter((section) => !NOT_A_PAGE.includes(section)).map(

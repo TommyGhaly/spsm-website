@@ -234,8 +234,15 @@ place on the pages themselves. What has not changed is the problem it had:
 `npm run dev` reads the real Firestore, which is right for the public pages and
 useless for editing. Pressing Edit needs a signed-in user with a role, and the
 only way to get one against the real project is to be an actual member of the
-parish Microsoft directory. So editing — the event pages, the galleries, the
-ministries, and /servants — is developed against the emulators.
+parish Microsoft directory. So editing — the event pages, the galleries, and the
+ministries — is developed against the emulators.
+
+The servants calendar is the one gated surface that is *not* on this list any
+more. It used to be `/servants`, a page behind `AdminGate`; it is now the extra
+entries `/calendar` shows a signed-in servant, fetched from the `calendar`
+Function. To see it locally you need the **Functions** emulator as well, and
+`servantsConfig/schedule` seeded — see `SPSM_BREEZE_PARISH_EMBED_URL` in
+`scripts/seed-emulator.mjs`.
 
 Two terminals. First the emulators — **use the real project id**, because the
 web app's config points at it and the client would otherwise talk to a different
@@ -304,10 +311,11 @@ environment variable — which matters, because `NEXT_PUBLIC_USE_EMULATORS=1` is
 the environment every local build of this app runs in. The seeded password is
 `emulator-only` if you ever need it directly.
 
-`/servants` also has an "Emulator sign-in" panel for picking an account by hand
-— it is `AdminGate`'s, so it appears wherever that gate does. It is rendered
-only when `NEXT_PUBLIC_USE_EMULATORS=1`, and the production project has no
-password provider enabled anyway.
+`AdminGate` also has an "Emulator sign-in" panel for picking an account by hand,
+rendered only when `NEXT_PUBLIC_USE_EMULATORS=1` — the production project has no
+password provider enabled anyway. Nothing renders that gate at the moment:
+`/servants` and then `/staff/events` were the two pages that did, and both are
+gone.
 
 To read emulator Firestore past the security rules — for checking what an edit
 actually wrote — the emulator accepts `Authorization: Bearer owner` as admin:
@@ -343,8 +351,8 @@ issues, and going back to a `publishAt` read-time filter turns five of them red
 immediately. `tests/rules/writes.test.ts` covers the write paths that would be
 expensive to get wrong: `vehicles` (the only unauthenticated write on the site,
 and a plate-to-name map that must never be enumerable), `orders`
-(`allow write: if false`, verified against an *admin*), the clergy-vs-staff
-split on `prayerRequests`, member claim-mirror immutability, and the catch-all.
+(`allow write: if false`, verified against an *admin*), member claim-mirror
+immutability, and the catch-all.
 
 Two things about these tests are deliberate and worth not "tidying up":
 

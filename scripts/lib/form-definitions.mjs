@@ -1,5 +1,5 @@
 /**
- * The parish's four forms, as one definition both seeders read.
+ * The parish's forms, as one definition both seeders read.
  *
  * Split out of `seed-forms.mjs` so the emulator seeder writes exactly the same
  * documents. Two copies of a form definition is how the local /forms and the
@@ -114,39 +114,91 @@ const FORMS = [
     confirmationMessage:
       'Your vehicle is registered and waiting to be approved. Once it has been, your ' +
       'license plate is recognised at the lot — there is no sticker to collect. ' +
-      'Contact the parish office with any questions.',
+      'Contact the church office with any questions.',
   },
 
   {
-    slug: 'prayer-requests',
-    title: 'Prayer requests',
+    slug: 'contact',
+    title: 'Contact the church office',
     blurb:
-      'Ask the fathers to pray for you or for someone you love, or offer a commemoration for the departed. No account needed, and you may write without giving your name.',
-    icon: 'hands',
-    image: '/img/sketch-christ-800.webp',
-    order: 5,
+      'A question for the office, or a way for the church to reach you. No account needed.',
+    icon: 'mail',
+    /*
+     * No photograph, and this is the case `FormDefinition.image` was written
+     * for: there is no picture of "getting in touch". The ornamental tile is
+     * honest about being a mark rather than decoration standing in for a
+     * subject.
+     */
+    order: 1,
     /*
      * Published, like the vehicle registration and unlike the three Breeze
-     * rebuilds. It is not a new form: it has been live at /prayer since before
-     * the hub existed, and there is nothing to hold back.
-     *
-     * Its own component, not a field list — the body is sealed before storage
-     * and the occasion is conditional, neither of which the builder has a
-     * vocabulary for. See FormKind.
+     * rebuilds. There is no older version of this anywhere to
+     * take down first — the parish has had no way at all to be written to
+     * before now — so holding it back as a draft would leave the contact page
+     * with the same gap it has today.
      */
     published: true,
-    kind: 'prayer',
-    fields: [],
+    kind: 'native',
+    fields: [
+      /*
+       * Name and email are the whole point: this form exists as much to build a
+       * list the office can write back to as to carry any one question. Both
+       * required, and both are the *typed* field rather than free text —
+       * `identifySubmitter` finds the submitter by field type, not by label, and
+       * an email typed into a `shortText` box would leave the review table's
+       * Email column empty on every row.
+       */
+      field('name', 'shortText', 'Your name', { required: true }),
+      field('email', 'email', 'Email address', {
+        required: true,
+        help: 'Where the church will reply.',
+      }),
+      /*
+       * Optional, unlike on the four request forms, where the office has to be
+       * able to ring somebody back about a van. Making it required here would
+       * turn "I have a question" into a form that demands a phone number first,
+       * which is how a contact form stops being used.
+       */
+      field('phone', 'phone', 'Phone number', {
+        help: 'Only if you would rather be called than emailed.',
+      }),
+      field('subject', 'select', 'What is this about?', {
+        required: true,
+        options: options(
+          'A general question',
+          'Baptism, marriage, or a funeral',
+          'Confession or a visit from a father',
+          'Joining a service or a ministry',
+          'Donations and giving',
+          'Hall or facility booking',
+          'Something else',
+        ),
+      }),
+      field('message', 'longText', 'Your message', {
+        required: true,
+        placeholder: 'Tell the office what you need.',
+      }),
+    ],
     confirmationMessage:
-      'Your request has been passed to the fathers of the parish. There is no ' +
-      'confirmation email — the request was not tied to an account, which is deliberate.',
+      'Thank you — the church office has your message and will reply to the address you gave.',
+    /*
+     * A copy to the sender, which most of these forms deliberately do without.
+     *
+     * Nothing here is sensitive — a name, an address to reply to, and a question
+     * somebody chose to send — so a copy in their inbox is a record that they
+     * asked and when, which is exactly what they will want in a fortnight if
+     * nobody has replied.
+     */
+    confirmationEmailBody:
+      'Thank you for writing to St. Philopater Mercurius & St. Mina. ' +
+      'Your message has reached the church office, and a reply will come to this address.',
   },
 
   {
     slug: 'van-request',
     image: '/img/stock-passenger-van-1000.webp',
     title: 'Request a church van',
-    blurb: 'For a service or an event that needs one of the parish vans.',
+    blurb: 'For a service or an event that needs one of the church vans.',
     icon: 'file',
     order: 20,
     fields: [
@@ -165,11 +217,11 @@ const FORMS = [
     slug: 'new-service-request',
     image: '/img/stock-small-group-1000.webp',
     title: 'Request a new service',
-    blurb: 'To start a new service or meeting in the parish.',
+    blurb: 'To start a new service or meeting in the church.',
     icon: 'file',
     order: 30,
     fields: [
-      field('policy', 'consent', 'I have read the parish policy for new services', {
+      field('policy', 'consent', 'I have read the church policy for new services', {
         required: true,
       }),
       section('sec_who', 'Who is asking'),
@@ -208,11 +260,11 @@ const FORMS = [
     slug: 'events-request',
     image: '/img/stock-gathering-1000.webp',
     title: 'Request an event',
-    blurb: 'To put an event on the parish calendar and book what it needs.',
+    blurb: 'To put an event on the church calendar and book what it needs.',
     icon: 'calendar',
     order: 40,
     fields: [
-      field('policy', 'consent', 'I have read the parish policy for events', {
+      field('policy', 'consent', 'I have read the church policy for events', {
         required: true,
       }),
       section('sec_who', 'Who is asking'),
@@ -250,7 +302,7 @@ const FORMS = [
         // once they have picked one. Worth revisiting if the parish minds.
         showWhen: { field: 'vans', test: 'equals', value: '1-van' },
       }),
-      field('rental', 'radio', 'Would you rent a van if the parish ones are taken?', {
+      field('rental', 'radio', 'Would you rent a van if the church ones are taken?', {
         required: true,
         options: options('Yes', 'No'),
       }),
@@ -258,7 +310,7 @@ const FORMS = [
   },
 ];
 
-/** The four forms, as plain objects. Callers add their own audit fields. */
+/** Every seeded form, as plain objects. Callers add their own audit fields. */
 export function seedForms() {
   return FORMS.map((form) => ({
     slug: form.slug,
@@ -282,7 +334,7 @@ export function seedForms() {
      */
     notifyEmails: [],
     confirmationMessage:
-      form.confirmationMessage ?? 'Thank you — the parish office has your request.',
+      form.confirmationMessage ?? 'Thank you — the church office has your request.',
     confirmationEmailBody: '',
     breezeFormId: null,
   }));

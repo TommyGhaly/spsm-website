@@ -89,12 +89,7 @@ type Removal =
   | { kind: 'undoable'; data: Record<string, unknown>; until: number }
   | { kind: 'final' };
 
-export function EventEditor({
-  baked,
-  onSaved,
-  onDone,
-  back = { href: '/calendar', label: 'Parish Calendar' },
-}: {
+export function EventEditor({ baked, onSaved }: {
   baked: DocOf<Event>;
   /**
    * Hands the saved document back up to the page, after every write.
@@ -110,16 +105,6 @@ export function EventEditor({
    * `setState` nobody sees and the gain is that Done is never a step backwards.
    */
   onSaved: (event: DocOf<Event>) => void;
-  /**
-   * What Done does. Leaving edit mode on an event's own page, by default.
-   *
-   * Overridden by `/staff/events`, which reaches this editor for an event with no
-   * page of its own yet — one created since the last build. There is no page to
-   * stop editing there, so Done goes back to the list.
-   */
-  onDone?: (() => void) | undefined;
-  /** Where the back link goes. The parish calendar, unless told otherwise. */
-  back?: { href: string; label: string } | undefined;
 }) {
   const edit = useEditMode();
 
@@ -461,7 +446,13 @@ export function EventEditor({
           the leaves differ.
         */}
         <header className="gallery-head">
-          <BackLink href={back.href} label={back.label} />
+          {/*
+            Always the calendar. This used to be a prop, because `/staff/events`
+            reached the editor from a list and had to send Back there; that
+            screen is gone, so every route into this editor is an event's own
+            page, and every one of them came from the calendar.
+          */}
+          <BackLink href="/calendar" label="Church Calendar" />
 
           {load.kind === 'failed' && (
             <div className="notice notice--alarm" role="alert">
@@ -642,7 +633,7 @@ export function EventEditor({
         onDone={() => {
           // Flushed rather than trusted to the unmount handler, so "Done" is a
           // promise that what is on screen has been written.
-          void autosave.flush().then(() => (onDone ? onDone() : edit.setOn(false)));
+          void autosave.flush().then(() => edit.setOn(false));
         }}
       />
     </article>

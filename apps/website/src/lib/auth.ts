@@ -3,7 +3,7 @@
  *
  * There is deliberately no public authentication on this site. A parishioner
  * never signs in — the calendar, the bulletin, giving, and contact details are
- * all public, and prayer requests and vehicle registration are written
+ * all public, and vehicle registration and the parish forms are written
  * anonymously. Sign-in exists for exactly two things: the servants schedule and
  * the admin surface.
  *

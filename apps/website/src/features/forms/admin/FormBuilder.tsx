@@ -286,16 +286,12 @@ function Settings({
             below; every other form can only ever be `native` or `external`.
             Changing this is a code change, which is the right weight for it.
           */}
-          {draft.kind === 'vehicle' || draft.kind === 'prayer' ? (
+          {draft.kind === 'vehicle' ? (
             <>
-              <input
-                value={draft.kind === 'vehicle' ? 'Vehicle registration' : 'Prayer requests'}
-                readOnly
-              />
+              <input value="Vehicle registration" readOnly />
               <small>
-                {draft.kind === 'vehicle'
-                  ? 'Writes to the Taksis parking system. Only this form does, and that cannot be changed here.'
-                  : 'Its own form, and the body is encrypted before it is stored. That cannot be changed here.'}
+                Writes to the Taksis parking system. Only this form does, and that cannot be
+                changed here.
               </small>
             </>
           ) : (
@@ -328,7 +324,7 @@ function Settings({
             onChange={(event) => edit({ externalUrl: event.target.value.trim() || null })}
           />
           <small>
-            The card links straight here. Answers go to Breeze, not to the parish
+            The card links straight here. Answers go to Breeze, not to the church
             site — Breeze&apos;s API cannot accept a submission from us.
           </small>
         </label>

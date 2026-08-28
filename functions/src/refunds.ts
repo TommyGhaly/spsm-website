@@ -53,7 +53,7 @@ export const squareRefund = onRequest(
       // all — the two need different fixes and a volunteer should be told which.
       res.status(caller ? 403 : 401).json({
         error: caller
-          ? 'Refunds are limited to the bookstore group and parish staff.'
+          ? 'Refunds are limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
       return;

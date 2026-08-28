@@ -35,7 +35,8 @@ table records what is known; **unknown is not the same as cleared.**
 | `Iconography1.jpg`, `Iconography2.JPG` | Unknown | Pencil studies. Artist unrecorded. |
 | `Coptic_church_example.jpg` | Unknown, likely stock | **Not this parish's building.** See below. |
 | `Coptic_Church_Verse.jpg` | Unknown, likely stock | **Not this parish's building.** Verse text cropped out in the derivative. |
-| `Donation.png` | Unknown, likely stock | Generic "helping hands" stock. |
+| `Donation.png` | Unknown, likely stock | Generic "helping hands" stock. The homepage offering band. |
+| `Donation_backgroudn.png` | Added by Tommy, 2026-08-26 | A dome, its cross, and the bells beside it. **Not this parish's building** — but a detail rather than a portrait of one, which is why it can head a page when `Coptic_church_example.jpg` cannot. The /giving hero. Source and licence unrecorded. Filename is as received, misspelling included. |
 | `Coptic_pattern.png` | AI-generated | Not used. See below. |
 | `stock/stock-parking-lot.jpg` | Unsplash `photo-1506521781263-d8422e82f27a`, 2026-08-26 | **Unsplash License** — commercial use, no permission needed, attribution not required. Vehicle registration. |
 | `stock/stock-passenger-van.jpg` | Unsplash `photo-1746985094087-e703bf52c71b`, 2026-08-26 | **Unsplash License.** Van request. |
@@ -44,8 +45,35 @@ table records what is known; **unknown is not the same as cleared.**
 | `Festival.jpg` | Parish | Not used. Past event. |
 | `SPSM-Church-Image.jpg` | Old Wix site | Not used. 176×176 thumbnail. |
 | `brand/instagram.svg`, `brand/facebook.svg`, `brand/youtube.svg` | Official brand marks | Third-party trademarks. See below. |
+| `brand/app-store-badge.svg` | Apple Marketing Tools, 2026-08-26 | **Apple trademark.** Official "Download on the App Store" badge, US/UK English, black. Licensed for linking to the App Store only; may not be recoloured, recomposed, redrawn or reworded. Copied through unchanged. |
+| `apps/taksis-icon.png` | Taksis App Store listing (`id6743824691`), 2026-08-27 | **The parish's own.** Apple lists the seller as "ST. PHILOPATER MERCURIUS & ST. MINA COPTIC ORTHODOX CHURCH, INC." The artwork is the sixth-century icon of Christ and St. Menas. 512×512, resized for /apps. |
+| `apps/tithely-icon.png` | Tithe.ly App Store listing (`id694740700`), 2026-08-27 | **Your Giving, Inc.'s mark.** Their app's icon, shown on /apps to identify the app the parish's own store badges link to. Resized only — not cropped, recoloured, or rounded in the file. |
+| `brand/google-play-badge.png` | Google Play brand resources, 2026-08-26 | **Google trademark.** Official "Get it on Google Play" generic web badge. May not be modified, and the padding in the file is Google's required clear space — do not crop it. Copied through unchanged. |
+
+### An app icon is not a badge
+
+`apps/taksis-icon.png` and `apps/tithely-icon.png` **are** resized and
+re-encoded, unlike the two store badges below, and the distinction is worth
+stating because it looks inconsistent. A badge is a lockup with type in it that
+Apple and Google license for one purpose and publish rules about altering; an app
+icon is the artwork identifying the app being linked to, and showing it at 64px
+is not altering it. What is not done to either: no crop, no recolour, and no
+rounded corner baked into the pixels — the corner is a CSS `border-radius` on the
+element, which is how every store renders these and leaves the file untouched.
+
+Taksis's is the parish's own artwork and raises no question at all. Tithe.ly's is
+theirs, used beside their own badges to say which app you are installing.
 
 ### The three social marks are not ours to redraw
+
+The same goes double for `brand/app-store-badge.svg` and
+`brand/google-play-badge.png`, which are on /giving. Both vendors publish written
+rules, both rules say the artwork is used as supplied, and both files are copied
+through the pipeline byte for byte — no `sharp`, no re-encoding, no resizing, and
+the PNG is deliberately *not* converted to WebP. They are 11 KB and 5 KB
+together. Unlike the social marks these are not painted with `mask-image` and
+`currentColor` either: they are full-colour lockups with type in them, and
+`currentColor` would flatten the Play triangle to one colour.
 
 `brand/*.svg` are the official Instagram, Facebook and YouTube glyphs, copied
 through to `public/brand/` **unchanged** — not minified, not recoloured, not

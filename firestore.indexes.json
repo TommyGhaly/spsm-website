@@ -54,25 +54,6 @@
       ]
     },
     {
-      "comment": "Prayer wall: active public requests, newest first.",
-      "collectionGroup": "prayerRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "visibility",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "comment": "Member order history.",
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",

@@ -108,10 +108,10 @@ function today(): string {
  * Whether to record anything at all.
  *
  * Do Not Track is honoured even though these events identify nobody and could
- * defensibly ignore it. A parish asking to be trusted with someone's prayer
- * requests and their card should not be the site that argues its way around a
- * privacy signal because the data happened to be anonymous. It costs some
- * completeness in the numbers and nothing else.
+ * defensibly ignore it. A parish asking to be trusted with someone's name,
+ * address and card should not be the site that argues its way around a privacy
+ * signal because the data happened to be anonymous. It costs some completeness
+ * in the numbers and nothing else.
  */
 function trackingAllowed(): boolean {
   if (typeof window === 'undefined') return false;

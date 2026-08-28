@@ -87,7 +87,7 @@ export function BreezeImport({ onImported }: { onImported: () => Promise<void> }
       fields: result.fields,
       payment: { ...NO_PAYMENT },
       notifyEmails: [],
-      confirmationMessage: 'Thank you — the parish office has your submission.',
+      confirmationMessage: 'Thank you — the church office has your submission.',
       confirmationEmailBody: '',
       // Provenance, so which Breeze form this came from is recorded rather than
       // remembered. It is also what a future "has Breeze changed?" check needs.
@@ -120,7 +120,7 @@ export function BreezeImport({ onImported }: { onImported: () => Promise<void> }
     <>
       <p className="note">
         Copies a Breeze form&apos;s questions across as a new draft here. It does not
-        connect the two: answers sent to the copy arrive at the parish site, and
+        connect the two: answers sent to the copy arrive at the church site, and
         answers sent in Breeze stay in Breeze.
       </p>
 

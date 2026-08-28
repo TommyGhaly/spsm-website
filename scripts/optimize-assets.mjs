@@ -675,6 +675,36 @@ for (const [source, slug] of [
   const hands = join(SRC, 'Donation.png');
   write(join(PUBLIC, 'img/backdrop-giving-1600.webp'), await webp(hands, { width: 1600, quality: 72 }));
   write(join(PUBLIC, 'img/backdrop-giving-800.webp'), await webp(hands, { width: 800, quality: 70 }));
+
+  /*
+   * The /giving page's own hero: a dome, its cross, and the bells beside it.
+   *
+   * Added by Tommy 2026-08-26 as `Donation_backgroudn.png` (his spelling; the
+   * file is named as received and only the outputs are renamed). It is a *detail*
+   * — a dome against sky — not a photograph of a building, which is the whole
+   * reason it can sit at the top of a page when the two stock exteriors cannot.
+   * See "no photographs of our own building" in the notes above.
+   *
+   * Two crops, because the band is a wide strip on a laptop and a tall one on a
+   * phone, and `object-fit: cover` on a single square source throws away most
+   * of whichever axis is short:
+   *
+   *   landscape  2.4:1, the window that holds the cross and the whole dome and
+   *              nothing below it. `top` is set from the cross: at 430 the
+   *              upright clears the edge with room, and at much less the frame
+   *              fills with empty sky.
+   *   portrait   0.72:1, centred on the dome's axis rather than the frame's —
+   *              the dome sits left of centre in the source — and full height,
+   *              so the phone gets the bells as well.
+   */
+  const dome = join(SRC, 'Donation_backgroudn.png');
+  const domeLand = { left: 0, top: 430, width: 2821, height: 1175 };
+  const domePort = { left: 40, top: 0, width: 1980, height: 2750 };
+
+  write(join(PUBLIC, 'img/hero-giving-1600.webp'), await webp(dome, { width: 1600, quality: 74, extract: domeLand }));
+  write(join(PUBLIC, 'img/hero-giving-1000.webp'), await webp(dome, { width: 1000, quality: 72, extract: domeLand }));
+  write(join(PUBLIC, 'img/hero-giving-portrait-900.webp'), await webp(dome, { width: 900, quality: 74, extract: domePort }));
+  write(join(PUBLIC, 'img/hero-giving-portrait-600.webp'), await webp(dome, { width: 600, quality: 72, extract: domePort }));
 }
 
 // ── The Coptic cross ────────────────────────────────────────────────────────
@@ -736,6 +766,26 @@ for (const [source, slug] of [
       .webp({ lossless: true, effort: 6 })
       .toBuffer(),
   );
+
+  /*
+   * The same cross again, small, for the marker on the /contact map.
+   *
+   * 112 is 2× the 56 CSS pixels the marker is drawn at, so it is sharp on a
+   * retina panel and nothing more. Reusing the 360 would be 33 KB of lossless
+   * webp to fill a thumbnail, on the one image on that page a visitor is
+   * guaranteed to download — the map is the reason they scrolled there.
+   *
+   * Lossy at 92 rather than lossless, and only here: at this size the
+   * arabesques inside the arms are sub-pixel anyway, and the alpha channel is
+   * preserved either way, which is the part that matters over map tiles.
+   */
+  write(
+    join(PUBLIC, 'img/cross-coptic-112.webp'),
+    await sharp(keyed, { raw: { width: info.width, height: info.height, channels: 4 } })
+      .resize({ width: 112, height: 112, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .webp({ quality: 92, effort: 6 })
+      .toBuffer(),
+  );
 }
 
 // ── Social brand marks ──────────────────────────────────────────────────────
@@ -755,6 +805,61 @@ for (const [source, slug] of [
       join(PUBLIC, `brand/${name}.svg`),
       readFileSync(join(SRC, `brand/${name}.svg`)),
     );
+  }
+}
+
+// ── App Store and Google Play badges ────────────────────────────────────────
+// The two store badges on /giving, copied through byte for byte.
+//
+// Everything above about the social marks applies harder here, because both
+// vendors publish written rules about it. Apple's badge may not be recoloured,
+// recomposed, or redrawn, and its wording and proportions are fixed; Google's
+// may not be modified and requires clear space around it, which is why the file
+// is the *generic web* badge — that padding is part of the artwork.
+//
+// So: no `sharp`, no re-encoding, no resizing, and the PNG is not converted to
+// WebP. Neither is `<img>`-with-`mask-image` like the social marks: these are
+// full-colour lockups with type in them, not monochrome glyphs, and painting
+// them with `currentColor` would flatten the Play triangle to one colour.
+//
+// They are 10.8 KB and 4.9 KB. There is nothing here worth optimising and a
+// good deal worth not touching.
+{
+  for (const name of ['app-store-badge.svg', 'google-play-badge.png']) {
+    write(join(PUBLIC, `brand/${name}`), readFileSync(join(SRC, `brand/${name}`)));
+  }
+}
+
+// ── App icons ───────────────────────────────────────────────────────────────
+// The two icons on /apps, from each app's own App Store listing at 512×512.
+//
+// Resized and re-encoded, unlike the two badges above, and the distinction is
+// worth stating because it looks inconsistent. A badge is a *lockup with type in
+// it* that Apple and Google license for one purpose and publish rules about
+// altering; an app icon is the artwork identifying the app you are linking to,
+// and showing it smaller is not altering it. What is not done to either: no
+// crop, no recolour, no rounding baked into the pixels. The rounded corner is a
+// CSS `border-radius` on the element, which is how every store renders these and
+// leaves the file itself untouched.
+//
+// Taksis's icon is the parish's own — Apple lists the seller as
+// "ST. PHILOPATER MERCURIUS & ST. MINA COPTIC ORTHODOX CHURCH, INC." — and is
+// the sixth-century icon of Christ and St. Menas. Tithe.ly's belongs to Your
+// Giving, Inc. and is used to identify their app beside their own store badges.
+//
+// Two sizes for a 64px slot, 2x and 3x. No 1x: the 128 is 6 KB and a file that
+// small is not worth a third variant, and a 1x screen simply takes the 2x.
+{
+  for (const [source, name] of [
+    ['taksis-icon.png', 'taksis'],
+    ['tithely-icon.png', 'tithely'],
+  ]) {
+    for (const size of [128, 192]) {
+      write(
+        join(PUBLIC, `img/app-${name}-${size}.webp`),
+        await webp(join(SRC, `apps/${source}`), { width: size, quality: 88 }),
+      );
+    }
   }
 }
 

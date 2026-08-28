@@ -48,10 +48,10 @@ describe('parseScreenAdmin', () => {
 
   it('does not accept truthy values that are not true', () => {
     // A hand-edited document, or an older writer that stored strings.
-    const parsed = parseScreenAdmin({ events: 'true', bulletin: 1, prayer: {}, parking: 'yes' });
+    const parsed = parseScreenAdmin({ events: 'true', bulletin: 1, theme: {}, parking: 'yes' });
     expect(parsed.events).toBe(false);
     expect(parsed.bulletin).toBe(false);
-    expect(parsed.prayer).toBe(false);
+    expect(parsed.theme).toBe(false);
     expect(parsed.parking).toBe(false);
   });
 
@@ -85,7 +85,7 @@ describe('canAdminScreen', () => {
   it('grants a non-admin exactly the screens they are given', () => {
     const map = { ...none, bulletin: true };
     expect(canAdminScreen({ role: 'servant' }, map, 'bulletin')).toBe(true);
-    expect(canAdminScreen({ role: 'servant' }, map, 'prayer')).toBe(false);
+    expect(canAdminScreen({ role: 'servant' }, map, 'events')).toBe(false);
   });
 
   it('refuses when there is no claim or no map', () => {

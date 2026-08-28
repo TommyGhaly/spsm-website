@@ -119,14 +119,6 @@ if (process.env.NODE_ENV === 'development') {
        * Breeze ones are staff-only and inert until BREEZE_API_KEY is set.
        */
       {
-        source: '/api/prayer/submit',
-        destination: `${origin}/${project}/${region}/prayerSubmit`,
-      },
-      {
-        source: '/api/prayer/list',
-        destination: `${origin}/${project}/${region}/prayerList`,
-      },
-      {
         source: '/api/forms/submit',
         destination: `${origin}/${project}/${region}/formSubmit`,
       },
@@ -205,6 +197,16 @@ if (process.env.NODE_ENV === 'development') {
       {
         source: '/api/live',
         destination: `${origin}/${project}/${region}/live`,
+      },
+      /*
+       * The church schedule. Same arrangement once more, and without it
+       * /calendar locally can only ever show the "could not load" state — the
+       * page has nothing to read, because Breeze cannot be called from a
+       * browser and there is no route handler in a static export.
+       */
+      {
+        source: '/api/calendar',
+        destination: `${origin}/${project}/${region}/calendar`,
       },
     ],
     /*

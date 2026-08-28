@@ -26,7 +26,7 @@ const ROLE_RANK: Record<Role, number> = {
   admin: 3,
 };
 
-export const GROUPS = ['clergy', 'prayerTeam', 'bookstore', 'parking'] as const;
+export const GROUPS = ['clergy', 'bookstore', 'parking'] as const;
 export type Group = (typeof GROUPS)[number];
 
 /** Shape of the custom claims block we set via the Admin SDK. */
@@ -70,15 +70,6 @@ export function hasRole(claims: SpsmClaims | null, atLeast: Role): boolean {
 
 export function inGroup(claims: SpsmClaims | null, group: Group): boolean {
   return claims?.groups?.includes(group) ?? false;
-}
-
-/**
- * Prayer requests marked clergy-only are readable by clergy and admins.
- * Staff tier alone is not enough — a facilities coordinator has no business
- * reading them.
- */
-export function canReadPrivatePrayerRequests(claims: SpsmClaims | null): boolean {
-  return inGroup(claims, 'clergy') || hasRole(claims, 'admin');
 }
 
 export function isKnownRole(value: unknown): value is Role {

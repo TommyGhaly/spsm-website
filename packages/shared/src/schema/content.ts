@@ -85,7 +85,6 @@ export interface Member extends AuditFields {
 
   notificationPrefs: {
     announcements: boolean;
-    prayerTeam: boolean;
     orderUpdates: boolean;
   };
 }

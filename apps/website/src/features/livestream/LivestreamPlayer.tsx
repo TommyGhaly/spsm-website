@@ -68,20 +68,24 @@ export function LivestreamPlayer({
     );
   }
 
+  /*
+   * The "watch on the channel instead" link is *not* rendered here, and used to
+   * be. A server component cannot know whether the stream is on, so the link
+   * went out unconditionally — which put "Trouble with the player? Watch on the
+   * church's channel instead →" directly beneath a band reading "No live stream
+   * right now". There was no player to have trouble with, and the link led to
+   * whatever YouTube resolves `/channel/…/live` to when nothing is live: on
+   * 2026-08-28 that was a broadcast scheduled for 2026-05-03 that never aired.
+   *
+   * So it belongs to `LiveFrame`, which knows the answer, and appears in the two
+   * states where it means something: beside a player that may be misbehaving,
+   * and in place of one we could not check.
+   */
   return (
     <>
       <LiveFrame src={src} probe={liveProbe} fallbackUrl={config.fallbackUrl} wide={wide} />
 
       {config.scheduleNote && <p className="meta">{config.scheduleNote}</p>}
-
-      {config.fallbackUrl && (
-        <p>
-          Trouble with the player?{' '}
-          <a href={config.fallbackUrl} rel="noopener noreferrer" target="_blank">
-            Watch on the parish&apos;s channel instead →
-          </a>
-        </p>
-      )}
     </>
   );
 }

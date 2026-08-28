@@ -40,10 +40,14 @@
  *
  * ## What is still not here
  *
- * Creating an event. A new one has no page to be in place on until the next build
- * enumerates its slug, so it lives at `/staff/events`, reached from the masthead's
- * account menu. Reaching an *unpublished* event used to be on that list too and no
- * longer is: there is no such thing — see `EventEditor` on the publish step going.
+ * Creating an event, and there is now nowhere on the site that does it. A new
+ * event has no page to be in place on until the next build enumerates its slug,
+ * so it needed a screen of its own; that screen was `/staff/events`, reached
+ * from the masthead's account menu, and Tommy had both removed on 28 Aug 2026.
+ * Events are made in the Firestore console until something replaces it.
+ *
+ * Reaching an *unpublished* event used to be on this list too and no longer is:
+ * there is no such thing — see `EventEditor` on the publish step going.
  */
 
 import { useState } from 'react';
@@ -111,7 +115,7 @@ function Article({ event: baked }: { event: DocOf<Event> }) {
       )}
       <PageBody flush>
         <header className="gallery-head">
-          <BackLink href="/calendar" label="Parish Calendar" />
+          <BackLink href="/calendar" label="Church Calendar" />
           <div className="gallery-head__row">
             <div className="gallery-head__titles">
               <h1>{live.title}</h1>

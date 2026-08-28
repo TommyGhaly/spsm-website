@@ -195,7 +195,7 @@ if (missingPublic.length > 0) {
       warn(
         'Email/Password sign-in is DISABLED. Firebase console > Build > ' +
           'Authentication > Sign-in method. Nothing that needs a signed-in user ' +
-          'works until this is on — prayer requests, member profiles, orders.',
+          'works until this is on — member profiles and orders.',
       );
     } else {
       pass(`Email/Password sign-in is enabled (probe rejected as expected: ${reason})`);
@@ -495,9 +495,7 @@ const tithelyKeys = [
 const tithelySet = tithelyKeys.filter((k) => env(k));
 if (tithelySet.length === 0) {
   info('Giving API not configured. Expected — access is by request (support@tithe.ly). Nothing depends on it yet.');
-  if (!env('NEXT_PUBLIC_TITHELY_GIVING_URL')) {
-    warn('NEXT_PUBLIC_TITHELY_GIVING_URL is also empty. That one needs no API access — it is just the parish\'s existing giving page, and it is the fallback if the API request is declined. Worth filling in now.');
-  }
+  info('The give button does not need any of this. It opens the parish\'s hosted Tithe.ly form in an overlay, off a form id committed in features/giving/config.ts; NEXT_PUBLIC_TITHELY_FORM_ID and NEXT_PUBLIC_TITHELY_GIVING_URL are optional overrides and blank is the normal state.');
 } else if (tithelySet.length < tithelyKeys.length) {
   warn(`partially configured: ${tithelySet.join(', ')} set, others blank`);
 } else {

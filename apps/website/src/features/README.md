@@ -38,15 +38,14 @@ feature A needs a file inside feature B, that file probably belongs in
 | Feature | Route | State |
 |---|---|---|
 | `content` | `/about` `/beliefs` `/clergy` | Working. Waiting on content. |
-| `events` | `/events`, `/events/[slug]`, `/staff/events` | Working, **edited in place on the page**. Typing autosaves into `pendingEdit`; a separate Publish makes it the parish's copy. `/staff/events` exists only for what has no page to be in place on — creating one, and reaching a draft the export skipped. |
+| `events` | `/events`, `/events/[slug]` | Working, **edited in place on the page**. Typing autosaves into `pendingEdit`; a separate Publish makes it the parish's copy. Creating an event has no home on the site — `/staff/events` was it, and was removed on 28 Aug 2026 along with its link in the account menu. |
 | `bulletin` | homepage | **Live with real data.** |
 | `announcements` | homepage | Working. Waiting on content. |
 | `parish` | `/contact` | Working. Waiting on `config/parish`. |
 | `livestream` | `/livestream`, homepage | **Live.** Castr player when streaming; `/livestream` falls back to a notice above the YouTube archive, the homepage section removes itself. |
 | `bookstore` | `/bookstore` | Catalog reads. Checkout blocked on decision #5. |
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
-| `prayer` | `/prayer` | Disclosure ships; form blocked on auth being enabled. |
-| `giving` | `/giving` | Working. Needs `NEXT_PUBLIC_TITHELY_GIVING_URL`. |
+| `giving` | `/giving` | Working. Tithe.ly's hosted form in an overlay; needs no configuration. |
 | `servants` | `/servants` | **Live.** Breeze calendar, framed behind Microsoft sign-in. |
 
 "Waiting on content" means the code works and the source is empty, so the page

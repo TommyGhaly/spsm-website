@@ -15,11 +15,11 @@ export default function NotFound() {
         <h2>Page not found</h2>
         <p className="prose">
           That address doesn&apos;t match anything on the site. It may have moved when the
-          parish website changed platforms.
+          church website changed platforms.
         </p>
         <div className="prose">
           <p>
-            Try the <Link href="/calendar">parish calendar</Link>, the{' '}
+            Try the <Link href="/calendar">church calendar</Link>, the{' '}
             <Link href="/about">about page</Link>, or{' '}
             <Link href="/contact">contact the office</Link> and we&apos;ll point you to it.
           </p>

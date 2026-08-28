@@ -9,7 +9,7 @@
  *
  * This is a syntax/compile check, not a behavioural one. It cannot tell you the
  * policy is correct, only that it parses. Behavioural tests (does a `staff` user
- * actually get denied on a clergy-only prayer request?) still need
+ * actually get denied on another member's order?) still need
  * @firebase/rules-unit-testing.
  *
  * Run via: npm run rules:check

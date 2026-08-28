@@ -85,7 +85,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog
-      title="Parish forms"
+      title="Church forms"
       className="sheet--drawer"
       screen={view.kind}
       onClose={onClose}
@@ -167,21 +167,20 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
 /**
  * Forms that are parish infrastructure rather than parish paperwork.
  *
- * Two of them: vehicle registration and prayer requests. Both are permanent,
- * and for the same reason — there are physical NFC tags pointing at `/parking`
- * and at `/prayer`, a card in the car park and a card in the pews, and neither
- * can be reprinted by editing a file.
+ * One of them: vehicle registration. It is permanent because there is a
+ * physical NFC tag pointing at `/parking`, a card in the car park, and it
+ * cannot be reprinted by editing a file.
  *
  * That matters here because `/parking` does not check `published` — but
  * `formSubmit` does, and answers 404 to an unpublished form. So unticking
- * Published would leave the tags loading a form that silently refuses every
+ * Published would leave the tag loading a form that silently refuses every
  * submission, with nothing on the page to say why. Deleting it is worse again.
  *
  * Neither is a decision anybody makes on purpose from a list of checkboxes, so
  * the two controls that cause it are not offered on this row.
  */
 function isPermanent(form: FormDefinition): boolean {
-  return form.kind === 'vehicle' || form.kind === 'prayer';
+  return form.kind === 'vehicle';
 }
 
 function FormsList({
@@ -317,7 +316,6 @@ const KIND_LABEL: Record<FormDefinition['kind'], string> = {
   native: 'built here',
   external: 'links out',
   vehicle: 'vehicle registration',
-  prayer: 'prayer requests',
 };
 
 /**
@@ -345,7 +343,7 @@ function blankForm(id: string): FormDraft {
     fields: [],
     payment: { ...NO_PAYMENT },
     notifyEmails: [],
-    confirmationMessage: 'Thank you — the parish office has your submission.',
+    confirmationMessage: 'Thank you — the church office has your submission.',
     confirmationEmailBody: '',
     breezeFormId: null,
   };

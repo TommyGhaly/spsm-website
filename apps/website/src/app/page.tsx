@@ -4,7 +4,7 @@ import { BookshelfPreview, getProducts, toShopProducts } from '@/features/bookst
 import { ActivitiesPreview } from '@/features/programs';
 import { getCurrentBulletin, BulletinLive, todayInParish } from '@/features/bulletin';
 import { bundledPortrait, getContentPages } from '@/features/content';
-import { givingUrl } from '@/features/giving';
+import { GiveButton } from '@/features/giving';
 import { LivestreamPlayer, ShowWhenLive, livestreamProbe } from '@/features/livestream';
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
 import { storageUrl } from '@/lib/storage';
@@ -445,7 +445,7 @@ function QuickFacts({
           {principalService.name}
         </>
       ) : (
-        <Link href="/contact">Ask the parish office →</Link>
+        <Link href="/contact">Ask the church office →</Link>
       ),
     },
     {
@@ -478,7 +478,7 @@ function QuickFacts({
           label: 'Visiting',
           // Was `/welcome`, which is now an NFC destination rather than a page
           // on the site. `/about` is the nearest thing a visitor can browse to.
-          body: <Link href="/about">About this parish →</Link>,
+          body: <Link href="/about">About our church →</Link>,
         },
   ];
 
@@ -488,7 +488,7 @@ function QuickFacts({
         {/* The section needs a name for landmark navigation, but a visible
             heading over three self-explanatory tiles is clutter. */}
         <h2 id="facts-heading" className="visually-hidden">
-          Visiting the parish
+          Visiting the church
         </h2>
         <ul className="facts reveal-stagger">
           {facts.map((fact) => (
@@ -565,7 +565,7 @@ function Welcome({ band }: { band: string }) {
   return (
     <section className={band} aria-labelledby="welcome-heading">
       <div className="wrap reveal">
-        <SectionHeading id="welcome-heading" eyebrow="Our parish" title="A word of welcome" />
+        <SectionHeading id="welcome-heading" eyebrow="Our church" title="A word of welcome" />
 
         <div className="welcome">
           {/*
@@ -613,7 +613,7 @@ function Welcome({ band }: { band: string }) {
 
           <div className="welcome__words">
             <p>
-              We are glad you found us. This is a Coptic Orthodox parish in Wayland, and
+              We are glad you found us. This is a Coptic Orthodox church in Wayland, and
               the Divine Liturgy is the heart of our week — the feasts and the fasts,
               Sunday school, the prayers said for the sick all grow out of it.
             </p>
@@ -664,7 +664,7 @@ function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
         <SectionHeading
           id="clergy-heading"
           eyebrow="Our fathers"
-          title="The clergy of the parish"
+          title="Our fathers"
           note="Who to look for on a Sunday morning."
         />
         {/* A face with the name beside it, not under it. The portraits are up
@@ -841,12 +841,11 @@ function Livestream({
  * HTML instead of baked into pixels. See the README's note on that crop.
  * ---------------------------------------------------------------------------
  *
- * A link out rather than a form. The giving flow is a Tithe.ly-hosted page and
- * this site never touches a card number — see features/giving.
+ * Still not a payment form of ours. `GiveButton` opens Tithe.ly's own hosted
+ * form in an overlay over this page — the card number is typed into Tithe.ly's
+ * origin, inside a frame this site cannot read across. See features/giving.
  */
 function Giving() {
-  const url = givingUrl();
-
   return (
     <section id="giving" className="band band--deep giving" aria-labelledby="giving-heading">
       {/*
@@ -882,42 +881,32 @@ function Giving() {
           <SectionHeading
             id="giving-heading"
             eyebrow="Offering"
-            title="Supporting the parish"
+            title="Supporting the church"
             note="What is offered here sustains the church, its services, and the poor."
           />
 
           <div className="hero__actions">
             {/*
-              The direct link when there is one, because a visitor who has
-              decided to give should not be routed through a page whose job is
-              to tell them where to go. `/giving` then follows as the quieter
-              second action, for anyone who wants to read first.
+              The offering itself first, because a visitor who has already
+              decided should not be routed through a page whose job is to tell
+              them where to go — and now that the form opens in place, they are
+              not routed anywhere at all. `/giving` follows as the quieter second
+              action, for anyone who wants to read first.
 
-              With no URL configured there is only one destination worth
-              offering, and two buttons at the same page is a choice that isn't.
+              There is no "not configured" branch any more: the form id is
+              committed rather than left to an empty `.env` line, so the give
+              action exists on every build. See `features/giving/config.ts`.
             */}
-            {url ? (
-              <>
-                <a className="button" href={url} rel="noopener noreferrer" target="_blank">
-                  Give online
-                </a>
-                <Link className="button button--ghost" href="/giving">
-                  About giving
-                </Link>
-              </>
-            ) : (
-              <Link className="button" href="/giving">
-                How to give
-              </Link>
-            )}
+            <GiveButton>Give online</GiveButton>
+            <Link className="button button--ghost" href="/giving">
+              About giving
+            </Link>
           </div>
 
-          {url && (
-            <p className="meta giving__note">
-              Opens Tithe.ly, which processes the payment. The parish website never
-              sees your card details.
-            </p>
-          )}
+          <p className="meta giving__note">
+            The form opens here on this page. Tithe.ly processes the payment; the
+            church website never sees your card details.
+          </p>
 
           {/*
             The verse, as text.

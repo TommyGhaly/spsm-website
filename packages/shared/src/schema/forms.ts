@@ -237,17 +237,14 @@ export const NO_PAYMENT: FormPayment = { enabled: false, baseCents: 0, label: ''
  * `native`   — built in the drawer on /forms, drawn by `FormRenderer`.
  * `external` — a card that links out to somebody else's form. Breeze today.
  * `vehicle`  — the parking registration: hand-written, and posts to Taksis.
- * `prayer`   — prayer requests and commemorations: hand-written, and posts to
- *              `prayerSubmit`, which seals the body before storing it.
  *
- * The last two exist for the same reason and it is worth stating once. Both are
- * real components rather than field lists, because both need something the
- * builder has no vocabulary for — a repeating driver list and a fixed colour
- * set; a sealed body and a conditional occasion. Giving them a `kind` is what
- * lets them appear on the hub, be reordered, and be unpublished like any other
- * form without pretending they are data.
+ * `vehicle` is a real component rather than a field list, because it needs
+ * something the builder has no vocabulary for: a repeating driver list and a
+ * fixed colour set. Giving it a `kind` is what lets it appear on the hub, be
+ * reordered, and be unpublished like any other form without pretending it is
+ * data.
  */
-export type FormKind = 'native' | 'external' | 'vehicle' | 'prayer';
+export type FormKind = 'native' | 'external' | 'vehicle';
 
 export interface FormDefinition extends AuditFields {
   /** URL segment: /forms/<slug>. Lowercase, dashes. */
@@ -496,10 +493,7 @@ export function parseFormDefinition(id: string, raw: unknown): FormDefinition {
   const record = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
   const kindRaw = str(record['kind']);
-  const kind: FormKind =
-    kindRaw === 'external' || kindRaw === 'vehicle' || kindRaw === 'prayer'
-      ? kindRaw
-      : 'native';
+  const kind: FormKind = kindRaw === 'external' || kindRaw === 'vehicle' ? kindRaw : 'native';
 
   const fields = (Array.isArray(record['fields']) ? record['fields'] : [])
     .map(parseField)
@@ -533,7 +527,7 @@ export function parseFormDefinition(id: string, raw: unknown): FormDefinition {
       .filter((value) => value.includes('@')),
     confirmationMessage:
       str(record['confirmationMessage']).trim() ||
-      'Thank you — the parish office has your submission.',
+      'Thank you — the church office has your submission.',
     confirmationEmailBody: str(record['confirmationEmailBody']).trim(),
 
     breezeFormId: nullableStr(record['breezeFormId']),

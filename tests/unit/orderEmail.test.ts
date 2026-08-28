@@ -60,7 +60,7 @@ describe('buildOrderEmail', () => {
     expect(withAddress.message.text).toContain('office@spsmwayland.org');
 
     const without = buildOrderEmail({ ...base, shipping: false });
-    expect(without.message.text).toContain('contact the parish office');
+    expect(without.message.text).toContain('contact the church office');
     expect(without.message.text).not.toContain('@spsmwayland.org');
   });
 

@@ -86,8 +86,8 @@ if (!write) {
 }
 
 // Groups are preserved: `admin` is a tier on the role ladder and says nothing
-// about which capability groups someone holds. Dropping `clergy` here would
-// quietly revoke their access to clergy-only prayer requests.
+// about which capability groups someone holds. Dropping `bookstore` here would
+// quietly revoke their access to the shop's section controls.
 await post('/accounts:update', {
   localId: user.localId,
   customAttributes: JSON.stringify({ ...current, role: 'admin' }),

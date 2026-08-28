@@ -5,7 +5,7 @@ rules_version = '2';
 //
 // Two axes, matching packages/shared/src/roles.ts:
 //   role   — linear tier: member < servant < staff < admin
-//   groups — cross-cutting: clergy, prayerTeam, bookstore, parking
+//   groups — cross-cutting: clergy, bookstore, parking
 //
 // Both come from Auth custom claims (the ID token), never from a Firestore
 // document. Reading them from /members would let a member promote themselves by
@@ -206,7 +206,35 @@ service cloud.firestore {
       allow write: if hasRole('staff');
     }
 
-    // The Breeze calendar embed URL, and nothing else.
+    // ---- the calendar's two staff-writable layers -------------------------
+    //
+    // Both are world-readable because both are part of the public schedule:
+    // /calendar assembles them in the browser alongside Breeze, so an
+    // anonymous visitor has to be able to read them or a manually added
+    // service is invisible to everyone except staff.
+    //
+    // Two collections rather than one, and the split is what makes the rule
+    // "staff may only remove what staff added" enforceable rather than merely
+    // intended — see packages/shared/src/schema/scheduleAdmin.ts. There is no
+    // path here that can delete a liturgy, because a liturgy is not in either
+    // of these; it is in Breeze, and deleting it from the website would only
+    // make the website disagree with Breeze until the next read put it back.
+
+    // Something the parish is doing that no source knows about. Ours, so it can
+    // be created, edited and deleted.
+    match /scheduleEntries/{entryId} {
+      allow read: if true;
+      allow write: if hasRole('staff');
+    }
+
+    // An annotation on an occurrence that already exists. Creating or deleting
+    // one never creates or deletes the event it is about.
+    match /calendarDetails/{occurrenceId} {
+      allow read: if true;
+      allow write: if hasRole('staff');
+    }
+
+    // The two Breeze calendar embed URLs, and nothing else.
     //
     // Not a document under /config, and that is the whole point. `config` is
     // `allow read: if true`, and a narrower rule cannot take that back —
@@ -214,13 +242,31 @@ service cloud.firestore {
     // would be world-readable no matter what was written here. A separate
     // collection is the only way to gate it.
     //
-    // It has to be gated because the embed URL is itself the credential: Breeze
+    // It has to be gated because an embed URL is itself the credential: Breeze
     // serves the calendar to anyone who requests that URL, with no session and
-    // no referrer check. The website is a static export, so the alternative —
-    // baking it into /servants — publishes it on a CDN behind a sign-in form
-    // that stops nobody.
+    // no referrer check.
+    //
+    // -----------------------------------------------------------------------
+    // `read: if false` — nobody, not even a servant. This was `hasRole('servant')`.
+    //
+    // It was that because the browser used to fetch the URL after sign-in and
+    // frame it in an iframe, which meant every servant's tab held a credential
+    // they could copy and pass on, permanently and undetectably.
+    //
+    // Nothing reads this from a client any more. The `calendar` Cloud Function
+    // reads it through the Admin SDK — which bypasses rules entirely, so this
+    // line does not constrain it — calls Breeze, and returns the *events*. A
+    // servant now gets a week of JSON checked against their ID token instead of
+    // a bearer URL, so there is no longer any client that needs this document,
+    // and a rule granting access nobody uses is a rule that will be used by
+    // accident.
+    //
+    // `scripts/set-servants-schedule.mjs` writes it over the REST API with
+    // gcloud credentials, which bypass rules the same way. So does the emulator
+    // seed. The write rule stays as documentation of intent.
+    // -----------------------------------------------------------------------
     match /servantsConfig/{docId} {
-      allow read: if hasRole('servant');
+      allow read: if false;
       allow write: if hasRole('admin');
     }
 
@@ -265,45 +311,6 @@ service cloud.firestore {
 
       allow update: if hasRole('admin');
       allow delete: if hasRole('admin');
-    }
-
-    // ---- prayer requests --------------------------------------------------
-    // Privacy model: Firestore at-rest encryption (Decision #1, Option A).
-    // Bodies are plaintext and readable by clergy. Enforcement is here.
-
-    match /prayerRequests/{requestId} {
-      /*
-       * CLOSED to clients in both directions, and that is a strengthening
-       * rather than a restriction.
-       *
-       * ---------------------------------------------------------------------
-       * The bodies are encrypted now. Rules are no longer the privacy model.
-       *
-       * `docs/decisions.md` #1 chose plaintext-plus-rules and said what it
-       * cost: "anyone with the Firebase service account can read every request;
-       * so can a Firestore console admin." The parish asked for that to stop
-       * being true of the database, so `body`, `authorName` and `contactEmail`
-       * are now AES-256-GCM envelopes sealed under a Secret Manager key.
-       *
-       * Which forces both halves through Cloud Functions:
-       *
-       *   create — sealing needs the key, and a key in a browser is not a key.
-       *            `prayerSubmit` validates with the same shared validator the
-       *            form used, seals, and writes with the Admin SDK.
-       *   read   — a client reading this collection directly would get
-       *            envelopes. `prayerList` opens them for clergy and admins,
-       *            which is the same test this rule used to apply. Moving the
-       *            check into a Function is not a licence to widen it.
-       *
-       * The long `hasOnly([...])` field whitelist that used to live here is
-       * gone with the client write path it guarded. Nothing is unguarded: the
-       * Admin SDK is the only writer, and what it writes is fixed in code.
-       *
-       * A read arriving here is by definition not from us, and would only ever
-       * yield ciphertext anyway.
-       * ---------------------------------------------------------------------
-       */
-      allow read, write: if false;
     }
 
     match /products/{productId} {

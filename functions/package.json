@@ -2,7 +2,7 @@
   "name": "@spsm/functions",
   "version": "0.0.0",
   "private": true,
-  "description": "Cloud Functions: Square checkout + webhook, sealed prayer requests, parish forms, claim management",
+  "description": "Cloud Functions: Square checkout + webhook, parish forms, claim management",
   "//main": "lib/index.js, not dist/. tsc emits dist/ with a live import of @spsm/shared; esbuild then bundles that into lib/. Only lib/ is deployable \u2014 see the build script.",
   "main": "lib/index.js",
   "type": "module",

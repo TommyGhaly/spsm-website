@@ -40,7 +40,7 @@ export function buildFormEmails(input: {
       '',
       // The reviewer's route back. Not a deep link to the submission — there is
       // no per-submission URL — but the drawer is two clicks from here.
-      'Review it under Forms & submissions on the parish site.',
+      'Review it under Forms & submissions on the church site.',
     ].join('\n');
 
     messages.push({

@@ -4,7 +4,7 @@
  * A second, finer axis than `Role`. The role tiers answer "how much of the site
  * is this person trusted with at all"; this answers "which parts". A parish has
  * people who should edit the bulletin and nothing else, and a bookstore
- * volunteer who has no business in prayer requests — distinctions the four
+ * volunteer who has no business in the parish calendar — distinctions the four
  * tiers in ./roles.ts cannot express without inventing a role per job.
  *
  * **These flags grant, they never revoke.** `hasRole(claims, 'admin')` still
@@ -33,8 +33,6 @@ export const ADMIN_SCREENS = [
   'bulletin',
   /** Bookstore catalog and orders. */
   'bookstore',
-  /** Prayer requests. Sensitive — see docs/decisions.md #1. */
-  'prayer',
   /** Vehicle registrations from the car-park NFC tag. */
   'parking',
   /** The servants schedule and the calendar URL behind it. */

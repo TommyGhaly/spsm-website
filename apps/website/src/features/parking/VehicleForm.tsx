@@ -101,7 +101,7 @@ export function VehicleForm() {
         <h2>Vehicle registered</h2>
         <p>
           Thank you — the parking team has it. You won&apos;t receive a confirmation
-          email; if you need to change or remove the registration, contact the parish
+          email; if you need to change or remove the registration, contact the church
           office.
         </p>
         <p>
