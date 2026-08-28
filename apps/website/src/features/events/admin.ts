@@ -13,13 +13,16 @@
  * screen is gone and the in-place editor on the event's own page is now what
  * calls this.
  *
- * ## Creating, deleting and listing drafts now have callers again
+ * ## `listEventsForAdmin` and `createEvent` have no caller
  *
- * `listEventsForAdmin`, `createEvent` and `deleteEvent` sat here unused after
- * `/admin/events` was deleted, because a new event has no page to be in place
- * on and an unpublished one is not exported. They are reached again from the
- * account menu in the masthead — see `features/events/StaffMenu` — which is the
- * one staff-only surface that is not any particular event's page.
+ * They sat unused once `/admin/events` was deleted, got one back at
+ * `/staff/events`, and lost it again when that screen was removed on 28 Aug
+ * 2026 — a new event has no page to be in place on, so the only thing that can
+ * call them is a screen that is not an event's page, and there is not one.
+ *
+ * They are kept rather than deleted because the gap they fill is still real and
+ * still has no other answer: nothing on the site can make an event. `deleteEvent`
+ * is live — the in-place editor calls it.
  *
  * `setProgramLink` is still uncalled. Pointing a calendar event at a ministry
  * gallery has no home in the editor yet; leave it.

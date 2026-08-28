@@ -83,7 +83,7 @@ export default function EventsPage() {
         explains what to do with them.
       */}
       <p className="lede events-lede">
-        The standing ministries of the parish — who each is for, when it gathers,
+        The standing ministries of the church — who each is for, when it gathers,
         and the photographs it keeps. Choose one to see its gatherings.
       </p>
     </PageBody>

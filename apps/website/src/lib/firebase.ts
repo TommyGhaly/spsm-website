@@ -9,8 +9,8 @@
  *     public can read it. If firestore.rules ever tightens by mistake, the
  *     build goes blank rather than shipping content that then 403s at runtime.
  *
- *   - The browser, for the interactive parts (auth, prayer requests, vehicle
- *     registration) that a static file cannot do.
+ *   - The browser, for the interactive parts (auth, vehicle registration, the
+ *     parish forms) that a static file cannot do.
  *
  * `getPublicConfig` throws with the exact missing variable names, which is what
  * we want at build time. At runtime in the browser the values were inlined by

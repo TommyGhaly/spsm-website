@@ -30,7 +30,7 @@ export function PastStreams({ streams }: { streams: PastStream[] }) {
     <section aria-labelledby="past-streams">
       <h2 id="past-streams">Recent services</h2>
       <p className="note">
-        Previous liturgies from the parish&apos;s channel, most recent first.
+        Previous liturgies from the church&apos;s channel, most recent first.
       </p>
 
       <ul className="grid">

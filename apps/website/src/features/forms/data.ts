@@ -146,7 +146,7 @@ export async function submitForm(input: {
     // "check your connection" is actionable and "submission failed" is not.
     return {
       ok: false,
-      errors: ['Could not reach the parish server. Check your connection and try again.'],
+      errors: ['Could not reach the church server. Check your connection and try again.'],
     };
   }
 

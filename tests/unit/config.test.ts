@@ -181,6 +181,73 @@ describe('parseParishConfig', () => {
 });
 
 /**
+ * The coordinates behind the map on /contact.
+ *
+ * These are the one field on this document where a wrong value is completely
+ * silent: a bad phone number bounces, a bad address gets read by somebody who
+ * knows the parish, and a bad `geo` is a confident marker on a real map three
+ * streets from the church. So the parser refuses everything it is not sure
+ * about, and the map section renders nothing at all rather than guessing.
+ */
+describe('parseParishConfig — geo', () => {
+  it('is null when absent, so no map is drawn at all', () => {
+    expect(parseParishConfig({}).geo).toBeNull();
+    expect(DEFAULT_PARISH_CONFIG.geo).toBeNull();
+  });
+
+  it('reads a well-formed point', () => {
+    expect(parseParishConfig({ geo: { lat: 42.345742, lng: -71.3331069 } }).geo).toEqual({
+      lat: 42.345742,
+      lng: -71.3331069,
+    });
+  });
+
+  it('refuses half a point rather than pairing it with zero', () => {
+    // lat with no lng plus a default of 0 puts the parish in the Gulf of Guinea.
+    expect(parseParishConfig({ geo: { lat: 42.345742 } }).geo).toBeNull();
+    expect(parseParishConfig({ geo: { lng: -71.3331069 } }).geo).toBeNull();
+  });
+
+  it('refuses numbers written as strings', () => {
+    // The shape the Firebase console produces if somebody types into a string
+    // field. It would otherwise reach `Math` and come out as NaN pixels.
+    expect(parseParishConfig({ geo: { lat: '42.345742', lng: '-71.3331069' } }).geo).toBeNull();
+  });
+
+  it('refuses a point outside the world', () => {
+    // Catches a decimal point in the wrong place, and the degrees-times-1e7
+    // integer form some exports use.
+    expect(parseParishConfig({ geo: { lat: 423.45742, lng: -71.3331069 } }).geo).toBeNull();
+    expect(parseParishConfig({ geo: { lat: 423457420, lng: -713331069 } }).geo).toBeNull();
+  });
+
+  it('accepts a swapped pair, which is the honest limit of this check', () => {
+    /*
+     * Documenting a gap rather than asserting a feature. Reversing this parish
+     * gives (-71.33, 42.35) — a legal point off Antarctica, indistinguishable
+     * from a deliberate one. Nothing in a parser can catch that; looking at the
+     * map on /contact once after setting the field can.
+     */
+    expect(parseParishConfig({ geo: { lat: -71.3331069, lng: 42.345742 } }).geo).toEqual({
+      lat: -71.3331069,
+      lng: 42.345742,
+    });
+  });
+
+  it('refuses NaN and Infinity', () => {
+    expect(parseParishConfig({ geo: { lat: Number.NaN, lng: 0 } }).geo).toBeNull();
+    expect(parseParishConfig({ geo: { lat: 0, lng: Number.POSITIVE_INFINITY } }).geo).toBeNull();
+  });
+
+  it('does not discard the rest of the document over a bad point', () => {
+    // Field-by-field fallback, the same contract every other field here has.
+    const config = parseParishConfig({ geo: 'somewhere in Wayland', phone: '(508) 555-0100' });
+    expect(config.geo).toBeNull();
+    expect(config.phone).toBe('(508) 555-0100');
+  });
+});
+
+/**
  * The social URLs go straight into a footer `href`, and staff paste them in by
  * hand. The two realistic mistakes are a bare handle and a scheme-less domain;
  * both would emit a *relative* link that 404s on this site rather than opening

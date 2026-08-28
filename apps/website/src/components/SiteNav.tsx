@@ -36,6 +36,15 @@ import { galleryPathUrl } from '@/features/programs/media';
  */
 const NAV_CYCLE_MS = 3200;
 
+/*
+ * Every href here is a path on this site, which is what lets `Link` be used
+ * unconditionally below — it prefetches and routes client-side, and doing either
+ * to another origin is at best wasted work.
+ *
+ * The links that do leave the site are in the footer, not the header, and
+ * `FOOTER_OTHER` in `app/layout.tsx` renders those as plain anchors. Anything
+ * added here that is not a path of ours needs that branch first.
+ */
 export type NavChild = { href: string; label: string; coverPaths?: readonly string[] };
 export type NavItem = { href: string; label: string; children?: readonly NavChild[] };
 
@@ -57,12 +66,33 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
    */
   const [shot, setShot] = useState(0);
 
+  /**
+   * Whether the menu currently open is the one made of ministries.
+   *
+   * Two menus hang off this bar now and only one of them is data. About's five
+   * parts are literals from `features/content/about.ts` with no photographs, so
+   * everything below that exists to serve the ministries — the picture cycle and
+   * the published-check — must not fire when About is what is open. Opening it
+   * would otherwise start a timer with nothing to animate and, far worse, pull
+   * the Firestore SDK into the browser to answer a question About never asks.
+   *
+   * Detected from the children rather than from `item.href === '/events'`, so it
+   * stays true if the section is ever renamed and false for any future literal
+   * menu that gets added beside About.
+   */
+  const openHasPrograms =
+    openMenu !== null &&
+    (items
+      .find((item) => item.href === openMenu)
+      ?.children?.some((child) => child.href.startsWith('/events/')) ??
+      false);
+
   useEffect(() => {
-    if (openMenu === null) return;
+    if (!openHasPrograms) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const timer = window.setInterval(() => setShot((n) => n + 1), NAV_CYCLE_MS);
     return () => window.clearInterval(timer);
-  }, [openMenu]);
+  }, [openHasPrograms]);
 
   /**
    * Ministries that have been hidden since the last build.
@@ -85,7 +115,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
   const [publishedHrefs, setPublishedHrefs] = useState<Set<string> | null>(null);
 
   useEffect(() => {
-    if (openMenu === null || publishedHrefs !== null) return;
+    if (!openHasPrograms || publishedHrefs !== null) return;
     let live = true;
 
     void (async () => {
@@ -110,7 +140,7 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
     return () => {
       live = false;
     };
-  }, [openMenu, publishedHrefs]);
+  }, [openHasPrograms, publishedHrefs]);
 
   /** The baked children, minus anything hidden since the build. */
   const visibleChildren = (children: readonly NavChild[] | undefined) => {
@@ -240,20 +270,29 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               
               What that leaves for each way of using the site:
               
-                mouse    — pointing at "Events" opens it
-                keyboard — tabbing to "Events" opens it (onFocus below), and the
+                mouse    — pointing at the word opens it
+                keyboard — tabbing to the word opens it (onFocus below), and the
                            next Tab walks into the list
-                touch    — no hover, so tapping "Events" simply follows the
-                           link to /events, which lists all five programs as
-                           cards
+                touch    — no hover, so tapping the word simply follows the
+                           link to /events or /about, each of which lists its
+                           own children on the page
               
               The touch path is the reason a chevron is not needed: the fallback
               is not a dead end, it is the same content on a page with more room
-              for it.
+              for it. It is also a standing obligation on any section that grows
+              a menu — /about earns one only because it indexes its five parts.
             */
             <span
               key={item.href}
-              className="nav__group"
+              /*
+                `--open` is what turns the word itself into the top of the
+                panel — see the tab in globals.css. Without it the menu was a
+                pale rectangle under a red bar with nothing saying which word it
+                had come out of.
+              */
+              className={
+                openMenu === item.href ? 'nav__group nav__group--open' : 'nav__group'
+              }
               onMouseEnter={() => openNow(item.href)}
               onMouseLeave={closeSoon}
               // Focus opens it, which is the whole keyboard path now that there
@@ -273,8 +312,11 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
               </Link>
 
               {/*
-                Tiles, each cycling through its own program's photographs.
-                
+                Tiles. Under Events each cycles through its program's
+                photographs; under About there are none, and the same tile is
+                simply the plain light one a program with no approved pictures
+                already gets. One construction, two menus.
+
                 A plain list of five names had nothing to look at, and the
                 decorations tried instead — a heading, an ornament rule, a cross
                 per item — were furniture rather than substance. This section is
@@ -284,6 +326,11 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
                 program with none yet gets a plain warm ground, and the type
                 stays dark either way so a half-filled menu still reads as one
                 thing.
+
+                Shrinking them to thumbnails beside the names was tried and
+                reversed — Tommy asked for the picture shuffle back. What was
+                actually wrong was the menu's attachment to the bar, which is
+                the tab in globals.css, not the size of the photographs.
               */}
               <ul className="nav__menu" hidden={openMenu !== item.href}>
                 {visibleChildren(item.children).map((child) => (
@@ -313,7 +360,18 @@ export function SiteNav({ items }: { items: readonly NavItem[] }) {
         onClick={() => setOpen((wasOpen) => !wasOpen)}
       >
         <MenuGlyph open={open} />
-        Menu
+        {/*
+          The word is in its own element so CSS can take it away.
+
+          It is hidden — not deleted — on a narrow bar, where the 63px it costs
+          are part of what lets the parish's name set on one line beside the seal
+          instead of breaking across "St. Philopater / Mercurius". See
+          `.nav-toggle__label`.
+          The button keeps its accessible name either way, so a screen reader
+          still announces "Menu" and the three-line glyph carries it visually,
+          which is the one icon on the web that needs no caption.
+        */}
+        <span className="nav-toggle__label">Menu</span>
       </button>
 
       {/*

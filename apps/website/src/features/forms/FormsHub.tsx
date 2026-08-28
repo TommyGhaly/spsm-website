@@ -33,22 +33,12 @@ const FormsAdmin = lazy(() =>
 /**
  * What the page shows before Firestore answers, and if it never does.
  *
- * Deliberately the two NFC destinations rather than a spinner. Both have been
- * on cards in the pews and tags in the car park for months; a hub that shows
- * nothing at all while it waits is a worse answer than one that shows the two
- * forms most people arriving here are looking for.
+ * Deliberately the NFC destination rather than a spinner. It has been on a tag
+ * in the car park for months; a hub that shows nothing at all while it waits is
+ * a worse answer than one that shows the form most people arriving here are
+ * looking for.
  */
 const FALLBACK: readonly HubCard[] = [
-  {
-    slug: 'prayer-requests',
-    href: '/forms/prayer-requests',
-    title: 'Prayer requests',
-    blurb:
-      'Ask the fathers to pray for you or for someone you love, or offer a commemoration for the departed. No account needed.',
-    icon: 'hands',
-    image: '/img/sketch-christ-800.webp',
-    external: false,
-  },
   {
     slug: 'vehicle-registration',
     href: '/forms/vehicle-registration',
@@ -96,7 +86,7 @@ export function FormsHub() {
   return (
     <>
       <p className="note">
-        The forms the parish keeps online. Nothing here needs an account.
+        The forms the church keeps online. Nothing here needs an account.
       </p>
 
       <ul className="forms">
@@ -115,7 +105,7 @@ export function FormsHub() {
 
       <p className="note forms__ask">
         Looking for something that is not here?{' '}
-        <a href="/contact">Ask the parish office</a> — they can send you the right form.
+        <a href="/contact">Ask the church office</a> — they can send you the right form.
       </p>
 
       {/*
@@ -133,6 +123,37 @@ export function FormsHub() {
 }
 
 /**
+ * Forms whose home is a page of their own, keyed by slug.
+ *
+ * ---------------------------------------------------------------------------
+ * A hardcoded slug in the hub, which deserves a defence.
+ *
+ * `contact` is a real form definition — that is what gives it validation, a
+ * notification email, and a row in the submissions panel — but it is *rendered*
+ * inside /contact, under the parish's address and service times, because that
+ * is where somebody looking for a way to reach the office goes. Left to the
+ * default the card would point at `/forms/contact`, which is the same form on a
+ * bare page with none of that context, and the parish would have two URLs for
+ * one thing with no way to tell which is the real one.
+ *
+ * So the card links to the page the form lives on. The map is deliberately not
+ * a field on `FormDefinition`: this is not a setting the parish office should
+ * have to understand, it is a consequence of a route existing in this codebase,
+ * and it belongs next to the route rather than in Firestore.
+ *
+ * The fragment matters as much as the path. Somebody who clicked a card called
+ * "Contact the parish office" has already decided to write; landing them at the
+ * top of /contact makes them scroll past the address, the map and the service
+ * times to find the thing they clicked. `#write-heading` is the h2 above the
+ * form, and it is in the exported HTML even though the form itself arrives
+ * later, so the jump lands correctly on a cold load.
+ * ---------------------------------------------------------------------------
+ */
+const FORMS_WITH_A_HOME: Readonly<Record<string, string>> = {
+  contact: '/contact#write-heading',
+};
+
+/**
  * A published form, as a card.
  *
  * An `external` form keeps its own URL so the card links straight out to Breeze
@@ -143,7 +164,9 @@ function toCard(form: FormDefinition): HubCard {
   const external = form.kind === 'external' && form.externalUrl !== null;
   return {
     slug: form.slug,
-    href: external ? (form.externalUrl as string) : `/forms/${form.slug}`,
+    href: external
+      ? (form.externalUrl as string)
+      : (FORMS_WITH_A_HOME[form.slug] ?? `/forms/${form.slug}`),
     title: form.title,
     blurb: form.blurb,
     icon: form.icon,

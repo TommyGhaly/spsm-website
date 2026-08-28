@@ -286,8 +286,8 @@ export const formSubmit = onRequest(
           totalCents,
           paymentId,
           errors: [
-            'Your payment went through, but the parish record did not save. ' +
-              'Please contact the parish office — do not pay again.',
+            'Your payment went through, but the church record did not save. ' +
+              'Please contact the church office — do not pay again.',
           ],
         });
         return;

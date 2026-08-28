@@ -14,7 +14,11 @@ import { usingEmulators } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 
 /**
- * Sign-in and the role check in front of /servants.
+ * Sign-in and the role check in front of a staff-only route.
+ *
+ * Nothing wraps this today. Its last caller was `/staff/events`, removed on
+ * 28 Aug 2026; it is kept because it is the only thing that both refuses a page
+ * and *offers* sign-in, which is what any future staff route will want.
  *
  * This is a convenience, not a security boundary, and the distinction is worth
  * being blunt about: the site is a static export, so every byte of this file is
@@ -24,12 +28,16 @@ import type { User } from 'firebase/auth';
  * event, because the rules read the token, not this component.
  *
  * It lives in components/ rather than beside a route because it used to wrap
- * two: /servants and an /admin section, deleted because a second event editor
- * alongside the in-place one on the page itself was a standing source of
- * confusion about which was authoritative. Editing now happens where the
- * content is — see features/events/EventArticle.tsx and the galleries' edit
- * mode — and this gate is what /servants still needs, since an embedded
- * calendar URL is a bearer credential and cannot be shown to just anyone.
+ * three: an /admin section, /servants, and this. The /admin section went first,
+ * because a second event editor alongside the in-place one on the page itself
+ * was a standing source of confusion about which was authoritative. /servants
+ * went next, and for a better reason: it existed to hide a bearer URL behind a
+ * form, and the schedule is now fetched by a Function that checks a verified
+ * token, so there is no credential left in the browser for a gate to guard. It
+ * appears inside /calendar for whoever signs in.
+ *
+ * What remains is creating an event, which is genuinely a staff-only screen
+ * with nowhere in-place to live — see the note in HeaderAuth.tsx.
  */
 
 type State =
@@ -84,9 +92,9 @@ export function AdminGate({
   if (state.kind === 'signed-out' || state.kind === 'signing-in' || state.kind === 'error') {
     return (
       <div className="prose">
-        <h1>Parish sign-in</h1>
+        <h1>Church sign-in</h1>
         <p className="lede">
-          Sign in with your parish Microsoft account. There is no separate password to
+          Sign in with your church Microsoft account. There is no separate password to
           remember, and no account to create.
         </p>
 
@@ -104,8 +112,8 @@ export function AdminGate({
         </p>
 
         <p className="note">
-          Only accounts in the parish directory can sign in. If you are a parishioner
-          looking for the calendar or a prayer request, you don&apos;t need an account —{' '}
+          Only accounts in the church directory can sign in. If you are a member of the congregation
+          looking for the calendar or a form, you don&apos;t need an account —{' '}
           <Link href="/">everything public is on the main site</Link>.
         </p>
 

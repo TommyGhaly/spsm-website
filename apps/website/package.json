@@ -4,7 +4,7 @@
   "private": true,
   "description": "Public parish website. Static export to Firebase Hosting.",
   "scripts": {
-    "//dev": "No --port flag on purpose. Next honours $PORT and otherwise takes 3000, stepping up if it is busy \u2014 so this coexists with whatever else is already running instead of failing to start.",
+    "//dev": "No --port flag on purpose. Next honours $PORT and otherwise takes 3000, stepping up if it is busy — so this coexists with whatever else is already running instead of failing to start.",
     "dev": "next dev",
     "//dev:https": "HTTPS on :3000 with a self-signed certificate. Needed to fill a card: browsers only offer saved payment methods on a secure origin, and Square's own iframe wants one too. First run installs a local CA and will ask for your password.",
     "dev:https": "next dev --experimental-https",
@@ -16,10 +16,18 @@
     "dev:emulated": "NEXT_PUBLIC_USE_EMULATORS=1 next dev",
     "//dev:emulated:second": "The same, alongside a server you already have running. `next dev` refuses a second server for the same output directory, so this one gets its own (.next-emulated, gitignored) and its own port. Use it to compare the real Firestore and the emulators side by side without stopping either.",
     "dev:emulated:second": "NEXT_DIST_DIR=.next-emulated NEXT_PUBLIC_USE_EMULATORS=1 PORT=3100 next dev",
-    "//dev:emulated:third": "A third server, for when :3100 is already taken by another session working in this same tree. Its own output directory again \u2014 `next dev` refuses two servers sharing one.",
+    "//dev:emulated:third": "A third server, for when :3100 is already taken by another session working in this same tree. Its own output directory again — `next dev` refuses two servers sharing one.",
     "dev:emulated:third": "NEXT_DIST_DIR=.next-emulated-3200 NEXT_PUBLIC_USE_EMULATORS=1 PORT=3200 next dev",
     "//dev:real:spare": "The real Firestore on a spare port and its own output dir, for when :3000 is taken by another session. Same as `dev`, just somewhere else.",
-    "dev:real:spare": "NEXT_DIST_DIR=.next-real-3300 PORT=3300 next dev"
+    "dev:real:spare": "NEXT_DIST_DIR=.next-real-3300 PORT=3300 next dev",
+    "//dev:real:spare2": "A fourth server. :3000, :3100 and :3300 were all held by peer sessions at once on Aug 26 — this is the next port along rather than a reason to stop somebody else's.",
+    "dev:real:spare2": "NEXT_DIST_DIR=.next-real-3400 PORT=3400 next dev",
+    "//dev:real:spare3": "A fifth server. Same reason as spare2, one port along again: :3400 was also held by a peer session on Aug 27.",
+    "dev:real:spare3": "NEXT_DIST_DIR=.next-real-3500 PORT=3500 next dev",
+    "//dev:real:spare4": "One more. Its own dist dir, like the rest: `next dev` refuses a second server for the same output directory.",
+    "dev:real:spare4": "NEXT_DIST_DIR=.next-real-3600 PORT=3600 next dev",
+    "//dev:real:spare5": "One port past 3600. Peers held 3000–3600 on Aug 28.",
+    "dev:real:spare5": "NEXT_DIST_DIR=.next-real-3700 PORT=3700 next dev"
   },
   "dependencies": {
     "@spsm/shared": "*",
@@ -32,9 +40,9 @@
   "//firebase-admin": "A devDependency, not a dependency: it is used only by src/features/bulletin/data.ts, which runs during `next build` to read the announcements project with its service-account key. Nothing it touches reaches the browser, and the static export ships no server code at all.",
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "firebase-admin": "^14.2.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "firebase-admin": "^14.2.0",
     "typescript": "^5.6.0"
   }
 }

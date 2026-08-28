@@ -90,14 +90,14 @@ claims and are never read from a Firestore document — a member who could edit
 their own profile could otherwise promote themselves.
 
 **Two auth axes.** `role` is a linear tier (`member` < `servant` < `staff` <
-`admin`). `groups` are cross-cutting capabilities (`clergy`, `prayerTeam`,
-`bookstore`, `parking`). Clergy aren't "more staff than staff" — they hold a
-different key. That separation is what lets clergy-only prayer requests stay
-closed to a facilities coordinator who is legitimately `staff`.
+`admin`). `groups` are cross-cutting capabilities (`clergy`, `bookstore`,
+`parking`). Clergy aren't "more staff than staff" — they hold a different key.
+That separation is what lets a capability stay closed to a facilities
+coordinator who is legitimately `staff`.
 
 **There is no public sign-in.** A parishioner never authenticates: the calendar,
-bulletin, giving, and contact details are public, and prayer requests and
-vehicle registrations are written anonymously. Sign-in is Microsoft-only and
+bulletin, giving, and contact details are public, and vehicle registrations and
+the parish forms are written anonymously. Sign-in is Microsoft-only and
 exists for the servants schedule and the admin surface. Because only clergy,
 staff, and servants have a parish M365 address, **tenant membership is the
 qualification** and a first sign-in grants `servant`. `staff` and `admin` are

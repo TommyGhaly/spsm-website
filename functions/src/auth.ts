@@ -152,7 +152,7 @@ export const enforceTenantOnCreate = beforeUserCreated(
       });
       throw new AuthHttpsError(
         'permission-denied',
-        'This site only supports parish Microsoft accounts.',
+        'This site only supports church Microsoft accounts.',
       );
     }
 
@@ -197,7 +197,7 @@ export const enforceTenantOnCreate = beforeUserCreated(
       });
       throw new AuthHttpsError(
         'permission-denied',
-        'That account is not part of the parish directory. Use your parish Microsoft account.',
+        'That account is not part of the church directory. Use your church Microsoft account.',
       );
     }
 
@@ -263,7 +263,6 @@ async function createMemberProfile(
 
           notificationPrefs: {
             announcements: true,
-            prayerTeam: false,
             orderUpdates: false,
           },
 

@@ -17,7 +17,7 @@ The Firebase web API key is an *identifier*, not a credential. Google publishes
 it in their own docs and sample apps. You will see it in the network tab of every
 Firebase site on the internet. Don't spend effort hiding it — spend that effort
 on [`firestore.rules`](../firestore.rules), which is what actually stops someone
-reading the prayer requests.
+reading the member directory or another buyer's order.
 
 The Square access token is the opposite. It authorizes money movement. It must
 live only in the Cloud Functions runtime.
@@ -177,8 +177,8 @@ Done: the app registration exists, and `NEXT_PUBLIC_AZURE_CLIENT_ID` /
 ### Why single-tenant is a security control here
 
 There is no public sign-in on this site. A parishioner never authenticates —
-the calendar, bulletin, giving, and contact details are public, and prayer
-requests and vehicle registrations are written anonymously. Sign-in exists only
+the calendar, bulletin, giving, and contact details are public, and vehicle
+registrations and the parish forms are written anonymously. Sign-in exists only
 for the servants schedule and the admin surface.
 
 So **tenant membership is the qualification**: only clergy, staff, and servants

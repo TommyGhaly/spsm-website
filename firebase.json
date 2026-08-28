@@ -16,15 +16,6 @@
         "function": "formSubmit"
       },
       {
-        "//prayer": "Prayer requests, sealed with AES-256-GCM under PRAYER_KEY. Both directions are Functions: the key cannot live in a browser, and the read exists because encrypting without a way to open would leave the parish a collection nobody can read. firestore.rules closes prayerRequests to clients in both directions; the Admin SDK bypasses that. Supersedes docs/decisions.md #1.",
-        "source": "/api/prayer/submit",
-        "function": "prayerSubmit"
-      },
-      {
-        "source": "/api/prayer/list",
-        "function": "prayerList"
-      },
-      {
         "source": "/api/forms/breeze-list",
         "function": "breezeListForms"
       },
@@ -85,6 +76,11 @@
         "function": "live"
       },
       {
+        "//calendar": "The church schedule. It cannot be read from the page: Breeze puts its event data behind a session cookie its own embed page sets, on its own origin, with no CORS header. It also cannot be baked at build time \u2014 a \"this week\" view baked into static HTML is whatever week the deploy ran in. The `scope=servants` variant needs a verified `servant` claim and is the whole of what used to be the /servants page.",
+        "source": "/api/calendar",
+        "function": "calendar"
+      },
+      {
         "source": "/events/**",
         "destination": "/gallery.html"
       },
@@ -132,8 +128,14 @@
         "type": 301
       },
       {
+        "//servants": "Both of these used to be pages. The servants schedule is no longer its own screen \u2014 it appears inside /calendar for whoever signs in with a church account \u2014 so the Wix URL and the one this site published both land there. Checked against apps/website/src/app: there is no /servants route any more, which is what makes a redirect safe here. See the note above the redirects array.",
         "source": "/servants-calendar",
-        "destination": "/servants",
+        "destination": "/calendar",
+        "type": 301
+      },
+      {
+        "source": "/servants",
+        "destination": "/calendar",
         "type": 301
       },
       {

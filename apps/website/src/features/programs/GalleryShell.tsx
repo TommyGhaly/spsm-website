@@ -473,7 +473,7 @@ function GalleryMissing() {
       <div className="notice">
         <h1>No such gallery</h1>
         <p>
-          This link does not lead to one of the parish&apos;s programs. It may have been
+          This link does not lead to one of the church&apos;s programs. It may have been
           renamed, or the address may have a typo in it.
         </p>
         <p>

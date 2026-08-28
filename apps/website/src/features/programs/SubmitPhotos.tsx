@@ -327,7 +327,7 @@ export function SubmitPhotos({
      * is on the ministry now, not on the level.
      */
     if (!(await programAcceptsSubmissions(program.id))) {
-      setNotice('The parish has stopped collecting photographs here.');
+      setNotice('The church has stopped collecting photographs here.');
       setBusy(false);
       return;
     }
@@ -382,7 +382,7 @@ export function SubmitPhotos({
       });
       setNotice(
         sent.length === queue.length
-          ? 'Thank you. The parish will look at these before they appear here.'
+          ? 'Thank you. The church will look at these before they appear here.'
           : `${sent.length} of ${queue.length} were sent. The rest are still below — you can try again.`,
       );
       if (inputRef.current) inputRef.current.value = '';

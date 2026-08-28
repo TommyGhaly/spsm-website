@@ -65,7 +65,7 @@ const ICONS = {
       <path d="M3.5 10h17M8.5 3.5v3M15.5 3.5v3" />
     </>
   ),
-  /** Prayer requests. */
+  /** Cupped hands. Unused since prayer requests were removed. */
   hands: (
     <>
       <path d="M12 20.5s-6.5-4-6.5-9a3.5 3.5 0 0 1 6.5-1.8A3.5 3.5 0 0 1 18.5 11.5c0 5-6.5 9-6.5 9z" />
@@ -218,6 +218,30 @@ const ICONS = {
       <rect x="2.5" y="4" width="19" height="13" rx="2" />
       <path d="M8 21h8M12 17v4" />
       <path d="M10.5 8l4 2.5-4 2.5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  /**
+   * A phone number. Beside the `tel:` link on /contact.
+   *
+   * The handset, not a smartphone rectangle: at 20px a rounded rectangle with a
+   * dot in it is a phone, a tablet, a card, or a door, depending on who is
+   * looking. The handset silhouette has never meant anything else.
+   */
+  phone: (
+    <>
+      <path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.2 2 2 0 0 1 6.5 3z" />
+    </>
+  ),
+  /**
+   * Writing to the parish. The contact form's card and heading.
+   *
+   * An open flap rather than a closed one: a sealed envelope at 20px is a
+   * rectangle with a horizontal line in it, which reads as a card or a note.
+   */
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3.5 6.5l8.5 6 8.5-6" />
     </>
   ),
   /** A form or a document. The default for a form card with no icon chosen. */

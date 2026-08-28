@@ -334,7 +334,7 @@ export function ProgramDetails({
         value={program.name}
         busy={busy}
         onCommit={(name) => void write('rename this ministry', () => updateProgram(program.id, { name }, null))}
-        note={`Its address stays /events/${program.slug} — changing that would break links the parish has shared.`}
+        note={`Its address stays /events/${program.slug} — changing that would break links the church has shared.`}
       />
 
       <LiveText
@@ -391,7 +391,7 @@ export function ProgramDetails({
         onAsk={() => setConfirmDelete(true)}
         onKeep={() => setConfirmDelete(false)}
         busy={busy}
-        note="Its gatherings have to be removed first. The photographs are not deleted — they become the parish's, and any ministry can take them in from “Not in any ministry” in its picture manager."
+        note="Its gatherings have to be removed first. The photographs are not deleted — they become the church's, and any ministry can take them in from “Not in any ministry” in its picture manager."
         onRemove={() =>
           void (async () => {
             setBusy(true);
@@ -474,7 +474,7 @@ export function LevelDetails({
         value={node.title}
         busy={busy}
         onCommit={(title) => void write('rename this', { title })}
-        note="Its address does not change with its name — links the parish has shared keep working."
+        note="Its address does not change with its name — links the church has shared keep working."
       />
 
       <LiveText

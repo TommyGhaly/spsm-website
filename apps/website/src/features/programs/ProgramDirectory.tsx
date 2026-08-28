@@ -389,7 +389,7 @@ function ProgramRail() {
             when it will not work.
           */
           removeWarning:
-            'Its albums have to be removed first. Nothing else about the parish changes.',
+            'Its albums have to be removed first. Nothing else about the church changes.',
         }),
       )}
       onAdd={(name) =>

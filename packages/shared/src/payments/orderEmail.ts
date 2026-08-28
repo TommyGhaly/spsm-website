@@ -84,7 +84,7 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
 
   // The one sentence the Square receipt cannot carry.
   const fulfilment = input.shipping
-    ? 'Your order will be delivered to you. The parish packs orders by hand, so allow a few days.'
+    ? 'Your order will be delivered to you. The church packs orders by hand, so allow a few days.'
     : 'Your order will be waiting for you at the bookstore. You can collect it after any Liturgy.';
 
   /*
@@ -100,10 +100,10 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
 
   const question = input.parishEmail
     ? `If anything is wrong with this order, reply to ${input.parishEmail} and quote the reference above.`
-    : 'If anything is wrong with this order, contact the parish office and quote the reference above.';
+    : 'If anything is wrong with this order, contact the church office and quote the reference above.';
 
   const text = [
-    'Your order from the parish bookstore is placed.',
+    'Your order from the church bookstore is placed.',
     '',
     fulfilment,
     ...(filedUnder ? [filedUnder] : []),

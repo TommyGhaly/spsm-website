@@ -67,7 +67,7 @@ export function OrderLookup() {
       } catch {
         // A network failure, or the dev server with no Functions emulator
         // behind it — see the rewrite note in next.config.mjs.
-        setError("Could not reach the parish just now. Try again in a moment.");
+        setError("Could not reach the church just now. Try again in a moment.");
         setOrders(null);
       } finally {
         setState("idle");
@@ -80,7 +80,7 @@ export function OrderLookup() {
     <div className="orderfind">
       <form className="orderfind__form" onSubmit={submit}>
         <p className="orderfind__lead">
-          Your order number is on the confirmation email the parish sent you.
+          Your order number is on the confirmation email the church sent you.
           Enter it with the address that email went to.
         </p>
 

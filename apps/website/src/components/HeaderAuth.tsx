@@ -1,15 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
-import { hasRole, type Role } from '@spsm/shared';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import {
   getServerSnapshot,
   getSnapshot,
@@ -25,7 +16,8 @@ import {
  * Sign-in used to exist only as a wall: you found out about it by navigating to
  * /servants and being stopped. That is wrong for the schedule — a servant who
  * wants to know when they are serving had to already know the URL of a page
- * that is deliberately not in the nav.
+ * that was deliberately not in the nav. That page is gone; the schedule is part
+ * of /calendar now, and signing in from here is what reveals it.
  *
  * Rendered twice, like the nav: inline in the bar above 78rem, and inside the
  * disclosure panel below it. Both trees are always in the DOM and CSS picks —
@@ -33,52 +25,23 @@ import {
  * share one subscription and one SDK load, because the state lives in the
  * module singleton in lib/authStore.ts rather than in either component.
  *
- * Nothing here is a security boundary, and nothing here is role-gated either:
- * the menu offers the schedule to anyone signed in, and `firestore.rules` is
- * what stops someone the token does not vouch for. Editing the site is reached
- * from the pages themselves — an Edit control that appears for whoever may use
- * it — rather than from a link to a separate section. Same argument as the top
- * of AdminGate.tsx.
+ * ## Why it navigates nowhere
+ *
+ * It used to carry a list of destinations. Both rows were wrong for it. One
+ * pointed at /calendar, which is a nav link two inches to the left — a menu
+ * whose only content is a link the header already shows is a menu that teaches
+ * people it holds nothing. The other went to a staff-only events screen, which
+ * is gone entirely.
+ *
+ * So this says who you are and lets you stop being them, and that is the whole
+ * of it. Everywhere else, editing is reached from the page being edited — an
+ * Edit control that appears for whoever may use it — rather than from a link to
+ * a separate section. Same argument as the top of AdminGate.tsx. Nothing here
+ * is a security boundary either; `firestore.rules` is.
  */
 export function HeaderAuth({ variant = 'bar' }: { variant?: 'bar' | 'panel' }) {
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   return variant === 'panel' ? <PanelAuth state={state} /> : <BarAuth state={state} />;
-}
-
-/**
- * The links a signed-in person actually came for.
- *
- * ## Why the events entry is here and not on a page
- *
- * Creating an event is the one thing the in-place editor cannot do, and the
- * reason is structural rather than an omission: a new event has no page to be in
- * place on until the next build enumerates its slug. It lived at `/admin/events`
- * until that section was deleted, and had nowhere after.
- *
- * Opening a *draft* was the other reason this entry exists and no longer is —
- * events have no draft state; see `EventEditor`.
- *
- * This menu is the one staff-only surface in the whole site that is not any
- * particular page, which makes it the only honest place for them. Tommy ruled
- * out putting it on /calendar.
- *
- * `roles` gates a row. Not a security boundary — `firestore.rules` is — but the
- * menu is offered to anybody signed in, and a servant with no staff claim
- * following this link would reach a screen whose every write is refused.
- */
-const DESTINATIONS: {
-  href: string;
-  label: string;
-  icon: ReactNode;
-  roles?: Role;
-}[] = [
-  { href: '/servants', label: 'Servants schedule', icon: <CalendarGlyph /> },
-  { href: '/staff/events', label: 'Parish events', icon: <PlusGlyph />, roles: 'staff' },
-];
-
-/** The rows this person may see. */
-function destinationsFor(state: Extract<AuthState, { kind: 'signed-in' }>) {
-  return DESTINATIONS.filter((item) => !item.roles || hasRole(state.claims, item.roles));
 }
 
 /* ---- the wide-screen control ------------------------------------------- */
@@ -206,17 +169,6 @@ function BarAuth({ state }: { state: AuthState }) {
             {state.claims.role}
           </p>
 
-          <ul className="header-auth__links">
-            {destinationsFor(state).map((item) => (
-              <li key={item.href}>
-                <Link href={item.href} onClick={() => setOpen(false)}>
-                  {item.icon}
-                  <span>{item.label}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-
           <button
             type="button"
             className="header-auth__signout"
@@ -238,8 +190,8 @@ function BarAuth({ state }: { state: AuthState }) {
 
 /**
  * No dropdown down here. The panel is already a disclosure, and a menu inside a
- * menu on a phone is two things to dismiss; these are laid out as rows in the
- * same list the nav links use.
+ * menu on a phone is two things to dismiss — so who you are and the way out are
+ * laid flat under the nav links rather than folded behind a second toggle.
  */
 function PanelAuth({ state }: { state: AuthState }) {
   if (state.kind === 'signed-in') {
@@ -249,13 +201,6 @@ function PanelAuth({ state }: { state: AuthState }) {
           <span>{state.name}</span>
           <span className="nav-panel__role">{state.claims.role}</span>
         </p>
-        <ul className="nav-panel__links">
-          {destinationsFor(state).map((item) => (
-            <li key={item.href}>
-              <Link href={item.href}>{item.label}</Link>
-            </li>
-          ))}
-        </ul>
         <button type="button" className="nav-panel__button" onClick={() => void signOut()}>
           Sign out
         </button>
@@ -278,7 +223,7 @@ function PanelAuth({ state }: { state: AuthState }) {
       <p className="nav-panel__note">
         {state.kind === 'error'
           ? state.message
-          : 'For the servants schedule. Uses your parish Microsoft account.'}
+          : 'For the servants schedule. Uses your church Microsoft account.'}
       </p>
     </div>
   );
@@ -295,28 +240,7 @@ function initialsOf(name: string): string {
   return (first + last).toUpperCase();
 }
 
-/** Line icons for the menu rows. Decorative — each row has its own label. */
-function CalendarGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4" />
-    </svg>
-  );
-}
-
-/** For the events row. A calendar with a plus, since that is what it leads to. */
-function PlusGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7" />
-      <path d="M3 10h18M8 3v4M16 3v4M18 15v6M15 18h6" />
-    </svg>
-  );
-}
-
+/** Decorative — the row it sits in carries the label. */
 function SignOutGlyph() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"

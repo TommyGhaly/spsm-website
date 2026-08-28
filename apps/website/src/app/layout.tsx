@@ -5,7 +5,13 @@ import { getParishConfig } from '@/lib/config';
 import { Masthead } from '@/components/Masthead';
 import { SiteNav, type NavItem } from '@/components/SiteNav';
 import { programNavChildren } from '@/features/programs/nav';
+// A leaf module — five literals and two helpers, no Firestore import — so
+// pulling it in here adds nothing to what the chrome already costs.
+import { ABOUT_PAGES, aboutHref } from '@/features/content/about';
+// Build-time, and one query for the whole footer — see `filled` below.
+import { getContentPages } from '@/features/content';
 import { HeaderAuth } from '@/components/HeaderAuth';
+import { Icon } from '@/components/Icon';
 import { ThemeBootScript, ThemeRuntime } from '@/components/ThemeRuntime';
 import './globals.css';
 
@@ -28,7 +34,7 @@ export const metadata: Metadata = {
     template: '%s · St. Philopater Mercurius & St. Mina',
   },
   description:
-    'St. Philopater Mercurius & St. Mina Coptic Orthodox Church in Wayland, Massachusetts — liturgy times, parish calendar, and ministries.',
+    'St. Philopater Mercurius & St. Mina Coptic Orthodox Church in Wayland, Massachusetts — liturgy times, the church calendar, and ministries.',
   openGraph: {
     type: 'website',
     siteName: 'St. Philopater Mercurius & St. Mina Coptic Orthodox Church',
@@ -50,7 +56,7 @@ export const metadata: Metadata = {
  * creates programs and a developer should not have to. A failed read yields an
  * empty list, so the worst case is a missing dropdown — "Events" itself stays
  * in the bar and still leads to a page listing them. The top level is still
- * eight literals that no data can empty.
+ * nine literals that no data can empty.
  */
 const NAV: NavItem[] = [
   // The wordmark also links home, which is the convention a regular web user
@@ -58,7 +64,24 @@ const NAV: NavItem[] = [
   // the word "Home" and not finding it is a worse first impression than one
   // redundant link.
   { href: '/', label: 'Home' },
-  { href: '/about', label: 'About' },
+  /*
+   * About has a dropdown, like Events — but built from literals rather than
+   * from a read, so the exception below still stands as written.
+   *
+   * Its five parts are the same shape as the ministries under Events and behave
+   * the same way: hover or focus opens the menu, and a touch visitor who taps
+   * the word simply lands on `/about`, which lists all five. What it does not
+   * have is photographs. A ministry is a thing you can take a picture of; "Our
+   * belief" is not, and a tile carrying a name over a blank ground is the same
+   * plain light tile a program with no approved pictures already gets — see
+   * `NavTile`, which decides on `has-cover` from what actually loaded. So the
+   * menu needs no new markup and no new CSS: no `coverPaths`, no cover.
+   */
+  {
+    href: '/about',
+    label: 'About',
+    children: ABOUT_PAGES.map((page) => ({ href: aboutHref(page.slug), label: page.label })),
+  },
   // Two entries, two views of the `events` collection, and they are not
   // duplicates: `/calendar` is the month grid you scan by date, `/events` the
   // ordered list of what is coming up. See the note at the top of
@@ -73,26 +96,33 @@ const NAV: NavItem[] = [
   // The catalog page has existed since the bookstore feature shipped and was
   // reachable only by typing the URL — nothing on the site linked to it. It is
   // in the sitemap now for the same reason.
+  //
+  // It briefly became a child of a "More" menu, to buy room in the row for the
+  // announcements board and the apps page. Tommy put it back: those two belong
+  // in the footer, and the shop is a section of the site in its own right.
   { href: '/bookstore', label: 'Bookstore' },
   { href: '/livestream', label: 'Live' },
   { href: '/giving', label: 'Giving' },
   { href: '/contact', label: 'Contact' },
 ];
 
-// `/beliefs` has come off the top bar pending a decision to make it a
-// subcategory of something rather than a seventh sibling. The page, its footer
-// link and its sitemap entry are all untouched — this is a change to the header
-// only, and nothing 404s.
+// `/beliefs` came off the top bar pending a decision to make it a subcategory of
+// something rather than a seventh sibling. The decision went the other way in
+// the end: About grew its own "Our belief" page rather than adopting this one,
+// because `/beliefs` is the Church's faith as a content section and the new page
+// is this parish's account of it. `/beliefs` is unchanged — still built, still
+// in the footer, still in the sitemap, still off the header. Nothing 404s.
 
-// `/bookstore` is intentionally absent. The route works, but `products` is
-// empty, so a nav item leads a visitor to an empty state — which reads as a
-// broken site rather than an unfinished one. Restore it when there is a catalog.
+// `/gallery` is absent and must stay absent. It is not a page: it is the shell
+// that `firebase.json` rewrites `/events/**` into, and visiting it directly
+// renders "no such gallery", which is correct behaviour for machinery and a dead
+// end for a visitor. The photographs are reached through their program.
 
-// `/welcome` and `/prayer` are absent for the reason `/parking` is: they are
-// entry points for an NFC tap — a card in the pew, a tag by the door — and not
-// pages a visitor browses to. Both routes still build and still work; nothing on
-// the site links to them, and robots.ts and sitemap.ts keep them out of search
-// so the tag stays the only way in.
+// `/welcome` is absent for the reason `/parking` is: it is an entry point for
+// an NFC tap — a tag by the door — and not a page a visitor browses to. The
+// route still builds and still works; nothing on the site links to it, and
+// robots.ts and sitemap.ts keep it out of search so the tag stays the only way
+// in.
 //
 // `/ministries` is absent for a plainer reason: it is read once, not weekly,
 // and it crowds out the links that are. It stays reachable from the footer.
@@ -101,40 +131,75 @@ const NAV: NavItem[] = [
 // the week's schedule on the homepage. The footer link is `/#clergy`.
 
 /**
- * Practical links that don't earn a spot in the main nav.
+ * The parish's weekly announcements board, which is not part of this site.
  *
- * `/parking` is not here: it is reached by tapping an NFC tag in the car park,
- * not by browsing, so a footer link is the wrong entry point and would be the
- * site's most prominent route to its only unauthenticated write.
+ * It is its own Firebase site — a rotating display of the week's meetings and
+ * services, the thing that runs on the screen in the hall — and it is linked
+ * rather than embedded or copied. Copying it would mean two places to update and
+ * one of them wrong by Wednesday; the board reads live from its own source,
+ * which is the same rule the bulletin follows (read through, never mirror).
  */
-const FOOTER_LINKS = [
-  { href: '/contact', label: 'Contact the parish office' },
-  // Gated, and in the footer rather than the nav: it matters weekly to a few
-  // dozen people and not at all to everyone else the main nav is for.
-  { href: '/servants', label: 'Servants schedule' },
+export const WEEKLY_ANNOUNCEMENTS = 'https://weeklyannouncements-1d046.web.app/';
+
+/**
+ * The footer's links, in two short columns.
+ *
+ * ---------------------------------------------------------------------------
+ * Chosen by what somebody is actually trying to do, which is a different list
+ * from "the pages the header does not have".
+ *
+ * That earlier rule produced a tidy footer of four links, two of which — the
+ * clergy biographies and the servants' schedule — are read once a year and once
+ * a week by a few dozen people. Meanwhile the things a parishioner opens on a
+ * Sunday were left out on the grounds that the header already had them. A person
+ * at the bottom of a page is not thinking about which bar a link came from; they
+ * are looking for the liturgy, the calendar, or the form somebody asked them to
+ * fill in. Repeating four header links costs four lines and saves a scroll back
+ * to the top.
+ *
+ * So: the weekly errands first, then the occasional ones. `/#clergy` stays
+ * because somebody looking for the priest's name looks down here, and a
+ * fragment of the homepage is a better answer than nothing.
+ *
+ * `/servants` used to be the last entry, and the note here said the footer was
+ * its only door. It has no door now because it has no room: the servants
+ * schedule is part of `/calendar`, shown to whoever signs in with a church
+ * account. One fewer link, and the people who needed it no longer have to
+ * remember a URL nobody would link to them.
+ *
+ * `/parking` is still not here, and must not be. It is reached by tapping an NFC
+ * tag in the car park, so a footer link is the wrong entry point and would be the
+ * site's most prominent route to its only unauthenticated write.
+ * ---------------------------------------------------------------------------
+ */
+const FOOTER_MORE = [
+  { href: '/livestream', label: 'Watch live', external: false },
+  { href: '/calendar', label: 'Church calendar', external: false },
+  { href: WEEKLY_ANNOUNCEMENTS, label: 'Weekly announcements', external: true },
+  { href: '/#clergy', label: 'Our clergy', external: false },
+  { href: '/giving', label: 'Giving', external: false },
+  { href: '/forms', label: 'Forms', external: false },
+  { href: '/apps', label: 'Our apps', external: false },
 ] as const;
 
 /**
- * Repeated in the footer, where a visitor who scrolled past the nav ends up.
+ * Two links that appear only once there is something behind them.
  *
- * Clergy and ministries are here and nowhere else in the chrome, so taking them
- * off the top bar does not strand them. `/welcome` is not here at all — see NAV.
+ * `/beliefs` and `/ministries` are `content` sections, and both are empty: each
+ * renders "Nothing here yet", which is honest of the page and useless as a
+ * destination. They sat in the footer anyway, which made two of its five links a
+ * dead end.
  *
- * "Our clergy" is a fragment rather than a page: the biographies are disclosures
- * on the homepage. It is still worth a line here — a visitor looking for the
- * priest's name looks in the footer, and being sent to the right part of the
- * homepage is a better answer than not being answered.
+ * Deleting them outright would have stranded two real routes with no way back —
+ * nobody would remember to restore the link the day staff publish something. So
+ * the link is conditional on the read instead: publish a page in either section
+ * and it appears at the next build, with no code change. The same shape the
+ * social icons and `ParishMap` already use — render nothing rather than render a
+ * promise the data cannot keep.
  */
-const FOOTER_EXPLORE = [
-  // "Our faith" carries more weight here now that `/beliefs` is off the top bar.
-  { href: '/beliefs', label: 'Our faith' },
-  { href: '/#clergy', label: 'Our clergy' },
-  { href: '/ministries', label: 'Ministries' },
-  // Was `/events` under this label, which is now the *other* page's name. One
-  // link, pointed at the page that actually is the calendar; `/events` is in
-  // the top bar and does not need a second entry point down here.
-  { href: '/calendar', label: 'Parish calendar' },
-  { href: '/giving', label: 'Giving' },
+const FOOTER_SECTIONS = [
+  { section: 'beliefs', href: '/beliefs', label: 'Our faith' },
+  { section: 'ministries', href: '/ministries', label: 'Ministries' },
 ] as const;
 
 /**
@@ -159,6 +224,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
    * for why that matters and what it costs.
    */
   const programs = await programNavChildren();
+
+  /*
+   * Which `content` sections actually have a published page in them.
+   *
+   * One query for every section rather than one per section, and it is the same
+   * query `/beliefs` and `/ministries` each run for themselves — so the footer
+   * cannot offer a link to a page that will greet the visitor with "Nothing here
+   * yet". See FOOTER_SECTIONS.
+   *
+   * A failed read yields `[]` through `safely()`, which hides both links. That
+   * is the right way round: a missing link is a smaller fault than a link into
+   * an empty room.
+   */
+  const filled = new Set((await getContentPages()).map((page) => page.section));
+  const sections = FOOTER_SECTIONS.filter((item) => filled.has(item.section));
+
   const nav: NavItem[] = NAV.map((item) =>
     item.href === '/events' && programs.length > 0 ? { ...item, children: programs } : item,
   );
@@ -251,115 +332,148 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <footer className="footer">
             <div className="wrap">
               <div className="footer__inner">
+                {/*
+                  Who and where, in one block.
+
+                  It was two — an identity block and a "Visit" column under its
+                  own heading — which is two headings and a column of width for
+                  four short lines that all answer the same question. The seal
+                  now sits beside the name rather than above it, which is worth
+                  about 60px of the footer's height on every page, and the
+                  address follows the name it belongs to.
+                */}
                 <div className="footer__brand">
-                  <img
-                    className="footer__seal"
-                    src="/brand/seal-128.png"
-                    srcSet="/brand/seal-128.png 1x, /brand/seal-192.png 2x"
-                    alt=""
-                    width={140}
-                    height={128}
-                  />
-                  {/*
-                    No hardcoded `<br />` any more.
+                  <div className="footer__lockup">
+                    <img
+                      className="footer__seal"
+                      src="/brand/seal-128.png"
+                      srcSet="/brand/seal-128.png 1x, /brand/seal-192.png 2x"
+                      alt=""
+                      width={70}
+                      height={64}
+                    />
+                    <div>
+                      {/*
+                        One line, at every width — the same requirement the
+                        masthead wordmark carries, and met the same way: `nowrap`
+                        plus a size that is a function of the room it has. See
+                        `.footer__name`. This has been a hardcoded `<br />` and
+                        then a balanced two-line wrap; it is neither now.
+                      */}
+                      <p className="footer__name">St. Philopater Mercurius &amp; St. Mina</p>
+                      <p className="footer__kicker">Coptic Orthodox Church</p>
+                    </div>
+                  </div>
 
-                    It forced the break after "Mercurius", which left "& St.
-                    Mina" alone on a short second line at every width — a ragged
-                    two-line name beside a centred seal. The name now wraps
-                    where the column actually ends, and `text-wrap: balance`
-                    evens the lines out; see `.footer__name`.
-                  */}
-                  <p className="footer__name">St. Philopater Mercurius &amp; St. Mina</p>
-                  <p className="footer__kicker">Coptic Orthodox Church</p>
+                  {/* Each line is conditional for the same reason ContactDetails
+                      is: a church that has published a phone number but not an
+                      address should show the phone number, not a blank row. */}
+                  <address className="footer__contact">
+                    {address ? (
+                      <span>
+                        {parish.address.line1},{' '}
+                        {[parish.address.city, parish.address.state].filter(Boolean).join(', ')}{' '}
+                        {parish.address.postalCode}
+                      </span>
+                    ) : (
+                      <span>Wayland, Massachusetts</span>
+                    )}
+                    {/* Both on one line, which they fit on: a phone number and
+                        an email address are 250px together and the narrowest
+                        this block ever gets is 339. Two lines here were two lines
+                        of footer on every page. */}
+                    {(parish.phone || parish.email) && (
+                      <span className="footer__reach">
+                        {parish.phone && (
+                          <a href={`tel:${parish.phone.replace(/[^\d+]/g, '')}`}>{parish.phone}</a>
+                        )}
+                        {parish.phone && parish.email && (
+                          <span aria-hidden="true">·</span>
+                        )}
+                        {parish.email && <a href={`mailto:${parish.email}`}>{parish.email}</a>}
+                      </span>
+                    )}
+                  </address>
 
                   {/*
-                    Only rendered when the parish has actually filled these in.
-                    See `ParishSocial` — the defaults are empty strings, because
-                    an icon pointing at a guessed account is worse than no icon.
+                    One link, to the page with the map on it, rather than the two
+                    directions buttons themselves.
+
+                    `ParishMap` has an Apple Maps link and a Google Maps link and
+                    a note explaining why it needs both — each is shaped for the
+                    app it opens, and both were checked against the live apps.
+                    Reproducing that pair down here would be two more links and a
+                    second copy of a decision that is already made; sending
+                    somebody to the map is one link and lets them pick.
                   */}
-                  {social.length > 0 && (
-                    <ul className="footer__social">
-                      {social.map((account) => (
-                        <li key={account.name}>
-                          <a
-                            href={account.href}
-                            /*
-                              `noopener` for the usual reason, and `noreferrer`
-                              with it. `rel="me"` is the one worth explaining:
-                              it is how a profile and a site claim each other,
-                              and it is what makes a Mastodon-style verified
-                              link resolve back here.
-                            */
-                            rel="me noopener noreferrer"
-                            target="_blank"
-                          >
-                            {/*
-                              The mark is painted by CSS `mask-image` from
-                              `public/brand/<name>.svg` — see `.social-icon`.
-                              The path data therefore lives in exactly one
-                              place, the file in `assets/brand/`, rather than
-                              being duplicated into a React component that can
-                              drift from it.
-                            */}
-                            <span
-                              className={`social-icon social-icon--${account.name}`}
-                              aria-hidden="true"
-                            />
-                            {/* The link's accessible name. The mark is a
-                                background, so without this the link announces
-                                as its bare URL. */}
-                            <span className="visually-hidden">
-                              {account.label} (opens in a new tab)
-                            </span>
-                          </a>
+                  <p className="footer__directions">
+                    <Link href="/contact">
+                      Map and directions
+                      <Icon name="arrow" size={14} />
+                    </Link>
+                  </p>
+                </div>
+
+                {/*
+                  The regular weekly schedule, in the footer of every page.
+
+                  "When is liturgy?" is the most asked question a church website
+                  answers, and until this it was on the homepage and on /contact
+                  and nowhere else — so anybody reading a form, an event or the
+                  bookstore had to navigate to find it.
+
+                  It is `config/parish.serviceTimes`, the same source both those
+                  pages read, so there is no second copy to fall out of date. The
+                  whole block is dropped when the church has not published any: a
+                  heading over nothing is worse than no heading.
+
+                  These are the times that hold *every* week; a feast is an
+                  exception to them, which is what the calendar link in the next
+                  column is for. See the note in `ServiceTimes`.
+                */}
+                {parish.serviceTimes.length > 0 && (
+                  <section aria-labelledby="footer-services">
+                    <h2 id="footer-services">Services</h2>
+                    <ul className="footer__services">
+                      {parish.serviceTimes.map((service) => (
+                        <li key={`${service.day}-${service.time}-${service.name}`}>
+                          <span className="footer__service-when">
+                            {service.day} · {service.time}
+                          </span>{' '}
+                          <span className="footer__service-name">{service.name}</span>
                         </li>
                       ))}
                     </ul>
-                  )}
-                </div>
+                  </section>
+                )}
 
-                <nav aria-labelledby="footer-explore">
-                  <h2 id="footer-explore">Explore</h2>
-                  <ul className="footer__links">
-                    {FOOTER_EXPLORE.map((item) => (
-                      <li key={item.href}>
-                        <Link href={item.href}>{item.label}</Link>
-                      </li>
-                    ))}
-                  </ul>
-                </nav>
-
-                <section aria-labelledby="footer-visit">
-                  <h2 id="footer-visit">Visit</h2>
-                  {/* Each line is conditional for the same reason ContactDetails
-                      is: a parish that has published a phone number but not an
-                      address should show the phone number, not a blank row. */}
-                  {address ? (
-                    <address style={{ fontStyle: 'normal' }}>
-                      {parish.address.line1}
-                      <br />
-                      {[parish.address.city, parish.address.state].filter(Boolean).join(', ')}{' '}
-                      {parish.address.postalCode}
-                    </address>
-                  ) : (
-                    <p>Wayland, Massachusetts</p>
-                  )}
-                  {parish.phone && (
-                    <p>
-                      <a href={`tel:${parish.phone.replace(/[^\d+]/g, '')}`}>{parish.phone}</a>
-                    </p>
-                  )}
-                  {parish.email && (
-                    <p>
-                      <a href={`mailto:${parish.email}`}>{parish.email}</a>
-                    </p>
-                  )}
-                </section>
-
-                <nav aria-labelledby="footer-parish">
-                  <h2 id="footer-parish">Parish</h2>
-                  <ul className="footer__links">
-                    {FOOTER_LINKS.map((item) => (
+                {/*
+                  Two short columns rather than one long one — eight links in a
+                  single stack is eight rows, and the footer is as tall as its
+                  tallest block. `sections` is the pair that only exists when the
+                  `content` collection has something published in them; see
+                  FOOTER_SECTIONS.
+                */}
+                <nav aria-labelledby="footer-more">
+                  <h2 id="footer-more">More</h2>
+                  <ul className="footer__links footer__links--split">
+                    {FOOTER_MORE.map((item) =>
+                      item.external ? (
+                        <li key={item.href}>
+                          <a href={item.href} rel="noopener noreferrer" target="_blank">
+                            {item.label}
+                            {/* The link's text alone does not say it leaves the
+                                site; an icon could not say it either. */}
+                            <span className="visually-hidden"> (opens in a new tab)</span>
+                          </a>
+                        </li>
+                      ) : (
+                        <li key={item.href}>
+                          <Link href={item.href}>{item.label}</Link>
+                        </li>
+                      ),
+                    )}
+                    {sections.map((item) => (
                       <li key={item.href}>
                         <Link href={item.href}>{item.label}</Link>
                       </li>
@@ -368,17 +482,72 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </nav>
               </div>
 
+              {/*
+                The bottom bar carries the social marks now.
+
+                They were a fourth row inside the identity block, which made that
+                block the tallest thing in the footer and therefore set the height
+                of the whole strip. Down here they cost nothing: the copyright
+                line was one item in a `space-between` row with an empty
+                right-hand end.
+              */}
               <div className="footer__bottom">
                 {/* The build year, frozen into the HTML — there is no server to
                     re-evaluate it. Correct as long as the site is rebuilt at
                     least once a year, which rebuild-on-publish makes near
                     certain; a stale year in a footer is also the mildest
-                    possible symptom of a site nobody has deployed in 12 months. */}
+                    possible symptom of a site nobody has deployed in 12 months.
+
+                    One line, not two: "Wayland, Massachusetts" used to be its own
+                    paragraph, three inches under the address it repeats. */}
                 <p>
                   &copy; {new Date().getFullYear()} St. Philopater Mercurius &amp; St. Mina
-                  Coptic Orthodox Church
+                  Coptic Orthodox Church, Wayland, Massachusetts
                 </p>
-                <p>Wayland, Massachusetts</p>
+
+                {/*
+                  Only rendered when the church has actually filled these in.
+                  See `ParishSocial` — the defaults are empty strings, because an
+                  icon pointing at a guessed account is worse than no icon.
+                */}
+                {social.length > 0 && (
+                  <ul className="footer__social">
+                    {social.map((account) => (
+                      <li key={account.name}>
+                        <a
+                          href={account.href}
+                          /*
+                            `noopener` for the usual reason, and `noreferrer`
+                            with it. `rel="me"` is the one worth explaining: it
+                            is how a profile and a site claim each other, and it
+                            is what makes a Mastodon-style verified link resolve
+                            back here.
+                          */
+                          rel="me noopener noreferrer"
+                          target="_blank"
+                        >
+                          {/*
+                            The mark is painted by CSS `mask-image` from
+                            `public/brand/<name>.svg` — see `.social-icon`. The
+                            path data therefore lives in exactly one place, the
+                            file in `assets/brand/`, rather than being duplicated
+                            into a React component that can drift from it.
+                          */}
+                          <span
+                            className={`social-icon social-icon--${account.name}`}
+                            aria-hidden="true"
+                          />
+                          {/* The link's accessible name. The mark is a
+                              background, so without this the link announces as
+                              its bare URL. */}
+                          <span className="visually-hidden">
+                            {account.label} (opens in a new tab)
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </footer>

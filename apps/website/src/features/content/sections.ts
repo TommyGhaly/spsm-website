@@ -14,8 +14,8 @@ export const SECTION_META: Record<ContentSection, { title: string; lede: string 
     lede: 'If you are coming for the first time, begin here.',
   },
   about: {
-    title: 'About the Parish',
-    lede: 'This parish, its history, and the Church to which it belongs.',
+    title: 'About Our Church',
+    lede: 'Our church, its history, and the Church to which it belongs.',
   },
   beliefs: {
     title: 'Our Faith',
@@ -23,18 +23,18 @@ export const SECTION_META: Record<ContentSection, { title: string; lede: string 
   },
   clergy: {
     title: 'Our Clergy',
-    lede: 'The fathers who serve this parish.',
+    lede: 'The fathers who serve this church.',
   },
   ministries: {
     title: 'Ministries',
-    lede: 'How the parish serves, teaches, and gathers through the year.',
+    lede: 'How the church serves, teaches, and gathers through the year.',
   },
   contact: {
     title: 'Contact Us',
-    lede: 'How to reach the parish office.',
+    lede: 'How to reach the church office.',
   },
   misc: {
-    title: 'Parish Information',
+    title: 'Church Information',
     lede: '',
   },
 };

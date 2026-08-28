@@ -7,67 +7,31 @@ reader can tell a considered trade-off from an accident.
 
 ## Resolved
 
-### 1. Prayer request privacy — ~~Option A~~ → **superseded 2026-08-26: application-level encryption**
+### 1. Prayer request privacy — **withdrawn 2026-08-27: the feature is gone**
 
-Bodies are stored as plaintext in Firestore. Confidentiality comes from
-[`firestore.rules`](../firestore.rules), not cryptography.
+The parish no longer takes prayer requests through the site, so there is nothing
+left for this decision to govern. The route, the form, `prayerSubmit`,
+`prayerList`, the sealing helper, the `prayerRequests` rules block and its index
+have all been removed, and `scripts/remove-prayer-requests.mjs` deletes the
+stored data and the `forms/prayer-requests` definition.
 
-**Why:** clergy need to actually read and follow up on prayer requests. True
-end-to-end encryption would have required distributing keys to clergy anyway —
-which reintroduces the same trust boundary while giving up search,
-server-side notifications, and any hope of recovering data after a lost key.
+Kept as a record because two of its conclusions outlived it and are worth not
+re-deriving:
 
-**What it costs — state this plainly in the submission UI, don't paper over it:**
-- Anyone with the Firebase service account can read every request.
-- So can a Firestore console admin.
+- **A choice between one real audience and one that does not exist is worse than
+  no choice.** The original `visibility` field offered `public`, described as
+  "the prayer team and congregation". The parish has no prayer team, and the
+  option implied a congregation would read what somebody wrote. `prayerTeam` is
+  gone from `GROUPS` for the same reason.
+- **Encrypting without building a read path makes a feature confidential and
+  useless.** Sealing the bodies forced *both* directions through Cloud
+  Functions, because a clergy member who could previously read a request in the
+  Firestore console could no longer do so afterwards. Any future feature that
+  seals what it stores inherits that obligation.
 
-**Mitigations built in:**
-- ~~`visibility: 'clergy'` requires the `clergy` group or `admin`~~ — the field is
-  **gone** (2026-08-26). It offered `public`, described as "the prayer team and
-  congregation", and **the parish has no prayer team**: the priests read these and
-  nobody else. A choice between one real audience and one that does not exist is
-  worse than no choice, because the wrong answer implied a congregation would
-  read what somebody wrote. The clergy-vs-staff separation it enforced survives
-  in `prayerList`, which still requires `clergy` or `admin`.
-- `anonymous: true` genuinely omits the uid rather than hiding it behind a flag,
-  so an anonymous request cannot be traced later. The trade-off is that the
-  submitter can't edit or withdraw it either.
-- `auditLog` collection exists for recording staff reads of sensitive data.
-
-~~**Revisit if:** the parish ever wants to promise true confidentiality.~~ —
-**the parish asked, on 2026-08-26.** Everything above is history; read it for the
-reasoning, not the current state.
-
-**What ships now.** `body`, `authorName` and `contactEmail` are AES-256-GCM
-envelopes sealed under `PRAYER_KEY` in Secret Manager. Firestore holds
-ciphertext. The prediction in the sentence above held exactly: `body` was one
-opaque string and became one sealed string, so the migration was contained.
-
-`authorName` is sealed too, which the original decision did not anticipate — on a
-commemoration the name *is* the disclosure, because it says someone has died and
-who. `kind`, `commemoration` and the timestamps stay readable so a priest can
-filter to "forty days" without decrypting the collection.
-
-**Both directions are Cloud Functions.** Sealing needs the key and a key in a
-browser is not a key, so the write moved to `prayerSubmit`. Reading moved to
-`prayerList` for a less obvious reason: a clergy member could previously read a
-request in the Firestore console, and after sealing they cannot, so encrypting
-without building a read path would have made the feature confidential and
-useless. `firestore.rules` now closes the collection to clients in both
-directions.
-
-**What did NOT change, and is still the honest limit.** Whoever holds the
-Functions service account can decrypt. The objection this decision was originally
-built on — clergy must be able to read these, so somebody must hold a key — is
-still true and is still why true end-to-end was not chosen. What changed is that
-the *database* is no longer a place the plaintext exists. `PrivacyDisclosure.tsx`
-says exactly this to the person before they type, and must not be softened into
-promising secrecy from the parish's own administrators.
-
-**The new risk this creates:** losing or rotating `PRAYER_KEY` orphans every
-request sealed under the old version. `prayerSubmit` proves the key round-trips
-before it will store anything, because sealing under a key that cannot open is
-the one failure here with no recovery.
+The honest limit it never resolved, also worth keeping: whoever holds the
+Functions service account can decrypt. Clergy had to be able to read these, so
+somebody had to hold a key, which is why true end-to-end was never on the table.
 
 ### 6. Frontend stack — **Next.js with `output: 'export'`**
 
@@ -124,6 +88,29 @@ That was written about a different product's integration and may not apply, but
 if it does, it changes this entire entry — so ask before building.
 
 Variables are staked out in `.env` §5 and blank until the above resolves.
+
+**Settled 2026-08-26 — giving is live, and it is not an API integration.** The
+give action on `/giving` and on the homepage band opens the parish's hosted
+Tithe.ly form (`44f1af1b-…`) in an overlay iframe on our own page. Nothing above
+is unblocked by it: the payment is still Tithe.ly's, and no key is involved.
+
+Two things about it are worth knowing before touching that code:
+
+- **Tithe.ly's own `give.js` is not used, deliberately.** Its second statement
+  bails to `window.open(url, '_blank')` when the browser is Chrome or Safari, or
+  the viewport is under 768px — which is nearly every visitor. Their documented
+  "modal" embed is a new tab for almost everyone.
+- **So the iframe is ours, which overrides that decision.** `?context=modal` is
+  still Tithe.ly's own framed mode and `give.tithe.ly` sends no framing headers,
+  the form renders and behaves inside the frame, and `allow="payment"` delegates
+  the wallet APIs that are the likeliest reason for the gate. But a card entered
+  through a path the vendor avoids can fail in ways we never see, so the overlay
+  always offers "open in a new tab instead", and **a real gift must be completed
+  through the overlay on both Safari and Chrome before the cutover.** That test
+  is outstanding.
+
+The form id is committed in `features/giving/config.ts` rather than kept in
+`.env`; see the note there for why.
 
 ### 3. App Store presence
 

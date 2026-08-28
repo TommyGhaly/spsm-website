@@ -80,7 +80,7 @@ export async function pushVehicleRegistration(answers: FormAnswers): Promise<Pus
     return {
       ok: false,
       status: 503,
-      reason: 'Vehicle registration is not connected yet. Please contact the parish office.',
+      reason: 'Vehicle registration is not connected yet. Please contact the church office.',
     };
   }
 
@@ -98,7 +98,7 @@ export async function pushVehicleRegistration(answers: FormAnswers): Promise<Pus
     return {
       ok: false,
       status: 503,
-      reason: 'Vehicle registration is not connected yet. Please contact the parish office.',
+      reason: 'Vehicle registration is not connected yet. Please contact the church office.',
     };
   }
 
@@ -137,7 +137,7 @@ export async function pushVehicleRegistration(answers: FormAnswers): Promise<Pus
       status: 502,
       reason:
         'The registration could not be sent to the parking system, so nothing was saved. ' +
-        'Please try again, or contact the parish office.',
+        'Please try again, or contact the church office.',
     };
   }
 }

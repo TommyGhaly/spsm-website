@@ -153,7 +153,7 @@ export function MainSectionField() {
           {chosenProgram ? `Pointing at ${chosenProgram.name}. ` : 'Nothing is pointed at. '}
           Nothing on this page looks different for it. It is what a tap on an NFC tag means
           by &ldquo;now&rdquo;, and where a form behind one files what it collects — so it is
-          worth changing when the ministry the parish is running changes.
+          worth changing when the ministry the church is running changes.
         </p>
       )}
 

@@ -6,7 +6,7 @@ import { PageBody } from '@/components/PageBody';
 export const metadata: Metadata = {
   title: 'Forms',
   description:
-    'The forms of St. Philopater Mercurius & St. Mina — prayer requests, vehicle registration, and parish paperwork.',
+    'The forms of St. Philopater Mercurius & St. Mina — vehicle registration and church paperwork.',
 };
 
 /**
@@ -32,13 +32,13 @@ export const metadata: Metadata = {
  * than the navigation, and hardcoding it would mean every new form waits for
  * somebody with deploy rights.
  *
- * `/prayer` and `/parking` were built as NFC destinations — a card in the pew, a
- * tag by the car park door — and `robots.ts` still keeps them out of search,
- * because a search result for "register a vehicle" is only ever a wrong turn
- * into a page that assumes you are standing in the car park. Being *browsable*
- * is a different question from being *findable*, and this page is the answer to
- * the first one. The tags still work and still land in the same place; this is a
- * second door, not a replacement for the first.
+ * `/parking` was built as an NFC destination — a tag by the car park door — and
+ * `robots.ts` still keeps it out of search, because a search result for
+ * "register a vehicle" is only ever a wrong turn into a page that assumes you
+ * are standing in the car park. Being *browsable* is a different question from
+ * being *findable*, and this page is the answer to the first one. The tag still
+ * works and still lands in the same place; this is a second door, not a
+ * replacement for the first.
  *
  * Note that vehicle registration has moved. It is `/forms/vehicle-registration`
  * now, writing to Taksis rather than to our own `vehicles` collection — see

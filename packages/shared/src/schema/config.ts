@@ -155,6 +155,26 @@ export interface ParishConfig {
     state: string;
     postalCode: string;
   };
+  /**
+   * Where the address actually is.
+   *
+   * Stored rather than derived, and `null` rather than a guess — the same rule
+   * the address itself follows. Geocoding the address at build time would put a
+   * network call and a third-party rate limit on the critical path of every
+   * deploy, and would silently move the point the day a geocoder changes its
+   * mind about which building on Rice Road is the church. A pair of numbers
+   * somebody checked once is the honest version. Fill it in with
+   * `npm run parish:geo`.
+   *
+   * **Nothing on the website reads this today.** The `/contact` map was a
+   * Leaflet map centred on this pair until Aug 27 2026; it is now a Google
+   * Maps embed built from the street address, which is what Google needs to
+   * find its own listing for the church. The field stays because it is the
+   * parish's checked coordinate and part two of the program — the mobile app —
+   * wants a point rather than a string. Do not delete it as dead, and do not
+   * assume moving it moves anything on the site.
+   */
+  geo: ParishGeo | null;
   phone: string;
   email: string;
   /** Free text — "Tuesday–Friday, 9am–3pm". */
@@ -165,6 +185,22 @@ export interface ParishConfig {
   notes: string;
   /** Where the parish is on social platforms. Any or all may be empty. */
   social: ParishSocial;
+}
+
+/**
+ * A point on the earth, in the only projection anything here uses.
+ *
+ * Degrees, WGS-84 — what every maps app, every tile server, and every `geo:`
+ * URI already expects. Deliberately not a Firestore `GeoPoint`: this document is
+ * read by the website, by the Functions, and (part two of the program) by the
+ * mobile app, and a plain pair of numbers is the one shape all three can parse
+ * without the Firestore SDK in the way. Same argument as the design tokens.
+ */
+export interface ParishGeo {
+  /** −90 … 90. */
+  lat: number;
+  /** −180 … 180. */
+  lng: number;
 }
 
 /**
@@ -279,6 +315,13 @@ export const DEFAULT_INTEGRATIONS_CONFIG: IntegrationsConfig = {
  */
 export const DEFAULT_PARISH_CONFIG: ParishConfig = {
   address: { line1: '', line2: '', city: '', state: '', postalCode: '' },
+  /*
+   * Blank for the same reason the address is, and more so. A wrong address is at
+   * least legible as wrong once somebody reads it; a wrong coordinate is a
+   * confident marker on a map, three streets away, that looks exactly as
+   * authoritative as a right one.
+   */
+  geo: null,
   phone: '',
   email: '',
   officeHours: '',
@@ -385,6 +428,7 @@ export function parseParishConfig(raw: unknown): ParishConfig {
       state: str(address?.['state']) ?? blank.address.state,
       postalCode: str(address?.['postalCode']) ?? blank.address.postalCode,
     },
+    geo: parseGeo(doc?.['geo']),
     phone: str(doc?.['phone']) ?? blank.phone,
     email: str(doc?.['email']) ?? blank.email,
     officeHours: str(doc?.['officeHours']) ?? blank.officeHours,
@@ -448,6 +492,34 @@ function parseServiceTimes(raw: unknown): ServiceTime[] {
       };
     })
     .filter((entry): entry is ServiceTime => entry !== null);
+}
+
+/**
+ * A stored `geo`, or null.
+ *
+ * Both numbers or neither: a document with a latitude and no longitude is a
+ * half-finished edit, and pairing the missing one with 0 would put the marker in
+ * the Gulf of Guinea. The range check is a second, weaker net — it catches a
+ * degrees-times-1e7 integer or a decimal point in the wrong place.
+ *
+ * What it explicitly does **not** catch is the two being swapped, which is the
+ * likeliest mistake of all: this parish reversed is (−71.33, 42.35), a perfectly
+ * legal point off the coast of Antarctica. No amount of validation can tell that
+ * from a deliberate one. The defence against it is that somebody looks at the
+ * map on /contact once after setting the field, which is a thing a person has to
+ * do rather than a thing this function can do for them.
+ */
+function parseGeo(raw: unknown): ParishGeo | null {
+  const point = asRecord(raw);
+  if (!point) return null;
+
+  const lat = point['lat'];
+  const lng = point['lng'];
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+
+  return { lat, lng };
 }
 
 /** True when the parish has filled in enough for a contact page to be useful. */
@@ -679,7 +751,7 @@ export const DEFAULT_BOOKSTORE_CONFIG: BookstoreConfig = {
   fulfilmentNote: 'Collect your order at the church, or have it delivered to you.',
   returnsNotice:
     'Sales are final. If a book reaches you damaged, or is not the one you ordered, ' +
-    'write to the parish office within 14 days and it will be put right.',
+    'write to the church office within 14 days and it will be put right.',
   /*
    * No sections by default, and none invented.
    *

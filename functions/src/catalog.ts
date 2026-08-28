@@ -99,7 +99,7 @@ export const squareCreateProduct = onRequest(
     if (!mayManageOrders(caller)) {
       res.status(caller ? 403 : 401).json({
         error: caller
-          ? 'Adding to the catalog is limited to the bookstore group and parish staff.'
+          ? 'Adding to the catalog is limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
       return;
@@ -659,7 +659,7 @@ export const squareProductStock = onRequest(
     if (!mayManageOrders(caller)) {
       res.status(caller ? 403 : 401).json({
         error: caller
-          ? 'Changing stock is limited to the bookstore group and parish staff.'
+          ? 'Changing stock is limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
       return;
@@ -837,7 +837,7 @@ export const squareArchiveProduct = onRequest(
     if (!mayManageOrders(caller)) {
       res.status(caller ? 403 : 401).json({
         error: caller
-          ? 'Removing a product is limited to the bookstore group and parish staff.'
+          ? 'Removing a product is limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
       return;

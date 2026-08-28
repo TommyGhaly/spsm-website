@@ -253,7 +253,7 @@ export function PictureManager({
         console.error('[galleries] could not refile:', caught);
         setError(
           rogue
-            ? 'That picture could not be taken in. Only a parish administrator can ' +
+            ? 'That picture could not be taken in. Only a church administrator can ' +
                 'give a loose picture a ministry.'
             : 'That picture could not be moved. You may not have permission here.',
         );

@@ -24,8 +24,13 @@
  *   node scripts/seed-emulator.mjs
  *   NEXT_PUBLIC_USE_EMULATORS=1 npm run dev
  *
- * Optional: SPSM_BREEZE_EMBED_URL=... to populate the servants schedule. It is
- * a bearer credential, so it is never committed — see docs/integrations.md.
+ * Optional, for the calendar:
+ *   SPSM_BREEZE_PARISH_EMBED_URL=...  the public church calendar
+ *   SPSM_BREEZE_EMBED_URL=...         the servants calendar
+ * Both are bearer credentials, so neither is ever committed — see
+ * docs/integrations.md. Note that seeding these only helps if the *Functions*
+ * emulator is running too: /calendar reads them through `/api/calendar`, never
+ * directly.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -275,7 +280,7 @@ for (const [email, role, groups, programAdmin] of accounts) {
     roleMirror: role,
     groupsMirror: groups,
     authProvider: 'microsoft',
-    notificationPrefs: { announcements: true, prayerTeam: false, orderUpdates: false },
+    notificationPrefs: { announcements: true, orderUpdates: false },
     programAdmin: programAdmin ?? { programs: [], events: [] },
     ...audit(),
   });
@@ -315,10 +320,19 @@ await put('config/parish', {
 // touching the real project.
 await put('config/theme', DEFAULT_THEME);
 
-const breeze = process.env.SPSM_BREEZE_EMBED_URL;
-if (breeze && isAllowedEmbedUrl(breeze)) {
+/*
+ * The two Breeze calendars. Read only by the `calendar` Function, never by a
+ * browser — which is why seeding this alone does nothing visible unless the
+ * Functions emulator is up as well.
+ */
+const breezeServants = process.env.SPSM_BREEZE_EMBED_URL;
+const breezeParish = process.env.SPSM_BREEZE_PARISH_EMBED_URL;
+const keep = (url) => (url && isAllowedEmbedUrl(url) ? url : '');
+
+if (keep(breezeServants) || keep(breezeParish)) {
   await put('servantsConfig/schedule', {
-    embedUrl: breeze,
+    embedUrl: keep(breezeServants),
+    parishEmbedUrl: keep(breezeParish),
     note: 'Updated weekly from Breeze.',
     manageUrl: '',
     updatedAt: new Date(),
@@ -875,7 +889,7 @@ console.log(`Seeded the emulators at ${FIRESTORE}:
   ${products.length} bookstore products (+1 unpublished draft)
   ${forms.length} forms at /forms (all published locally; three are drafts in production)
   config/parish, config/integrations, and config/theme
-  ${breeze ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_EMBED_URL to include it'}
+  ${breezeParish || breezeServants ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_PARISH_EMBED_URL and/or SPSM_BREEZE_EMBED_URL to include it'}
 
 Sign in from the masthead: "Sign in with Microsoft" lists these in the
 emulator's IdP widget. (Password  emulator-only  also works where a form asks.)

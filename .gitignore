@@ -41,6 +41,9 @@ out/
 # session working in this same tree often already holds :3100.
 .next-emulated-3200/
 .next-real-3300/
+.next-real-3400/
+.next-real-3500/
+.next-real-3600/
 .turbo/
 coverage/
 *.tsbuildinfo

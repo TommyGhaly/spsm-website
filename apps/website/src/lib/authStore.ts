@@ -71,10 +71,25 @@ let pendingSignIn = false;
 let detach: (() => void) | null = null;
 
 /**
- * Resolves with the first answer Firebase gives, so `signIn` can tell "nobody
- * is signed in, open the popup" from "the hint was stale, we are already in".
+ * Resolves once Firebase has given its first answer, so `signIn` can wait for
+ * the SDK to make up its mind before deciding whether to open a popup.
+ *
+ * It carries no answer of its own, deliberately. It used to resolve with
+ * `user !== null` and `signIn` read *that* — a value frozen at the first
+ * transition of the page's life — as "are you signed in right now". Sign in,
+ * sign out, click sign in again, and the memoised `true` said a session was
+ * live: no popup, no error, the button stuck on "Opening Microsoft…" until a
+ * reload threw the module away. Whether somebody is signed in is a live fact
+ * and is kept in `hasLiveSession`.
  */
-let firstAnswer: Promise<boolean> | null = null;
+let firstAnswer: Promise<void> | null = null;
+
+/**
+ * What Firebase last reported, updated on every transition — the answer to
+ * "signed in right now?", as opposed to `state`, which also holds the
+ * in-between kinds the header paints.
+ */
+let hasLiveSession = false;
 
 function emit(next: AuthState): void {
   state = next;
@@ -88,12 +103,13 @@ async function attach(): Promise<{ mod: AuthModule; signedIn: boolean }> {
   const mod = await import('./auth');
 
   if (!firstAnswer) {
-    firstAnswer = new Promise<boolean>((resolve) => {
+    firstAnswer = new Promise<void>((resolve) => {
       let settled = false;
       detach = mod.onAuthChange((user, claims) => {
+        hasLiveSession = user !== null;
         if (!settled) {
           settled = true;
-          resolve(user !== null);
+          resolve();
         }
         if (user) {
           pendingSignIn = false;
@@ -112,7 +128,10 @@ async function attach(): Promise<{ mod: AuthModule; signedIn: boolean }> {
     });
   }
 
-  return { mod, signedIn: await firstAnswer };
+  // Read after the await, not before: `hasLiveSession` is whatever the most
+  // recent transition said, which is the only thing worth acting on.
+  await firstAnswer;
+  return { mod, signedIn: hasLiveSession };
 }
 
 let started = false;
@@ -343,12 +362,17 @@ export async function signOut(): Promise<void> {
     await mod.signOut();
     // `onAuthChange` emits `signed-out`; this is belt and braces for the case
     // where the listener was never attached in this page's lifetime.
+    hasLiveSession = false;
     emit({ kind: 'signed-out' });
   } catch (error) {
     // Loud, unlike before. A sign-out that fails is worth knowing about, and
     // the raw error is the only thing that says why.
     console.error('[auth] sign-out failed:', error);
     setSessionHint(false);
+    // Whatever the SDK still thinks, this session is over as far as the header
+    // is concerned — and leaving this set would make the next `signIn` skip the
+    // popup on the strength of a session that just failed to end.
+    hasLiveSession = false;
     emit({ kind: 'signed-out' });
   }
 }

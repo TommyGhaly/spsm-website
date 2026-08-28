@@ -62,16 +62,6 @@ export { squareRefund } from './refunds.js';
  */
 export { formSubmit } from './forms/submit.js';
 
-/*
- * Prayer requests, sealed.
- *
- * Both directions are Functions because the key cannot be in a browser, and
- * because encrypting without building a read path would leave the parish with a
- * collection nobody can open. `firestore.rules` closes the collection to clients
- * in both directions; the Admin SDK bypasses that. See docs/decisions.md #1,
- * which this supersedes.
- */
-export { prayerSubmit, prayerList } from './prayer/index.js';
 export { breezeListForms, breezeImportForm } from './forms/breeze.js';
 
 // Bookstore statistics. The shop writes one document per view and cart change
@@ -89,6 +79,12 @@ export { bulletin } from './bulletin.js';
 // sends no CORS header, so unlike the Castr probe this cannot be a fetch from
 // the page itself. See live.ts.
 export { live } from './live.js';
+
+// The church schedule, read out of Breeze and served as JSON. Replaces the
+// iframe on /servants: the embed URL is a bearer credential, and this sends the
+// events rather than the credential. `?scope=servants` needs a verified
+// `servant` claim. See calendar.ts.
+export { calendar } from './calendar.js';
 
 // Program galleries: transcode on submission, publish on approval, take down on
 // rejection. Deployed to us-east1 rather than us-central1 like everything else

@@ -297,7 +297,7 @@ export function ProductSettings({
 
       <p className="bkpanel__note">
         Square owns the title, the price and the description — this screen holds
-        the four things the parish sets.
+        the four things the church sets.
       </p>
 
       <div className="bkpanel__block">

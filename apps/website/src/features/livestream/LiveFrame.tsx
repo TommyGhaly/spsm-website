@@ -25,9 +25,18 @@ export function LiveFrame({
   /** Where to read the stream's status, or null when nothing can be asked. */
   probe: LiveProbe | null;
   /**
-   * Where to watch if we cannot show the player ourselves. Rendered in the
-   * `unknown` state, where it stops being a convenience and becomes the only
-   * route to a liturgy that may well be in progress.
+   * Where to watch if the player here will not do.
+   *
+   * Rendered in exactly two states, and never in `offline`. Beside a live
+   * player it is a convenience; in the `unknown` state it stops being one and
+   * becomes the only route to a liturgy that may well be in progress. Under
+   * "no live stream right now" it would be neither — just a link to whatever
+   * the channel URL happens to resolve to on a quiet Tuesday.
+   *
+   * Empty is a legitimate setting, and is the current one. A channel's `/live`
+   * URL is a poor value for it: YouTube answers that with the next *scheduled*
+   * broadcast when nothing is on, so a premiere the parish set up and never ran
+   * becomes the site's "watch here" link indefinitely. Prefer `/streams`.
    */
   fallbackUrl: string;
   /**
@@ -52,16 +61,32 @@ export function LiveFrame({
 
   if (status === 'live' && playing) {
     return (
-      <div className={`embed${wide ? ' embed--stage' : ''}`}>
-        <iframe
-          src={playing}
-          title="Parish livestream"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          loading="lazy"
-        />
-      </div>
+      <>
+        <div className={`embed${wide ? ' embed--stage' : ''}`}>
+          <iframe
+            src={playing}
+            title="Church livestream"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            loading="lazy"
+          />
+        </div>
+
+        {/*
+          Only ever beside a player. See the note in `LivestreamPlayer`: rendered
+          from there it followed the standby band too, offering help with a
+          player that was not on screen and a link to a stream that was not on.
+        */}
+        {fallbackUrl && (
+          <p>
+            Trouble with the player?{' '}
+            <a href={fallbackUrl} rel="noopener noreferrer" target="_blank">
+              Watch on the church&apos;s channel instead →
+            </a>
+          </p>
+        )}
+      </>
     );
   }
 
@@ -106,11 +131,11 @@ export function LiveFrame({
                 <>
                   If a service is in progress it will be{' '}
                   <a href={fallbackUrl} rel="noopener noreferrer" target="_blank">
-                    on the parish&apos;s YouTube channel →
+                    on the church&apos;s YouTube channel →
                   </a>
                 </>
               ) : (
-                'If a service is in progress, it will be on the parish’s YouTube channel.'
+                'If a service is in progress, it will be on the church’s YouTube channel.'
               )}
             </p>
           </>
