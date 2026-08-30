@@ -44,6 +44,8 @@ out/
 .next-real-3400/
 .next-real-3500/
 .next-real-3600/
+.next-real-3700/
+.next-real-3800/
 .turbo/
 coverage/
 *.tsbuildinfo
