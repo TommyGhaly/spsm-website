@@ -1,0 +1,1 @@
+export { BeliefScreen } from './BeliefScreen';

@@ -127,8 +127,8 @@ const NAV: NavItem[] = [
 // `/ministries` is absent for a plainer reason: it is read once, not weekly,
 // and it crowds out the links that are. It stays reachable from the footer.
 //
-// The clergy are not a route at all any more — they are the disclosures under
-// the week's schedule on the homepage. The footer link is `/#clergy`.
+// The clergy are not a route at all any more — the roster is a section of
+// `/about/who-we-are`, and the footer link is `/about/who-we-are#clergy`.
 
 /**
  * The parish's weekly announcements board, which is not part of this site.
@@ -157,9 +157,13 @@ export const WEEKLY_ANNOUNCEMENTS = 'https://weeklyannouncements-1d046.web.app/'
  * fill in. Repeating four header links costs four lines and saves a scroll back
  * to the top.
  *
- * So: the weekly errands first, then the occasional ones. `/#clergy` stays
- * because somebody looking for the priest's name looks down here, and a
- * fragment of the homepage is a better answer than nothing.
+ * So: the weekly errands first, then the occasional ones. "Our clergy" stays
+ * because somebody looking for the priest's name looks down here. It points at
+ * `/about/who-we-are#clergy` — the written roster, three fathers and three
+ * deacons — rather than the old `/#clergy`, which was a homepage band built
+ * from the `content/clergy` pages. Those are all unpublished, so that band
+ * renders nothing and the fragment matched nothing: the link left a reader at
+ * the top of the homepage with no clergy anywhere on it.
  *
  * `/servants` used to be the last entry, and the note here said the footer was
  * its only door. It has no door now because it has no room: the servants
@@ -176,7 +180,7 @@ const FOOTER_MORE = [
   { href: '/livestream', label: 'Watch live', external: false },
   { href: '/calendar', label: 'Church calendar', external: false },
   { href: WEEKLY_ANNOUNCEMENTS, label: 'Weekly announcements', external: true },
-  { href: '/#clergy', label: 'Our clergy', external: false },
+  { href: '/about/who-we-are#clergy', label: 'Our clergy', external: false },
   { href: '/giving', label: 'Giving', external: false },
   { href: '/forms', label: 'Forms', external: false },
   { href: '/apps', label: 'Our apps', external: false },

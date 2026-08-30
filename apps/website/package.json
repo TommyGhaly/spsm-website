@@ -27,7 +27,9 @@
     "//dev:real:spare4": "One more. Its own dist dir, like the rest: `next dev` refuses a second server for the same output directory.",
     "dev:real:spare4": "NEXT_DIST_DIR=.next-real-3600 PORT=3600 next dev",
     "//dev:real:spare5": "One port past 3600. Peers held 3000–3600 on Aug 28.",
-    "dev:real:spare5": "NEXT_DIST_DIR=.next-real-3700 PORT=3700 next dev"
+    "dev:real:spare5": "NEXT_DIST_DIR=.next-real-3700 PORT=3700 next dev",
+    "//dev:real:spare6": "One port past 3700. Every port from 3000 to 3700 was held at once on Aug 29.",
+    "dev:real:spare6": "NEXT_DIST_DIR=.next-real-3800 PORT=3800 next dev"
   },
   "dependencies": {
     "@spsm/shared": "*",

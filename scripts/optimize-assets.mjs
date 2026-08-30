@@ -442,12 +442,35 @@ async function sealCard(seal, { width, height, sealHeight }) {
 // quietly. **It is now published rather than staged**, so the outstanding
 // licence confirmation in assets/README.md is no longer a pre-launch tidy-up —
 // it is a third party's notice on a live page.
+//
+// **The last three have no file yet, and that is not an error.** The deacons
+// are named on /about/who-we-are, and the names of the photographs they are
+// waiting for are written here so that adding one is dropping a jpg into
+// `assets/` and re-running this — no edit to this table, no edit to the page,
+// no deploy-day scramble. Until then `bundledPortrait()` finds nothing on disk
+// and the roster shows the person's initial instead of a broken image, which
+// is the same fallback the homepage has always used for a father with no
+// photograph.
+//
+// So this loop skips a missing source rather than throwing on it. That is a
+// deliberate hole in an otherwise strict script, and it is narrow: it applies
+// only to this table, it prints every skip, and `--check` still fails on an
+// output that was built once and then lost, because a source that exists must
+// still produce its two files.
 for (const [source, slug] of [
   ['Father-Youhanna.jpg', 'fr-youhanna-gobran'],
   ['Father-Armia.jpg', 'fr-armia-tawfik'],
   ['Bishop-David.jpg', 'bishop-david'],
+  ['Deacon-Severus.jpg', 'deacon-severus-ghaly'],
+  ['Deacon-Peter.jpg', 'deacon-peter-awadalla'],
+  ['Deacon-Kyrillos.jpg', 'deacon-kyrillos-bebawy'],
 ]) {
   const input = join(SRC, source);
+
+  if (!existsSync(input)) {
+    console.log(`  (waiting)  assets/${source} — no portrait for ${slug} yet`);
+    continue;
+  }
 
   // Two widths, one image. The card carries the portrait at its full width, so
   // 400 covers a 1× column and 800 the same column on a 2× panel.
@@ -921,6 +944,143 @@ for (const [source, slug] of [
     // the card at 1x. Nothing here is ever shown large enough to want more.
     write(join(PUBLIC, `img/${name}-1000.webp`), await webp(source, { width: 1000, quality: 74, extract }));
     write(join(PUBLIC, `img/${name}-500.webp`), await webp(source, { width: 500, quality: 72, extract }));
+  }
+}
+
+// ── The festival tour galleries ─────────────────────────────────────────────
+// Twenty-four images for the six stations on /about/welcome-newcomers, added
+// 2026-08-29. All of them come from Wikimedia Commons and every one is CC0,
+// public domain, CC BY or CC BY-SA — nothing NC, nothing ND, nothing whose
+// licence the parish could not honour. `assets/tour/credits.json` holds the
+// Commons file name, the permanent description-page URL, the licence and the
+// author for each, straight from the API rather than typed out here, and
+// `features/tour/stations.ts` renders that list at the foot of the page.
+// Deleting an entry from the manifest without deleting it from the credits is
+// how attribution silently rots, so both live beside the file.
+//
+// None of these is this parish. Same rule as the form photographs above: they
+// illustrate a censer, an iconostasis, a ney, a deacon's tunic — the things the
+// tour is about — and not St Philopater's own building or people.
+//
+// **No crop, unlike every other group in this file.** These are museum
+// photographs of tall icons, manuscript leaves and vestments mixed with wide
+// interior shots, and a band cut through the middle of a full-length icon of
+// the Archangel is a picture of a torso. `fit: 'inside'` (what `webp` does when
+// no `height` is passed) keeps each one whole and lets the grid crop with
+// object-fit, where the lightbox can still show the original framing.
+//
+// Two sizes: 640 is a tile on a retina phone, 1280 the lightbox on a laptop.
+// Everything is lazily loaded, and a visitor who never opens station 4 never
+// pays for its four pictures.
+{
+  const tour = JSON.parse(readFileSync(join(SRC, 'tour/credits.json'), 'utf8'));
+
+  for (const name of Object.keys(tour).sort()) {
+    const source = join(SRC, `tour/${name}.jpg`);
+    write(join(PUBLIC, `img/tour/${name}-1280.webp`), await webp(source, { width: 1280, quality: 76 }));
+    write(join(PUBLIC, `img/tour/${name}-640.webp`), await webp(source, { width: 640, quality: 74 }));
+  }
+}
+
+// ── Our Belief ──────────────────────────────────────────────────────────────
+// Eleven pictures for /about/our-belief, added 2026-08-29. All from Wikimedia
+// Commons, all public domain or CC BY / CC BY-SA — nothing NC, nothing ND.
+// `assets/belief/credits.json` holds the Commons file name, the permanent
+// description-page URL, the licence and the author for each, taken from the
+// API rather than typed here, and `features/belief/parts.tsx` prints that list
+// at the foot of the page. The manifest and the credits are one file for a
+// reason: an entry deleted from one and left in the other is how attribution
+// rots.
+//
+// None of them is this church. Same rule as the tour and the form photographs
+// above — they illustrate what the Creed says, and the councils that wrote it,
+// not St. Philopater Mercurius & St. Mina's own building or people.
+//
+// **No crop**, for the tour's reason and more so: these are icons, and a band
+// cut across an icon of Christ is a picture of a chin. `fit: 'inside'` (what
+// `webp` does with no `height`) keeps every one whole and lets the page frame
+// them with object-fit where it needs a shape.
+//
+// Two widths, and the srcset in `features/belief/images.ts` states the *real*
+// width of the large file rather than 1280 — `withoutEnlargement` means a
+// 1023px original stays 1023px, and a descriptor that claims otherwise makes
+// the browser choose wrongly on exactly the screens the second file exists for.
+{
+  const belief = JSON.parse(readFileSync(join(SRC, 'belief/credits.json'), 'utf8'));
+
+  for (const name of Object.keys(belief).sort()) {
+    const source = join(SRC, `belief/${name}.jpg`);
+    write(join(PUBLIC, `img/belief/${name}-1280.webp`), await webp(source, { width: 1280, quality: 76 }));
+    write(join(PUBLIC, `img/belief/${name}-640.webp`), await webp(source, { width: 640, quality: 74 }));
+  }
+}
+
+// ── The patron saints ───────────────────────────────────────────────────────
+// Seven pictures for /about/patron-saints, added 2026-08-29. Icons, museum
+// objects, a church interior and an excavated site — the things the page's
+// words are about. Wikimedia Commons again, CC0 or CC BY / CC BY-SA, nothing NC
+// and nothing ND; `assets/saints/credits.json` came straight from the Commons
+// API and `features/saints/saints.ts` prints it at the foot of the page.
+//
+// **No crop**, for the tour's reason and one more of its own. Four of these are
+// icons, and an icon is a composition: the angel handing down the second sword
+// is in the top corner of the Mercurius icon, and a band cut to a pleasant
+// aspect ratio is a picture of a man on a horse with the point of the story
+// trimmed off. `fit: 'inside'` keeps every one whole and lets CSS decide how
+// much of it to show.
+//
+// Two sizes rather than the tour's, because these are not lightboxed: 1100 is a
+// figure beside the prose on a laptop at 2×, 520 a tile in the iconography
+// grid. `withoutEnlargement` means the two smallest sources — the icon at 792px
+// and the mosaic at 600px — simply stop where they stop rather than being blown
+// up into mush, so the pair of files is occasionally one file's worth of pixels
+// written twice. That is the right trade for two images out of seven.
+{
+  const saints = JSON.parse(readFileSync(join(SRC, 'saints/credits.json'), 'utf8'));
+
+  for (const name of Object.keys(saints).sort()) {
+    const source = join(SRC, `saints/${name}.jpg`);
+    write(join(PUBLIC, `img/saints/${name}-1100.webp`), await webp(source, { width: 1100, quality: 78 }));
+    write(join(PUBLIC, `img/saints/${name}-520.webp`), await webp(source, { width: 520, quality: 76 }));
+  }
+}
+
+// ── Who we are ──────────────────────────────────────────────────────────────
+// Seven pictures for /about/who-we-are, added 2026-08-29. The page tells one
+// story in three movements — Egypt, the crossing to America, this church — and
+// each picture belongs to a movement rather than decorating a heading.
+//
+// **Every one of these is public domain, CC0 or "no restrictions".** Not a
+// coincidence and not a preference for old things: this page shows no credits
+// list, so a CC BY or CC BY-SA picture on it would be a licence we are not
+// honouring. `assets/who/credits.json` came from the Commons API and the fetch
+// refuses any file whose licence is not in that free set, so the rule is
+// enforced where the pictures come in rather than remembered at review time.
+// Two of the best candidates — the Abbassia cathedral and the church in Jersey
+// City — were dropped for exactly this reason. If a credits list ever goes
+// back on the page, they are worth going back for.
+//
+// None of them is this church. The one picture of Wayland on the page is the
+// sanctuary, and it is already built above as `img/home-sanctuary-*` — this
+// page reuses those files rather than emitting an eighth copy of them.
+//
+// **No crop**, as with the tour, the belief plates and the saints. Two of these
+// are portraits of a man's face and one is a nineteenth-century print with its
+// caption still printed under it; a band cut to a pleasant ratio takes the
+// caption off and the face in half. `fit: 'inside'` keeps each one whole.
+//
+// Two widths, and the srcset in `features/who/images.ts` states the *real*
+// width of the large file rather than 1280 — `withoutEnlargement` means the
+// 1015px portrait of Pope Kyrillos stays 1015px, and a descriptor claiming
+// otherwise makes the browser choose it on screens where it is no bigger than
+// the small file.
+{
+  const who = JSON.parse(readFileSync(join(SRC, 'who/credits.json'), 'utf8'));
+
+  for (const name of Object.keys(who).sort()) {
+    const source = join(SRC, `who/${name}.jpg`);
+    write(join(PUBLIC, `img/who/${name}-1280.webp`), await webp(source, { width: 1280, quality: 76 }));
+    write(join(PUBLIC, `img/who/${name}-640.webp`), await webp(source, { width: 640, quality: 74 }));
   }
 }
 

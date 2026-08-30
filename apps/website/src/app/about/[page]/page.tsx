@@ -28,8 +28,49 @@ import { PageBody } from '@/components/PageBody';
 
 type Params = { page: string };
 
+/**
+ * Parts of About that this template must not emit.
+ *
+ * `welcome-newcomers` has its own route — `app/about/welcome-newcomers/page.tsx`
+ * — because it is the festival tour rather than prose: six stations with their
+ * own URL fragments, a passport held in `localStorage`, and a gallery per
+ * station, none of which a `content` document can express. Under
+ * `output: 'export'` both files would write the same HTML, so the slug is
+ * excluded here and the dedicated page wins.
+ *
+ * `our-belief` left for a different reason — `app/about/our-belief/page.tsx`.
+ * It is prose, but it is prose with ten pictures in it, each carrying its own
+ * alt text, caption, srcset and licence credit, and a `content` document is a
+ * title and a markdown body. The Creed in it also needs its line breaks to
+ * survive, which markdown's single newline does not.
+ *
+ * `patron-saints` left third — `app/about/patron-saints/page.tsx`. Same shape
+ * as `our-belief`: two lives told in paragraphs with seven credited pictures
+ * set into them, two feast tables and an iconography grid, against a `content`
+ * document's single markdown body.
+ *
+ * `who-we-are` left fourth — `app/about/who-we-are/page.tsx`. Same shape again:
+ * the history from Alexandria to Rice Road, told with seven credited pictures
+ * set into it and two chronologies rendered as description lists, none of which
+ * survives a single markdown body.
+ *
+ * All four stay in `ABOUT_PAGES`, so the header menu, the `/about` index and
+ * the sitemap are unaffected. Exactly the shape `NOT_A_PAGE` has in
+ * `app/[section]/page.tsx`, for exactly the same reason. Note what is left:
+ * `future-plans` is the only part of About still read from `content`, which is
+ * also the only one whose text will keep changing.
+ */
+const NOT_PROSE: readonly string[] = [
+  'welcome-newcomers',
+  'our-belief',
+  'patron-saints',
+  'who-we-are',
+];
+
 export async function generateStaticParams(): Promise<Params[]> {
-  return ABOUT_PAGES.map((page) => ({ page: page.slug }));
+  return ABOUT_PAGES.filter((page) => !NOT_PROSE.includes(page.slug)).map((page) => ({
+    page: page.slug,
+  }));
 }
 
 export async function generateMetadata({

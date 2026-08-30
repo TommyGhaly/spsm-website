@@ -5664,6 +5664,21 @@ main {
 }
 
 /*
+ * The clergy band is two rails now — three fathers, then three deacons, which
+ * is how Tommy asked for it ("3 and 3 to keep it even") — and they were flush
+ * against each other, so the six read as one six-deep column rather than as two
+ * ranks. `--space-md` is the same gap the cards inside a rail already use, so
+ * the rows sit apart by exactly as much as the cards do, and no more: the split
+ * has to be visible without looking like two separate sections.
+ *
+ * A sibling rule rather than a gap on the wrap, because the wrap holds the
+ * section heading too and that has its own spacing already.
+ */
+.rail--clergy + .rail--clergy {
+  margin-top: var(--space-md, 1.25rem);
+}
+
+/*
  * One father. A row: the portrait, then his name and rank beside it.
  *
  * ---------------------------------------------------------------------------
@@ -24543,36 +24558,116 @@ span.gallery-figure__frame {
 }
 
 
-/* --------------------------------------------------------------------------
- * The About index — the five parts of About, on /about.
- *
- * Class names are prefixed `about-` rather than being `.index` or `.parts`,
- * because there is one stylesheet for the whole site and no CSS modules: a
- * generic name written here reaches the bookstore, the galleries and the admin
- * drawers as well. That has happened before.
- *
+/* ==========================================================================
+   /about — the index of About, and the picture credits for the whole section.
+   ==========================================================================
+
+   Class names are prefixed `about-` and `credits-` rather than being `.index`,
+   `.parts` or `.drawer`, because there is one stylesheet for the whole site and
+   no CSS modules: a generic name written here reaches the bookstore, the
+   galleries and the admin drawers as well. That has happened before.
+
+   Fallbacks are the default theme's real values, not approximations. A misspelt
+   custom property does not error; it falls through to the fallback and looks
+   like a deliberate choice.
+   ========================================================================== */
+
+/* ── The opening band ─────────────────────────────────────────────────────── */
+
+/*
+ * Short, and shorter on a phone — the five links are the page, and every pixel
+ * of hero is a pixel between the reader and them. Same measurements as the
+ * hero on /about/who-we-are, deliberately: this is the front door of that
+ * section and the two should not read as different sites.
+ */
+.about-hero {
+  padding-block: var(--space-lg, 1.5rem);
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .about-hero {
+    padding-block: var(--space-xl, 2.5rem);
+  }
+}
+
+.about-hero__inner {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+/* `gap` spaces these; the browser's own `p { margin: 1em 0 }` is not reset
+   globally and would add a second, em-sized space on top of it. */
+.about-hero__inner > * {
+  margin: 0;
+}
+
+.about-hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/* A `p` carrying the page's visible title — `PageHeader` has already rendered
+   the hidden `h1`, and a second would give the document two. */
+.about-hero__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.about-hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/* ── The five parts ───────────────────────────────────────────────────────── */
+
+/*
+ * The band under the hero. `band--tight-start`'s job without the class: the
+ * ground changes colour at the seam, so this only has to stop crowding the
+ * list, not put a section's worth of air above it.
+ */
+.about-parts {
+  padding-top: var(--space-xl, 2.5rem);
+}
+
+/*
  * Deliberately not the tile grid the header menu and /events use. Those tiles
  * are the size they are so a photograph can be a photograph; these five have no
  * photographs and never will, so a grid of picture-shaped boxes with nothing in
  * them would be a page of empty frames. A list, with the line that says what
  * each one is, which is the thing a reader is actually choosing between.
- * -------------------------------------------------------------------------- */
-
+ *
+ * An `ol`, because the five are in the order they are best read in — the
+ * history, then the faith, then the saints, then the Liturgy, then what comes
+ * next. The number is the only mark of that; nothing stops a reader taking them
+ * in any order, and the ordinal is `aria-hidden` because the list element
+ * already tells a screen reader it is numbered.
+ */
 .about-index {
   display: grid;
-  gap: var(--space-sm, 0.75rem);
-  margin: var(--space-lg, 1.5rem) 0 0;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .about-index a {
   display: grid;
-  gap: 0.2rem;
-  padding: var(--space-sm, 0.85rem) var(--space-md, 1rem);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  padding: var(--space-md, 1rem) var(--space-md, 1rem);
   border: 1px solid var(--color-rule, #e0cac3);
   border-left: 3px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radius-md, 8px);
   background: var(--color-paper-raised, #fdf7f4);
   text-decoration: none;
   color: inherit;
@@ -24586,11 +24681,30 @@ span.gallery-figure__frame {
   transform: translateY(-1px);
 }
 
+/*
+ * The ordinal. Tabular figures so 01 through 05 occupy identical width and the
+ * five names start on one vertical line — with proportional figures the `1`s
+ * are narrow and the column ragged.
+ */
+.about-index__num {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.15rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 85%, var(--color-ink, #1c1614));
+}
+
+.about-index__text {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .about-index__name {
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--type-subheading, 1.15rem);
   font-weight: 600;
-  color: var(--color-ink, #2b2118);
+  color: var(--color-ink, #1c1614);
 }
 
 .about-index a:hover .about-index__name,
@@ -24599,17 +24713,60 @@ span.gallery-figure__frame {
 }
 
 .about-index__note {
-  font-size: var(--type-small, 0.9rem);
+  font-size: var(--type-small, 0.9375rem);
   line-height: 1.45;
-  color: var(--color-ink-soft, #5c4a44);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * The arrow. Faint until the row is hovered or focused, so five of them down
+ * the page are not five red marks competing with the names.
+ */
+.about-index__arrow {
+  font-size: var(--type-subheading, 1.15rem);
+  line-height: 1;
+  color: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 55%, transparent);
+  transition: color 160ms ease, transform 160ms ease;
+}
+
+.about-index a:hover .about-index__arrow,
+.about-index a:focus-visible .about-index__arrow {
+  color: var(--color-accent, #992a21);
+  transform: translateX(3px);
+}
+
+/*
+ * On a phone the ordinal and the arrow both leave the row.
+ *
+ * At 360px the three columns leave the note about 14 characters wide and it
+ * wraps to five lines. The number is decoration and the arrow is an affordance
+ * a tap does not need, so both are dropped rather than shrunk — the name and
+ * its line get the whole width.
+ */
+@media (max-width: 30rem) {
+  .about-index a {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .about-index__num,
+  .about-index__arrow {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .about-index a,
-  .about-index a:hover {
+  .about-index a:hover,
+  .about-index__arrow,
+  .about-index a:hover .about-index__arrow {
     transition: none;
     transform: none;
   }
+}
+
+/* Prose filed under `about` that is not one of the five. Usually nothing. */
+.about-loose > .wrap > * + * {
+  margin-top: var(--space-lg, 1.5rem);
 }
 
 /* The way back to the index from one of the five. Quiet — it is a way out, not
@@ -24618,5 +24775,2649 @@ span.gallery-figure__frame {
   margin-top: var(--space-xl, 2.5rem);
   padding-top: var(--space-md, 1rem);
   border-top: 1px solid var(--color-rule, #e0cac3);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/* ── The picture credits drawer ───────────────────────────────────────────── */
+
+/*
+ * Every picture on the About pages, in one shut drawer at the foot of /about.
+ *
+ * ---------------------------------------------------------------------------
+ * **A `<details>`, not a client component.** The whole of About is server-
+ * rendered with no JavaScript in it, and a toggle is the one thing HTML has
+ * always been able to do on its own. It also means the fifty entries stay
+ * reachable by find-in-page and by a screen reader while the drawer is shut,
+ * which a `display: none` behind React state would not be.
+ *
+ * **This is not the accordion that was rejected.** Folds were ruled out for
+ * *prose* — a page that hides what it has to say behind a promise. This is a
+ * reference list of forty-nine attributions that almost nobody wants and the
+ * licences require: exactly the case a disclosure is for.
+ *
+ * Shut by default, because the standing instruction is that the credits are off
+ * the page. `[open]` styling exists only so the toggle looks attached to the
+ * body it has opened.
+ * ---------------------------------------------------------------------------
+ */
+.credits-drawer {
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  overflow: hidden;
+}
+
+.credits-drawer[open] {
+  background: var(--color-paper, #f6e8e3);
+  box-shadow: 0 4px 18px rgba(72, 16, 16, 0.07);
+}
+
+/*
+ * The toggle.
+ *
+ * `list-style: none` plus the WebKit pseudo-element removes the browser's own
+ * disclosure triangle — Safari draws it inside the flow and it would sit
+ * between the border and the title. `.credits-drawer__mark` replaces it, on the
+ * other end of the bar where it belongs.
+ */
+.credits-drawer__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-md, 1rem) var(--space-md, 1rem);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 160ms ease;
+}
+
+.credits-drawer__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.credits-drawer__toggle:hover {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 8%, transparent);
+}
+
+/*
+ * A summary is focusable, and the default ring is drawn on a box that is the
+ * full width of the drawer — fine, but it has to be visible against the paper.
+ */
+.credits-drawer__toggle:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: -2px;
+}
+
+.credits-drawer__label {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.credits-drawer__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.15rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * The count, on the toggle rather than inside the drawer.
+ *
+ * A reader deciding whether to open this deserves to know it is fifty entries
+ * and not two, and that they came from Commons rather than from the church's
+ * own camera — which is the actual question somebody clicking has.
+ */
+.credits-drawer__count {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * The chevron, drawn from two borders rather than set as a glyph, so it turns
+ * on the same axis at every size and needs no icon font.
+ */
+.credits-drawer__mark {
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-top: -0.2rem;
+  border-right: 2px solid var(--color-accent, #992a21);
+  border-bottom: 2px solid var(--color-accent, #992a21);
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 180ms ease;
+}
+
+.credits-drawer[open] .credits-drawer__mark {
+  margin-top: 0.2rem;
+  transform: rotate(-135deg);
+}
+
+.credits-drawer__body {
+  padding: 0 var(--space-md, 1rem) var(--space-lg, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.credits-drawer__intro {
+  max-width: 42rem;
+  margin: var(--space-md, 1rem) 0 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.55;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── One page's worth of credits ──────────────────────────────────────────── */
+
+.credits-group {
+  margin-top: var(--space-lg, 1.5rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 28%, transparent);
+}
+
+/*
+ * The group heading links to the page the pictures are on. Somebody reading a
+ * credit is very often trying to get back to the picture.
+ */
+.credits-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm, 0.5rem);
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-body, 1.0625rem);
+}
+
+.credits-group__head a {
+  color: var(--color-ink, #1c1614);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+.credits-group__head a:hover,
+.credits-group__head a:focus-visible {
+  color: var(--color-accent, #992a21);
+  border-bottom-color: currentColor;
+}
+
+.credits-group__count {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.credits-group__note {
+  max-width: 42rem;
+  margin: 0.35rem 0 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.5;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.credits-group__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-sm, 0.5rem) var(--space-lg, 1.5rem);
+  margin: var(--space-md, 1rem) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+/*
+ * `minmax(min(16rem, 100%), 1fr)` rather than `minmax(16rem, 1fr)`: at 360px
+ * the viewport is narrower than the track's own minimum and a plain 16rem
+ * pushes the grid past the screen. The `min()` lets the single column collapse
+ * to whatever width there is.
+ *
+ * Each entry is a block, not a wrapping row: the authors run from one word
+ * ("Unknown") to a full sentence with dates in it, and inline they broke
+ * mid-credit so that a licence ended up on the line under an unrelated name.
+ * Title on one line, attribution under it, which is also the order the licences
+ * ask for.
+ */
+.credits-group__list li {
+  min-width: 0;
+}
+
+.credits-group__list a {
+  color: var(--color-ink, #1c1614);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 35%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.credits-group__list a:hover,
+.credits-group__list a:focus-visible {
+  color: var(--color-accent, #992a21);
+  border-bottom-color: currentColor;
+}
+
+.credits-group__meta {
+  display: block;
+  margin-top: 0.15rem;
+  line-height: 1.4;
+  color: var(--color-ink-faint, #6f5f5a);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .credits-drawer__toggle,
+  .credits-drawer__mark {
+    transition: none;
+  }
+}
+
+/* ===========================================================================
+   The festival tour — /about/welcome-newcomers
+   ===========================================================================
+
+   Six stations a visitor reads on a phone while walking around a hall. Every
+   decision below follows from that sentence.
+
+   All classes are `tour-` prefixed and none of them is a bare word. There is
+   one stylesheet on this site and no CSS modules, so a generic `.stamp` or
+   `.gallery` here would reach into every other page that ever wants one — which
+   has already happened once, when a `.shelf` written for the programs panel
+   flattened the whole bookstore.
+
+   Colours come from the theme tokens, and every `var()` carries the default
+   theme's own value as its fallback. A misspelt custom property does not error;
+   it silently falls through to the fallback and looks like a design choice, so
+   the fallbacks here are the real values rather than something approximate.
+   =========================================================================== */
+
+.tour {
+  /* The passport strip's height, which three other things offset against:
+     the sticky top, and the scroll-margin on every station. Declared once so
+     they cannot drift apart. */
+  --tour-passport-h: 3.5rem;
+}
+
+/*
+ * Every grid on this page spaces its children with `gap`. The browser's own
+ * `p { margin: 1em 0 }` is not reset globally, so without this each child adds
+ * a second, em-sized space on top of the gap — and because it is *em*-sized,
+ * the biggest type gets the biggest space. It put 84px around the hero's title
+ * alone and made a band described in its own comment as "short" 444px tall.
+ *
+ * Scoped to the containers that use `gap`, not to `.belief *`: the prose bodies
+ * want `.prose`'s paragraph rhythm and must not be flattened by this.
+ */
+.belief-hero__inner > *,
+.belief-creed__head > *,
+.belief-creed__aside > *,
+.belief-articles__head > *,
+.belief-plate > * {
+  margin: 0;
+}
+
+/* ── The opening band ─────────────────────────────────────────────────────── */
+
+/*
+ * Deliberately short. The point of this page is station 1, and a hero that
+ * fills the viewport puts it below the fold on the phone this is designed for —
+ * the same mistake the sitewide page banner was cut for. Three lines and the
+ * passport, then the tour.
+ */
+/*
+ * Short on purpose, and shorter still on a phone.
+ *
+ * The point of this page is station 1, and every pixel of hero is a pixel
+ * between the reader and it — the same reason the sitewide page banner was cut.
+ * At 375×812 the band plus the passport strip is already most of the first
+ * screen, so the padding halves below 48rem and the lede is two lines rather
+ * than four.
+ */
+.tour-hero {
+  padding-block: var(--space-lg, 1.5rem);
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .tour-hero {
+    padding-block: var(--space-xl, 2.5rem);
+  }
+}
+
+.tour-hero__inner {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: 46rem;
+}
+
+.tour-hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+.tour-hero__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+  margin: 0;
+}
+
+.tour-hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-snug, 1.25);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+  margin: 0;
+}
+
+/* ── The passport ─────────────────────────────────────────────────────────── */
+
+/*
+ * Progress and navigation in one strip. It scrolls away with the hero, then
+ * catches under the masthead and stays there for the rest of the page.
+ *
+ * `position: sticky` and not `fixed`: fixed would float it over the hero from
+ * the first paint, and the top of the page should be the tour rather than the
+ * furniture. `--masthead-h` is what it lands against — the same token the
+ * masthead sets its own height from, so raising one moves both.
+ */
+.tour-passport {
+  position: sticky;
+  /*
+   * `--tour-masthead-h` is measured and written by `useChromeHeight`, because
+   * `--masthead-h` is a stale token that no other rule reads: it says 5rem
+   * while the bar is 69px on a phone and 85px on a laptop. Offsetting against
+   * the token left a strip of page showing between the two bars on mobile.
+   * 5rem stays as the fallback for the frame before the measurement lands.
+   */
+  top: var(--tour-masthead-h, 5rem);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 1rem);
+  min-height: var(--tour-passport-h, 3.5rem);
+  padding-inline: var(--space-gutter, 1.5rem);
+  background: color-mix(in srgb, var(--color-paper-raised, #fdf7f4) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: var(--shadow-sm, 0 1px 2px 0 #1c161412);
+}
+
+/*
+ * The masthead hides itself on a scroll down — see `.masthead--hidden` — and
+ * the passport has to follow it up, or it hangs 69px below the top of the
+ * window with the page sliding through the gap underneath.
+ *
+ * A general sibling selector, which works because the masthead and `<main>` are
+ * both children of `.shell`. That is a coupling to the layout's shape and it is
+ * declared here rather than hidden in a component: the alternative was a
+ * `MutationObserver` on a class another component owns, which is a heavier and
+ * more brittle way to learn the same fact.
+ *
+ * The transition matches the bar's own leaving curve, so the two move together
+ * instead of the passport snapping to the top while the masthead is still on
+ * its way out.
+ */
+.masthead--hidden ~ * .tour-passport {
+  top: 0;
+}
+
+/*
+ * Armed only once `useChromeHeight` has measured, so the first paint's
+ * correction from the 5rem fallback is instant and only the masthead's own
+ * comings and goings are animated.
+ */
+.tour-measured .tour-passport {
+  transition: top 260ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.tour-passport__count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tour-passport__label {
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-passport__score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-accent, #992a21);
+}
+
+.tour-passport__stamps {
+  display: flex;
+  gap: var(--space-xs, 0.25rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Six stamps fit at 320px, but only just; scrolling rather than wrapping
+     keeps the strip one row tall at every width, which is what makes the
+     sticky offset a constant. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tour-passport__stamps::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * One stamp: a number that becomes a tick.
+ *
+ * Both glyphs are always in the DOM and stacked on each other, so the box never
+ * changes size when a station is stamped — a strip that reflows under the
+ * reader's thumb as they scroll is worse than no animation at all.
+ */
+.tour-stamp {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-ink-faint, #6f5f5a);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.tour-stamp:hover {
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-accent, #992a21);
+}
+
+.tour-stamp__num,
+.tour-stamp__mark {
+  grid-area: 1 / 1;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.tour-stamp__mark {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.tour-stamp.is-stamped {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.tour-stamp.is-stamped .tour-stamp__num {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.tour-stamp.is-stamped .tour-stamp__mark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ── A station ────────────────────────────────────────────────────────────── */
+
+/*
+ * `scroll-margin-top` is what makes the QR codes work. Without it the browser
+ * puts the station's heading at y=0, which is underneath both the masthead and
+ * the sticky passport — a visitor scanning the code at station 4 would land on
+ * the station and see the middle of its gallery.
+ */
+.tour-station {
+  scroll-margin-top: calc(var(--tour-masthead-h, 5rem) + var(--tour-passport-h, 3.5rem));
+}
+
+/*
+ * The full `.wrap`, which is 80rem — the same column every other page on this
+ * site uses.
+ *
+ * This was capped at 52rem, on the reasoning that prose wants a measure. That
+ * conflated two different things and Tommy caught it: *"why is it taking up so
+ * little of the width of the screen"*. On a 1440px laptop it left an 832px
+ * column of content with 300px of empty paper down each side, which does not
+ * read as a considered measure — it reads as a page that failed to load
+ * properly.
+ *
+ * The measure is still real, and it is still enforced — but on the paragraphs,
+ * in `.tour-part__body`, where it belongs. The *container* is wide, and the
+ * width buys a second column: photographs beside the words rather than a
+ * gallery the reader has to scroll past to reach them.
+ */
+.tour-station__inner {
+  max-width: var(--shell-width, 80rem);
+}
+
+/* ── The station's header ─────────────────────────────────────────────────── */
+
+.tour-station__head {
+  max-width: 46rem;
+  margin-bottom: var(--space-lg, 1.5rem);
+}
+
+.tour-station__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin: 0 0 var(--space-sm, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * The number, as a filled disc — the same mark the passport uses for that
+ * station, at the size of a heading rather than a control. It is what ties the
+ * strip at the top of the screen to the thing under it: a reader who taps the
+ * 4 should arrive somewhere that is visibly the 4.
+ *
+ * `aria-hidden`, because the words beside it already say "Station 4" and a
+ * screen reader should not hear the number twice.
+ */
+.tour-station__num {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: var(--type-subheading, 1.125rem);
+  letter-spacing: 0;
+}
+
+/*
+ * The display face, explicitly.
+ *
+ * A bare `h2` on this site is the *UI* font — `h1, h2, h3, h4, nav, .ui` sets
+ * it, later in this file than the `h1, h2, h3` rule that sets the display face,
+ * so sans wins. Pages that want the serif opt in by name, as `.give-hero h2` and
+ * `.inspector__head h2` do. Without this line the station's title was the one
+ * sans heading on a page of serif ones, next to a serif hero and above serif
+ * part titles.
+ */
+.tour-station__title {
+  margin: 0 0 var(--space-sm, 0.5rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.1);
+}
+
+.tour-station__lede {
+  margin: 0;
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── Prose beside pictures ────────────────────────────────────────────────── */
+
+.tour-station__grid {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+/*
+ * 68rem, not the 40rem the gallery switches at.
+ *
+ * Two columns need room for *both* to work — a 62-character measure for the
+ * prose and four legible thumbnails beside it — and splitting as soon as the
+ * viewport allows one of them gives a tablet a cramped version of each. Below
+ * this the single column is not a fallback; it is the better layout.
+ */
+@media (min-width: 68rem) {
+  .tour-station__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+
+  /* Second column, first row — the DOM has it first, for the reading order a
+     phone and a screen reader get. See the note at the call site. */
+  .tour-station__aside {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: calc(var(--tour-masthead-h, 5rem) + var(--tour-passport-h, 3.5rem) + var(--space-md, 1rem));
+  }
+
+  .tour-station__body {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+/* ── The parts of a station ───────────────────────────────────────────────── */
+
+/*
+ * Every part is open and on the screen. The fold that used to be here is gone;
+ * `Subsection` in `features/tour/parts.tsx` carries the reasoning.
+ *
+ * So the whole job of this rule is to keep six open sections legible as six
+ * things. A rule above each heading does it with no boxes — the interactive
+ * panels inside a part are already bordered cards, and a card around those
+ * would be a box in a box on every station.
+ */
+.tour-part + .tour-part {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-lg, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.tour-part__title {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-tight, 1.1);
+  color: var(--color-deep, #481010);
+}
+
+.tour-part__body > * + * {
+  margin-top: var(--space-md, 1rem);
+}
+
+/*
+ * The measure, applied to the paragraphs rather than to the page.
+ *
+ * This is the half of the old 52rem cap that was actually doing something. A
+ * paragraph at the full width of the prose column would run to about 95
+ * characters, which is past the point where the eye loses the start of the next
+ * line. The panels, lists and tables below are deliberately *not* capped: a
+ * seven-chip tab set and a five-step rail both want the whole column, and
+ * neither is read line by line.
+ */
+.tour-part__body p {
+  max-width: 62ch;
+  line-height: var(--leading-relaxed, 1.65);
+}
+
+.tour-lede-inline {
+  max-width: 62ch;
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── Gallery ──────────────────────────────────────────────────────────────── */
+
+/*
+ * Two columns on a phone, four on a laptop. `minmax(0, 1fr)` and not `1fr`: a
+ * grid track defaults to `min-content` as its floor, so an image with a wide
+ * intrinsic size can push the column — and therefore the page — past the
+ * viewport. That has already cost this project a 93px horizontal scroll on the
+ * admin screens.
+ */
+.tour-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md, 1rem);
+  margin: 0 0 var(--space-lg, 1.5rem);
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Four across while the station is one column and the gallery has the whole
+ * 80rem to itself.
+ */
+@media (min-width: 40rem) {
+  .tour-gallery {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/*
+ * And back to two once it moves into the 24rem sidebar at 68rem, where four
+ * would be 84px tiles. A media query rather than a container query only because
+ * the two breakpoints have to agree with `.tour-station__grid`'s: the gallery
+ * moves column *because* the station did, so they cannot be allowed to drift.
+ */
+@media (min-width: 68rem) {
+  .tour-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tour-gallery__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.25rem);
+  min-width: 0;
+}
+
+.tour-gallery__tile {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--color-paper-sunken, #eeddd7);
+  cursor: zoom-in;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.tour-gallery__tile:hover {
+  border-color: var(--color-gold, #b08d43);
+  box-shadow: var(--shadow-md, 0 4px 16px -2px #1c16141a);
+}
+
+.tour-gallery__img {
+  display: block;
+  width: 100%;
+  /* Fixed ratio, so the grid's rows are level before a single picture has
+     loaded and nothing shifts as they arrive. */
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.tour-gallery__caption {
+  margin: 0;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.4;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ── Lightbox ─────────────────────────────────────────────────────────────── */
+
+.tour-light {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg, 1.5rem);
+  background: color-mix(in srgb, var(--color-deep, #481010) 88%, #000);
+}
+
+.tour-light__frame {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: min(100%, 60rem);
+  justify-items: center;
+}
+
+/*
+ * `contain`, which is the whole reason the lightbox exists: the tile above
+ * cropped this picture to a landscape band, and this is where the icon or the
+ * manuscript leaf is given back whole.
+ */
+.tour-light__img {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper, #f6e8e3);
+}
+
+.tour-light__caption {
+  margin: 0;
+  max-width: 44rem;
+  text-align: center;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 84%, transparent);
+}
+
+.tour-light__close,
+.tour-light__step {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  /* 44px. Below that a control is a coin toss for a thumb, and this one is
+     the only way out of a full-screen overlay. */
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 30%, transparent);
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, #000 40%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tour-light__close:hover,
+.tour-light__step:hover {
+  background: color-mix(in srgb, #000 65%, transparent);
+}
+
+.tour-light__close {
+  top: var(--space-md, 1rem);
+  right: var(--space-md, 1rem);
+}
+
+.tour-light__step {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tour-light__step--prev {
+  left: var(--space-sm, 0.5rem);
+}
+
+.tour-light__step--next {
+  right: var(--space-sm, 0.5rem);
+}
+
+/* ── The Creed ────────────────────────────────────────────────────────────── */
+
+.tour-creed {
+  margin: var(--space-lg, 1.5rem) 0 0;
+  padding: var(--space-lg, 1.5rem);
+  border-inline-start: 3px solid var(--color-gold, #b08d43);
+  background: var(--color-gold-soft, #f4ead2);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-relaxed, 1.65);
+}
+
+.tour-creed p + p {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-creed__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ── Reveal ───────────────────────────────────────────────────────────────── */
+
+.tour-reveal {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-reveal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.25rem);
+  margin-bottom: -1px;
+}
+
+.tour-chip {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-ink-soft, #4b413e);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.tour-chip:hover {
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-accent, #992a21);
+}
+
+.tour-chip.is-open {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.tour-reveal__panel {
+  margin-top: var(--space-sm, 0.5rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.tour-reveal__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5em;
+  margin: 0 0 var(--space-sm, 0.5rem);
+}
+
+.tour-reveal__aside {
+  font-size: var(--type-micro, 0.8125rem);
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-reveal__body > * + * {
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+.tour-reveal__body p {
+  line-height: var(--leading-relaxed, 1.65);
+}
+
+/* The censer's four parts, and any list of the same shape. */
+.tour-parts {
+  margin: var(--space-sm, 0.5rem) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+}
+
+.tour-parts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  padding-block: 0.35rem;
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.tour-parts strong {
+  min-width: 9rem;
+}
+
+/* ── Switcher ─────────────────────────────────────────────────────────────── */
+
+.tour-switch {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-switch__bar {
+  display: flex;
+  gap: var(--space-xs, 0.25rem);
+  padding: 0.25rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-sunken, #eeddd7);
+  width: fit-content;
+}
+
+.tour-switch__tab {
+  padding: 0.5rem 1.25rem;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-ink-soft, #4b413e);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tour-switch__tab.is-open {
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-accent, #992a21);
+  box-shadow: var(--shadow-sm, 0 1px 2px 0 #1c161412);
+}
+
+.tour-switch__panel {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-vestments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+
+.tour-vestments li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5em;
+  padding-block: 0.6rem;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+/* The Arabic or Greek name, beside the English one. */
+.tour-vestments span {
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ── Stepper ──────────────────────────────────────────────────────────────── */
+
+.tour-stepper {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-stepper__rail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.25rem);
+  margin: 0 0 var(--space-md, 1rem);
+  padding: 0;
+  list-style: none;
+}
+
+/* The connector between dots. On the item rather than the button so it does
+   not sit inside the click target. */
+.tour-stepper__rail-item + .tour-stepper__rail-item::before {
+  content: '';
+  display: inline-block;
+  width: 1rem;
+  height: 1px;
+  margin-right: var(--space-xs, 0.25rem);
+  vertical-align: middle;
+  background: var(--color-rule, #e0cac3);
+}
+
+.tour-stepper__dot {
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-ink-faint, #6f5f5a);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tour-stepper__dot.is-done {
+  border-color: var(--color-gold, #b08d43);
+  color: var(--color-gold, #b08d43);
+}
+
+.tour-stepper__dot.is-here {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.tour-stepper__panel {
+  padding: var(--space-lg, 1.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  /* The five steps are different lengths and the panel resizing under the
+     reader's thumb as they press Next is the thing that makes a stepper feel
+     broken. A floor, not a fixed height — a step longer than this still grows. */
+  min-height: 11rem;
+}
+
+.tour-stepper__count {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-stepper__title {
+  margin: var(--space-xs, 0.25rem) 0 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-tight, 1.1);
+}
+
+.tour-stepper__service {
+  margin: 0 0 var(--space-sm, 0.5rem);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: italic;
+  color: var(--color-accent, #992a21);
+}
+
+.tour-stepper__body p {
+  line-height: var(--leading-relaxed, 1.65);
+}
+
+.tour-stepper__controls {
+  display: flex;
+  gap: var(--space-sm, 0.5rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-quote,
+.tour-close {
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid var(--color-gold, #b08d43);
+  font-style: italic;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.tour-close {
+  margin-top: var(--space-lg, 1.5rem);
+}
+
+/* ── Your name in Coptic ──────────────────────────────────────────────────── */
+
+.tour-name {
+  margin-top: var(--space-sm, 0.5rem);
+  padding: var(--space-lg, 1.5rem);
+  border: 1px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-gold-soft, #f4ead2);
+}
+
+.tour-name__label {
+  display: block;
+  margin-bottom: var(--space-xs, 0.25rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-name__input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #1c1614);
+  /* 16px minimum. Anything smaller and iOS Safari zooms the page in when the
+     field is focused, and never zooms back out. */
+  font-size: 1rem;
+  font-family: var(--font-body, Georgia, serif);
+}
+
+.tour-name__out {
+  display: block;
+  min-height: 3.5rem;
+  margin-top: var(--space-md, 1rem);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.tour-name__coptic {
+  font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.75rem);
+  line-height: 1.3;
+  color: var(--color-accent, #992a21);
+}
+
+/* The placeholder reads ⲡⲉⲕⲣⲁⲛ — "your name". Faint, so it is visibly a
+   prompt rather than a result. */
+.tour-name__empty {
+  font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.75rem);
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 40%, transparent);
+}
+
+.tour-name__note {
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+/* ── The Coptic year ──────────────────────────────────────────────────────── */
+
+.tour-year {
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-year__seasons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-xs, 0.25rem);
+}
+
+.tour-year__season {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper, #f6e8e3);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.tour-year__season.is-open {
+  border-color: var(--color-accent, #992a21);
+  background: var(--color-accent-soft, #f6d8d0);
+}
+
+.tour-year__season-name {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.tour-year__season-gloss {
+  font-size: var(--type-micro, 0.8125rem);
+  font-style: italic;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-year__panel {
+  margin-top: var(--space-sm, 0.5rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.tour-year__months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.25rem);
+  margin: 0 0 var(--space-sm, 0.5rem);
+  padding: 0;
+  list-style: none;
+}
+
+.tour-year__month {
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-gold-soft, #f4ead2);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-deep, #481010);
+}
+
+.tour-year__note {
+  margin: 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.5;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── The hymn ─────────────────────────────────────────────────────────────── */
+
+.tour-hymn {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.tour-hymn__line {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  padding: var(--space-md, 1rem);
+  border-inline-start: 3px solid var(--color-gold, #b08d43);
+  background: var(--color-paper-raised, #fdf7f4);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+}
+
+/* Side by side once there is room for two columns of prose to both be
+   readable. Below that they stack, which is the right reading order anyway —
+   the transliteration first, then what it means. */
+@media (min-width: 46rem) {
+  .tour-hymn__line {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-lg, 1.5rem);
+  }
+
+  .tour-hymn--three .tour-hymn__line {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.tour-hymn__coptic {
+  margin: 0;
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: 1.6;
+  color: var(--color-accent, #992a21);
+}
+
+.tour-hymn__translit {
+  margin: 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.6;
+  font-style: italic;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.tour-hymn__english {
+  margin: 0;
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.6;
+}
+
+/* ── Collecting a stamp ───────────────────────────────────────────────────── */
+
+/*
+ * The stamp control sits under the photographs in the sidebar, so it no longer
+ * needs the rule that used to separate it from the end of a station's prose.
+ * The gallery's own bottom margin is the separation.
+ */
+.tour-stampline {
+  margin-top: 0;
+}
+
+/* Full width on a phone, where it is the last thing in the station and wants to
+   look like a decision rather than a footnote. */
+.tour-stampline__button {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (min-width: 68rem) {
+  .tour-stampline__button {
+    width: auto;
+  }
+}
+
+.tour-stampline__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.7rem 1.25rem;
+  border: 1px solid var(--color-accent, #992a21);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/*
+ * The stamped state is `disabled`, and it must not look disabled. It is a
+ * statement — "you have this one" — not a control that has been taken away, and
+ * greying it out reads as an error.
+ */
+.tour-stampline__button.is-done,
+.tour-stampline__button:disabled {
+  border-color: var(--color-gold, #b08d43);
+  background: var(--color-gold-soft, #f4ead2);
+  color: var(--color-deep, #481010);
+  cursor: default;
+  opacity: 1;
+}
+
+.tour-stampline__tick {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* ── The end of the tour ──────────────────────────────────────────────────── */
+
+/* The same full-width column the stations use, so the page does not narrow at
+   its last band. The reward card sets its own measure below. */
+.tour-end__inner {
+  max-width: var(--shell-width, 80rem);
+}
+
+/*
+ * Shown at the dessert table, across a counter, probably at arm's length. So
+ * the offer is set at display size and nothing else on the panel competes with
+ * it.
+ */
+.tour-reward {
+  /* Centred and capped: this is one short announcement held up to a volunteer
+     across a counter, and a 1280px-wide banner would set the offer in a line of
+     type with a foot of empty gold on either side of it. */
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--space-xl, 2.5rem) var(--space-lg, 1.5rem);
+  border: 2px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-gold-soft, #f4ead2);
+  text-align: center;
+}
+
+.tour-reward__eyebrow {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.tour-reward__headline {
+  margin: var(--space-xs, 0.25rem) 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-display, 3rem);
+  line-height: var(--leading-tight, 1.1);
+  color: var(--color-accent, #992a21);
+}
+
+.tour-reward__body {
+  margin: 0;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.tour-reward__reset {
+  margin-top: var(--space-lg, 1.5rem);
+}
+
+/*
+ * Unused since the credits were hidden.
+ *
+ * The block they styled is a `visually-hidden` div now — Tommy asked for the
+ * photo credits off the page, on this page and on /about/our-belief both. The
+ * rules are left in place rather than deleted because the markup they belong to
+ * is one commit away from coming back if the seven CC BY / CC BY-SA
+ * photographs are ever swapped for CC0 ones. See the note at the call site in
+ * `features/tour/TourScreen.tsx`.
+ */
+.tour-credits {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.tour-credits__summary {
+  cursor: pointer;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.tour-credits__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-xs, 0.25rem) var(--space-lg, 1.5rem);
+  margin: var(--space-md, 1rem) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+/*
+ * Each entry is a block, not a wrapping row: the authors run from one word
+ * ("Unknown") to a full sentence with dates in it, and inline they broke
+ * mid-credit so that a licence ended up on the line under an unrelated name.
+ * Title on one line, attribution under it, which is also the order the licences
+ * ask for.
+ */
+.tour-credits__list li {
+  display: block;
+  min-width: 0;
+  padding-block: 0.15rem;
+}
+
+.tour-credits__meta {
+  display: block;
+}
+
+.tour-credits__list a {
+  text-transform: capitalize;
+}
+
+.tour-credits__meta {
+  color: var(--color-ink-faint, #6f5f5a);
+  line-height: 1.4;
+}
+
+.tour-back {
+  padding-bottom: var(--space-section, 4rem);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+
+/*
+ * Everything that moves on this page moves to confirm a tap. Honour the
+ * preference by removing the transition, not the state change — the stamp still
+ * turns into a tick, it just does it at once.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .tour-stamp,
+  .tour-stamp__num,
+  .tour-stamp__mark,
+  .tour-chip,
+  .tour-gallery__tile,
+  .tour-measured .tour-passport,
+  .tour-year__season {
+    transition: none;
+  }
+}
+
+/* ===========================================================================
+   Our Belief — /about/our-belief
+   ===========================================================================
+
+   A long read, sat down, with ten pictures in it. Nothing here is interactive
+   except the credits disclosure, so this file carries the whole design of the
+   page: there is no client component to hide a style decision in.
+
+   Every class is `belief-` prefixed and none of them is a bare word. One
+   stylesheet, no CSS modules — a generic `.plate` or `.creed` here would reach
+   into every other page that ever wants one, which has already happened once
+   when a `.shelf` written for the programs panel flattened the bookstore.
+
+   Fallbacks are the default theme's real values, not approximations. A
+   misspelt custom property does not error; it falls through to the fallback
+   and looks like a deliberate choice, so the fallback has to be right.
+   =========================================================================== */
+
+/* ── The opening band ─────────────────────────────────────────────────────── */
+
+/*
+ * Short, and shorter on a phone. The point of this page is the Creed, which is
+ * two bands down; every pixel of hero is a pixel between the reader and it.
+ * Same reasoning as the sitewide page banner that was cut.
+ */
+.belief-hero {
+  padding-block: var(--space-lg, 1.5rem);
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .belief-hero {
+    padding-block: var(--space-xl, 2.5rem);
+  }
+}
+
+.belief-hero__inner {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: 46rem;
+}
+
+.belief-hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/*
+ * A `p` carrying the page's visible title — `PageHeader` has already rendered
+ * the hidden `h1`, and a second one would give the document two. Styled as
+ * display type, marked up as what it is.
+ */
+.belief-hero__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.belief-hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The display serif, opted into by name.
+ *
+ * A bare `h2` on this site is the *UI sans* face: the `h1, h2, h3, h4, nav, .ui`
+ * rule lands later in this file than the one that sets the display serif, so
+ * sans wins and a page that wants the serif asks for it — the way `.give-hero
+ * h2` and `.tour-station__title` do. This page is the Creed and four sections
+ * of commentary on it, all set in the serif, and sans headings through the
+ * middle of that read as a different document.
+ */
+.belief-opening h2,
+.belief-creed h2,
+.belief-councils h2,
+.belief-articles h2,
+.belief-see h2,
+.belief-article__heading {
+  font-family: var(--font-display, Georgia, serif);
+  line-height: var(--leading-tight, 1.15);
+}
+
+.belief-article__heading {
+  font-size: var(--type-heading, 1.5rem);
+  color: var(--color-deep, #481010);
+}
+
+/* ── Prose beside a picture ───────────────────────────────────────────────── */
+
+/*
+ * The page's workhorse: a column of text with a plate hung beside it.
+ *
+ * `minmax(0, …)` on both tracks rather than `1fr 22rem`. A grid item's implicit
+ * minimum is its content, so a long unbroken word or an image's intrinsic width
+ * can push a column wider than its share and shove the whole band off a phone —
+ * which is exactly how the staff events editor ended up 93px wider than the
+ * screen.
+ *
+ * Below 60rem it is one column and the plate follows the text it illustrates,
+ * which is the right reading order on a phone anyway.
+ */
+.belief-split {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+@media (min-width: 60rem) {
+  .belief-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+}
+
+/* ── A plate ──────────────────────────────────────────────────────────────── */
+
+/*
+ * One picture and its caption. No lightbox anywhere on this page: the tour has
+ * one because its galleries are the point of the station, but here a picture
+ * supports an argument the reader is in the middle of, and a modal that takes
+ * the screen — and focus, and body scroll — is a way of losing their place.
+ *
+ * The frame is a hairline and a shallow lift rather than a heavy border. Most
+ * of these are icons on gold ground and museum photographs on grey; they carry
+ * their own edges, and a thick frame reads as a second one.
+ */
+.belief-plate {
+  margin: 0;
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.belief-plate__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.belief-plate__caption {
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * A picture that runs the width of the band instead of sitting in a column.
+ * The two landscape paintings need it: at 22rem wide, Bellini's Alexandria is
+ * a smear.
+ */
+.belief-plate--full {
+  margin-block: var(--space-lg, 1.5rem);
+}
+
+.belief-plate--full .belief-plate__caption {
+  max-width: var(--measure, 68ch);
+}
+
+/* ── The Creed ────────────────────────────────────────────────────────────── */
+
+/*
+ * On `band--tinted`, which is the third ground and appears nowhere else on this
+ * page. This is the one thing a reader may have come here for, and it has to be
+ * findable by scrolling past everything else at speed.
+ */
+.belief-creed__head {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: var(--measure, 68ch);
+  margin-bottom: var(--space-lg, 1.5rem);
+}
+
+.belief-creed__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 88%, var(--color-ink, #1c1614));
+}
+
+.belief-creed__body {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+@media (min-width: 60rem) {
+  .belief-creed__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+}
+
+/*
+ * The text itself, on a raised card.
+ *
+ * Set in the display face and a size above body copy, because this is said out
+ * loud and is read here the way it is read there. The gold rule down the inside
+ * edge is the site's quotation mark — `.prose blockquote` uses the same one —
+ * kept here rather than inherited, because this blockquote deliberately sits
+ * outside `.prose` (whose rule would also italicise the whole Creed).
+ */
+.belief-creed__text {
+  margin: 0;
+  padding: var(--space-lg, 1.5rem);
+  padding-inline-start: calc(var(--space-lg, 1.5rem) - 3px);
+  border-inline-start: 3px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * One stanza per paragraph, one `<br>` per line of the Creed.
+ *
+ * Where the lines break is where the church breathes, so the breaks are
+ * content. `text-wrap: pretty` rather than `balance`: a line too long for the
+ * column wraps once, and pretty leaves the overflow hanging under its own line
+ * instead of rebalancing the pair into two half-lines that read as a break the
+ * Creed does not have.
+ */
+.belief-creed__stanza {
+  margin: 0 0 1em;
+  text-wrap: pretty;
+}
+
+/*
+ * One line of the Creed, hanging-indented the way verse is always set.
+ *
+ * On a phone the column is narrower than several of these lines, and without
+ * the indent a line the *browser* wrapped is indistinguishable from a line the
+ * *Church* breaks — "We believe in one God, the / Father Almighty," reads as
+ * two lines of the Creed, which it is not. The overflow is indented; the
+ * Creed's own lines are not.
+ *
+ * This is why the lines are blocks rather than `<br />`: `text-indent` applies
+ * to the first line of a block only, so with one block per stanza it would have
+ * indented every line after a `<br />` as though the screen had wrapped it.
+ */
+.belief-creed__line {
+  display: block;
+  padding-inline-start: 1.25em;
+  text-indent: -1.25em;
+}
+
+.belief-creed__stanza:last-child {
+  margin-bottom: 0;
+}
+
+.belief-creed__aside {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  align-content: start;
+}
+
+/* ── The Creed, clause by clause ──────────────────────────────────────────── */
+
+.belief-articles__head {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: var(--measure, 68ch);
+  margin-bottom: var(--space-xl, 2.5rem);
+}
+
+/*
+ * An `ol` with no markers. The order is the Creed's own and carries meaning, so
+ * the list is ordered; the numbers are not shown because the Creed does not
+ * number its clauses and a reader counting to seven is counting the wrong
+ * thing.
+ */
+.belief-articles__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+/* The gap above the rule and the padding below it are the same, so the hairline
+   sits centred in the seam rather than tight against the clause under it. */
+.belief-article + .belief-article {
+  padding-top: var(--space-lg, 1.5rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+.belief-article {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+@media (min-width: 60rem) {
+  .belief-article--plated {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+
+  /*
+   * The plates alternate sides down the page. A column of pictures all down the
+   * right reads as a sidebar the eye learns to skip; alternating keeps each one
+   * next to the sentence it belongs to.
+   *
+   * Only above 60rem. In one column, `order` would put the picture before the
+   * clause it illustrates.
+   */
+  .belief-article--plated:nth-child(even) {
+    grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  }
+
+  .belief-article--plated:nth-child(even) .belief-article__plate {
+    order: -1;
+  }
+}
+
+/*
+ * The Creed's own words, above the heading that explains them.
+ *
+ * Quiet — this is the second time the reader has met these lines, and the point
+ * is recognition rather than another reading. Hence the size below body copy
+ * and the gold rule that says "quoted from above" rather than "read me now".
+ */
+.belief-article__line {
+  margin: 0 0 var(--space-sm, 0.5rem);
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid var(--color-gold, #b08d43);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  font-style: italic;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.belief-article__heading {
+  margin: 0 0 var(--space-sm, 0.5rem);
+}
+
+/* `.prose h3` adds a top margin, which here would push the heading away from
+   the Creed line it belongs to. */
+.belief-article__body.prose .belief-article__heading {
+  margin-top: 0;
+}
+
+/* ── The See of St. Mark ──────────────────────────────────────────────────── */
+
+.belief-see__head {
+  max-width: var(--measure, 68ch);
+}
+
+/* ── The foot ─────────────────────────────────────────────────────────────── */
+
+/*
+ * There isn't one. The closing band held the picture credits, and before that a
+ * panel of links; both were cut, and the credits are now `visually-hidden`
+ * inside the last section — so they take their styling from nothing. See
+ * `features/belief/parts.tsx` for why they are still in the markup at all.
+ */
+
+/* The back link out, matching the tour's. */
+.belief-back {
+  padding-block: var(--space-lg, 1.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+/* ── /about/patron-saints ───────────────────────────────────────────────────
+ *
+ * Two lives, seven pictures. Everything here is prefixed `saint-` or `saints-`
+ * because this file is one global sheet with no modules in it — a `.figure` or
+ * a `.pair` declared here would reach into every other page on the site.
+ *
+ * The page is built out of `.band` / `.band--sunken` like the homepage and
+ * `/contact`, so the seams, the section spacing and the gold eyebrows all come
+ * for free and nothing below re-implements them.
+ */
+
+/* The opening diptych — the words, and the two icons that answer "which one is
+   which" before the prose gets a chance to. */
+.saints-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl, 2.5rem);
+}
+
+@media (min-width: 60rem) {
+  .saints-open {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-xxl, 4rem);
+    align-items: start;
+  }
+}
+
+.saints-open__pair {
+  display: grid;
+  /* `minmax(0, …)`, not `1fr`, or a tall icon's intrinsic width can push the
+     grid wider than its column. See the note on the admin date inputs. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg, 1.5rem);
+  align-items: start;
+}
+
+/*
+ * A mount, not a crop.
+ *
+ * The two icons have different proportions — 792×1186 against 600×821 — and
+ * side by side at natural height they end at different points, which reads as a
+ * mistake. `object-fit: cover` would square that up by cutting them, and on
+ * these two pictures the cut lands on the angel handing down the second sword
+ * and on the camels at St. Mina's feet, which are the two things the icons are
+ * *for*. So both sit whole inside a common frame with the paper showing around
+ * them, the way an icon sits in a mount.
+ */
+.saints-open__pair .saint-figure__image {
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
+  padding: var(--space-sm, 0.75rem);
+}
+
+/* The saint's name, printed inside his caption — see `SaintFigure`. */
+.saint-figure__name {
+  display: block;
+  margin-bottom: var(--space-xs, 0.5rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.25);
+  color: var(--color-ink, #1c1614);
+}
+
+.saint-figure__also {
+  display: block;
+  margin-top: 0.15em;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  letter-spacing: var(--tracking-wide, 0.08em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #7a6f6a);
+}
+
+/* One saint's band: the life, and a photograph of a place beside it. */
+.saint__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl, 2.5rem);
+}
+
+@media (min-width: 60rem) {
+  .saint__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    gap: var(--space-xxl, 4rem);
+    align-items: start;
+  }
+
+  /*
+   * The picture rides down beside the life rather than sitting at the top of a
+   * column that is then empty for a thousand pixels. Each of these bands is one
+   * saint and one photograph of a place that belongs to him, so there is
+   * nothing to scroll it *past* — the alternative is a tall column of paper.
+   *
+   * A literal `6rem` and not `--masthead-h`: that token says 80px and the bar
+   * is 69 or 85 depending on the width, so anything pinned to it is wrong at
+   * one of the two. 6rem clears the taller one with a margin to spare, and this
+   * only has to look unpinned, not to butt against the bar.
+   */
+  .saint__aside {
+    position: sticky;
+    top: 6rem;
+  }
+}
+
+.saint__words h3 {
+  margin-top: var(--space-xl, 2.5rem);
+  color: var(--color-accent, #992a21);
+}
+
+/* A picture with its caption. The gold hairline is the same mark the cards and
+   the band seams use, so a framed picture belongs to the page rather than
+   floating on it. */
+.saint-figure {
+  margin: 0;
+}
+
+.saint-figure__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper-raised, #fffaf7);
+  box-shadow: var(--shadow-sm);
+}
+
+.saint-figure__caption,
+.saint-tile__caption {
+  margin-top: var(--space-sm, 0.75rem);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* The days the Church keeps. */
+.saint-feasts {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid var(--color-gold, #b08d43);
+}
+
+.saint-feasts__label {
+  margin: 0 0 var(--space-sm, 0.75rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  letter-spacing: var(--tracking-wide, 0.08em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #7a6f6a);
+}
+
+.saint-feasts__list {
+  margin: 0;
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.saint-feasts__row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  gap: var(--space-xs, 0.5rem) var(--space-md, 1rem);
+  align-items: baseline;
+}
+
+@media (max-width: 30rem) {
+  .saint-feasts__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.saint-feasts__row dt {
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+.saint-feasts__row dd {
+  margin: 0;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.saint-feasts__coptic {
+  display: block;
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+}
+
+.saint-feasts__gregorian {
+  display: block;
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-ink-faint, #7a6f6a);
+}
+
+/* "How to tell them apart" — two paragraphs and the three objects that show it. */
+.saints-look {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl, 2.5rem);
+}
+
+@media (min-width: 60rem) {
+  .saints-look {
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    gap: var(--space-xxl, 4rem);
+    align-items: start;
+  }
+}
+
+.saints-look__note p {
+  margin-block: 0 1.1em;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.saints-look__note p:last-child {
+  margin-bottom: 0;
+}
+
+.saints-look__note strong {
+  color: var(--color-ink, #1c1614);
+}
+
+.saints-look__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-lg, 1.5rem);
+}
+
+.saint-tile {
+  margin: 0;
+}
+
+/*
+ * These three are cropped and the figures above are not, and the difference is
+ * the job: a tile is evidence sitting beside a sentence, and three objects of
+ * three different shapes in a row read as clutter. The crop is in CSS rather
+ * than in the built file because these are the same files the figures use.
+ */
+.saint-tile__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 34%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper-raised, #fffaf7);
+}
+
+/*
+ * One tile per row is not a row, so the crop comes off.
+ *
+ * The grid collapses to a single column below about 34rem, and a full-width
+ * tile is 340px of picture: at that size the 4/5 crop is cutting a third off a
+ * landscape triptych for a tidiness nobody can see, since there is no
+ * neighbouring tile to line it up with. Each picture goes back to its own shape.
+ */
+@media (max-width: 34rem) {
+  .saint-tile__image {
+    aspect-ratio: var(--tile-ratio, 4 / 5);
+  }
+}
+
+/*
+ * The close of the page: the link back to About, and the picture credits that
+ * are in the document but never on the screen. See `PictureCredits` — the list
+ * is `visually-hidden`, so this row is the "All of About" link and nothing
+ * else, and the band around it is what stops that link sitting hard against the
+ * iconography grid above it.
+ */
+.saints-close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+}
+
+.saints-close .about-page__back {
+  margin: 0;
+}
+
+.saint-credits__list {
+  margin: var(--space-md, 1rem) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.saint-credits__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.saint-credits__meta {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  color: var(--color-ink-faint, #7a6f6a);
+}
+
+/* ===========================================================================
+   Who We Are — /about/who-we-are
+   ===========================================================================
+
+   A history with seven pictures and two dated spines in it. Nothing on the page
+   is interactive, so this block carries the whole design of it: there is no
+   client component anywhere to hide a style decision in.
+
+   Every class is `who-` prefixed and none of them is a bare word. One
+   stylesheet, no modules — a generic `.plate`, `.spine` or `.crossing` declared
+   here would reach into every other page that ever wants one, which has already
+   happened once, when a `.shelf` written for the programs panel flattened the
+   bookstore.
+
+   Deliberately close to the `belief-` block above rather than sharing with it.
+   The two pages sit next to each other in the About menu and should read as one
+   family, but a shared `.about-plate` would mean a change made for one page
+   silently landing on the other, and these two want different things already —
+   /about/our-belief alternates its plates left and right down a numbered list,
+   and this page never does.
+
+   Fallbacks are the default theme's real values, not approximations. A misspelt
+   custom property does not error; it falls through to the fallback and looks
+   like a deliberate choice, so the fallback has to be right.
+   =========================================================================== */
+
+/*
+ * Every grid here spaces its children with `gap`. The browser's own
+ * `p { margin: 1em 0 }` is not reset globally, so without this each child adds
+ * a second, em-sized space on top of the gap — and because it is em-sized, the
+ * biggest type gets the biggest space. On the tour that alone put 84px around a
+ * hero title and made a band described in its own comment as "short" 444px tall.
+ *
+ * Scoped to the containers that use `gap`, not to `.who *`: the prose bodies
+ * want `.prose`'s own paragraph rhythm and must not be flattened by this.
+ */
+.who-hero__inner > *,
+.who-spine__head > *,
+.who-wayland__head > *,
+.who-plate > * {
+  margin: 0;
+}
+
+/* ── The opening band ─────────────────────────────────────────────────────── */
+
+/*
+ * Short, and shorter on a phone. The subject of this page starts in the band
+ * below, and every pixel of hero is a pixel between the reader and it — the
+ * same reasoning the sitewide page banner was cut for.
+ */
+.who-hero {
+  padding-block: var(--space-lg, 1.5rem);
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .who-hero {
+    padding-block: var(--space-xl, 2.5rem);
+  }
+}
+
+.who-hero__inner {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: 46rem;
+}
+
+.who-hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/*
+ * A `p` carrying the page's visible title — `PageHeader` has already rendered
+ * the hidden `h1`, and a second would give the document two. Styled as display
+ * type, marked up as what it is.
+ */
+.who-hero__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.who-hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The display serif, opted into by name.
+ *
+ * A bare `h2` on this site is the UI *sans* face: the `h1, h2, h3, h4, nav, .ui`
+ * rule lands later in this file than the one setting the display serif, so sans
+ * wins and a page that wants the serif has to ask. This page is six sections of
+ * continuous history, and sans headings through the middle of it read as a
+ * different document — the same call /about/our-belief made.
+ */
+.who-origin h2,
+.who-spine h2,
+.who-minority h2,
+.who-crossing h2,
+.who-here h2,
+.who-wayland h2 {
+  font-family: var(--font-display, Georgia, serif);
+  line-height: var(--leading-tight, 1.15);
+}
+
+/* ── Prose beside a picture ───────────────────────────────────────────────── */
+
+/*
+ * The page's workhorse: a column of text with a plate hung beside it.
+ *
+ * `minmax(0, …)` on both tracks rather than `1fr 22rem`. A grid item's implicit
+ * minimum is its content, so a long unbroken word or an image's intrinsic width
+ * can push a column past its share and shove the whole band off a phone — which
+ * is exactly how the staff events editor ended up 93px wider than the screen.
+ *
+ * Below 60rem it collapses to one column and the plate follows the text it
+ * illustrates, which is the right reading order on a phone anyway.
+ */
+.who-split {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+@media (min-width: 60rem) {
+  .who-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+
+  /*
+   * Picture on the left instead. Used once, for the second half of "The
+   * crossing": two splits stacked with the plate on the same side both times
+   * reads as a sidebar the eye learns to skip.
+   *
+   * Only above 60rem — in one column, `order` would put the picture before the
+   * paragraph it belongs to.
+   */
+  .who-split--flipped {
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  }
+
+  .who-split--flipped .who-split__plate {
+    order: -1;
+  }
+}
+
+/* Two stacked splits inside one band need a gap between them; the band's own
+   padding is around the pair, not between. */
+.who-split + .who-split,
+.who-split + .wrap {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+/* ── A plate ──────────────────────────────────────────────────────────────── */
+
+/*
+ * One picture and its caption. No lightbox anywhere on this page, for the
+ * reason /about/our-belief has none: the tour's galleries are the point of the
+ * station, but here a picture supports a paragraph the reader is in the middle
+ * of, and a modal that takes the screen — and focus, and body scroll — is a way
+ * of losing their place.
+ *
+ * A hairline frame and a shallow lift, not a heavy border. Four of these are
+ * old photographs on grey and two are portraits on black; they carry their own
+ * edges, and a thick frame reads as a second one.
+ */
+.who-plate {
+  margin: 0;
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.who-plate__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.who-plate__caption {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * A picture that runs the width of the band instead of sitting in a column. The
+ * landscapes need it — St. Antony's monastery under its cliff is a smear at
+ * 22rem — and on a page of six long bands it is also the only place the reader
+ * gets to stop reading.
+ *
+ * **Capped by height, not by width, and that is the whole trick.** The four
+ * pictures that use this run from 2.59:1 (the sanctuary) to 3:4 (the church in
+ * Queens). Sized by width alone at the band's 1,200px they come out 464px and
+ * 1,600px tall — the second is a wall of church that takes two screens to
+ * scroll past and buries the chronology under it. So the image is bounded on
+ * its long side instead: `max-height` with `width: auto` lets each one take the
+ * band's full width only if its shape allows, and the tall ones stand in the
+ * middle of it at a readable size.
+ *
+ * `62vh` rather than a rem figure because what is being bounded is *the
+ * reader's screen*, not the layout — the rule exists so that no single picture
+ * fills the viewport, and a laptop and a phone disagree about how many pixels
+ * that is. It overrides `width: 100%` from the base plate, so it has to come
+ * after it.
+ *
+ * Nothing is cropped. `object-fit` would have been the other answer and it is
+ * the wrong one here: the monastery's subject is the cliff *above* the
+ * monastery, and a cover crop to a pleasant ratio removes it.
+ */
+.who-plate--full {
+  margin-block: var(--space-xl, 2.5rem);
+  justify-items: center;
+}
+
+.who-plate--full .who-plate__img {
+  width: auto;
+  max-width: 100%;
+  max-height: 62vh;
+}
+
+/* Centred as a block under a centred picture, but the sentence inside it still
+   starts at the left — a two-line caption set centred reads as a pull quote. */
+.who-plate--full .who-plate__caption {
+  max-width: min(100%, var(--measure, 68ch));
+  text-align: start;
+}
+
+/* ── A dated spine ────────────────────────────────────────────────────────── */
+
+.who-spine__head,
+.who-wayland__head {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: var(--measure, 68ch);
+  margin-bottom: var(--space-xl, 2.5rem);
+}
+
+.who-spine__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #731d16);
+}
+
+/*
+ * A `dl` of years and what happened in them.
+ *
+ * The rule runs down the *left of the whole list* rather than between the two
+ * columns, and the years hang outside it. A rule between the columns would move
+ * with the widest year — "the late 1970s" against "641" — and the entries would
+ * stop lining up with each other the moment somebody added one.
+ */
+.who-chron {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+  max-width: 58rem;
+}
+
+.who-chron__row {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+}
+
+/*
+ * Two columns from 40rem up, not 60rem. This is a narrow list of short lines
+ * and it wants the year beside the sentence as early as the year fits, which on
+ * a 6.7in phone in landscape it already does.
+ *
+ * `minmax(0, 1fr)` on the second track for the usual reason — the implicit
+ * minimum of a grid item is its content, and one unbroken word would otherwise
+ * push the row wider than the page.
+ */
+@media (min-width: 40rem) {
+  .who-chron__row {
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: var(--space-lg, 1.5rem);
+    align-items: baseline;
+  }
+}
+
+/*
+ * The year, in the display serif and in the accent, so the eye can run down the
+ * column without reading. Not a heading: a screen reader jumping by heading
+ * through this page should land on the six sections, not on twenty years.
+ */
+.who-chron__when {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-accent-strong, #731d16);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* `dd` carries a browser default `margin-inline-start: 40px`, which in a grid
+   cell is 40px of nothing between the year and the sentence. */
+.who-chron__what {
+  margin: 0;
+  max-width: var(--measure, 68ch);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* On `band--tinted`, where the ground is darker, the soft ink loses too much
+   against it. */
+.band--tinted .who-chron__what {
+  color: var(--color-ink, #1c1614);
+}
+
+/* ── This church ──────────────────────────────────────────────────────────── */
+
+.who-wayland__inner {
+  display: grid;
+}
+
+.who-wayland__body {
+  max-width: var(--measure, 68ch);
+}
+
+/* ── The foot ─────────────────────────────────────────────────────────────── */
+
+/*
+ * There isn't one, on purpose. No closing panel of links and no invitation —
+ * see the note at the top of `WhoScreen`. The credits are `visually-hidden`
+ * inside the last band and take their styling from nothing.
+ */
+
+/* The back link out, matching the tour's and /about/our-belief's. */
+.who-back {
+  padding-block: var(--space-lg, 1.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+/* ── The clergy roster ────────────────────────────────────────────────────── */
+
+/*
+ * Six people, three and three.
+ *
+ * **A fixed column count, not `auto-fit`.** `auto-fit` was here first and it was
+ * wrong: at a laptop width six 15rem tracks do not fit, so it laid out four and
+ * then two — which reads as a group of four with a leftover pair rather than as
+ * three fathers and three deacons. Tommy asked for "3 and 3 to keep it even",
+ * and evenness here is not decoration; the two rows *are* the two ranks.
+ *
+ * So the roster's shape is load-bearing, and `ROSTER` in `features/who/clergy.ts`
+ * says so beside the data. If a fourth priest is ever appointed, this rule is
+ * what has to be looked at — a seventh person lands alone on a third row.
+ *
+ * `minmax(0, 1fr)` on every track for the usual reason: a grid item's implicit
+ * minimum is its content, and an unbroken name would otherwise push a track
+ * wider than its third and the row off a phone.
+ */
+.who-clergy__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl, 2.5rem) var(--space-lg, 1.5rem);
+}
+
+/* Two, then three. Two columns is also even — three rows of two — so a tablet
+   never shows the leftover-pair shape either. */
+@media (min-width: 32rem) {
+  .who-clergy__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 48rem) {
+  .who-clergy__list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.who-cleric {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-xs, 0.25rem);
+  text-align: center;
+}
+
+/*
+ * A circle, and the same 8.5rem at every width.
+ *
+ * The homepage's row is 11rem because it is the first thing on that section and
+ * it is scrolled horizontally; here the roster is the last band of a long read
+ * and six 11rem circles would out-weigh the history above them. `object-fit`
+ * with `position: top` because the build already crops these to 4:5 from the
+ * north — a circle cut from the centre of a 4:5 headshot takes the chin.
+ */
+.who-cleric__portrait,
+.who-cleric__mark {
+  width: 8.5rem;
+  height: 8.5rem;
+  border-radius: var(--radius-full, 999px);
+  margin-bottom: var(--space-xs, 0.25rem);
+}
+
+.who-cleric__portrait {
+  display: block;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+/* The initial, for the three deacons whose photographs have not arrived. Same
+   treatment as the homepage's `.cleric__mark`, scaled to this circle — it has
+   to read as "not yet" rather than as a design element. */
+.who-cleric__mark {
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+  color: var(--color-gold, #b08d43);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  line-height: 1;
+}
+
+.who-cleric__name {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  line-height: var(--leading-snug, 1.25);
+}
+
+.who-cleric__rank {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #731d16);
+}
+
+.who-cleric__note {
+  margin: var(--space-xs, 0.25rem) 0 0;
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+  /* Not `--measure`: these sit in a 15rem-plus column, and a 68ch cap does
+     nothing here except look like it is doing something. */
+  max-width: 26rem;
 }

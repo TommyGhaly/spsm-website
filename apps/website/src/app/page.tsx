@@ -3,7 +3,7 @@ import { formatAddress, type ContentPage, type DocOf } from '@spsm/shared';
 import { BookshelfPreview, getProducts, toShopProducts } from '@/features/bookstore';
 import { ActivitiesPreview } from '@/features/programs';
 import { getCurrentBulletin, BulletinLive, todayInParish } from '@/features/bulletin';
-import { bundledPortrait, getContentPages } from '@/features/content';
+import { DEACONS, bundledPortrait, clericInitial, getContentPages } from '@/features/content';
 import { GiveButton } from '@/features/giving';
 import { LivestreamPlayer, ShowWhenLive, livestreamProbe } from '@/features/livestream';
 import { getIntegrationsConfig, getParishConfig } from '@/lib/config';
@@ -663,8 +663,8 @@ function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
       <div className="wrap reveal">
         <SectionHeading
           id="clergy-heading"
-          eyebrow="Our fathers"
-          title="Our fathers"
+          eyebrow="Serving here"
+          title="Our clergy"
           note="Who to look for on a Sunday morning."
         />
         {/* A face with the name beside it, not under it. The portraits are up
@@ -692,25 +692,95 @@ function Clergy({ clergy }: { clergy: DocOf<ContentPage>[] }) {
             ))}
           </ul>
         </DragRail>
+
+        {/*
+          The deacons, on a second rail of their own.
+          ------------------------------------------------------------------
+          Two rows of three rather than one rail of six, which is how Tommy
+          asked for it — "3 and 3 to keep it even". It is also the truthful
+          shape: the split between the rows is the split between the ranks, and
+          six in a row would have scrolled sideways on the laptop the first
+          three fit exactly.
+
+          No sub-heading over either rail. Every card already prints a rank
+          under the name — Bishop, Priest, Deacon — so a "Deacons" label would
+          be the page saying twice what the cards say once, and an `h3` there
+          would sit at the same level as the names themselves.
+
+          They come from `features/content/deacons.ts`, not from Firestore: a
+          `content` document is a biography, and a deacon here has a name and a
+          year. /about/who-we-are shows the same three from the same module.
+        */}
+        <DragRail className="rail--clergy">
+          <ul className="clergy">
+            {DEACONS.map((deacon) => (
+              <ClericCard
+                key={deacon.slug}
+                slug={deacon.slug}
+                name={deacon.name}
+                rank={deacon.rank}
+              />
+            ))}
+          </ul>
+        </DragRail>
       </div>
     </section>
   );
 }
 
+/**
+ * A father, from his `content` document.
+ *
+ * Nothing but the adapter now: it resolves the two portrait sources and hands
+ * the card what it needs. `ClericCard` below draws it, and the deacons — who
+ * have no `content` document — use that directly.
+ *
+ * `person.portraitPath` is a Firebase Storage object staff can replace from the
+ * console without a deploy, so it wins wherever it is set. It is null for all
+ * three fathers today, and the fallback is the copy the build put in
+ * `public/img/clergy/` — see features/content/portraits.ts.
+ */
 function Cleric({ page }: { page: DocOf<ContentPage> }) {
+  return (
+    <ClericCard
+      slug={page.slug}
+      name={page.person?.name ?? page.title}
+      rank={page.person?.rank}
+      uploaded={storageUrl(page.person?.portraitPath)}
+    />
+  );
+}
+
+/**
+ * One card: a face, a name, a rank.
+ *
+ * Takes plain strings rather than a `ContentPage`, because half the people it
+ * draws are not in Firestore — see `features/content/deacons.ts`. That is the
+ * whole reason this was split out of `Cleric`.
+ */
+function ClericCard({
+  slug,
+  name,
+  rank,
+  uploaded,
+}: {
+  slug: string;
+  name: string;
+  /* `| undefined` explicitly, not just `?`. `exactOptionalPropertyTypes` is on,
+     so an optional property will not accept an explicit `undefined` — and
+     `page.person?.rank` is exactly that. */
+  rank?: string | undefined;
+  /** A Storage URL, where staff have uploaded one. Never set for a deacon. */
+  uploaded?: string | null | undefined;
+}) {
   /*
-   * Two sources, in this order.
-   *
-   * `person.portraitPath` is a Firebase Storage object staff can replace from
-   * the console without a deploy, so it wins wherever it is set. It is null for
-   * all three fathers today, and the fallback is the copy the build put in
-   * `public/img/clergy/` — see features/content/portraits.ts. If neither has a
-   * photograph, the row carries the parish's cross instead of an empty frame:
-   * a grey rectangle where a face should be reads as a broken image.
+   * The uploaded photograph wins; the file the build bundled is the fallback.
+   * If there is neither — which is every deacon today — the card carries the
+   * person's initial rather than an empty frame: a grey rectangle where a face
+   * should be reads as a broken image, and the initial at least says who is
+   * missing.
    */
-  const uploaded = storageUrl(page.person?.portraitPath);
-  const bundled = uploaded ? null : bundledPortrait(page.slug);
-  const name = page.person?.name ?? page.title;
+  const bundled = uploaded ? null : bundledPortrait(slug);
 
   return (
     /*
@@ -722,7 +792,7 @@ function Cleric({ page }: { page: DocOf<ContentPage> }) {
      * as the anchor is all that takes. The stylesheet's `scroll-padding-top`
      * keeps it clear of the sticky masthead.
      */
-    <li className="cleric" id={page.slug}>
+    <li className="cleric" id={slug}>
       {uploaded || bundled ? (
         <img
           className="cleric__portrait"
@@ -752,9 +822,12 @@ function Cleric({ page }: { page: DocOf<ContentPage> }) {
         />
       ) : (
         <span className="cleric__mark" aria-hidden="true">
-          {/* The father's initial, not an ornament. A mark that stands for "no
-              photograph yet" should still say which person it is. */}
-          {page.title.trim().charAt(0).toUpperCase()}
+          {/* The person's initial, not an ornament. A mark that stands for "no
+              photograph yet" should still say which person it is — and the rank
+              has to come off the front, or all three deacons show a D. Shared
+              with /about/who-we-are, which lists the same six people and must
+              not disagree about which letter stands for whom. */}
+          {clericInitial(name)}
         </span>
       )}
 
@@ -766,7 +839,7 @@ function Cleric({ page }: { page: DocOf<ContentPage> }) {
           heading, which is the simpler and more honest thing for it to be.
         */}
         <h3>{name}</h3>
-        {page.person?.rank && <p className="meta">{page.person.rank}</p>}
+        {rank && <p className="meta">{rank}</p>}
       </div>
     </li>
   );
