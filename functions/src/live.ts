@@ -70,6 +70,17 @@ import {
 const YOUTUBE_API_KEY = defineSecret('YOUTUBE_API_KEY');
 
 /**
+ * What the secret holds when no real key has been provisioned yet.
+ *
+ * It is set to this rather than left absent because `firebase deploy` resolves
+ * every secret declared anywhere in functions/src during discovery, so one
+ * missing secret blocks every deploy — including an unrelated
+ * `--only functions:<other>`. Same convention, same reason, as `NO_KEY_YET` in
+ * forms/breeze.ts; keep the two spellings identical.
+ */
+const NO_KEY_YET = 'unset';
+
+/**
  * How long Hosting's CDN may serve one answer, in seconds.
  *
  * Thirty seconds, matching `/api/bulletin`. A liturgy beginning shows up on the
@@ -132,8 +143,8 @@ export const live = onRequest(
       return;
     }
 
-    const apiKey = YOUTUBE_API_KEY.value();
-    if (!apiKey || apiKey.startsWith('REPLACE_ME')) {
+    const apiKey = YOUTUBE_API_KEY.value().trim();
+    if (!apiKey || apiKey === NO_KEY_YET) {
       console.error(
         '[live] YOUTUBE_API_KEY is not set, so the live check cannot run. Set it with: ' +
           'firebase functions:secrets:set YOUTUBE_API_KEY',
