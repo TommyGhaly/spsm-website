@@ -14,8 +14,9 @@
  * the field to be unchanged.
  *
  * Every screen is written `false`. This grants nothing; it only creates the
- * shape. Use the admin UI (or `setMemberRole` for whole tiers) to actually
- * entrust somebody with an area.
+ * shape. Use /access to actually entrust somebody with an area — there is no
+ * other way, and since the role ladder was removed there is no tier that could
+ * stand in for one either.
  *
  * Like the other scripts here it talks to the Firestore REST API with your own
  * gcloud credentials, which bypass security rules — necessary, since the rules

@@ -197,8 +197,10 @@ npm run dev:backend
 | Storage | 127.0.0.1:9199 |
 
 The UI at :4000 is the useful one — a Firestore data browser and a fake user
-manager that can mint custom claims, so you can test the `staff` / `clergy`
-gating without a real Entra ID tenant.
+manager that can mint custom claims — which since the role ladder was removed
+means one claim, `superadmin`. Everything else is a flag or a program id on the
+member document, so to test a *delegated* administrator you edit
+`members/{uid}` in the data browser rather than the claims on the account.
 
 Two machine-specific things:
 
@@ -227,19 +229,40 @@ The same value has to exist wherever Functions are deployed from.
 `defineSecret`. Without it the emulator prompts for each one on startup and
 appears to hang. It is gitignored; keep only dummy or sandbox values in it.
 
-## Working on anything that needs a signed-in role
+### The two endpoints anybody can post to
+
+Both are Cloud Functions behind a Hosting rewrite, proxied to the Functions
+emulator by `next dev`:
+
+| Path | Function | Sends |
+|---|---|---|
+| `/api/forms/submit` | `formSubmit` | every native form, and the vehicle registration into Taksis |
+| `/api/camp/servant-request` | `campServantRequest` | a servant's own camp sign-up |
+
+With no Functions emulator running, both answer HTML instead of JSON and the
+page says so in plain words while the console carries the detail. Neither can
+be exercised by pointing the dev server at the real project: they are rewrites
+in production and a dev-only Next proxy locally.
+
+`campServantRequest` reads `config/camp` before it writes anything — it takes
+the season and the ministry from there rather than from the request, and refuses
+outright when `servantSignUp` is false. So an emulator with no `config/camp`
+answers 503 with "camp sign-ups are not set up yet"; `npm run seed:emulator`
+writes one with the switch on.
+
+## Working on anything that needs a signed-in user
 
 There is no /admin section any more — it was deleted, and the site is edited in
 place on the pages themselves. What has not changed is the problem it had:
 `npm run dev` reads the real Firestore, which is right for the public pages and
-useless for editing. Pressing Edit needs a signed-in user with a role, and the
-only way to get one against the real project is to be an actual member of the
-parish Microsoft directory. So editing — the event pages, the galleries, and the
-ministries — is developed against the emulators.
+useless for editing. Pressing Edit needs a signed-in user with an allocation,
+and the only way to get one against the real project is to be an actual member
+of the parish Microsoft directory. So editing — the event pages, the galleries,
+and the ministries — is developed against the emulators.
 
 The servants calendar is the one gated surface that is *not* on this list any
-more. It used to be `/servants`, a page behind `AdminGate`; it is now the extra
-entries `/calendar` shows a signed-in servant, fetched from the `calendar`
+more. It used to be `/servants`, a page behind a role gate; it is now the extra
+entries `/calendar` shows anybody signed in, fetched from the `calendar`
 Function. To see it locally you need the **Functions** emulator as well, and
 `servantsConfig/schedule` seeded — see `SPSM_BREEZE_PARISH_EMBED_URL` in
 `scripts/seed-emulator.mjs`.
@@ -259,8 +282,9 @@ npm run dev:local
 ```
 
 There is no longer any account to create by hand: `dev:local` runs
-`scripts/seed-emulator.mjs` first, which creates six accounts with their role
-claims already set.
+`scripts/seed-emulator.mjs` first, which creates six accounts with their
+allocations already written — one claim on the superadmin, and a `screenAdmin`
+map plus a `programAdmin` grant on each of the others.
 
 ### The seeded galleries have real photographs in them
 
@@ -292,18 +316,23 @@ account picker, no trip to Entra. One click and you are
 
 Which account is a URL question. `?as=` on any page picks one:
 
-| `?as=` | Role |
+| `?as=` | What they hold |
 |---|---|
-| *omitted* | `admin` — everything, including role changes |
-| `staff` | `staff` — the events admin |
-| `servant` | `servant` — the schedule only |
-| `father` | `staff` + `clergy` |
-| `lead` | `servant`, with a program grant over all of Summercamp |
-| `volunteer` | `servant`, with a grant over Summercamp Week 1 only |
+| *omitted* | `superadmin` — everything, and the only one who can allocate at /access |
+| `staff` | every area /access can hand out, plus Summercamp by program grant |
+| `servant` | nothing at all — the servants' rota, and that is the whole of it |
+| `father` | one area, About pages. To see that one flag opens one screen |
+| `lead` | a program grant over all of Summercamp, and no area |
+| `volunteer` | a grant over Summercamp Week 1 only |
 
-That last pair is the point of it: the program-grant model is only testable by
-comparing what `lead` and `volunteer` see, and that comparison should be an edit
-to the address bar rather than a sign-out and a re-pick.
+`staff` is not a tier and does not mean one — it is nine ticked boxes on a member
+document, which is now all any administrator is. `servant` is the most useful
+fixture on the list: it is what nearly every account in the parish will be, and
+what almost every page should show it is the signed-out view plus a rota.
+
+The last pair is the other point of it: the program-grant model is only testable
+by comparing what `lead` and `volunteer` see, and that comparison should be an
+edit to the address bar rather than a sign-out and a re-pick.
 
 The branch is guarded on `NODE_ENV` as well as `NEXT_PUBLIC_USE_EMULATORS`, so
 it folds out of a production build entirely and cannot be switched back on by an
@@ -351,11 +380,24 @@ issues, and going back to a `publishAt` read-time filter turns five of them red
 immediately. `tests/rules/writes.test.ts` covers the write paths that would be
 expensive to get wrong: `vehicles` (the only unauthenticated write on the site,
 and a plate-to-name map that must never be enumerable), `orders`
-(`allow write: if false`, verified against an *admin*), member claim-mirror
-immutability, and the catch-all.
+(`allow write: if false`, verified against the *superadmin*), member
+claim-mirror immutability, and the catch-all.
+
+`tests/rules/access.test.ts` is the one to read first if you are changing
+authorization at all: it is where "signing in is worth nothing but the rota" and
+"one flag opens one screen" are actually asserted, one area at a time.
 
 Two things about these tests are deliberate and worth not "tidying up":
 
+- **Each suite passes its own name to `createTestEnv`, which puts it in its own
+  emulator project.** These files run in parallel and each clears Firestore, and
+  the emulator scopes data *and* the loaded ruleset by project id — so one id
+  shared between them means one suite's clear deletes another's fixtures. That
+  was survivable while a fixture was only the document under test; it stopped
+  being survivable when a permission became a document, because a stray clear
+  silently revokes every grant in the suite and thirty correct rules report
+  `permission-denied`. Measured: 282 passing sequentially, 254 in parallel,
+  before the argument existed.
 - **Firestore is cleared once per file in `beforeAll`, never in `beforeEach`.**
   A clear immediately followed by a seed write races, and the lost fixture makes
   `assertFails` pass *for the wrong reason* — NOT_FOUND counts as a failure the

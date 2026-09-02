@@ -14,10 +14,29 @@
  * it wants to say about itself between deploys, and these five names are part of
  * how the site is laid out rather than part of its content.
  *
- * The *prose* inside each one is content, and that is read from the `content`
- * collection by slug — see `app/about/[page]/page.tsx`. So staff can write and
- * rewrite these pages without a code change; they just cannot add a sixth.
+ * **Every one of the five now has its own route, and the shared template that
+ * rendered them from `content` is gone.** That is a reversal worth reading
+ * before undoing. The five were built as `content` documents so staff could
+ * rewrite them from the Firebase console without a deploy, and one by one they
+ * outgrew it: `welcome-newcomers` became the festival tour with a passport in
+ * `localStorage`, `our-belief`, `patron-saints` and `who-we-are` became prose
+ * with credited plates and dated spines in it, and on 2026-09-01
+ * `future-plans` became ten renderings, a video and a sourced area schedule. A
+ * `content` document is a title and a markdown body; none of those five is.
+ * `app/about/[page]/page.tsx` was deleted the same day, because with all five
+ * slugs excluded it returned an empty `generateStaticParams()` and
+ * `output: 'export'` refuses that.
  *
+ * **So adding a sixth part is now two things, not one: an entry here *and* a
+ * page under `app/about/`.** The entry alone puts a link in the header menu
+ * that 404s. That is a real regression against what this comment used to
+ * promise, and it is the price of five pages that are each worth more than a
+ * markdown body.
+ *
+ * The cost of the reversal, stated plainly: staff can no longer rewrite any of
+ * these five from the console, and changing a word in one is a deploy.
+ *
+
  * Note what this does **not** do: `/beliefs` and `/welcome` still exist and are
  * untouched. "Our belief" and "Welcome newcomers" here are new pages under
  * `/about`, not links to those two. That was chosen over reusing them — the two

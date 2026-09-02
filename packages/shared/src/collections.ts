@@ -73,6 +73,70 @@ export const COLLECTIONS = {
   /** Firestore-backed form definitions and their submissions. */
   forms: 'forms',
   formSubmissions: 'formSubmissions',
+  /**
+   * Summer camp registrations — families with their children, and servants
+   * with their roles.
+   *
+   * Deliberately not `formSubmissions`. A submission is a flat answer map
+   * recording one moment; a registration holds a repeating child, a payment
+   * ledger written to over weeks, and roles administrators append afterwards.
+   * See schema/camp.ts for the long version.
+   *
+   * The most sensitive collection on the site: a child's date of birth,
+   * allergies and medical notes. There is no anonymous write path and no public
+   * read — every access takes a program grant on the camp's ministry.
+   */
+  campRegistrations: 'campRegistrations',
+  /**
+   * Servants who have signed themselves up, waiting to be accepted.
+   *
+   * Separate from `campRegistrations` rather than a `status` on it, because the
+   * two have opposite write rules: a registration is written by somebody
+   * holding a program grant, and one of these is written by a Cloud Function on
+   * behalf of a stranger. A pending row inside the register would mean opening
+   * that collection to unauthenticated writes — beside the children's medical
+   * notes — which is the one thing its shape is chosen to prevent.
+   *
+   * Accepting a request writes a real registration and deletes the request, so
+   * nothing here is ever the record of somebody who is coming. See
+   * `schema/camp.ts`.
+   */
+  campServantRequests: 'campServantRequests',
+  /**
+   * How one camp season is divided up: grade bands, the groups inside them,
+   * the activity stations, and which child or servant is in each.
+   *
+   * One document per season, id `<programId>__<season>` — see
+   * `allocationDocId`. It holds no names, only keys pointing back into
+   * `campRegistrations`, which is deliberate: the registration is the record
+   * and a second copy of a child's name is a copy that goes stale. Same
+   * program grant as the registrations themselves.
+   */
+  campAllocations: 'campAllocations',
+  /**
+   * The camp's register: one document per day of camp.
+   *
+   * Id `<programId>__<season>__<day>` — see `attendanceDocId`. Children only,
+   * two marks each (arrived, collected), keyed by the same
+   * `registrationId/childId` keys the allocation places. A map rather than a
+   * list because two servants tick at once and each tap has to merge rather
+   * than overwrite the morning. Same program grant as the registrations.
+   */
+  campAttendance: 'campAttendance',
+  /**
+   * Totals-only money, with the people taken out.
+   *
+   * One document per camp season and per paid form — counts and sums, no name,
+   * no email, no check number. It exists because the `finance` grant could not
+   * honestly reach either: a camp fee lives inside a `campRegistrations`
+   * document next to a child's medical notes, and a form's total sits beside
+   * every answer given, and Firestore rules grant documents rather than fields.
+   * This is the document the treasurer can be given on its own.
+   *
+   * Written solely by the scheduled rollup through the Admin SDK; no client may
+   * write it. See schema/finance.ts and functions/src/finance.ts.
+   */
+  financeRollups: 'financeRollups',
   /** Append-only audit trail for staff reads of sensitive collections. */
   auditLog: 'auditLog',
   /**

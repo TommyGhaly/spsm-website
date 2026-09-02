@@ -1,8 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineString } from 'firebase-functions/params';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import { COLLECTIONS, cleanName, slugify } from '@spsm/shared';
+import {
+  COLLECTIONS,
+  slugify,
+  trackInventoryPatch,
+  tracksInventory,
+} from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_SANDBOX_ACCESS_TOKEN,
@@ -48,8 +55,17 @@ const MAX_NAME = 120;
 const MAX_DESCRIPTION = 2000;
 /** $1,000. A parish bookstore has no honest reason to exceed it. */
 const MAX_PRICE_CENTS = 100_000;
-/** Square's own ceiling is 15MB; this is well under and still generous. */
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+/**
+ * Square's own ceiling, and the reason this one number survived.
+ *
+ * The site's other 8MB caps were removed on 2026-09-01 — a phone photograph
+ * clears 8MB routinely and refusing a trusted volunteer's file protected
+ * nothing. This one is not ours to remove: the image is forwarded to Square,
+ * which rejects anything over 15MB with an error of its own. A larger bound
+ * here would only move the failure to a worse place, where the message comes
+ * back in Square's words after the whole upload has already been sent.
+ */
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 /** A parish bookstore counting more than this has mistyped, not restocked. */
 const MAX_STOCK = 10_000;
 
@@ -88,15 +104,23 @@ async function categoryId(
  * without a special case.
  */
 export const squareCreateProduct = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({
         error: caller
           ? 'Adding to the catalog is limited to the bookstore group and church staff.'
@@ -105,15 +129,40 @@ export const squareCreateProduct = onRequest(
       return;
     }
 
+    /*
+     * Ninety a minute, on the person, and the number is chosen around a batch
+     * of photographs rather than around a single click.
+     *
+     * A book with eight pictures is eight calls in a few seconds, and somebody
+     * adding a shelf of them in one sitting must not be stopped halfway through
+     * — a batch that half-succeeds leaves a product in Square with some of its
+     * photographs and no way to tell which. **Nothing here caps how large a
+     * photograph may be; this counts calls, never bytes.**
+     */
+    if (
+      throttled(req, res, {
+        bucket: 'catalogCreate',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message: 'That is a lot of new products at once. Please wait a minute.',
+      })
+    ) {
+      return;
+    }
+
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const name = cleanName(body['name']);
+    const name = cleanTitle(body['name']);
     const description =
       typeof body['description'] === 'string' ? body['description'].trim().slice(0, MAX_DESCRIPTION) : '';
     const priceCents = Number(body['priceCents']);
     const section = typeof body['section'] === 'string' ? body['section'].trim().slice(0, 40) : '';
 
-    if (!name || name.length > MAX_NAME) {
+    if (!name) {
       res.status(400).json({ error: 'A name is needed.' });
+      return;
+    }
+    if (name.length > MAX_NAME) {
+      res.status(400).json({ error: `A title of ${MAX_NAME} characters or fewer.` });
       return;
     }
     /*
@@ -150,12 +199,11 @@ export const squareCreateProduct = onRequest(
     }
 
     try {
-      const idempotencyKey = `new-${caller?.uid ?? 'staff'}-${Date.now()}`.slice(0, 45);
       const response = await fetch(`${square.host}/v2/catalog/object`, {
         method: 'POST',
         headers: square.headers,
         body: JSON.stringify({
-          idempotency_key: idempotencyKey,
+          idempotency_key: squareIdempotencyKey('new'),
           object: {
             // `#name` is Square's convention for a client-supplied temporary id
             // on a create; it returns the real one in `id_mappings`.
@@ -165,6 +213,21 @@ export const squareCreateProduct = onRequest(
               name,
               description,
               categories: [{ id: category }],
+              /*
+               * The same category again, as the reporting one.
+               *
+               * Square keeps two: `categories` is what the item belongs to and
+               * is what `mapSquareCatalog` filters the shop on, while
+               * `reporting_category` is what the Dashboard's sales and
+               * inventory reports group by. Setting only the first put a new
+               * book on the website and left it out of every report the parish
+               * office actually reads — all ten books added through the Square
+               * app carry both, so a book added here looked different for no
+               * reason anyone chose.
+               *
+               * One category, so there is nothing to decide between them.
+               */
+              reporting_category: { id: category },
               variations: [
                 {
                   id: '#variation',
@@ -285,16 +348,52 @@ export const squareCreateProduct = onRequest(
  * `imagePaths`. The optimised copy arrives at the next `npm run catalog`.
  */
 export const squareProductImage = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false, memory: '512MiB' },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    // 512MiB because a photograph arrives here base64'd in the request body and
+    // is held in memory to be re-sent to Square. The instance cap is what stops
+    // a batch of them costing ten of these at once; it does not, and must not,
+    // cap how large any one of them may be.
+    memory: '512MiB',
+    maxInstances: CAPS.bookstoreEdit,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({ error: 'Not permitted.' });
+      return;
+    }
+
+    /*
+     * Ninety a minute, on the person, and the number is chosen around a batch
+     * of photographs rather than around a single click.
+     *
+     * A book with eight pictures is eight calls in a few seconds, and somebody
+     * adding a shelf of them in one sitting must not be stopped halfway through
+     * — a batch that half-succeeds leaves a product in Square with some of its
+     * photographs and no way to tell which. **Nothing here caps how large a
+     * photograph may be; this counts calls, never bytes.**
+     */
+    if (
+      throttled(req, res, {
+        bucket: 'catalogImage',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message:
+          'That is a lot of photographs at once. Please wait a minute, then carry ' +
+          'on — nothing you have already added is lost.',
+      })
+    ) {
       return;
     }
 
@@ -312,7 +411,9 @@ export const squareProductImage = onRequest(
     const bytes = Buffer.from(dataUrl.slice(comma + 1), 'base64');
 
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES) {
-      res.status(413).json({ error: 'That image is too large. Keep it under 8MB.' });
+      res.status(413).json({
+        error: 'That image is too large for Square. Keep it under 15MB.',
+      });
       return;
     }
 
@@ -337,7 +438,7 @@ export const squareProductImage = onRequest(
       form.append(
         'request',
         JSON.stringify({
-          idempotency_key: `img-${slug}-${Date.now()}`.slice(0, 45),
+          idempotency_key: squareIdempotencyKey('img'),
           object_id: squareId,
           image: {
             type: 'IMAGE',
@@ -422,16 +523,37 @@ export const squareProductImage = onRequest(
  * points at a deleted URL.
  */
 export const squareRemoveProductImage = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({ error: 'Not permitted.' });
+      return;
+    }
+
+    // Ninety a minute, on the person rather than the address. Far above anybody
+    // editing the shop by hand, and it counts calls, never bytes.
+    if (
+      throttled(req, res, {
+        bucket: 'catalogImageRemove',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message: 'That is a lot of changes at once. Please wait a minute.',
+      })
+    ) {
       return;
     }
 
@@ -480,7 +602,7 @@ export const squareRemoveProductImage = onRequest(
         const failure = await upsertCatalogObject(
           square,
           { ...item, item_data: { ...data, image_ids: ids.filter((id) => id !== imageId) } },
-          `detach-${slug}-${imageId}`,
+          squareIdempotencyKey('detach'),
         );
         if (failure) {
           // Nothing written to Firestore: a product whose document says the
@@ -593,6 +715,68 @@ async function readCatalogObject(
   return body.object ?? null;
 }
 
+/**
+ * A Square idempotency key: a short prefix and a UUID, never over 45 characters.
+ *
+ * ---------------------------------------------------------------------------
+ * These were `${prefix}-${slug}-${Date.now()}` trimmed to Square's 45-character
+ * limit, and the trim cut the timestamp off the **end** — the only part that
+ * made the key unique.
+ *
+ * For `the-crucified-jesus-by-manasseh-youhanna-paperback` not one digit of it
+ * survived, so every stock change after the first re-sent the first change's key
+ * with a different quantity, and Square answered *"The idempotency key can only
+ * be retried with the same request data."* Permanently, for that book. Shorter
+ * names failed less obviously: `be-prepared-book-fr-daoud-lamei` kept seven
+ * digits, so its key only changed every ~17 minutes, and
+ * `the-bridegroom-pascha-sermons` kept nine, so two edits ten seconds apart
+ * collided. Anything past a 25-character slug was affected to some degree, which
+ * is why this looked intermittent rather than broken.
+ *
+ * A UUID is 36 characters, so every prefix here fits with room to spare and the
+ * length no longer depends on what the book is called.
+ *
+ * NOT for refunds. `refunds.ts` derives its key from the order id on purpose, so
+ * that a retried refund is the *same* request and Square collapses it instead of
+ * paying twice. Uniqueness is right here and wrong there.
+ */
+function squareIdempotencyKey(prefix: string): string {
+  return `${prefix}-${randomUUID()}`.slice(0, 45);
+}
+
+/**
+ * A book title, tidied, or null if there is not one.
+ *
+ * `cleanName` from @spsm/shared is deliberately *not* used: it caps at that
+ * module's `MAX_NAME`, which is 60 and describes a **buyer's** name on an
+ * order. Applied to a title it silently truncated, and the `name.length >
+ * MAX_NAME` guard on the create path could therefore never fire — a 130
+ * character title was cut to 60 and accepted rather than refused. Titles get
+ * this module's own limit, and a title over it is rejected out loud.
+ */
+function cleanTitle(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Text, safe to put in Square's `description_html`.
+ *
+ * The panel's description box is plain text, so every one of these is a literal
+ * character rather than markup — a blurb reading "Fathers & Sons" must reach the
+ * dashboard as those words and not as a broken entity. Five characters is the
+ * whole of what HTML needs escaped in element content and attribute values.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Upsert an object Square just gave us, modified. Returns an error sentence or null. */
 async function upsertCatalogObject(
   square: { host: string; headers: Record<string, string> },
@@ -648,20 +832,41 @@ async function upsertCatalogObject(
  * ---------------------------------------------------------------------------
  */
 export const squareProductStock = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({
         error: caller
           ? 'Changing stock is limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
+      return;
+    }
+
+    // Ninety a minute, on the person rather than the address. Far above anybody
+    // editing the shop by hand, and it counts calls, never bytes.
+    if (
+      throttled(req, res, {
+        bucket: 'catalogStock',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message: 'That is a lot of stock changes at once. Please wait a minute.',
+      })
+    ) {
       return;
     }
 
@@ -721,14 +926,18 @@ export const squareProductStock = onRequest(
       }
 
       const data = (variation['item_variation_data'] ?? {}) as Record<string, unknown>;
-      // Coerced, because Square omits the field entirely on an untracked
-      // variation rather than sending `false` — a strict compare would upsert
-      // on every "stop counting" of something already untracked.
-      if (Boolean(data['track_inventory']) !== !untrack) {
+      /*
+       * Read and written through the shared pair, because the parish's books
+       * keep this flag in `location_overrides` rather than at the top level.
+       * Comparing or setting only `data['track_inventory']` reads every real
+       * book as untracked and leaves the override standing — see
+       * `tracksInventory`.
+       */
+      if (tracksInventory(data) !== !untrack) {
         const failure = await upsertCatalogObject(
           square,
-          { ...variation, item_variation_data: { ...data, track_inventory: !untrack } },
-          `track-${slug}-${Date.now()}`,
+          { ...variation, item_variation_data: trackInventoryPatch(data, !untrack) },
+          squareIdempotencyKey('track'),
         );
         if (failure) {
           res.status(502).json({ error: failure });
@@ -741,7 +950,7 @@ export const squareProductStock = onRequest(
           method: 'POST',
           headers: square.headers,
           body: JSON.stringify({
-            idempotency_key: `stock-${slug}-${Date.now()}`.slice(0, 45),
+            idempotency_key: squareIdempotencyKey('stock'),
             changes: [
               {
                 type: 'PHYSICAL_COUNT',
@@ -800,6 +1009,265 @@ export const squareProductStock = onRequest(
 );
 
 /**
+ * Change what Square owns about a book: its title, its price, its description.
+ *
+ * ---------------------------------------------------------------------------
+ * Square first, and the document keeps its id.
+ *
+ * All three are on the sync's field mask, so a value typed straight into
+ * Firestore survives exactly until the next run and then reverts. That alone
+ * makes this a Function. The better reason is that the parish sells these books
+ * from the Square POS too: a price the website owned would disagree with the one
+ * on the till receipt, which is the kind of difference somebody discovers at the
+ * counter with a queue behind them.
+ *
+ * **The slug does not follow the title.** `mirrorDocumentId` is what makes that
+ * hold across a sync; this endpoint is the other half. A recomputed slug would
+ * be a different document, and renaming would quietly cost the book its
+ * category, its baked cover, and the link from every completed order that names
+ * it. So /bookstore keeps whatever URL the book was first given, which is also
+ * the one anybody may have bookmarked.
+ *
+ * ## One endpoint for three fields, not three endpoints
+ *
+ * This began as `squareProductName`, which did the title alone. Price and
+ * description arrived a day later and would have been two more near-identical
+ * handlers — same gate, same lookup, same upsert, same mirror — differing only
+ * in which key they set. Worse, editing all three would have been three round
+ * trips and three catalog versions, and `catalog.version.updated` turns each of
+ * those into a full mirror run.
+ *
+ * Every field is optional and only what is sent is touched, so the panel can
+ * send one or all three and an absent key is never read as "clear it".
+ *
+ * ## Description is written three times, and that is Square's doing
+ *
+ * `description` is the field `mapSquareCatalog` reads and the one Square now
+ * calls deprecated; `description_html` is what the Square dashboard and the
+ * online store render; `description_plaintext` is what its search indexes. The
+ * parish's own items carry all three, identical. Setting only one leaves the
+ * other two stale, so the shop and the dashboard would show different words for
+ * the same book. They are written together or not at all.
+ *
+ * The HTML copy is escaped rather than passed through: this is a plain-text box
+ * in the panel, and a book blurb containing an ampersand must not become markup.
+ * ---------------------------------------------------------------------------
+ */
+export const squareProductDetails = onRequest(
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'POST only.' });
+      return;
+    }
+
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
+    const caller = await callerOf(req);
+    if (!(await mayManageOrders(caller))) {
+      res.status(caller ? 403 : 401).json({
+        error: caller
+          ? 'Editing a book is limited to the bookstore group and church staff.'
+          : 'Sign in again — your session has expired.',
+      });
+      return;
+    }
+
+    // Ninety a minute, on the person rather than the address. Far above anybody
+    // editing the shop by hand, and it counts calls, never bytes.
+    if (
+      throttled(req, res, {
+        bucket: 'catalogDetails',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message: 'That is a lot of edits at once. Please wait a minute.',
+      })
+    ) {
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const slug = typeof body['slug'] === 'string' ? body['slug'].trim() : '';
+
+    /*
+     * `undefined` means "not sent, leave it alone" and is different from an
+     * empty string, which means "clear the description". Only the description
+     * can legitimately be emptied — a book with no title or no price is not
+     * something this endpoint will produce.
+     */
+    const wantsName = 'name' in body;
+    const wantsDescription = 'description' in body;
+    const wantsPrice = 'priceCents' in body;
+
+    const name = wantsName ? cleanTitle(body['name']) : undefined;
+    const description = wantsDescription
+      ? String(body['description'] ?? '').trim().slice(0, MAX_DESCRIPTION)
+      : undefined;
+    const priceCents = wantsPrice ? Number(body['priceCents']) : undefined;
+
+    if (!slug) {
+      res.status(400).json({ error: 'A product is needed.' });
+      return;
+    }
+    if (!wantsName && !wantsDescription && !wantsPrice) {
+      res.status(400).json({ error: 'Nothing to change.' });
+      return;
+    }
+    if (wantsName && !name) {
+      res.status(400).json({ error: 'A title is needed.' });
+      return;
+    }
+    if (name && name.length > MAX_NAME) {
+      res.status(400).json({ error: `A title of ${MAX_NAME} characters or fewer.` });
+      return;
+    }
+    /*
+     * The same rule as creating one, and for the same reason: Square will store
+     * a $0.00 item quite happily, and the checkout refuses a zero total — so a
+     * free book appears on the shop and fails at the card form with "could not
+     * price the order", which is the least explicable failure available.
+     */
+    if (
+      wantsPrice &&
+      (!Number.isInteger(priceCents) || priceCents! <= 0 || priceCents! > MAX_PRICE_CENTS)
+    ) {
+      res.status(400).json({ error: 'A price between $0.01 and $1,000.00 is needed.' });
+      return;
+    }
+
+    const square = squareClient();
+    if (!square) {
+      res.status(503).json({ error: 'Square is not configured.' });
+      return;
+    }
+
+    const db = getFirestore();
+    const ref = db.collection(COLLECTIONS.products).doc(slug);
+    const snapshot = await ref.get();
+
+    if (!snapshot.exists) {
+      res.status(404).json({ error: 'No such product.' });
+      return;
+    }
+
+    const squareId = snapshot.get('squareCatalogObjectId') as string | undefined;
+    if (!squareId) {
+      res.status(409).json({
+        error: 'This product is not in Square, so there is nothing to change. Re-run the catalog sync.',
+      });
+      return;
+    }
+
+    try {
+      const item = await readCatalogObject(square, squareId);
+      if (!item) {
+        res.status(502).json({ error: 'Square no longer has this product.' });
+        return;
+      }
+
+      const data = { ...((item['item_data'] ?? {}) as Record<string, unknown>) };
+      const mirror: Record<string, unknown> = {};
+      let changed = false;
+
+      if (name !== undefined && data['name'] !== name) {
+        data['name'] = name;
+        mirror['name'] = name;
+        changed = true;
+      }
+
+      if (description !== undefined && data['description'] !== description) {
+        data['description'] = description;
+        data['description_html'] = escapeHtml(description);
+        data['description_plaintext'] = description;
+        mirror['description'] = description;
+        changed = true;
+      }
+
+      if (priceCents !== undefined) {
+        /*
+         * The price is on the *variation*, not the item, so the whole variation
+         * list is rebuilt with the first one repriced. First rather than all,
+         * because `mapSquareCatalog` prices a product from `variations[0]` and
+         * every book in the parish's catalog has exactly one ("Regular"); a
+         * multi-variation item would need a UI that can tell them apart, and
+         * repricing all of them from one box would be a guess.
+         */
+        const variations = Array.isArray(data['variations']) ? [...data['variations']] : [];
+        const first = variations[0] as Record<string, unknown> | undefined;
+        const variationData = first?.['item_variation_data'] as
+          | Record<string, unknown>
+          | undefined;
+
+        if (!first || !variationData) {
+          res.status(409).json({
+            error: 'This product has no price in Square to change. Re-run the catalog sync.',
+          });
+          return;
+        }
+
+        const current = (variationData['price_money'] ?? {}) as Record<string, unknown>;
+        if (current['amount'] !== priceCents || current['currency'] !== 'USD') {
+          variations[0] = {
+            ...first,
+            item_variation_data: {
+              ...variationData,
+              pricing_type: 'FIXED_PRICING',
+              price_money: { amount: priceCents, currency: 'USD' },
+            },
+          };
+          data['variations'] = variations;
+          mirror['price'] = { amount: priceCents, currency: 'USD' };
+          changed = true;
+        }
+      }
+
+      /*
+       * Square is written to only when something actually differs. Not an
+       * optimisation: an upsert bumps the catalog version, which the
+       * `catalog.version.updated` webhook turns into a full mirror run, so
+       * saving an unchanged form would cost a sync for nothing.
+       */
+      if (changed) {
+        const failure = await upsertCatalogObject(
+          square,
+          { ...item, item_data: data },
+          squareIdempotencyKey('edit'),
+        );
+        if (failure) {
+          res.status(502).json({ error: failure });
+          return;
+        }
+
+        /*
+         * Mirrored straight away, like the stock count and for the same reason:
+         * /bookstore is a static export that reads through to Firestore and
+         * swaps, so this write is what puts the new price on the shelf within
+         * seconds instead of at the next sync.
+         *
+         * `slug` is pointedly not touched.
+         */
+        await ref.update({
+          ...mirror,
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: caller?.uid ?? null,
+        });
+      }
+
+      res.status(200).json({ ok: true, slug, changed });
+    } catch (error) {
+      console.error('[catalog] unexpected failure editing a product', error);
+      res.status(500).json({ error: 'That change could not be saved.' });
+    }
+  },
+);
+
+/**
  * Take a product off the shop, by archiving it in Square.
  *
  * ---------------------------------------------------------------------------
@@ -826,20 +1294,41 @@ export const squareProductStock = onRequest(
  * ---------------------------------------------------------------------------
  */
 export const squareArchiveProduct = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified — see rateLimit.ts. Loose,
+    // because the parish's staff share a building and therefore an address.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({
         error: caller
           ? 'Removing a product is limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
+      return;
+    }
+
+    // Ninety a minute, on the person rather than the address. Far above anybody
+    // editing the shop by hand, and it counts calls, never bytes.
+    if (
+      throttled(req, res, {
+        bucket: 'catalogArchive',
+        max: BUDGETS.bookstoreEdit,
+        identity: caller!.uid,
+        message: 'That is a lot of removals at once. Please wait a minute.',
+      })
+    ) {
       return;
     }
 
@@ -874,7 +1363,7 @@ export const squareArchiveProduct = onRequest(
           const failure = await upsertCatalogObject(
             square,
             { ...item, item_data: { ...data, is_archived: true } },
-            `archive-${slug}-${Date.now()}`,
+            squareIdempotencyKey('archive'),
           );
           if (failure) {
             res.status(502).json({ error: failure });

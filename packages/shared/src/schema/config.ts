@@ -25,6 +25,8 @@
  * values stay in the environment; everything else moves here.
  */
 
+import { DEFAULT_CAMP_WEEKS, MAX_CAMP_WEEKS } from './camp.js';
+
 /** Document id of the single integrations config document. */
 export const CONFIG_DOC_INTEGRATIONS = 'integrations';
 
@@ -829,4 +831,271 @@ export function parseSections(raw: unknown): BookstoreSection[] {
   }
 
   return sections;
+}
+
+/* ==========================================================================
+   The camp's own settings
+   ========================================================================== */
+
+/** Document id of the camp settings document. */
+export const CONFIG_DOC_CAMP = 'camp';
+
+/**
+ * The handful of things about summer camp that are a parish decision.
+ *
+ * ---------------------------------------------------------------------------
+ * Why these are config and not fields on a screen.
+ *
+ * There is no settings UI anywhere on this site and there is not one here
+ * either — `config/*` is edited in the Firebase console or by `npm run config`,
+ * which is the arrangement `config/bookstore` settled after an in-place editor
+ * was built for the shop and rejected. The camp fee, the season and the waiver
+ * are exactly that kind of value: set once a year by whoever runs the camp,
+ * read by every registration, and wrong to expose on the same screen a
+ * volunteer is typing a family's phone number into.
+ *
+ * `config` is world-readable. Everything here is fine to be public — a fee, a
+ * season name, and a waiver the parish hands to parents anyway. Nothing about a
+ * registered family goes anywhere near this document.
+ * ---------------------------------------------------------------------------
+ */
+export interface CampConfig {
+  /**
+   * The ministry the camp belongs to. Decides the program grant that opens the
+   * registration screen — see `packages/shared/src/programAdmin.ts`.
+   *
+   * Configurable because the id is whatever `npm run programs` created, and a
+   * parish that renamed the ministry should not lose the camp screen with it.
+   */
+  programId: string;
+
+  /**
+   * The season being registered for right now: `2027`.
+   *
+   * One current season rather than a list, because the screen only ever writes
+   * to one. Past seasons are still readable — they are just rows with a
+   * different `season` — and rolling over to next year is editing this string.
+   */
+  season: string;
+
+  /**
+   * The fee for one child for one **week**, in integer minor units.
+   *
+   * Per week, not per child: a child registered for both weeks is charged
+   * twice. The field is named `baseCents` rather than something that says so,
+   * because it is stored on every existing registration and renaming it in code
+   * without rewriting those documents is how a fee silently reads as zero. See
+   * `campBill`.
+   *
+   * Copied onto each registration when it is created; changing it never
+   * re-bills anyone already registered.
+   */
+  baseCents: number;
+
+  /**
+   * How many weeks the camp runs this year. Normally two.
+   *
+   * Read by the day grid on the registration form, which draws Monday to Friday
+   * for each. Lowering it hides a week from the form but does not touch the days
+   * anybody has already been registered for — deleting somebody's attendance
+   * because a setting changed would be a silent loss of a real answer.
+   */
+  weeks: number;
+
+  /**
+   * The Monday each week of camp begins, as `YYYY-MM-DD`. Index 0 is week 1.
+   *
+   * ---------------------------------------------------------------------------
+   * Added 2 Sep 2026, because *"I want admins to set a config for when the first
+   * and second week of camp is"* — and because a register that says "Week 2 ·
+   * Wed" is a puzzle to anybody standing at a door in June.
+   *
+   * **This changes no stored day key.** Attendance, a child's chosen days and
+   * the register are all still `w1-mon`, for the reason `CampDayKey` gives: the
+   * camp talks in weeks and weekdays, and dates would tie every registration to
+   * one year's calendar. What these are is the *display* of those keys —
+   * `campDayDate` turns `w2-wed` into a real day, and every screen that shows a
+   * day shows both. Nothing migrates, and clearing this field only takes the
+   * dates back off the screens.
+   *
+   * A start rather than a start and an end, so a week cannot be saved as four
+   * days by accident; Monday to Friday is derived. A blank entry means that
+   * week's dates are not set yet, which is the normal state in February.
+   *
+   * The length is coerced to `weeks` on read: shortening the camp leaves the
+   * later dates unread rather than deleting them, matching what `weeks` already
+   * does to everybody's registered days.
+   * ---------------------------------------------------------------------------
+   */
+  weekStarts: string[];
+
+  /**
+   * Identifies the waiver wording currently in force.
+   *
+   * Bump this whenever `waiverText` changes in a way that matters. Registrations
+   * store the version they agreed to, so what a family signed in June stays
+   * legible after the text is edited in September.
+   */
+  waiverVersion: string;
+
+  /**
+   * The waiver itself, as plain text. Paragraphs separated by blank lines.
+   *
+   * Empty until the parish provides it, and the registration screen says so
+   * rather than showing an empty box with a consent tick under it — asking
+   * somebody to agree to nothing is worse than not asking.
+   */
+  waiverText: string;
+
+  /** Shown above the registration form. Empty is fine. */
+  note: string;
+
+  /**
+   * Whether servants may sign themselves up.
+   *
+   * ---------------------------------------------------------------------------
+   * The one switch on an otherwise open door.
+   *
+   * `/forms/summer-camp` shows a **public** sign-up form to anybody who opens
+   * it — no account, no link that has to be kept secret — because half the
+   * camp's servants are teenagers who have never signed in to anything of the
+   * parish's. What that costs is that the form is reachable all year, including
+   * the eight months when the camp is not taking anybody, and a form that
+   * accepts sign-ups for a camp that has closed its list is worse than no form:
+   * somebody believes they are coming.
+   *
+   * So this closes it. The page then says the camp is not taking sign-ups at
+   * the moment rather than 404ing, which is the same distinction
+   * `FormDefinition.open` draws and for the same reason.
+   *
+   * Family registrations are unaffected — those are taken by administrators and
+   * this never gated them.
+   *
+   * Defaults to **true**. The alternative is a feature that ships switched off
+   * and is reported as broken by the first person who goes looking for it; the
+   * queue is reviewed by a human either way, so an unwanted sign-up costs one
+   * click to dismiss.
+   *
+   * Writable by a camp administrator, along with the rest of this document
+   * except `programId` — see the `config/camp` block in `firestore.rules`.
+   * ---------------------------------------------------------------------------
+   */
+  servantSignUp: boolean;
+
+  /**
+   * Whether the camp is taking family registrations.
+   *
+   * ---------------------------------------------------------------------------
+   * The switch beside `servantSignUp`, added 2 Sep 2026 so that the two forms
+   * are turned on and off the same way. It is **not** the same kind of switch,
+   * and the difference is the point.
+   *
+   * A family registration is taken by an administrator at a desk; there is no
+   * public path to it and there never will be. So closing this does not shut a
+   * door on a stranger — it tells the camp's own volunteers that the list is
+   * full, or that next season is not open yet, at the moment they go to type
+   * somebody in. The form says so and refuses to start a new registration;
+   * every registration already taken stays fully editable, because a fee still
+   * gets paid in August on a list that closed in June.
+   *
+   * Defaults to **true**, for the reason `servantSignUp` does: a feature that
+   * ships switched off is reported as broken by the first person who looks.
+   * ---------------------------------------------------------------------------
+   */
+  familyRegistration: boolean;
+}
+
+/**
+ * What the camp screen assumes before anybody has configured it.
+ *
+ * The fee is zero on purpose. A default fee is a number somebody has to notice
+ * and correct, and the failure mode of noticing late is a family told the wrong
+ * price at a desk. Zero shows as "no fee set" on the screen, which nobody
+ * mistakes for a decision.
+ *
+ * The season defaults to the current calendar year, which is right for a camp
+ * that runs in the summer and is registered for in the spring of the same year.
+ */
+export function defaultCampConfig(now: Date = new Date()): CampConfig {
+  return {
+    programId: 'summercamp',
+    season: String(now.getFullYear()),
+    baseCents: 0,
+    weeks: DEFAULT_CAMP_WEEKS,
+    // Blank, not a guess. A camp whose dates default to some Monday in June is
+    // a camp that shows the wrong dates on a register until somebody notices;
+    // blank shows as "dates not set" and nobody mistakes that for a decision.
+    weekStarts: Array.from({ length: DEFAULT_CAMP_WEEKS }, () => ''),
+    waiverVersion: '',
+    waiverText: '',
+    note: '',
+    servantSignUp: true,
+    familyRegistration: true,
+  };
+}
+
+/** A guard against a mistyped fee: $2,000 for one child for one week is not a camp. */
+export const MAX_CAMP_FEE_CENTS = 200_000;
+
+/**
+ * Coerce `config/camp` into usable settings, field by field.
+ *
+ * `baseCents` falls back rather than clamping, for the reason `deliveryCents`
+ * does: clamping charges a family a figure nobody chose, and falling back to
+ * zero surfaces on the screen as "no fee set" instead of quietly billing.
+ */
+export function parseCampConfig(raw: unknown, now: Date = new Date()): CampConfig {
+  const doc = asRecord(raw);
+  const fallback = defaultCampConfig(now);
+
+  const base = doc?.['baseCents'];
+  const usableBase =
+    typeof base === 'number' && Number.isInteger(base) && base >= 0 && base <= MAX_CAMP_FEE_CENTS;
+
+  const weeks = doc?.['weeks'];
+  const usableWeeks =
+    typeof weeks === 'number' && Number.isInteger(weeks) && weeks >= 1 && weeks <= MAX_CAMP_WEEKS;
+
+  const weekCount = usableWeeks ? (weeks as number) : fallback.weeks;
+
+  return {
+    programId: str(doc?.['programId']) || fallback.programId,
+    season: str(doc?.['season']) || fallback.season,
+    baseCents: usableBase ? (base as number) : fallback.baseCents,
+    weeks: weekCount,
+    weekStarts: weekStartList(doc?.['weekStarts'], weekCount),
+    waiverVersion: str(doc?.['waiverVersion']) ?? fallback.waiverVersion,
+    waiverText: str(doc?.['waiverText']) ?? fallback.waiverText,
+    note: str(doc?.['note']) ?? fallback.note,
+    // Absent means open, matching the default. A camp configured before this
+    // field existed has no `servantSignUp` key, and reading that as "closed"
+    // would hide the sign-up on every parish that has not been told to add it.
+    servantSignUp: typeof doc?.['servantSignUp'] === 'boolean'
+      ? (doc['servantSignUp'] as boolean)
+      : fallback.servantSignUp,
+    // Absent means open, for the same reason as the field above it.
+    familyRegistration: typeof doc?.['familyRegistration'] === 'boolean'
+      ? (doc['familyRegistration'] as boolean)
+      : fallback.familyRegistration,
+  };
+}
+
+/**
+ * Exactly `count` start dates, in week order, each either `YYYY-MM-DD` or ''.
+ *
+ * Padded rather than trusted: a document written before this field existed has
+ * none, and one written when the camp ran three weeks has too many for a camp
+ * that now runs two. Anything that is not a plain calendar date is dropped to
+ * '' rather than carried, so no screen has to guess at the format it was
+ * handed — and no date is *invented* to fill a gap, because a wrong date on a
+ * register is worse than no date at all.
+ */
+function weekStartList(value: unknown, count: number): string[] {
+  const given = Array.isArray(value) ? value : [];
+  return Array.from({ length: count }, (_unused, index) => {
+    const entry = given[index];
+    return typeof entry === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.trim())
+      ? entry.trim()
+      : '';
+  });
 }

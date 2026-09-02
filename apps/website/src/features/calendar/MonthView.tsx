@@ -67,7 +67,7 @@ import { dayParts, formatClock, type ViewRange } from './range';
  * one column from where it belongs, with the grid still looking perfectly
  * plausible.
  */
-const WEEKDAYS = [
+export const WEEKDAYS = [
   { short: 'Mon', long: 'Monday' },
   { short: 'Tue', long: 'Tuesday' },
   { short: 'Wed', long: 'Wednesday' },

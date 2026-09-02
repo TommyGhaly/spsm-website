@@ -61,6 +61,10 @@ export type Passport = {
   ready: boolean;
   stamp: (id: string) => void;
   reset: () => void;
+  /** Bumped by every `reset`. The stamp observers watch it, because clearing
+   *  the passport while standing in front of station 4 must not have station 4
+   *  stamp itself again the same second — see `StampButton`. */
+  resetSeq: number;
   count: number;
   complete: boolean;
 };
@@ -68,6 +72,7 @@ export type Passport = {
 export function usePassport(): Passport {
   const [stamped, setStamped] = useState<ReadonlySet<string>>(() => new Set());
   const [ready, setReady] = useState(false);
+  const [resetSeq, setResetSeq] = useState(0);
 
   useEffect(() => {
     setStamped(new Set(read()));
@@ -104,13 +109,17 @@ export function usePassport(): Passport {
     [],
   );
 
-  const reset = useCallback(() => save(new Set()), [save]);
+  const reset = useCallback(() => {
+    save(new Set());
+    setResetSeq((seq) => seq + 1);
+  }, [save]);
 
   return {
     stamped,
     ready,
     stamp,
     reset,
+    resetSeq,
     count: stamped.size,
     complete: ready && stamped.size === TOUR_STATIONS.length,
   };

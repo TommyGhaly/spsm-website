@@ -182,17 +182,25 @@ registrations and the parish forms are written anonymously. Sign-in exists only
 for the servants schedule and the admin surface.
 
 So **tenant membership is the qualification**: only clergy, staff, and servants
-have a parish M365 address, and a first sign-in therefore grants `servant`
-automatically ([`DEFAULT_SIGNIN_ROLE`](../packages/shared/src/roles.ts)).
+have a parish M365 address, and being able to authenticate at all is therefore
+what earns an account and the servants' rota — see
+[`packages/shared/src/claims.ts`](../packages/shared/src/claims.ts).
 
 Which means: **if that app registration is ever switched to multi-tenant, every
-Microsoft account on earth becomes a servant.** `enforceTenantOnCreate` in
+Microsoft account on earth can read the servants' rota.** `servantEvents` in
+`firestore.rules` is `signedIn()` and nothing more, deliberately — needing a
+grant to see when you are serving would be exactly backwards — so this app
+registration is the only thing standing in front of it.
+`enforceTenantOnCreate` in
 [`functions/src/auth.ts`](../functions/src/auth.ts) re-checks the `tid` claim on
 every account creation for exactly that reason, so a change in the Azure portal
 cannot silently open the door — but keep both in agreement.
 
-`staff` and `admin` are never inferred. They come from `setMemberRole`, per
-person. Bootstrap the first one with:
+**Nothing else is inferred, and there are no roles.** Every other privilege is a
+flag or a program id on the person's member document, handed out by a superadmin
+at `/access`. The one exception is `superadmin` itself, which is a custom claim
+because it is the power to hand out all the rest — so it is set from a terminal,
+per person, and by nothing on the site:
 
 ```bash
 node scripts/grant-admin.mjs someone@spsmwayland.org --write

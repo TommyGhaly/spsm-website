@@ -40,12 +40,18 @@ out/
 # The spare server's output dir — see .claude/launch.json's -3200 entry. A peer
 # session working in this same tree often already holds :3100.
 .next-emulated-3200/
+.next-emulated-3900/
+.next-emulated-3250/
 .next-real-3300/
 .next-real-3400/
 .next-real-3500/
 .next-real-3600/
 .next-real-3700/
 .next-real-3800/
+# Where a one-off `next build` is sent to check the static export without
+# clobbering a peer session's .next/ or the committed-nothing `out/`. Not a
+# server; delete it when the check is done.
+.next-build-check/
 .turbo/
 coverage/
 *.tsbuildinfo
@@ -87,3 +93,20 @@ Thumbs.db
 # Where `next dev --experimental-https` writes its self-signed cert. The *.pem
 # rule above already catches the key itself; this covers the directory.
 apps/website/certificates/
+
+# =============================================================================
+# The source documents for /about/future-plans
+# =============================================================================
+# Three files, 607 MB between them: the 1080p flythrough master, the June 2025
+# renderings, and the 33-sheet December 2025 permit set. Every other original on
+# this site is committed on purpose — see assets/README.md — and these are the
+# exception, because half a gigabyte of architect's deliverable is not a thing
+# to put in git history where it can never be taken out again.
+#
+# What ships instead is committed and small: ten WebP renderings under
+# `apps/website/public/img/future/`, a 33 MB compressed cut of the flythrough
+# under `apps/website/public/video/`, and the PNG stills they were built from in
+# `assets/future/`. `assets/future/credits.json` records which document and
+# which timestamp each one came from, so the derivation is checkable without the
+# masters. Keep the masters — the parish paid for them — just not here.
+assets/Future Plans/

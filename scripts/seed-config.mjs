@@ -26,6 +26,7 @@ import {
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
   DEFAULT_THEME,
+  defaultCampConfig,
 } from '../packages/shared/dist/index.js';
 import { accessToken, documentUrl, fromFirestore, toFieldMap } from './lib/firestore-rest.mjs';
 
@@ -43,6 +44,20 @@ const ALL_DOCS = [
   // document. Writing it is what makes the theme *editable*, so it is worth
   // doing before handing the console to anyone.
   { id: 'theme', defaults: DEFAULT_THEME },
+  /*
+   * Summer camp: the season, the weekly fee per child, and the waiver.
+   *
+   * Seeding this creates a document with a fee of **zero** and an empty waiver,
+   * which is the deliberate shape of the default — a seeded fee is a number
+   * somebody has to notice and correct, and the failure mode of noticing late
+   * is a family told the wrong price at a desk. The registration screen shows
+   * "No fee set" and refuses to offer the waiver tick until the text is there.
+   *
+   * A function rather than a constant because the default season is the current
+   * year, which cannot be frozen into a module that gets imported in January
+   * and read in July.
+   */
+  { id: 'camp', defaults: defaultCampConfig() },
 ];
 
 const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length);

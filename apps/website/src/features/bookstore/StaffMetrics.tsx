@@ -229,19 +229,19 @@ function Report({
         <Tile
           label="Collect / deliver"
           value={`${t.pickupOrders} / ${t.shippedOrders}`}
-          note="how orders were taken"
+          note="picked up / delivered"
         />
         <Tile
           label="Visitors"
           value={String(t.visitors)}
           note={
             period.kind === 'month'
-              ? 'busiest single day — days cannot be added up'
+              ? 'busiest single day (daily figures cannot be added up)'
               : `${t.views} covers seen, ${t.details} opened`
           }
         />
         <Tile
-          label="Reached checkout"
+          label="Started checkout"
           value={String(t.checkoutStarts)}
           note={`${t.orders} paid${t.checkoutStarts > 0 ? ` · ${Math.round((t.orders / t.checkoutStarts) * 100)}% of them` : ''}`}
         />
@@ -249,7 +249,7 @@ function Report({
           <Tile
             label="Repeat buyers"
             value={String(t.repeatBuyers)}
-            note="had bought before"
+            note="have bought before"
           />
         )}
       </div>
@@ -257,7 +257,7 @@ function Report({
       <div className="bkstats__grid">
         <Table
           title="Most bought"
-          empty="Nothing sold in this period."
+          empty="Nothing sold yet."
           rows={bought.map((row) => ({
             key: row.slug,
             name: nameOf(row.slug),
@@ -268,7 +268,7 @@ function Report({
 
         <Table
           title="Most looked at"
-          empty="No covers were opened."
+          empty="No one has opened a book yet."
           rows={viewed.map((row) => ({
             key: row.slug,
             name: nameOf(row.slug),
@@ -278,9 +278,9 @@ function Report({
         />
 
         <Table
-          title="Put down again"
-          empty="Every basket was paid for."
-          hint="Added to a basket more often than bought."
+          title="Added but not bought"
+          empty="Nothing was left behind in a basket."
+          hint="Books people put in a basket but did not buy."
           rows={abandoned.map((row) => ({
             key: row.slug,
             name: nameOf(row.slug),
@@ -291,8 +291,8 @@ function Report({
 
         <Table
           title="Searched for, not found"
-          empty="Every search matched something."
-          hint="The closest thing to a list of books to stock."
+          empty="Every search found something."
+          hint="Worth thinking about stocking these."
           rows={zeroSearches.map(([term, count]) => ({
             key: term,
             name: term,
@@ -303,7 +303,7 @@ function Report({
 
         <Table
           title="Searched for"
-          empty="Nobody used the search."
+          empty="No one has used the search yet."
           rows={allSearches.map(([term, count]) => ({
             key: term,
             name: term,

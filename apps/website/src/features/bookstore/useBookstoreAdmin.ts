@@ -1,8 +1,7 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
-import { hasRole, inGroup, type SpsmClaims } from '@spsm/shared';
-import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
+import { type SpsmClaims } from '@spsm/shared';
+import { useScreenGrants } from '@/lib/screenGrants';
 
 /**
  * Whether the person reading the shop may review its orders.
@@ -23,15 +22,42 @@ import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
  * one: do not make it worse, and do not ship a back office to people buying a
  * book. Which is why the section this gates is behind two `lazy` boundaries.
  *
- * ## The one difference from the events version, and why
+ * ## Two answers, not one, and the second one is a fix
  *
- * The group. `useEventsAdmin` asks only `hasRole(claims, 'staff')`, because
- * `firestore.rules` says exactly that for `/events/{eventId}`. The `orders` rule
- * is `inGroup('bookstore') || hasRole('staff')`, and a bookstore volunteer is
- * `member` plus the group — so asking for the role alone would hide the section
- * from the only people it was built for, while the rules happily served them
- * every document in it. A check stricter than the policy is not caution, it is
- * a bug that looks like caution.
+ * This returned a single `canReview`, and `Shop.tsx` used it to draw *both* the
+ * review drawer and the Edit toggle — which was fine while the only people who
+ * had one had the other. Admitting `finance` broke that: the treasurer's grant
+ * is to read the takings and the orders under them, and a single flag would
+ * have handed them the control that rearranges the shop's shelves and rewrites
+ * its catalog. `firestore.rules` would have refused every one of those writes,
+ * so the visible failure is a screenful of controls that silently do nothing.
+ *
+ * So the session answers the two questions separately, matching the two rules:
+ *
+ *   canReview  `orders` and `bookstoreStats` read — bookstore **or** finance
+ *   canEdit    `products` and `config/bookstore` write — bookstore only
+ *
+ * ## Three ways in, and the rule this has to keep matching
+ *
+ * A check stricter than the policy is not caution, it is a bug that looks like
+ * caution — so this asks for exactly what the `orders` and `bookstoreStats`
+ * rules ask for, and all three clauses earn their place:
+ *
+ *   - the **group**, because a bookstore volunteer is `member` plus
+ *     `groups: ['bookstore']` and nothing else. Asking for the role alone would
+ *     hide the queue from the only people it was built for while the rules
+ *     happily served them every document in it. This clause is why this hook was
+ *     never a copy of `useEventsAdmin`.
+ *   - the **bookstore screen**, new with the allocation page at /access, which
+ *     is how somebody is given the shop without being given the parish.
+ *   - the **finance screen**, because `hasScreen('finance')` reads the takings
+ *     and the orders behind them. A treasurer who could see a day's total but
+ *     not the refund that reduced it has been handed a figure they cannot
+ *     check.
+ *
+ * `useScreenGrants` short-circuits on `superadmin` exactly as `hasScreen()`
+ * does in the rules, so the parish's administrator keeps everything without a
+ * lookup.
  *
  * ## Not a security boundary
  *
@@ -48,20 +74,28 @@ export interface BookstoreAdminSession {
   claims: SpsmClaims | null;
   /** May they see the orders queue and the sales figures? */
   canReview: boolean;
+  /**
+   * May they change what the shop *is* — its shelves, sections and covers?
+   *
+   * Deliberately narrower than `canReview`. A treasurer reading the books is
+   * not thereby someone who rearranges them.
+   */
+  canEdit: boolean;
 }
 
 export function useBookstoreAdmin(): BookstoreAdminSession {
-  const auth = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { ready, claims, canAdmin } = useScreenGrants();
 
-  const signedIn = auth.kind === 'signed-in';
-  const claims = signedIn ? auth.claims : null;
+  // One grant, where this was `inGroup(claims, 'bookstore') || canAdmin(...)`.
+  // The group claim and the screen flag named the same people — whoever runs
+  // the shop — and every rule that read them said so with an `||`. Removing the
+  // role ladder removed the groups beside it.
+  const runsTheShop = canAdmin('bookstore');
 
   return {
-    // `restoring` and `signing-in` are both "we do not know yet". Reporting
-    // ready on those would flash the Edit control away again a moment later for
-    // somebody who does have the claim.
-    ready: auth.kind === 'signed-out' || signedIn,
+    ready,
     claims,
-    canReview: claims !== null && (hasRole(claims, 'staff') || inGroup(claims, 'bookstore')),
+    canReview: runsTheShop || canAdmin('finance'),
+    canEdit: runsTheShop,
   };
 }

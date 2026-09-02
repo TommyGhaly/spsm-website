@@ -14,9 +14,12 @@
  * a second, weaker copy of a check that already exists in the one place that
  * cannot be bypassed.
  *
- * So the gate is `hasRole('staff')` in the rules. The edit controls in the UI
- * are a convenience — a member who edits them out of their own browser still
- * cannot write, because the rules read the token and not the button.
+ * So the gate is `hasScreen('events')` in the rules — the Parish calendar row
+ * at /access, and nothing wider. It was `hasRole('staff')` until the role
+ * ladder was removed, which admitted the bookstore volunteer and the bulletin
+ * editor alike. The edit controls in the UI are a convenience: somebody who
+ * edits them out of their own browser still cannot write, because the rules
+ * read the grant and not the button.
  * ---------------------------------------------------------------------------
  *
  * **There is deliberately no way to delete anything but our own.** The whole

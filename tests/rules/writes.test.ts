@@ -14,22 +14,42 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import {
-  createTestEnv,
-  asAnon,
-  asMember,
-  asServant,
-  asStaff,
-  asAdmin,
-  asParking,
-} from './helpers.js';
+import { createTestEnv, asAnon, asServant, asSignedIn, asSuper } from './helpers.js';
+
+/**
+ * Two allocations, seeded onto member documents rather than passed as claims.
+ *
+ * The role ladder that used to answer these — `asStaff`, and an
+ * `inGroup('parking')` context — is gone, and with it the idea that one context
+ * could stand in for "trusted with the administration". Each of these holds
+ * exactly one area, which is what /access hands out and therefore what the
+ * rules have to be tested against.
+ */
+const asParking = (env: RulesTestEnvironment) => env.authenticatedContext('parking-1', {});
+const asEvents = (env: RulesTestEnvironment) => env.authenticatedContext('events-1', {});
+
+/** The grants those two run on. Idempotent, like every other seed here. */
+async function seedGrants(): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'members', 'parking-1'), {
+      screenAdmin: { parking: true },
+      programAdmin: { programs: [], events: [] },
+    });
+    await setDoc(doc(db, 'members', 'events-1'), {
+      screenAdmin: { events: true },
+      programAdmin: { programs: [], events: [] },
+    });
+  });
+}
 
 let env: RulesTestEnvironment;
 
 beforeAll(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv('writes');
   // Cleared exactly once, here, and never again in this file. See `reset`.
   await env.clearFirestore();
+  await seedGrants();
 });
 
 afterAll(async () => {
@@ -89,14 +109,14 @@ describe('vehicles — the only unauthenticated write path on the site', () => {
   });
 
   it('allows a signed-in member to register under their own uid', async () => {
-    const db = asMember(env, 'member-1').firestore();
+    const db = asSignedIn(env, 'member-1').firestore();
     await assertSucceeds(
       addDoc(collection(db, 'vehicles'), vehicleDoc({ ownerUid: 'member-1' })),
     );
   });
 
   it('denies claiming a registration for someone else', async () => {
-    const db = asMember(env, 'member-1').firestore();
+    const db = asSignedIn(env, 'member-1').firestore();
     await assertFails(
       addDoc(collection(db, 'vehicles'), vehicleDoc({ ownerUid: 'someone-else' })),
     );
@@ -140,32 +160,45 @@ describe('vehicles — a plate-to-name map must never be enumerable', () => {
   });
 
   it('denies a signed-in member reading someone else’s registration', async () => {
-    await assertFails(getDoc(doc(asMember(env, 'other-member').firestore(), 'vehicles', 'v1')));
+    await assertFails(getDoc(doc(asSignedIn(env, 'other-member').firestore(), 'vehicles', 'v1')));
   });
 
   it('allows the owner to read their own', async () => {
-    await assertSucceeds(getDoc(doc(asMember(env, 'member-1').firestore(), 'vehicles', 'v1')));
+    await assertSucceeds(getDoc(doc(asSignedIn(env, 'member-1').firestore(), 'vehicles', 'v1')));
   });
 
-  it('allows the parking group and staff to read', async () => {
+  it('allows the car-park register to read', async () => {
     await assertSucceeds(getDoc(doc(asParking(env).firestore(), 'vehicles', 'v1')));
-    await assertSucceeds(getDocs(collection(asStaff(env).firestore(), 'vehicles')));
+    await assertSucceeds(getDocs(collection(asParking(env).firestore(), 'vehicles')));
   });
 
-  it('denies a non-owner update, allows staff', async () => {
+  /**
+   * A plate-to-name list, so holding *some* area must not be holding this one.
+   *
+   * There used to be two doors here — an `inGroup('parking')` claim and the
+   * `staff` tier — and the second admitted the bulletin editor and the bookstore
+   * volunteer alike. This is the assertion that there is one door now.
+   */
+  it('denies somebody holding a different area entirely', async () => {
+    await assertFails(getDoc(doc(asEvents(env).firestore(), 'vehicles', 'v1')));
+    await assertFails(getDocs(collection(asEvents(env).firestore(), 'vehicles')));
+  });
+
+  it('denies a non-owner update, allows the register', async () => {
     await assertFails(
-      updateDoc(doc(asMember(env, 'other-member').firestore(), 'vehicles', 'v1'), {
+      updateDoc(doc(asSignedIn(env, 'other-member').firestore(), 'vehicles', 'v1'), {
         active: false,
       }),
     );
     await assertSucceeds(
-      updateDoc(doc(asStaff(env).firestore(), 'vehicles', 'v1'), { active: false }),
+      updateDoc(doc(asParking(env).firestore(), 'vehicles', 'v1'), { active: false }),
     );
   });
 
-  it('denies delete below staff', async () => {
-    await assertFails(deleteDoc(doc(asMember(env, 'member-1').firestore(), 'vehicles', 'v1')));
-    await assertSucceeds(deleteDoc(doc(asStaff(env).firestore(), 'vehicles', 'v1')));
+  it('denies delete without the grant', async () => {
+    await assertFails(deleteDoc(doc(asSignedIn(env, 'member-1').firestore(), 'vehicles', 'v1')));
+    await assertFails(deleteDoc(doc(asEvents(env).firestore(), 'vehicles', 'v1')));
+    await assertSucceeds(deleteDoc(doc(asParking(env).firestore(), 'vehicles', 'v1')));
   });
 });
 
@@ -185,54 +218,69 @@ describe('orders are written only by Cloud Functions', () => {
     // Admin is the strongest client identity there is, so this is the test that
     // proves `allow write: if false` means what it says.
     await assertFails(
-      updateDoc(doc(asAdmin(env).firestore(), 'orders', 'o1'), { status: 'paid' }),
+      updateDoc(doc(asSuper(env).firestore(), 'orders', 'o1'), { status: 'paid' }),
     );
     await assertFails(
-      setDoc(doc(asAdmin(env).firestore(), 'orders', 'o2'), { status: 'paid' }),
+      setDoc(doc(asSuper(env).firestore(), 'orders', 'o2'), { status: 'paid' }),
     );
-    await assertFails(deleteDoc(doc(asAdmin(env).firestore(), 'orders', 'o1')));
+    await assertFails(deleteDoc(doc(asSuper(env).firestore(), 'orders', 'o1')));
   });
 
   it('lets the buyer read their own order', async () => {
-    await assertSucceeds(getDoc(doc(asMember(env, 'member-1').firestore(), 'orders', 'o1')));
+    await assertSucceeds(getDoc(doc(asSignedIn(env, 'member-1').firestore(), 'orders', 'o1')));
   });
 
   it('denies another member reading it', async () => {
-    await assertFails(getDoc(doc(asMember(env, 'member-2').firestore(), 'orders', 'o1')));
+    await assertFails(getDoc(doc(asSignedIn(env, 'member-2').firestore(), 'orders', 'o1')));
   });
 });
 
-describe('members — claims are authoritative, the mirror is not', () => {
+/**
+ * The member document, which is now the permission record rather than a profile
+ * with a couple of display mirrors on it.
+ *
+ * `roleMirror` and `groupsMirror` used to be pinned here and are gone with the
+ * claims they copied. What is left is `superadminMirror` — genuinely cosmetic,
+ * because rules read the token — and the two maps, which are not cosmetic at
+ * all: `screenAdmin` and `programAdmin` have no claim behind them, so a member
+ * who could write their own would hold every permission on the site. Those are
+ * covered at length in access.test.ts and program-galleries.test.ts; this suite
+ * covers the mirror and the ordinary profile edit beside it.
+ */
+describe('members — the claim is authoritative, the mirror is not', () => {
   beforeEach(() => reset());
 
-  it('lets a member create their own profile only as a plain member', async () => {
-    const db = asMember(env, 'member-1').firestore();
+  it('lets a member create their own profile with nothing granted', async () => {
+    const db = asSignedIn(env, 'member-1').firestore();
     await assertSucceeds(
       setDoc(doc(db, 'members', 'member-1'), {
         displayName: 'Mina',
         email: 'mina@example.org',
-        roleMirror: 'member',
-        groupsMirror: [],
+        superadminMirror: false,
       }),
     );
   });
 
   it('denies self-promotion at create time', async () => {
-    const db = asMember(env, 'member-2').firestore();
+    const db = asSignedIn(env, 'member-2').firestore();
+    // The mirror. Cosmetic in effect — /access reads it to label a row — but
+    // writable only by `grant-admin.mjs`, because a document that claimed
+    // somebody was the site administrator would be believed by every screen
+    // that draws a label from it.
     await assertFails(
       setDoc(doc(db, 'members', 'member-2'), {
         displayName: 'Ambitious',
         email: 'a@example.org',
-        roleMirror: 'admin',
-        groupsMirror: [],
+        superadminMirror: true,
       }),
     );
+    // And the map that is not cosmetic.
     await assertFails(
       setDoc(doc(db, 'members', 'member-2'), {
         displayName: 'Ambitious',
         email: 'a@example.org',
-        roleMirror: 'member',
-        groupsMirror: ['clergy'],
+        superadminMirror: false,
+        screenAdmin: { forms: true },
       }),
     );
   });
@@ -242,14 +290,17 @@ describe('members — claims are authoritative, the mirror is not', () => {
       await setDoc(doc(ctx.firestore(), 'members', 'member-3'), {
         displayName: 'Mina',
         email: 'mina@example.org',
-        roleMirror: 'member',
-        groupsMirror: [],
+        superadminMirror: false,
+        screenAdmin: {},
+        programAdmin: { programs: [], events: [] },
       });
     });
-    const db = asMember(env, 'member-3').firestore();
+    const db = asSignedIn(env, 'member-3').firestore();
     await assertSucceeds(updateDoc(doc(db, 'members', 'member-3'), { displayName: 'Mina B.' }));
-    await assertFails(updateDoc(doc(db, 'members', 'member-3'), { roleMirror: 'staff' }));
-    await assertFails(updateDoc(doc(db, 'members', 'member-3'), { groupsMirror: ['clergy'] }));
+    await assertFails(updateDoc(doc(db, 'members', 'member-3'), { superadminMirror: true }));
+    await assertFails(
+      updateDoc(doc(db, 'members', 'member-3'), { screenAdmin: { bookstore: true } }),
+    );
   });
 });
 
@@ -268,21 +319,21 @@ describe('formSubmissions is closed until the feature exists', () => {
     );
   });
 
-  it('denies it even for staff and admin, so nothing quietly depends on it', async () => {
+  it('denies it even for the superadmin, so nothing quietly depends on it', async () => {
     await assertFails(
-      addDoc(collection(asStaff(env).firestore(), 'formSubmissions'), { formId: 'x' }),
+      addDoc(collection(asEvents(env).firestore(), 'formSubmissions'), { formId: 'x' }),
     );
     await assertFails(
-      addDoc(collection(asAdmin(env).firestore(), 'formSubmissions'), { formId: 'x' }),
+      addDoc(collection(asSuper(env).firestore(), 'formSubmissions'), { formId: 'x' }),
     );
   });
 });
 
-describe('the calendar layers staff may write', () => {
+describe('the calendar layers the events grant may write', () => {
   /**
    * Both are world-readable on purpose: /calendar assembles them in the browser
    * next to Breeze, so an anonymous visitor has to be able to read them or a
-   * manually added service is invisible to everybody but staff.
+   * manually added service is invisible to everybody but its author.
    */
   it('lets anyone read a manually added entry', async () => {
     await assertSucceeds(
@@ -291,8 +342,8 @@ describe('the calendar layers staff may write', () => {
     await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'calendarDetails', '404577147')));
   });
 
-  it('refuses a write from anyone below staff', async () => {
-    for (const as of [asAnon, asMember, asServant]) {
+  it('refuses a write from anyone without the events grant', async () => {
+    for (const as of [asAnon, asSignedIn, asParking]) {
       await assertFails(
         setDoc(doc(as(env).firestore(), 'scheduleEntries', 'x'), { title: 'Not yours' }),
       );
@@ -302,8 +353,8 @@ describe('the calendar layers staff may write', () => {
     }
   });
 
-  it('lets staff add, annotate and remove', async () => {
-    const staff = asStaff(env).firestore();
+  it('lets the events grant add, annotate and remove', async () => {
+    const staff = asEvents(env).firestore();
     await assertSucceeds(
       setDoc(doc(staff, 'scheduleEntries', 'choir'), {
         title: 'Choir practice',
@@ -323,15 +374,15 @@ describe('the calendar layers staff may write', () => {
   /**
    * The point of the two-collection split, asserted rather than assumed.
    *
-   * Everything the parish does *not* own lives somewhere staff cannot delete
-   * it from — Breeze is not in Firestore at all, and the site's own `events`
-   * are a different path with a different rule. Deleting a detail must not be
-   * capable of deleting anything but the detail.
+   * Everything the parish does *not* own lives somewhere this grant cannot
+   * delete it from — Breeze is not in Firestore at all, and the site's own
+   * `events` are a different path with a different rule. Deleting a detail must
+   * not be capable of deleting anything but the detail.
    */
-  it('gives staff no path that removes a liturgy', async () => {
+  it('gives the events grant no path that removes a liturgy', async () => {
     // A detail is keyed by the occurrence id it annotates. Removing it removes
     // the annotation; there is nothing else at that path to remove.
-    const staff = asStaff(env).firestore();
+    const staff = asEvents(env).firestore();
     await assertSucceeds(deleteDoc(doc(staff, 'calendarDetails', '404577147')));
     // And the schedule the detail was about is not in Firestore to begin with,
     // so there is no rule that could have allowed it.
@@ -356,12 +407,13 @@ describe('servantsConfig holds bearer URLs, so no client may read it at all', ()
     return assertFails(getDoc(doc(asAnon(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
-  it('denies a signed-in member who is not a servant', async () => {
-    await assertFails(getDoc(doc(asMember(env).firestore(), 'servantsConfig', 'schedule')));
+  it('denies a signed-in member with no allocation', async () => {
+    await assertFails(getDoc(doc(asSignedIn(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
   /**
-   * Servants and staff too, which is the change worth having a test for.
+   * Servants and allocated administrators too, which is the change worth having
+   * a test for.
    *
    * This used to allow a servant, because the browser fetched the URL after
    * sign-in and framed it — so every servant's tab held a credential they could
@@ -373,24 +425,24 @@ describe('servantsConfig holds bearer URLs, so no client may read it at all', ()
    * business here, and this asserts that none of them can get in — including
    * the ones that used to be allowed.
    */
-  it('denies a servant and staff too, now that nothing client-side reads it', async () => {
+  it('denies a servant and an allocated administrator too', async () => {
     await assertFails(getDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule')));
-    await assertFails(getDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule')));
+    await assertFails(getDoc(doc(asEvents(env).firestore(), 'servantsConfig', 'schedule')));
   });
 
-  it('denies writes below admin — staff may not repoint the calendar', async () => {
+  it('denies writes below superadmin — an allocation may not repoint the calendar', async () => {
     await assertFails(
       setDoc(doc(asServant(env).firestore(), 'servantsConfig', 'schedule'), {
         embedUrl: 'https://evil.test/x',
       }),
     );
     await assertFails(
-      setDoc(doc(asStaff(env).firestore(), 'servantsConfig', 'schedule'), {
+      setDoc(doc(asEvents(env).firestore(), 'servantsConfig', 'schedule'), {
         embedUrl: 'https://evil.test/x',
       }),
     );
     await assertSucceeds(
-      setDoc(doc(asAdmin(env).firestore(), 'servantsConfig', 'schedule'), {
+      setDoc(doc(asSuper(env).firestore(), 'servantsConfig', 'schedule'), {
         embedUrl: 'https://stphilopaterstmina.breezechms.com/embed/calendar/grid?x=2',
       }),
     );
@@ -400,13 +452,13 @@ describe('servantsConfig holds bearer URLs, so no client may read it at all', ()
 describe('the catch-all denies anything not deliberately opened', () => {
   beforeEach(() => reset());
 
-  it('denies read and write on an unmatched collection, even for an admin', async () => {
-    const db = asAdmin(env).firestore();
+  it('denies read and write on an unmatched collection, even for the superadmin', async () => {
+    const db = asSuper(env).firestore();
     await assertFails(getDocs(collection(db, 'somethingNobodyAddedARuleFor')));
     await assertFails(setDoc(doc(db, 'somethingNobodyAddedARuleFor', 'x'), { a: 1 }));
   });
 
   it('denies client writes to auditLog', async () => {
-    await assertFails(setDoc(doc(asAdmin(env).firestore(), 'auditLog', 'e1'), { action: 'read' }));
+    await assertFails(setDoc(doc(asSuper(env).firestore(), 'auditLog', 'e1'), { action: 'read' }));
   });
 });

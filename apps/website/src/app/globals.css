@@ -503,9 +503,79 @@ main {
     var(--color-deep, #481010) 62%
   );
   color: var(--color-ink-inverse, #f9efec);
-  /* Vestment trim: the gold hairline is what separates the bar from the page
-     below it, in place of the near-invisible `rule` a white header needed. */
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  /*
+   * Vestment trim: the gold hairline is what separates the bar from the page
+   * below it, in place of the near-invisible `rule` a white header needed.
+   *
+   * 2px of solid gold, and both halves of that are corrections.
+   *
+   * It was `gold 55%`. The mix is painted over the bar's own dark ground, so it
+   * renders the same colour on every page — but it is only *read* as gold where
+   * the ground below it is dark too, which is the About pages and the homepage.
+   * Against paper a 55% gold next to `--color-paper` is swamped by it and the
+   * bar ends in nothing.
+   *
+   * It was also 1px, and on the About pages it has never *looked* 1px: those
+   * pages open on a `band--deep`, whose own `border-block` adds a second gold
+   * hairline immediately under this one. Two stacked 1px rules, which is the
+   * weight Tommy has been reading as the line — *"the same thickness as the
+   * about main page"*. So 2px here, matched by eye against /about at 4x, rather
+   * than a rule that tries to detect a hero band and cancel its top edge: those
+   * bands are a direct child of `main` on some pages and nested in a feature
+   * wrapper on others, so any such selector would be quietly wrong on half of
+   * them. The About pages therefore carry 2px plus that 35% hairline, which is
+   * about a third of a pixel of extra warmth and invisible at 1x.
+   */
+  border-bottom: 2px solid var(--color-gold, #b08d43);
+
+  /*
+   * A 1px of `--color-deep` under the gold, and it is what makes the line read
+   * the same weight on a light page as on a dark one.
+   *
+   * The border is one colour on every page — it is painted over the bar's own
+   * ground — but a gold line does not *look* like one thing. Against the deep
+   * band the About pages open on it has about 4:1 to work with; against
+   * `--color-paper` it has about 2.5:1, and the same pixels go dull and muddy.
+   * Tommy: *"it looks better on a dark background than a light background."*
+   *
+   * So the gold is given a dark edge of its own rather than borrowing one from
+   * the page. Now it is bounded by the masthead above and this below on every
+   * page, its local contrast no longer depends on what it happens to sit over,
+   * and the two read alike.
+   *
+   * **The colour of that edge is `--color-accent`.** It took three tries and
+   * each one was rejected for the same reason, so the reason is the note:
+   *
+   *   `--color-deep` (#481010)     — Tommy: *"the about line is a different
+   *                                  colour, I like that one more."*
+   *   the About bronze (#6C3C22)   — the resolved composite of that page's own
+   *                                  `gold 35%` hairline over its dark band.
+   *                                  Tommy: *"it's still a darker colour."*
+   *   `--color-accent` (#992a21)   — the vibrant oxblood the `.admin-hub__card`
+   *                                  rules wear down their left edge, which is
+   *                                  what he pointed at.
+   *
+   * The first two are both *dark* reds, chosen to disappear. That was the wrong
+   * instinct: what the gold needs below it is a bounded edge, and there is no
+   * rule saying the boundary has to be dimmer than the thing it bounds. The
+   * accent is the palette's most saturated red and it reads as deliberate trim
+   * rather than as a shadow the browser drew.
+   *
+   * It also means the whole mark is now two theme colours in sequence — gold on
+   * accent — which is the pairing the site already uses on the admin cards and
+   * on `.about-index`'s left rules. Nothing here is a literal; `config/theme`
+   * moves both.
+   *
+   * The About pages match rather than lead: this bar is sticky with
+   * `z-index: 50`, so its shadow paints *over* the band's own `gold 35%`
+   * hairline underneath. Every page is 2px of gold on 1px of accent, exactly.
+   *
+   * A shadow, not a second border: a border would add to the bar's height and
+   * `--masthead-h` is already wrong by more than that (see its note). This
+   * paints outside the box and costs no layout. It is drawn before the bar's
+   * children, so `.nav-panel--open` still covers it.
+   */
+  box-shadow: 0 1px 0 var(--color-accent, #992a21);
 }
 
 /*
@@ -516,9 +586,15 @@ main {
  *
  * `transform`, not `top`: this element repaints on every scroll frame already,
  * and a transform is the one property that moves it without asking the browser
- * to lay the page out again. -101% rather than -100% so the gold bottom hairline
- * clears the top of the window too — at exactly 100% it stays as a one-pixel
- * gold line across the top of the screen, which looks like a rendering fault.
+ * to lay the page out again. Past -100% so the gold bottom hairline clears the
+ * top of the window too — at exactly 100% it stays as a one-pixel gold line
+ * across the top of the screen, which looks like a rendering fault.
+ *
+ * -102%, not the -101% it was. The percentage is of the *border box*, and the
+ * bar's dark bottom edge is now a `box-shadow`, which paints 1px outside that
+ * box: 101% of 86px is 86.86px against 87px of ink to clear. Sub-pixel, so it
+ * may well never have shown — but the margin was there for exactly this and it
+ * is cheaper to keep it than to find out on somebody's phone.
  *
  * The two durations are not the same on purpose. Leaving is quicker than
  * arriving: going away should feel like getting out of the way, and coming back
@@ -535,7 +611,7 @@ main {
 }
 
 .masthead--hidden {
-  transform: translateY(-101%);
+  transform: translateY(-102%);
 }
 
 .masthead:not(.masthead--hidden) {
@@ -1496,15 +1572,19 @@ main {
 }
 
 /*
- * The one row in the card.
+ * The rows in the card, and the shape they share.
  *
- * There used to be a list of destinations above this, and the shape of a menu
- * row was shared between them. The list is gone — see the top of HeaderAuth —
- * so this is the whole of it: a full-width row under the identity block.
+ * The list of destinations that used to live here was removed and sign-out was
+ * left as the only row — hence the note this replaces, which called it "the one
+ * row in the card". One destination is back: `.header-auth__link` is /access,
+ * rendered for a superadmin and for nobody else. It takes the same shape
+ * deliberately, so that a menu with two rows in it still reads as one control
+ * rather than as a link that wandered in above a button.
  *
- * `gap` still sets the glyph off the label at a fixed distance, which is the
- * thing that makes it look built rather than assembled.
+ * `gap` sets the glyph off the label at a fixed distance, which is the thing
+ * that makes them look built rather than assembled.
  */
+.header-auth__link,
 .header-auth__signout {
   display: flex;
   align-items: center;
@@ -1536,17 +1616,20 @@ main {
 
 /* The glyph is secondary to its label until the row is hovered, when both come
    up together — one state change, not two. */
+.header-auth__link svg,
 .header-auth__signout svg {
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 120ms ease;
 }
 
+.header-auth__link:hover,
 .header-auth__signout:hover {
   background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 12%, transparent);
   color: var(--color-gold, #b08d43);
 }
 
+.header-auth__link:hover svg,
 .header-auth__signout:hover svg {
   opacity: 1;
 }
@@ -1677,6 +1760,279 @@ main {
   margin: var(--space-sm, 0.5rem) 0 0;
   font-size: var(--type-micro, 0.8125rem);
   color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 75%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Deleting your own account, in the account menu and in the nav panel.
+ *
+ * Both live on the dark oxblood of the masthead's own surfaces, which is what
+ * decides the colour: `--color-accent` is the site's destructive red and it is
+ * a *dark* red (#992a21) meant for red-on-paper. Against `--color-deep`
+ * (#481010) it very nearly disappears. So the danger signal here is
+ * `--color-accent-soft` (#f6d8d0) — the pale end of the same hue — which is the
+ * one that carries on this background. Two of the palette's reds, used the way
+ * round each was drawn for.
+ *
+ * Every `var()` below carries a fallback, and that is not decoration. The
+ * palette is not defined in this stylesheet at all — it arrives at runtime from
+ * `config/theme` in Firestore via ThemeRuntime — so a `var()` with no fallback
+ * renders as nothing rather than as an error, and a whole block can be
+ * off-palette without anybody noticing. See the note on the theme tokens.
+ * ------------------------------------------------------------------------ */
+
+/* The resting row, below sign-out. Takes the sign-out row's exact shape — see
+   `.header-auth__link, .header-auth__signout` — because it is a peer of it, and
+   quieter than it at rest: a bin icon in the palest red is enough to find, and
+   anything louder would make deletion the most eye-catching thing in a menu
+   whose ordinary use is to sign out. */
+.header-auth__delete {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.4rem var(--space-sm, 0.6rem);
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-accent-soft, #f6d8d0) 72%, transparent);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.header-auth__delete svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 120ms ease;
+}
+
+/* Hover is where it becomes unmistakably the destructive row: full-strength
+   soft red on a red-tinted ground, rather than the gold every other row goes
+   to. */
+.header-auth__delete:hover {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  color: var(--color-accent-soft, #f6d8d0);
+}
+
+.header-auth__delete:hover svg {
+  opacity: 1;
+}
+
+/* The confirmation, in place of the row. Inset and tinted so it reads as a
+   held-open state inside the card rather than as three more rows of it. */
+.header-auth__confirm {
+  margin-top: var(--space-xs, 0.35rem);
+  padding: var(--space-sm, 0.6rem);
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft, #f6d8d0) 35%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--color-accent, #992a21) 28%, transparent);
+}
+
+.header-auth__confirmLead {
+  margin: 0 0 0.3rem;
+  font-weight: 600;
+  color: var(--color-accent-soft, #f6d8d0);
+}
+
+/* The two facts people need. `--leading-normal`, not the card's `snug`: this is
+   the one piece of prose in the menu and it is three lines long. */
+.header-auth__confirmBody {
+  margin: 0;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/*
+ * The failure line. Always in the DOM while confirming so `role="alert"` has a
+ * node to watch, and collapsed to nothing until it has text — `:empty` rather
+ * than conditional rendering, which is what lets the region pre-exist its own
+ * message.
+ */
+.header-auth__confirmError {
+  margin: var(--space-xs, 0.35rem) 0 0;
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-accent-soft, #f6d8d0);
+  font-weight: 500;
+}
+
+.header-auth__confirmError:empty {
+  display: none;
+}
+
+.header-auth__confirmActions {
+  display: flex;
+  gap: var(--space-xs, 0.35rem);
+  margin-top: var(--space-sm, 0.6rem);
+}
+
+.header-auth__confirmCancel,
+.header-auth__confirmGo {
+  flex: 1 1 0;
+  /* `minmax(0)`'s flexbox equivalent. Without it the longer label sets the
+     basis and the two buttons come out different widths. */
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0.35rem var(--space-sm, 0.6rem);
+  border-radius: 0.35rem;
+  font-family: inherit;
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+/* Cancel is the safe one, so it is the plain one. */
+.header-auth__confirmCancel {
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 35%, transparent);
+  background: transparent;
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.header-auth__confirmCancel:hover:not(:disabled) {
+  border-color: var(--color-ink-inverse, #f9efec);
+  background: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 14%, transparent);
+}
+
+/* Filled, because at this point it is what the person came for and a second
+   quiet button would leave the pair with no answer to "which one does it". */
+.header-auth__confirmGo {
+  border: 1px solid var(--color-accent-soft, #f6d8d0);
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-accent-strong, #731d16);
+}
+
+.header-auth__confirmGo:hover:not(:disabled) {
+  background: var(--color-ink-inverse, #f9efec);
+  border-color: var(--color-ink-inverse, #f9efec);
+}
+
+.header-auth__confirmCancel:disabled,
+.header-auth__confirmGo:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* ---- the same thing in the nav panel ----------------------------------- */
+
+/*
+ * Full-width pill, like every other control down here, but outlined in the soft
+ * red rather than gold. No glyph: the panel's buttons are centred text and
+ * adding one to this alone would make it the odd control in the stack.
+ */
+.nav-panel__delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.8rem var(--space-md, 1rem);
+  margin-top: var(--space-sm, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1.0625rem);
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-accent-soft, #f6d8d0) 85%, transparent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft, #f6d8d0) 45%, transparent);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+}
+
+.nav-panel__delete:hover {
+  color: var(--color-accent-soft, #f6d8d0);
+  border-color: var(--color-accent-soft, #f6d8d0);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 35%, transparent);
+}
+
+.nav-panel__confirm {
+  margin-top: var(--space-sm, 0.5rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft, #f6d8d0) 40%, transparent);
+  /* The panel's own controls are pills; this is a block of prose and two
+     buttons, so it takes the card radius instead. */
+  border-radius: var(--radius-lg, 0.75rem);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 30%, transparent);
+}
+
+.nav-panel__confirmLead {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--color-accent-soft, #f6d8d0);
+}
+
+.nav-panel__confirmBody {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+.nav-panel__confirmError {
+  margin: var(--space-sm, 0.5rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  font-weight: 500;
+  color: var(--color-accent-soft, #f6d8d0);
+}
+
+.nav-panel__confirmError:empty {
+  display: none;
+}
+
+/*
+ * Stacked, not side by side. This is the phone: two 44px pills in a row come
+ * out around 130px each with the panel's padding, which is where a destructive
+ * control starts getting hit by the thumb aiming for the safe one. Cancel is
+ * first in the DOM and therefore on top.
+ */
+.nav-panel__confirmActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 0.5rem);
+  margin-top: var(--space-md, 1rem);
+}
+
+.nav-panel__confirmCancel,
+.nav-panel__confirmGo {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.7rem var(--space-md, 1rem);
+  border-radius: var(--radius-full, 999px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-panel__confirmCancel {
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 40%, transparent);
+  background: transparent;
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.nav-panel__confirmGo {
+  border: 1px solid var(--color-accent-soft, #f6d8d0);
+  background: var(--color-accent-soft, #f6d8d0);
+  color: var(--color-accent-strong, #731d16);
+}
+
+.nav-panel__confirmCancel:disabled,
+.nav-panel__confirmGo:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 /* ---- hero -------------------------------------------------------------- */
@@ -7844,14 +8200,6 @@ main {
   color: var(--color-ink, #1c1614);
 }
 
-.schedule__loading {
-  margin: 0;
-  padding: var(--space-xl, 2.5rem) 0;
-  text-align: center;
-  color: var(--color-ink-faint, #6f5f5a);
-  font-family: var(--font-ui, system-ui, sans-serif);
-}
-
 /* ---- the servants band -------------------------------------------------- */
 
 /*
@@ -7896,6 +8244,135 @@ main {
   font-size: var(--type-micro, 0.8125rem);
   color: var(--color-azure-deep, #16304d);
   opacity: 0.85;
+}
+
+/* ---- the same place, signed out ---------------------------------------- */
+
+/*
+ * One line of small print where the servants switch sits for a servant.
+ *
+ * Deliberately the quietest thing in the footer — no ground, no border, no
+ * azure, and a size below the legend beside it. The servants schedule is a
+ * handful of people's business and the whole footer is already the part of the
+ * page a visitor reads past; an offer that had to be dismissed, or that took a
+ * band of colour to make, would be charging everybody for something almost
+ * nobody needs. The explanation of how to act on it is further down, where it
+ * interrupts no one.
+ */
+.schedule__signin {
+  margin: 0;
+  max-width: var(--measure, 68ch);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* A button, because it opens a popup rather than going anywhere — drawn as the
+   link it reads as. */
+.schedule__signin-link {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-accent, #992a21);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.schedule__signin-link:hover:not([disabled]) {
+  color: var(--color-accent-strong, #731d16);
+  text-decoration-color: currentColor;
+}
+
+.schedule__signin-link:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.schedule__signin-link[disabled] {
+  cursor: default;
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration: none;
+}
+
+/* ---- signing in: the long answer, below the calendar -------------------- */
+
+/*
+ * Three short columns under a rule, drawn only for somebody signed out.
+ *
+ * A rule and space rather than a band, for the same reason the line above is
+ * small print: this is an appendix to the page, not a second subject on it.
+ * The calendar keeps the reader's whole attention and this begins where the
+ * calendar has finished.
+ */
+.signin-help {
+  margin-top: var(--space-section, 4rem);
+  padding-top: var(--space-lg, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.signin-help__title {
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.125rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * `minmax(0, …)` on the track, not `1fr` alone: a long address in the second
+ * column has an intrinsic minimum width, and an `auto`-floored track lets it
+ * push the grid wider than the page instead of wrapping inside its column.
+ */
+.signin-help__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+  gap: var(--space-lg, 1.5rem);
+}
+
+.signin-help__col {
+  min-width: 0;
+}
+
+.signin-help__col h3 {
+  margin: 0 0 var(--space-sm, 0.6rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.signin-help__col p {
+  margin: 0 0 var(--space-sm, 0.6rem);
+  line-height: var(--leading-normal, 1.5);
+}
+
+.signin-help__col p:last-child {
+  margin-bottom: 0;
+}
+
+.signin-help__steps {
+  margin: 0 0 var(--space-md, 1rem);
+  padding-left: 1.15rem;
+  line-height: var(--leading-normal, 1.5);
+}
+
+.signin-help__steps li + li {
+  margin-top: var(--space-xs, 0.4rem);
+}
+
+/* The account domain, which must not be broken across two lines — a reader
+   copying it by eye would otherwise copy half of it. */
+.signin-help__nowrap {
+  white-space: nowrap;
 }
 
 /* ---- the legend --------------------------------------------------------- */
@@ -8412,14 +8889,20 @@ main {
  *
  * This was a three-deep stack — end time under start time, then the location,
  * the note and the contact each on their own line — and it made a Saturday 320
- * pixels tall inside a wheel that has to be as tall as the busiest day. Flat is
- * about half that, and the trailing detail is not lost: it runs on after the
- * title, dimmed, and takes no height when it is absent.
+ * pixels tall inside a wheel that has to be as tall as the busiest day. What
+ * bought the height back was flattening the *trailing detail*: it runs on after
+ * the title, dimmed, and takes no height when it is absent. The end time is
+ * stacked again under the start, where it belongs.
+ *
+ * The first column is sized for `until 10:30 AM` — 87px measured, not guessed
+ * — because the times are `nowrap` and a fixed track that is too narrow does
+ * not wrap them, it overflows the row into the title. 5.25rem was enough for
+ * every start time and quietly short for the ends.
  */
 .sched-entry {
   --sched-tone: var(--color-rule, #e0cac3);
   display: grid;
-  grid-template-columns: 4.25rem minmax(0, 1fr) auto;
+  grid-template-columns: 5.75rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-sm, 0.5rem);
   padding: 0.3rem 0.4rem 0.3rem var(--space-sm, 0.5rem);
@@ -8482,12 +8965,37 @@ main {
 }
 
 .sched-entry__start {
+  display: block;
   font-size: var(--type-small, 0.9375rem);
   font-weight: 600;
+  /* Tight, because this is now the first of two lines in a cell that has to
+     stay shorter than the title beside it. */
+  line-height: 1.15;
   /* Mixed toward the ink rather than set to the tone outright: gold at full
      strength on paper fails contrast for text this size, and a time nobody can
      read is worse than a time that is merely warm. */
   color: color-mix(in srgb, var(--sched-tone) 55%, var(--color-ink, #1c1614));
+}
+
+/*
+ * "until 9 AM", under the start.
+ *
+ * Deliberately quieter than the line above it in all three of size, weight and
+ * colour. The start time is what somebody is scanning the column for; the end
+ * is the answer to a second question they only ask about one entry at a time,
+ * and giving it equal weight would double the number of times on the page
+ * competing for the same glance.
+ *
+ * It keeps its own colour rather than the entry's tone, because a faint mix of
+ * gold at this size is unreadable and the tone is already carried by the rule
+ * and the start time.
+ */
+.sched-entry__end {
+  display: block;
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 .sched-entry__allday {
@@ -8591,12 +9099,24 @@ main {
   display: none;
 }
 
-/* Titles wrap everywhere now, so all a phone needs is a narrower time column
-   and the rows aligned to the first line rather than centred on two. */
+/*
+ * A phone: the rows aligned to their first line rather than centred, and the
+ * end time a size smaller so the column can be narrower.
+ *
+ * 3.5rem was here and was never wide enough for anything — `10:30 AM` is 68px
+ * on its own — so the time simply spilled left out of its track and sat against
+ * the edge of the card. 5rem holds the widest either line gets: `until 12:30
+ * PM` at 11px, measured in the page rather than guessed. The digits are all one
+ * width here, so what decides it is `PM` against `AM`.
+ */
 @media (max-width: 29.999rem) {
   .sched-entry {
-    grid-template-columns: 3.5rem minmax(0, 1fr);
+    grid-template-columns: 5rem minmax(0, 1fr);
     align-items: baseline;
+  }
+
+  .sched-entry__end {
+    font-size: 0.6875rem;
   }
 }
 
@@ -8934,6 +9454,283 @@ main {
    * far smaller wart than every long title being split.
    */
   overflow-wrap: normal;
+}
+
+/* ---- the calendar waiting for its schedule ------------------------------
+ *
+ * The two loading states, drawn as the grid they are about to become. See
+ * features/calendar/Skeleton.tsx, which explains at length why the frame is
+ * real and only the entries are placeholders.
+ *
+ * Almost nothing here is layout: the skeleton renders the real views' own
+ * classes — `.sched-month`, `.sched-wheel__card`, `.sched-pips__pip` — so it
+ * has already inherited every measurement from them. What is below is the
+ * placeholder shapes and the shimmer, plus the three overrides the wheel needs
+ * because the skeleton's wheel does not scroll.
+ *
+ * **This block has to stay below `.sched-wheel__*`, and that is load-bearing.**
+ * It borrows those classes and then countermands two of their declarations, at
+ * the same specificity — so source order is the whole of what decides it. Put
+ * this above them and `grid-area: day` wins on a peek that has no `day` area to
+ * sit in, which does not fall back to `auto`: an unmatched line name resolves
+ * against the *implicit* grid, so the wheel silently grows a column and the
+ * card ends up half width. Found exactly that way.
+ */
+
+.sched-skel {
+  /*
+   * One clock for the whole skeleton.
+   *
+   * Every placeholder animates on the same duration with no delay, so they are
+   * in phase and the grid pulses as one surface. Staggered delays were the
+   * other option and they make forty-two cells look like forty-two independent
+   * things loading, which is the opposite of what the picture is claiming.
+   */
+  --skel-beat: 1.6s;
+  /*
+   * Mixed from `--color-rule`, not from the papers.
+   *
+   * The first version mixed `paper-sunken` with `paper`, which on the month
+   * grid put a placeholder within about seven values of the ground it sits on —
+   * technically drawn, effectively invisible, and the reason the month view
+   * looked as though it had no skeleton. `--color-rule` is the tone the palette
+   * already uses for a mark on paper: it is what an uncategorised dot and an
+   * entry's neutral left rule are drawn in, so a placeholder in it is as visible
+   * as the thing it stands in for and no more.
+   *
+   * Both mix toward `paper-raised` rather than `paper` so the same pair works on
+   * the week card, which is raised, and on the month grid, which is not.
+   */
+  --skel-fill: color-mix(in srgb, var(--color-rule, #e0cac3) 75%, var(--color-paper-raised, #fdf7f4));
+  --skel-lit: color-mix(in srgb, var(--color-rule, #e0cac3) 28%, var(--color-paper-raised, #fdf7f4));
+}
+
+/*
+ * A bar: the shape of a line of text that has not arrived.
+ *
+ * The sweep is a background-position animation rather than a moving overlay
+ * element, so it composites on its own and never lands on top of the dates —
+ * which are real, and would look like they were loading too if a highlight ran
+ * across them.
+ */
+.sched-skel__bar,
+.sched-skel__num {
+  display: block;
+  border-radius: var(--radius-sm, 4px);
+  background-image: linear-gradient(
+    100deg,
+    var(--skel-fill) 30%,
+    var(--skel-lit) 50%,
+    var(--skel-fill) 70%
+  );
+  background-size: 220% 100%;
+  background-position: 130% 0;
+  animation: skel-sweep var(--skel-beat) ease-in-out infinite;
+}
+
+/* The date pill, for the one frame before the browser has said what day it is.
+   Sized to a two-digit date so the cell it sits in is already the right height. */
+.sched-skel__num {
+  width: 1.35rem;
+  height: 1.05rem;
+  border-radius: var(--radius-full, 999px);
+}
+
+/*
+ * A month cell's mark: one bar where the dots will be.
+ *
+ * The height is the dot's own 0.375rem, so `.sched-month__dots`'s reserved row
+ * is unchanged and the swap moves nothing. The width comes from the element, in
+ * pixels, because it is the measured width of the dots it stands in for — see
+ * `placeholderBarWidth` in Skeleton.tsx.
+ *
+ * Fully rounded rather than the bars' 4px radius: at 6px tall a 4px corner is
+ * most of the shape, and the result reads as a lozenge. A pill reads as a mark.
+ */
+.sched-skel__bar--dots {
+  height: 0.375rem;
+  border-radius: var(--radius-full, 999px);
+  /* The sweep has to be steeper here than on a full-width bar: 33px of travel
+     at the shared 100deg puts the highlight off the end of the shape. */
+  background-image: linear-gradient(
+    120deg,
+    var(--skel-fill) 20%,
+    var(--skel-lit) 50%,
+    var(--skel-fill) 80%
+  );
+}
+
+/* The pips, as marks rather than controls — flatter than the real ones, which
+   are a target you can hit. */
+.sched-skel__pip {
+  cursor: default;
+  background: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 22%, transparent);
+  animation: skel-pulse var(--skel-beat) ease-in-out infinite;
+}
+
+.sched-skel__pip--centred {
+  background: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 40%, transparent);
+}
+
+/* ---- the wheel, held still ---------------------------------------------- */
+
+/*
+ * Three rows at the heights the frame already declares, instead of a scroller.
+ *
+ * `.sched-wheel` is `overflow-y: auto` with snap points and a tab stop, and the
+ * real view scrolls it to today on its first layout pass. The skeleton has
+ * nothing to scroll to and must not be scrollable — so it keeps the height and
+ * replaces the mechanism: a strip of the day above, the day itself, a strip of
+ * the day below, summing to exactly `--wheel-slot + 2 * --wheel-peek`. That is
+ * the same arithmetic the wheel's own height uses, which is why the swap moves
+ * nothing.
+ */
+.sched-skel__wheel {
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: var(--wheel-peek) var(--wheel-slot) var(--wheel-peek);
+}
+
+/*
+ * A taller slot than the 14rem default, and measured rather than guessed.
+ *
+ * `--wheel-slot` is normally written by the wheel itself, from the height its
+ * *first* day settled at — and Monday is the parish's heaviest weekday, so a
+ * real week resolves to about 270–290px. The 14rem in `.sched-wheel-frame` is
+ * the value that holds only until that measurement happens, which on the
+ * skeleton is never: there is nothing to measure. Left at 14rem the wheel grew
+ * by a row and a half the moment the schedule landed, which is the reflow this
+ * whole file exists to prevent.
+ *
+ * 17rem is 272px. It will not be exact for a quiet week and cannot be — the
+ * height depends on data that has not arrived — but it is wrong by a few pixels
+ * rather than by sixty.
+ */
+.sched-skel .sched-wheel-frame {
+  --wheel-slot: 17rem;
+}
+
+/*
+ * `grid-area: day` is meaningless outside a `.sched-wheel__slot`, and left in
+ * place it would put both peeks into an implicit row of their own — pushing the
+ * card out of the band. The named area only exists on the slot.
+ */
+.sched-skel__peek {
+  grid-area: auto;
+  /* What a slot one day out of the centre fades to in the real wheel:
+     `max(0.2, 1 - 1 * 0.42)`. Written out because there is no slot here to
+     compute it from. */
+  opacity: 0.58;
+}
+
+.sched-skel__peek--above {
+  align-self: end;
+  padding-bottom: var(--space-sm, 0.5rem);
+}
+
+.sched-skel__peek--below {
+  align-self: start;
+  padding-top: var(--space-sm, 0.5rem);
+}
+
+/* The peek's own placeholder date, sized to "Mon 24". */
+.sched-skel__bar--peek {
+  width: 3.5rem;
+  height: 0.9rem;
+}
+
+/* ---- the centred day's contents ------------------------------------------ */
+
+.sched-skel__bar--weekday {
+  width: 5.5rem;
+  /* The height of `--type-subheading`'s line box, so the head does not resize
+     when the real weekday replaces it. */
+  height: 1.4rem;
+}
+
+.sched-skel__bar--date {
+  width: 3.25rem;
+  height: 1.4rem;
+}
+
+.sched-skel__entries {
+  display: grid;
+  /* `start`, not `stretch`: three rows of placeholder stand at the top of the
+     card exactly as three entries would, rather than spreading to fill a day
+     that might turn out to hold one. */
+  align-content: start;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+/*
+ * One placeholder entry, on `.sched-entry`'s own measurements — the 5.75rem
+ * time column, the 3px rule, the same padding. A row that is nearly the right
+ * height is worse than an obviously fake one, because the difference only shows
+ * as a jump at the moment the real thing lands.
+ */
+.sched-skel__entry {
+  display: grid;
+  grid-template-columns: 5.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  padding: 0.3rem 0.4rem 0.3rem var(--space-sm, 0.5rem);
+  border-left: 3px solid var(--color-rule, #e0cac3);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+}
+
+/* The time column: right-aligned, as `.sched-entry`'s own is. */
+.sched-skel__stack {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.sched-skel__bar--time {
+  width: 2.75rem;
+  height: 0.95rem;
+}
+
+.sched-skel__bar--until {
+  width: 4.25rem;
+  height: 0.7rem;
+}
+
+.sched-skel__bar--title {
+  height: 0.95rem;
+}
+
+@keyframes skel-sweep {
+  to {
+    background-position: -130% 0;
+  }
+}
+
+@keyframes skel-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/*
+ * Somebody who has asked not to be moved gets the same picture, standing still.
+ *
+ * Not "no skeleton": the shape is the information, and the shape does not move.
+ * It is the shimmer that is the motion, and a flat fill says "waiting" perfectly
+ * well next to a `role="status"` line that says so in words.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .sched-skel__bar,
+  .sched-skel__num,
+  .sched-skel__pip {
+    animation: none;
+  }
+
+  .sched-skel__bar,
+  .sched-skel__num {
+    background-image: none;
+    background-color: var(--skel-fill);
+  }
 }
 
 /* ---- the schedule's foot, and the staff controls ------------------------ */
@@ -11733,6 +12530,12 @@ button.sched-month__entry:focus-visible {
   /* Long enough to read as a dissolve, comfortably shorter than the 3200ms hold
      — a fade longer than the hold never finishes before the next one starts. */
   transition: opacity 500ms ease;
+  /*
+   * No filter, and that is the instruction rather than an omission. This briefly
+   * carried `saturate(0.2) brightness(1.4)` to prepare the picture for a
+   * full-tile red multiply, and the result was a flat red plate — the multiply
+   * is gone (see the film below) and the photograph is shown as it is.
+   */
 }
 
 .nav__menu a.has-cover img.is-current {
@@ -11740,47 +12543,72 @@ button.sched-month__entry:focus-visible {
 }
 
 /*
- * The scrim. Centred type needs it across the whole tile, not only along the
- * bottom edge, and it is tinted with the panel's own red rather than neutral
- * black so a photograph sits in the drawer instead of on top of it.
+ * No film at all, and no scrim: the name carries its own contrast.
+ *
+ * ---------------------------------------------------------------------------
+ * Four versions of a *background* were built and rejected before this, and they
+ * are worth listing because every one of them is the obvious idea:
+ *
+ *   1. A near-black wash across the whole tile at 0.8. Killed the photograph —
+ *      "very dull" — and, because a pseudo-element paints after its siblings, it
+ *      also covered the name it was there to protect.
+ *   2. The parish red, multiplied over the picture. Killed it differently: a
+ *      flat red plate.
+ *   3. A red oval fading out well inside the tile. The picture survived, but a
+ *      red film on a red tile in a red drawer cannot be seen doing its job.
+ *   4. The same oval in white. Legible, and still a lozenge of paper sitting on
+ *      a photograph in a dark drawer.
+ *
+ * The common fault is that all four make the *picture* pay for the *type*. This
+ * one does not touch the picture: the name is white with a heavy dark stroke
+ * painted behind its own letterforms, which is the map-label technique — it
+ * costs only the few pixels immediately around each glyph, and it works over a
+ * sunlit sky and a dark church interior without knowing which it is on.
+ *
+ * So `.nav a::after` stays switched off here, as it is everywhere else in the
+ * menu, and the tile is the photograph plus the word.
+ * ---------------------------------------------------------------------------
  */
-.nav__menu a.has-cover::after {
-  display: block;
-  content: '';
-  position: absolute;
-  inset: 0;
-  /*
-   * **These four resets are the whole scrim.** This pseudo-element is not new —
-   * it is `.nav a::after`, the 1.25rem x 2px gold bar the masthead draws under
-   * the current page, which arrives here already sized, already rounded, and
-   * already `scaleX(0)`. `inset: 0` does not undo a `width`, and nothing undoes
-   * a `transform`, so the scrim has been a zero-width sliver in the corner of
-   * the tile for as long as it has existed: light type has been sitting straight
-   * on the photograph, unreadable over a bright sky, and no one saw it because
-   * no gallery has an approved picture yet. Take any of these out and it goes
-   * back to that.
-   */
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  transform: none;
-  /*
-   * Heavier than it looks like it should be, and measured against the worst
-   * photograph rather than a nice one: a sunlit sky. The name sits in the middle
-   * of the tile, where the scrim is about 0.73, which puts light type at 5.2:1
-   * over white. At the 0.46 this used to specify it was 3.2:1 — unreadable, and
-   * never noticed because the scrim was never drawing at all (see above).
-   *
-   * The picture is not lost. At 17rem by 2.7rem it is a strip, not something you
-   * study; it tells you which ministry this is by its colour and shape, and the
-   * tile is still visibly a photograph rather than a plate.
-   */
-  background: linear-gradient(to top, rgba(50, 14, 11, 0.8) 0%, rgba(50, 14, 11, 0.66) 100%);
-}
-
 .nav__menu a.has-cover > span {
   position: relative;
+  /* Above the pictures, which are absolutely positioned siblings. */
+  z-index: 2;
+  /*
+   * White, not the drawer's cream: the fill sits inside a black edge, and cream
+   * against black reads as a slightly dirty white rather than as a colour
+   * anybody chose. This is the one place on the site that wants pure #fff.
+   */
+  color: #ffffff;
+  /*
+   * The black behind the letters. `paint-order` is what makes it a backing
+   * rather than an outline drawn *over* the glyphs — without it the stroke is
+   * painted last, eats into the white from both sides, and a 15px word at this
+   * weight closes up into a smear. Stroke first, fill on top: the black shows
+   * only where the white does not reach, which is the "a little smaller" of it.
+   *
+   * 3.5px total, so 1.75px stands proud of each edge. Heavy for type this size,
+   * and deliberately so — it is doing the job the film used to do, and it has to
+   * hold against a bright photograph with no help from anything else.
+   */
+  -webkit-text-stroke: 3.5px var(--color-ink, #1c1614);
+  paint-order: stroke fill;
+  /*
+   * A short drop under the whole thing. Not for contrast — the stroke has that —
+   * but to lift the word off the picture, which otherwise reads as printed on
+   * the photograph rather than laid over it.
+   */
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  /*
+   * Back a step from the 0.98rem the white-film version used, and still above
+   * the 0.88rem of the plain tiles.
+   *
+   * The stroke is why. A dark edge round every glyph adds about 3.5px to the
+   * word's visual weight, so the name reads a size larger than it is set — left
+   * at 0.98rem it crowded the tile and pushed the shorter ministry names close
+   * to the gold border. This is the size at which the stroked word looks the
+   * same weight as the unstroked ones above and below it.
+   */
+  font-size: 0.94rem;
 }
 
 /* Lift and a gold edge rather than a colour change: a tile carrying a
@@ -14243,6 +15071,14 @@ button.sched-month__entry:focus-visible {
   text-decoration: none;
   color: var(--color-ink-soft, #4b413e);
   transition: color 150ms ease, background-color 150ms ease;
+}
+
+/* The button variant. Everything a `<button>` brings of its own that the link
+   does not have, taken back off. */
+.back-link--button {
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .back-link:hover {
@@ -17699,15 +18535,48 @@ span.gallery-figure__frame {
  * running, `0px` is a page that has not moved rather than a page padded for a
  * panel of unknown width.
  */
-.is-editing {
+/*
+ * `body.is-editing`, not `.is-editing`, and the qualifier is load-bearing.
+ *
+ * This is one global stylesheet with no modules, and `is-editing` is exactly the
+ * kind of name two features pick independently. The bookstore's cards have
+ * carried `class="book is-editing"` since long before this column existed — so
+ * the moment /bookstore started putting `is-editing` on `body` too, this rule
+ * matched every book card and gave each one `padding-right: 352px`. With
+ * `box-sizing: border-box` that pins a card to the panel's width whatever its
+ * grid track is, so the cards overflowed their tracks and overlapped, and the
+ * shelf looked broken while the page beside it was perfectly fine.
+ *
+ * Qualifying by `body` costs nothing — the comment below already says this rule
+ * can only ever be on `body` — and makes the collision impossible rather than
+ * merely absent. Same failure as `.shelf` from the programs panel flattening
+ * this same shop.
+ */
+body.is-editing {
   padding-right: var(--edit-gutter, 0px);
-  padding-bottom: 5rem;
   transition: padding-right 120ms ease;
+}
+
+/*
+ * Room at the foot, only when something is actually down there.
+ *
+ * This was an unconditional `padding-bottom: 5rem`, which is 80px of empty
+ * scroll below the footer for the whole of edit mode — Tommy's *"it scrolls too
+ * far longer than the page itself"*. The galleries never had a bottom bar at
+ * all, so it was dead there in every state; the shop has one only while edits
+ * are held, and `SaveBar` renders nothing until then.
+ *
+ * `:has()` rather than a class React toggles, because the bar's own presence is
+ * already the exact condition — a second flag saying "the bar is showing" is one
+ * more thing that can disagree with it.
+ */
+body.is-editing:has(.bksave) {
+  padding-bottom: 5rem;
 }
 
 /* No transition while the handle is being dragged — the page would lag a frame
    behind the panel edge, which reads as the two coming apart. */
-.is-editing:has(.inspector-col.is-dragging) {
+body.is-editing:has(.inspector-col.is-dragging) {
   transition: none;
 }
 
@@ -17991,10 +18860,13 @@ span.gallery-figure__frame {
     display: none;
   }
 
-  .is-editing {
+  /* `body`-qualified for the same reason as the rule it overrides — a bare
+     `.is-editing` also matches the bookstore's cards, and 64vh of padding on
+     every book is a shelf one title tall. */
+  body.is-editing {
+    padding-right: 0;
     /* The sheet is over the page rather than beside it, so the room it needs is
        at the foot and the gutter is nothing. */
-    padding-right: 0;
     padding-bottom: 64vh;
   }
 }
@@ -22653,6 +23525,23 @@ span.gallery-figure__frame {
   width: 100%;
 }
 
+/*
+ * The picture row on the add form.
+ *
+ * Its own rule rather than reusing `.bkpix`, because the add tile is a grid
+ * child here and `.bkpix` is sized for the space beside a card's "Pictures"
+ * label. `flex-wrap` so a book with four covers pushes the Add button onto a
+ * second line instead of squeezing the tiles — the form is inside a card slot
+ * about 12rem wide.
+ */
+.bknew__pix {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  min-width: 0;
+}
+
 .bknew input,
 .bknew select {
   /* Grows into the row but may shrink to nothing before forcing a scrollbar —
@@ -22832,6 +23721,151 @@ span.gallery-figure__frame {
 .bkedit__state.is-saved {
   color: var(--color-accent, #992a21);
   opacity: 1;
+}
+
+/*
+ * "Edited" — a change held on this card and not yet sent.
+ *
+ * Deliberately quieter than `is-saved`: the accent means "this landed", and a
+ * waiting edit has not. Faint ink with the card's own paper behind it reads as a
+ * note to self, which is what it is. The bar at the foot of the window is what
+ * actually asks for a decision; this only says which cards it is talking about.
+ */
+.bkedit__state.is-held {
+  color: var(--color-ink-faint, #6f5f5a);
+  font-style: italic;
+  opacity: 1;
+}
+
+/*
+ * The save bar.
+ *
+ * ---------------------------------------------------------------------------
+ * Fixed rather than sticky, and out of the document flow entirely, because the
+ * shelf must not move when it appears. A bar that pushes the grid down by its
+ * own height relocates the card you were about to press at the exact moment you
+ * decided to press it — the same fault that sent the orders panel into a drawer.
+ *
+ * Centred and narrow rather than full-bleed: it is a decision about a handful of
+ * books, not a system-wide mode, and a bar spanning the whole window reads as
+ * the latter. `max-width` keeps it to a readable measure on a desktop and the
+ * `calc` keeps it clear of the edges on a phone.
+ *
+ * z-index 70 puts it over the masthead's 50. It does not need to beat the
+ * dialogs: those are native `<dialog>` elements in the top layer, which no
+ * z-index can reach and none should try to.
+ */
+.bksave {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100vw - 2rem);
+  max-width: 34rem;
+  padding: 0.7rem 0.9rem 0.7rem 1.1rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper-raised, #fffefb);
+  border: 1px solid var(--color-rule, #e4d8d2);
+  border-radius: var(--radius-md, 0.6rem);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent),
+    0 14px 30px -12px color-mix(in srgb, var(--color-ink, #1c1614) 42%, transparent);
+}
+
+.bksave__count {
+  margin: 0;
+  min-width: 0;
+}
+
+/* On its own line under the count, not in parentheses after it: it answers a
+   different question — "what about the picture I just added?" — and a clause
+   inside the sentence about stock makes both harder to read. */
+.bksave__aside {
+  display: block;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+.bksave__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Discard is a real choice, so it is a button rather than a link — but it is
+   the recessive one, and giving it the same weight as Save would make throwing
+   work away as easy as keeping it. */
+.bksave__discard {
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border: 1px solid var(--color-rule, #e4d8d2);
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.bksave__discard:hover:not(:disabled) {
+  color: var(--color-ink, #1c1614);
+  border-color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bksave__go {
+  padding: 0.4rem 1.1rem;
+  font: inherit;
+  white-space: nowrap;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 120ms ease;
+}
+
+.bksave__go:hover:not(:disabled) {
+  background: var(--color-accent-strong, #731d16);
+}
+
+.bksave__go:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.bksave__go:disabled,
+.bksave__discard:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Under about 30rem the count and the buttons each want the full width, and
+   side by side they wrap into a ragged two-and-a-bit lines. */
+@media (max-width: 30rem) {
+  .bksave {
+    justify-content: stretch;
+  }
+
+  .bksave__actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  /* Full 44px targets on a phone. At the desktop padding these came out at 38
+     and 40px, which is under the size a thumb reliably hits — and Discard
+     missing by a few pixels means pressing Save instead. */
+  .bksave__discard,
+  .bksave__go {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+  }
 }
 
 .bkedit__field {
@@ -23042,6 +24076,44 @@ span.gallery-figure__frame {
   object-fit: cover;
   border-radius: var(--radius-sm, 0.35rem);
   background: var(--color-paper-sunken, #f6efe9);
+}
+
+/*
+ * A picture marked to come off, still on screen until Save.
+ *
+ * Faded and desaturated rather than hidden. A removal that vanishes instantly is
+ * indistinguishable from one already sent, which is the very thing holding the
+ * edit was meant to fix — you have to be able to see what you are about to do,
+ * and put it back. The tile keeps its space so the row does not reflow under
+ * the pointer that is still over it.
+ */
+.bkpix__one.is-removed img {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+/*
+ * "removing", for the panel where there is room to say it.
+ *
+ * Hidden on the card: at 2.4rem the word would be wider than the photograph,
+ * which is the same reason `.bkpix__cover` is a dot there. The fade carries it
+ * on the card, and the panel's own Put back button says the rest.
+ */
+.bkpix__gone {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  text-align: center;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--color-accent, #992a21);
+}
+
+.bkpix:not(.bkpix--panel) .bkpix__gone {
+  display: none;
 }
 
 /* Which one the shop actually shows. A dot, not a word — at this size a label
@@ -23672,15 +24744,61 @@ span.gallery-figure__frame {
   gap: var(--space-xs, 0.5rem);
 }
 
+/*
+ * Two columns: the move arrows down the left, everything else stacked to their
+ * right. `minmax(0, 1fr)` on the content column because a long slug in
+ * `.fxa__row-meta` would otherwise set the column's width and push the whole
+ * drawer off a phone — the mistake the camp admin already made once.
+ */
 .fxa__row {
   display: grid;
-  gap: var(--space-xs, 0.5rem);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-xs, 0.5rem) var(--space-sm, 0.6rem);
   padding: var(--space-sm, 0.75rem);
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-md, 8px);
 }
 
+/* Spans the row's full height, so the pair sits beside the title rather than
+   floating level with whichever line happens to be first. */
+.fxa__row-move {
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: start;
+}
+
+.fxa__move {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.5rem;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--color-ink-soft, #4b413e);
+  background: none;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+
+.fxa__move:hover:not(:disabled) {
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-accent, #992a21);
+}
+
+/* Kept visible rather than hidden at the ends of the list: a control that
+   vanishes makes the row above it jump a few pixels sideways every time the
+   order changes. */
+.fxa__move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .fxa__row-main {
+  grid-column: 2;
   display: grid;
   gap: 0.15rem;
   min-width: 0;
@@ -23706,6 +24824,7 @@ span.gallery-figure__frame {
 }
 
 .fxa__row-flags {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-md, 1rem);
@@ -23722,6 +24841,7 @@ span.gallery-figure__frame {
 }
 
 .fxa__row-actions {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs, 0.4rem);
@@ -23810,6 +24930,60 @@ span.gallery-figure__frame {
   margin: 0 0 var(--space-xs, 0.35rem);
   color: var(--color-ink, #1c1614);
   overflow-wrap: anywhere;
+}
+
+/* ---- forms: a form hosted somewhere else, framed on our page ------------
+ *
+ * See features/forms/FormEmbed.tsx. The frame is ours and everything inside
+ * it is Tithe.ly's, which is what most of these rules are working around: we
+ * cannot style a cross-origin document, cannot measure its height, and cannot
+ * be told when it has finished.
+ */
+
+.fx-embed {
+  margin-block: var(--space-sm, 0.75rem) var(--space-md, 1rem);
+}
+
+/*
+ * One quiet line above the frame, carrying the host and the escape link.
+ *
+ * Above rather than below, because a page that refuses to be framed is a blank
+ * rectangle and a link underneath one of those on a phone is several scrolls
+ * past the point where somebody decides the site is broken. `.note` rather
+ * than `.meta`: these are sentences, and `.meta` uppercases.
+ */
+.fx-embed__aside {
+  margin: 0 0 var(--space-sm, 0.5rem);
+}
+
+/*
+ * No border, no radius, no box.
+ *
+ * The framed page brings its own header, its own background and — on Breeze —
+ * its own copy of the parish crest, none of which we can style, because
+ * cross-origin is the whole point of a frame. A border around that is a box
+ * inside a box, and with our picture band above it the page had four pieces of
+ * chrome before the first question. Flush is the only version that reads as one
+ * page instead of two.
+ */
+.fx-embed__frame {
+  display: block;
+  width: 100%;
+  /*
+   * Tall, because the height of the document inside is unknowable.
+   *
+   * Cross-origin means no `contentDocument`, so "resize to fit" needs the
+   * framed page to post its height out and neither host does. The choice is
+   * therefore between an inner scrollbar on long forms and dead space under
+   * short ones. This leans long — a Breeze registration is the case that looks
+   * worst when it scrolls inside a short box — while `120vh` keeps a short
+   * Tithe.ly form from being followed by a screenful of nothing on a laptop.
+   */
+  height: clamp(38rem, 120vh, 62rem);
+  border: 0;
+  /* Their ground is white or near it. Matching it means no band of paper-beige
+     while the form loads, the same reason the giving overlay's frame does this. */
+  background: #fff;
 }
 
 /* ---- forms: the picture band and richer sections ----------------------- */
@@ -24264,6 +25438,89 @@ span.gallery-figure__frame {
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/*
+ * A book selected into the editing column.
+ *
+ * A ring rather than a change of background: the card is mostly photograph, and
+ * tinting behind it does nothing you can see. Drawn with `outline` so it does
+ * not participate in layout — a border would move every other card in the row by
+ * two pixels the moment one was picked.
+ */
+.book.is-selected {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+/* While editing, the whole card is the target — say so before it is pressed. */
+.book.is-editing .book__open {
+  cursor: pointer;
+}
+
+/*
+ * The categories, listed in the column's shop view.
+ *
+ * Read-only: the pills above the shelf are where categories are renamed,
+ * reordered and removed. This is the count beside each, which is the one thing
+ * the pills cannot show — an empty category renders nothing on the shelf and is
+ * otherwise invisible.
+ */
+.bkcats {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bkcats li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 7%, transparent);
+}
+
+.bkcats li:last-child {
+  border-bottom: 0;
+}
+
+.bkcats__name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bkcats__n {
+  flex: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * Add a book, in the column rather than as the last cell of the shelf grid.
+ *
+ * `.book--add` sizes itself to a grid track and has a cover's aspect ratio;
+ * neither means anything here, so this is a plain block that fills the column's
+ * width. The form inside is the same `NewProduct` either way.
+ */
+.bkadd-panel {
+  width: 100%;
+}
+
+.bkadd-panel .bkadd {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px dashed color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
 .bkpanel__select {
   width: auto;
   min-width: 10rem;
@@ -24271,6 +25528,122 @@ span.gallery-figure__frame {
   background-color: var(--color-paper, #fffefb);
   border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 15%, transparent);
   border-radius: var(--radius-sm, 0.35rem);
+}
+
+/*
+ * The title field and its button.
+ *
+ * `minmax(0, 1fr)` on the input, not `1fr`: a text input's intrinsic width is
+ * about twenty characters and a grid track sized `1fr` will not shrink below
+ * it, so the button was pushed out of the panel on a phone. This is the same
+ * fault, and the same fix, as the camp admin's date inputs.
+ *
+ * Wraps rather than shrinking further below 22rem — a rename button squeezed to
+ * three characters is worse than a second line.
+ */
+.bkrename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+  width: 100%;
+}
+
+@media (max-width: 22rem) {
+  .bkrename {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+}
+
+.bkrename__input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+  background-color: var(--color-paper, #fffefb);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 15%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bkrename__input:focus-visible {
+  outline: 2px solid var(--color-accent, #7b1d22);
+  outline-offset: 1px;
+}
+
+/*
+ * The book's own details, stacked.
+ *
+ * A label above each field rather than beside it: the column is about 22rem and
+ * a side-by-side label leaves the price box four characters wide. Stacked, every
+ * field gets the full width and the three read as one form.
+ */
+.bkdetails {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.bkdetails__row {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.bkdetails__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* The dollar sign is furniture, not part of the value — outside the box, so it
+   is never something a volunteer has to delete before typing. */
+.bkdetails__money {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.3rem;
+  align-items: center;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkdetails__text {
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: 1.4;
+  color: var(--color-ink, #1c1614);
+  background-color: var(--color-paper, #fffefb);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 15%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+  /* Vertical only: a textarea a volunteer can drag wider than the column is a
+     panel with a horizontal scrollbar. */
+  resize: vertical;
+}
+
+.bkdetails__text:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+}
+
+/* A price that cannot be read. Said with the outline *and* the line beneath —
+   colour alone is not a message somebody who cannot see it receives. */
+.bkrename__input.is-wrong {
+  border-color: var(--color-accent, #992a21);
+}
+
+.bkpanel__aside--wrong {
+  color: var(--color-accent, #992a21);
+}
+
+.bkdetails__go {
+  justify-self: start;
 }
 
 /*
@@ -24764,18 +26137,119 @@ span.gallery-figure__frame {
   }
 }
 
-/* Prose filed under `about` that is not one of the five. Usually nothing. */
-.about-loose > .wrap > * + * {
-  margin-top: var(--space-lg, 1.5rem);
+
+
+/* ── The foot of every part ──────────────────────────────────── */
+
+/*
+ * The other parts of About, and the way back up to the index. Rendered by
+ * `components/MoreOfAbout` at the bottom of all five.
+ *
+ * ---------------------------------------------------------------------------
+ * This band replaced a bare `.wrap` holding a single "All of About" link, which
+ * every one of the five ended on. That link was *correct* and it looked wrong,
+ * which is worth separating. On /about/future-plans, which ends on
+ * `band--deep` above a dark footer, eight words on a strip of plain paper
+ * between the two read as something that had failed to load. On the other four,
+ * which end on paper, it read as blander rather than broken — but the strip ran
+ * into the oxblood footer with a zero-pixel gap, so the last thing on the page
+ * was a lone link with nothing under it. The fix was not to restyle the link
+ * but to give the strip a reason to exist.
+ *
+ * `band--sunken`, so it has a ground and the gold hairline every other section
+ * boundary has. Shallower than a full section: it is a foot, not one more thing
+ * to read.
+ *
+ * **Prefixed `about-`, not `future-`, and not something shorter.** It began as
+ * `.future-more` on the one page that had it. There is one `globals.css` for
+ * the whole site and no modules in it, so the shared name had to be one that
+ * cannot reach into another page: `.more` or `.page-foot` would have, and
+ * `.shelf` from the programs panel already flattened the whole bookstore once.
+ * `about-` is the prefix the /about index already uses.
+ * ---------------------------------------------------------------------------
+ */
+.about-more {
+  padding-block: var(--space-xl, 2.5rem);
 }
 
-/* The way back to the index from one of the five. Quiet — it is a way out, not
-   a call to action, and it sits under content of unknown length. */
-.about-page__back {
-  margin-top: var(--space-xl, 2.5rem);
-  padding-top: var(--space-md, 1rem);
-  border-top: 1px solid var(--color-rule, #e0cac3);
-  font-size: var(--type-small, 0.9375rem);
+/*
+ * Set as a label rather than as display type. It is an `h2` because it heads a
+ * section and a screen reader jumping by heading should find it, but at
+ * `--type-heading` in the serif it would announce itself as one more chapter of
+ * a page that has just finished.
+ */
+.about-more__head {
+  margin: 0 0 var(--space-lg, 1.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * Four cards, `auto-fit` from a 16rem floor: four across a laptop, two on a
+ * tablet, one on a phone. `minmax(0, …)` inside the `repeat` for the usual
+ * reason — a grid item's implicit minimum is its content, and these ledes are
+ * full sentences.
+ */
+.about-more__list {
+  list-style: none;
+  margin: 0 0 var(--space-lg, 1.5rem);
+  padding: 0;
+  display: grid;
+  gap: var(--space-md, 1rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+}
+
+/*
+ * The whole card is the link — label and lede together. A heading that is a
+ * link with a description beside it that is not gives a keyboard user one stop
+ * and a mouse user a dead zone under it, and the description here is doing the
+ * persuading.
+ */
+.about-more__link {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  height: 100%;
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper, #fdf9f7);
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.about-more__link:hover,
+.about-more__link:focus-visible {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 62%, transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+.about-more__label {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-lede, 1.15rem);
+  line-height: var(--leading-tight, 1.2);
+  color: var(--color-accent-strong, #731d16);
+}
+
+.about-more__lede {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.45);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* The `BackLink` sits under the four, on its own line. Its own rule already
+   pulls it left by the padding so the arrow, not the word, lines up with the
+   cards above it. */
+.about-more__back {
+  margin: 0;
 }
 
 /* ── The picture credits drawer ───────────────────────────────────────────── */
@@ -25134,7 +26608,10 @@ span.gallery-figure__frame {
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: var(--space-md, 1rem);
+  /* Tightened on a phone, where the row is holding six stamps and the reset
+     and the last stamp was clipped by eight pixels at 375px. Widened back
+     with the label at 40rem. */
+  gap: var(--space-sm, 0.5rem);
   min-height: var(--tour-passport-h, 3.5rem);
   padding-inline: var(--space-gutter, 1.5rem);
   background: color-mix(in srgb, var(--color-paper-raised, #fdf7f4) 92%, transparent);
@@ -25182,10 +26659,32 @@ span.gallery-figure__frame {
   white-space: nowrap;
 }
 
+/*
+ * The word, not the number.
+ *
+ * Off on a phone, and back at 40rem. The strip has to hold six stamps, the
+ * score and the reset in one row, and on a 375px screen the label is the only
+ * one of the four that is not carrying information — the six numbered pills
+ * beside "1 of 6" say what it is, and the `<nav>` is labelled "Tour passport"
+ * for anything reading the page aloud. Keeping it and letting the stamps
+ * scroll instead would have put stations 5 and 6 behind a swipe, and the
+ * stamps are the tour's navigation.
+ */
 .tour-passport__label {
+  display: none;
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+@media (min-width: 40rem) {
+  .tour-passport {
+    gap: var(--space-md, 1rem);
+  }
+
+  .tour-passport__label {
+    display: block;
+  }
 }
 
 .tour-passport__score {
@@ -25209,6 +26708,58 @@ span.gallery-figure__frame {
 
 .tour-passport__stamps::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * Start over.
+ *
+ * Pushed to the far end of the strip by the auto margin, and deliberately as
+ * far from the six stamps as the row allows: the stamps are the navigation, and
+ * a destructive control sat next to them is a mis-tap waiting for a bump in a
+ * crowded hall. `flex: none` because the stamps are the thing that gives way at
+ * 320px — they scroll (see above), and this does not.
+ *
+ * Quiet until it is armed, and then it is the loudest thing in the bar. See the
+ * two-press note in `Passport`.
+ */
+.tour-passport__reset {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.tour-passport__reset:hover {
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-accent, #992a21);
+}
+
+.tour-passport__reset.is-arming {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+/*
+ * An empty passport, or one that has not been read out of storage yet. Hidden
+ * rather than removed, so the strip's height and the stamps' position do not
+ * change when storage lands — every station's `scroll-margin-top` is measured
+ * against this bar. React sets `inert`, which also takes it out of the tab
+ * order and off the accessibility tree.
+ */
+.tour-passport__reset[inert] {
+  visibility: hidden;
 }
 
 /*
@@ -26255,10 +27806,6 @@ span.gallery-figure__frame {
   line-height: 1.4;
 }
 
-.tour-back {
-  padding-bottom: var(--space-section, 4rem);
-  font-size: var(--type-small, 0.9375rem);
-}
 
 /* ── Reduced motion ───────────────────────────────────────────────────────── */
 
@@ -26274,6 +27821,7 @@ span.gallery-figure__frame {
   .tour-chip,
   .tour-gallery__tile,
   .tour-measured .tour-passport,
+  .tour-passport__reset,
   .tour-year__season {
     transition: none;
   }
@@ -26372,6 +27920,34 @@ span.gallery-figure__frame {
 .belief-article__heading {
   font-size: var(--type-heading, 1.5rem);
   color: var(--color-deep, #481010);
+}
+
+/*
+ * The opening heading is two lines: a Latin maxim and its English gloss.
+ *
+ * A grid rather than a `<br />`, so the gap is a token and the gloss can drop
+ * to the UI sans at body size without inheriting the display serif's tight
+ * leading. Both spans live inside the `h2` on purpose — the English is what
+ * the heading *means*, so it should come back with the heading in a screen
+ * reader's heading list rather than being stranded as the paragraph after it.
+ */
+.belief-opening__title {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+}
+
+.belief-opening__title [lang='la'] {
+  font-style: italic;
+}
+
+.belief-opening__gloss {
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-style: normal;
+  font-weight: 400;
+  line-height: var(--leading-normal, 1.5);
+  letter-spacing: 0.02em;
+  color: var(--color-ink-soft, #4b413e);
 }
 
 /* ── Prose beside a picture ───────────────────────────────────────────────── */
@@ -26646,17 +28222,18 @@ span.gallery-figure__frame {
 /* ── The foot ─────────────────────────────────────────────────────────────── */
 
 /*
- * There isn't one. The closing band held the picture credits, and before that a
- * panel of links; both were cut, and the credits are now `visually-hidden`
- * inside the last section — so they take their styling from nothing. See
- * `features/belief/parts.tsx` for why they are still in the markup at all.
+ * Nothing prefixed `belief-`. The closing band held the picture credits, and
+ * before that a panel of links; both were cut, and the credits are now
+ * `visually-hidden` inside the last section — so they take their styling from
+ * nothing. See `features/belief/parts.tsx` for why they are still in the markup
+ * at all.
+ *
+ * The page does have a foot again, but it is not this page's: `.about-more`,
+ * shared by all five parts of About and filed with `/about` above. It is a list
+ * of the other four, not the panel of links that was cut — that one was an
+ * invitation.
  */
 
-/* The back link out, matching the tour's. */
-.belief-back {
-  padding-block: var(--space-lg, 1.5rem);
-  font-family: var(--font-ui, system-ui, sans-serif);
-}
 
 /* ── /about/patron-saints ───────────────────────────────────────────────────
  *
@@ -26917,24 +28494,6 @@ span.gallery-figure__frame {
   }
 }
 
-/*
- * The close of the page: the link back to About, and the picture credits that
- * are in the document but never on the screen. See `PictureCredits` — the list
- * is `visually-hidden`, so this row is the "All of About" link and nothing
- * else, and the band around it is what stops that link sitting hard against the
- * iconography grid above it.
- */
-.saints-close {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md, 1rem);
-}
-
-.saints-close .about-page__back {
-  margin: 0;
-}
 
 .saint-credits__list {
   margin: var(--space-md, 1rem) 0 0;
@@ -27297,16 +28856,16 @@ span.gallery-figure__frame {
 /* ── The foot ─────────────────────────────────────────────────────────────── */
 
 /*
- * There isn't one, on purpose. No closing panel of links and no invitation —
- * see the note at the top of `WhoScreen`. The credits are `visually-hidden`
- * inside the last band and take their styling from nothing.
+ * Nothing prefixed `who-`, on purpose. No closing panel of links and no
+ * invitation — see the note at the top of `WhoScreen`. The credits are
+ * `visually-hidden` inside the last band and take their styling from nothing.
+ *
+ * The page does end on `.about-more`, shared by all five parts of About and
+ * filed with `/about` above, but that is navigation between siblings and not
+ * the "come and see" band that was refused. `WhoScreen` itself still ends on
+ * the clergy.
  */
 
-/* The back link out, matching the tour's and /about/our-belief's. */
-.who-back {
-  padding-block: var(--space-lg, 1.5rem);
-  font-family: var(--font-ui, system-ui, sans-serif);
-}
 
 /* ── The clergy roster ────────────────────────────────────────────────────── */
 
@@ -27420,4 +28979,3623 @@ span.gallery-figure__frame {
   /* Not `--measure`: these sit in a 15rem-plus column, and a 68ch cap does
      nothing here except look like it is doing something. */
   max-width: 26rem;
+}
+
+/* =========================================================================
+ * /access — who administers what
+ *
+ * Two columns: the church directory on the left, the areas for whoever is
+ * picked on the right. Below 60rem they stack, directory first, because on a
+ * phone the first question is still "which person".
+ *
+ * Every class here is prefixed `access__`. That is not tidiness — this file is
+ * one global stylesheet with no modules in it, and a `.panel` or a `.person`
+ * declared here would reach into the bookstore and the galleries. A `.shelf`
+ * written for the programs panel once flattened the entire shop.
+ * ====================================================================== */
+
+.access {
+  display: grid;
+  /*
+   * `minmax(0, …)` on the second track, and it is load-bearing rather than
+   * defensive. The panel holds long email addresses and `<code>` with a program
+   * id in it, both of which have an intrinsic minimum width — a bare `1fr`
+   * resolves to `minmax(auto, 1fr)` and lets that minimum push the whole grid
+   * wider than the viewport. The same mistake put the admin 93px off a phone
+   * once, and a top-level `scrollWidth` check did not show it.
+   */
+  grid-template-columns: 18rem minmax(0, 1fr);
+  gap: var(--space-lg, 1.5rem);
+  align-items: start;
+  margin-top: var(--space-md, 1rem);
+}
+
+@media (max-width: 60rem) {
+  .access {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- the directory ---------------------------------------------------- */
+
+.access__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 0.6rem);
+  /*
+   * Sticks beside a long panel on a wide screen only. Below the breakpoint the
+   * list is *above* the panel rather than beside it, and a sticky element there
+   * would pin the directory over the very controls it was used to reach.
+   */
+  position: sticky;
+  top: calc(var(--space-lg, 1.5rem) + 5.5rem);
+}
+
+@media (max-width: 60rem) {
+  .access__people {
+    position: static;
+  }
+
+  /*
+   * No inner scroller once the columns have stacked.
+   *
+   * The 60vh cap earns its place beside the panel, where the directory has to
+   * stay put while a long list of areas scrolls next to it. Stacked, the list is
+   * simply the top of the page — and capping it there makes a scrolling box
+   * inside a scrolling page, where a flick either moves the list or moves the
+   * document depending on where the thumb landed. The page scroll is the one
+   * that should win, so the list gives up its own.
+   */
+  .access__list {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/*
+ * `flex: 0 0 auto`, and it is a fix rather than a default.
+ *
+ * `.field` is the site's form control and carries `flex: 1 1 12rem`, sized for
+ * `.field-row`, which is a flex **row** — there the `1fr` grows it sideways to
+ * share a line with its neighbours. `.access__people` is a flex *column*, so
+ * the same declaration grew it along the other axis: the label rendered 83px
+ * tall and the input 104px, one search box filling 191px of a 595px column.
+ * Nothing was misspelled and nothing warned; the class simply meant something
+ * else in this container.
+ *
+ * The hazard this belongs to is the one this stylesheet has hit before — one
+ * global file, no modules, so a generic class carries its old context into
+ * every new one. Overriding here rather than touching `.field` because the row
+ * behaviour is right everywhere it was written for.
+ */
+.access__filter {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.access__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access__person {
+  display: grid;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  border-radius: var(--radius-md, 0.5rem);
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.access__person:hover {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 7%, transparent);
+}
+
+/*
+ * The selected row.
+ *
+ * An inset rule on the leading edge rather than a filled background: the panel
+ * beside it is the loud thing on this screen, and a solid oxblood row in the
+ * list competes with it for the eye. A 3px edge says "this one" and stops.
+ */
+.access__person--on {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
+}
+
+.access__personName {
+  font-weight: 600;
+}
+
+.access__personMail,
+.access__personTally {
+  font-size: 0.8125rem;
+  color: var(--color-ink-soft, #4b413e);
+  /* An address longer than the column ellipsizes rather than widening the
+     18rem track and taking the panel's space with it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access__personTally {
+  color: color-mix(in srgb, var(--color-accent, #992a21) 80%, var(--color-ink-soft, #4b413e));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the panel -------------------------------------------------------- */
+
+.access__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 1rem);
+  min-width: 0;
+}
+
+.access__empty {
+  margin: 0;
+  padding: var(--space-lg, 1.5rem);
+  border: 1px dashed color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  text-align: center;
+}
+
+.access__who h2 {
+  margin: 0;
+}
+
+.access__who .note {
+  margin: 0.15rem 0 0;
+}
+
+.access__blanket {
+  margin: 0;
+}
+
+/*
+ * What somebody already holds, as chips under their name.
+ *
+ * Set in the accent at low strength rather than as outlined pills: they are a
+ * summary of state, not controls, and an outline on this page means "there is a
+ * box here to tick". Small, tabular and wrapping — six of them on one line is
+ * the whole point, because the question they answer is asked at a glance.
+ */
+.access__held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access__heldChip {
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 12%, transparent);
+  color: color-mix(in srgb, var(--color-accent, #992a21) 85%, var(--color-ink, #1c1614));
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Gold, the one colour on this site that means "and everything else". */
+.access__heldChip--all {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 26%, transparent);
+  color: var(--color-ink, #1c1614);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/*
+ * "nothing yet", which is most of the parish and must not read as a warning.
+ * Ink at low strength: present, unemphatic, and clearly not one of the chips
+ * beside it.
+ */
+.access__heldChip--none {
+  background: color-mix(in srgb, var(--color-ink, #1c1614) 8%, transparent);
+  color: var(--color-ink-soft, #4b413e);
+  font-weight: 500;
+}
+
+/*
+ * "What they run" / "Areas of the site".
+ *
+ * A heading over a run of blocks rather than a border around them. The blocks
+ * already have borders, and a box inside a box on a page that is mostly boxes
+ * is how a panel stops having a hierarchy at all.
+ */
+.access__group {
+  margin: var(--space-sm, 0.6rem) 0 -0.2rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.access__group:first-of-type {
+  margin-top: 0;
+}
+
+/*
+ * The tick beside the area's name, as one target.
+ *
+ * A `<label>` wrapping the checkbox and the heading, so the words are the hit
+ * area — the same bargain `.access__check` makes below, kept because the row is
+ * now the control and a 16px box is not a thing anybody should have to aim at.
+ */
+.access__areaHead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.25rem;
+  cursor: pointer;
+}
+
+.access__areaHead input {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  accent-color: var(--color-accent, #992a21);
+  cursor: pointer;
+}
+
+.access__areaName {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+/*
+ * A block whose grant is on.
+ *
+ * An edge and a tint, matching the selected row in the directory — the two are
+ * the same idea (this one) said on either side of the screen. Deliberately not a
+ * border-colour change: the block's border is what separates it from its
+ * neighbours, and recolouring it makes the *gap* look different rather than the
+ * block.
+ */
+.access__area--on {
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 30%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 5%, var(--color-paper-raised, #fdf7f4));
+  box-shadow: inset 3px 0 0 var(--color-accent, #992a21);
+}
+
+/* A grant this page preserves and does not offer. Rare enough to be a footnote,
+   important enough not to be silent — see `unofferedHeld`. */
+.access__orphans {
+  margin-top: 0;
+}
+
+/*
+ * One area, one bordered block.
+ *
+ * Bordered rather than folded. A row per area with the explanation behind a
+ * disclosure would fit more on screen and would be the wrong trade every time:
+ * the caveats are the reason this page is safe to use — that Finance does not
+ * reach the camp ledger, that an event is public the moment it is saved — and a
+ * caveat behind a fold is a caveat nobody reads before they tick the box.
+ */
+.access__area {
+  padding: var(--space-md, 1rem);
+  border: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+/*
+ * Was `.access__area h3`, when every block's title was an `<h3>` with the
+ * checkbox in a row of its own beneath the prose. The title is an `<h4>` inside
+ * a label now, under the group headings that were introduced above it, so this
+ * targets the class and the two headings are a real outline rather than six
+ * `<h3>`s in a row.
+ */
+.access__area > h4:first-child,
+.access__area .access__areaName {
+  margin: 0 0 0.2rem;
+}
+
+.access__blurb {
+  /* A reading measure on the paragraph, not on the block — the checkboxes below
+     want the full width and the prose does not. */
+  max-width: var(--measure, 68ch);
+  margin: 0 0 0.4rem;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.access__caveat {
+  max-width: var(--measure, 68ch);
+  margin: 0.4rem 0 0;
+  padding-inline-start: 0.7rem;
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-accent, #992a21) 35%, transparent);
+  font-size: 0.85rem;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.access__check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  /* 40px of row for a checkbox that is 16px of box, so the label is the target
+     rather than the tick. */
+  min-height: 2.5rem;
+  cursor: pointer;
+}
+
+.access__check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  accent-color: var(--color-accent, #992a21);
+  cursor: pointer;
+}
+
+.access__programs {
+  display: grid;
+  /* `minmax(0, …)` again, for the same reason as the page grid: a ministry with
+     a long name must wrap inside its column rather than widen it. */
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
+  gap: 0 var(--space-md, 1rem);
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * The three parts of Finance, indented under it.
+ *
+ * ---------------------------------------------------------------------------
+ * A rule on the inline start rather than a box, and the difference is the whole
+ * point of the treatment. Every other block on this page is one area in a
+ * bordered card; these are not areas, they are a sentence about the card they
+ * are in — "Finance, but only the bookstore" — and a second border inside the
+ * first would read as three more grants standing beside the one above.
+ *
+ * So: no background, no border, one hairline down the side and an indent, which
+ * is the same shape `.access__caveat` uses for the same reason. It says
+ * "belongs to the thing above" without competing with it.
+ * ---------------------------------------------------------------------------
+ */
+.access__sources {
+  margin-top: 0.5rem;
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+/* The caveat's own rule would double the one on the block. */
+.access__sources .access__caveat {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.access__sourceList {
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * One line under each source, and it is the reason these are a list rather than
+ * three checkboxes in a row.
+ *
+ * The bookstore source opens the orders, which carry a buyer's name; the other
+ * two are figures with nobody in them. That difference cannot be told from
+ * three labels reading "Bookstore, Camp, Forms", and it is exactly the thing an
+ * administrator needs to know before ticking one.
+ */
+.access__sourceBlurb {
+  max-width: var(--measure, 68ch);
+  /* Cleared past the checkbox so the sentence lines up with its own label
+     rather than with the tick. `1.05rem` of box plus the `0.55rem` gap. */
+  margin: -0.35rem 0 0.5rem calc(1.05rem + 0.55rem);
+  font-size: 0.85rem;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* Tighter than the areas above it: a sub-row is not worth 40px of aim. */
+.access__sourceList .access__check {
+  min-height: 2rem;
+}
+
+/*
+ * The gold tag beside a ministry, marking the one that is the summer camp.
+ *
+ * There was a `--quiet` ink variant here for the "no editor yet" marker on the
+ * five rows this page used to draw and no longer does. It went with them: the
+ * only tag left is a thing to notice, so the modifier that existed to *not*
+ * compete with it had nothing to be quieter than.
+ */
+.access__tag {
+  margin-inline-start: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 22%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.access__save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+  /*
+   * Sticks to the bottom of the viewport while the panel scrolls. The areas run
+   * past a screen's height, so a Save button at the natural end of the document
+   * is a button an administrator has to go and find after every change — and
+   * the failure that produces is not a missed click, it is a change they
+   * believe they made.
+   */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: var(--space-sm, 0.6rem) 0;
+  /*
+   * Opaque, with a rule along the top — not the fade this started as.
+   *
+   * A `linear-gradient(to top, paper 70%, transparent)` let the area block
+   * underneath show through the strip's upper third, so a caveat ran *behind*
+   * the Save button and read as two things overlapping rather than one sitting
+   * above the other. A sticky bar has to be a surface or it is a smudge.
+   *
+   * `--color-paper` matches the page's own ground: the band is transparent and
+   * the beige comes from `body`, so this is the colour actually behind the
+   * panel rather than a guess at it.
+   */
+  background: var(--color-paper, #f6e8e3);
+  border-top: 1px solid color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+}
+
+.access__save .note {
+  margin: 0;
+}
+
+/* ===========================================================================
+   The /admin hub's cards
+   ===========================================================================
+
+   Two screens' worth of rules used to share one block here, because the camp's
+   allocation board was the first thing /admin linked to. The camp has its own
+   block now; this is what belongs to the hub itself.
+   ------------------------------------------------------------------------- */
+
+.admin-hub__title {
+  font-size: var(--type-h1, 2rem);
+  margin-bottom: var(--space-lg, 1.75rem);
+}
+
+.admin-hub__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /*
+   * `minmax(0, …)` on the track rather than `1fr`. A card holding a long
+   * unbroken word has an intrinsic minimum wider than its share, and `1fr` is
+   * `minmax(auto, 1fr)` — which is how a date input once pushed a whole admin
+   * screen 93px off a phone with nothing in `scrollWidth` to show for it.
+   */
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-md, 1.25rem);
+}
+
+.admin-hub__card {
+  display: block;
+  height: 100%;
+  padding: var(--space-md, 1.25rem) var(--space-lg, 1.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid var(--color-accent, #992a21);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  background: var(--color-paper-raised, #fdf7f4);
+  text-decoration: none;
+  color: inherit;
+}
+
+.admin-hub__card:hover {
+  background: var(--color-paper, #f6e8e3);
+  border-color: var(--color-ink-faint, #6f5f5a);
+  border-left-color: var(--color-accent, #992a21);
+}
+
+.admin-hub__card h2 {
+  margin: 0 0 var(--space-xs, 0.4rem);
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.admin-hub__card p {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ===========================================================================
+   Summer camp — /admin/camp and its three tabs, and /forms/summer-camp
+   ===========================================================================
+
+   Every class here is prefixed `camp-`, and that is not a naming preference.
+   This stylesheet is global and has no modules: `.shelf` from the programs
+   panel once flattened the entire bookstore because both wanted a generic
+   word. A camp is made of "groups", "chips", "rows", "days" and "bands" —
+   `.band` alone is the layout primitive every section on this site is built
+   from — so none of them appear here unqualified.
+
+   Colour comes in as two inline custom properties, `--camp-colour` and
+   `--camp-ink`, set from `CAMP_COLOURS` in @spsm/shared. Nothing in this file
+   knows which twelve colours those are, and nothing should: the value is data,
+   chosen per band, exported into the spreadsheet's row fill, and read by the
+   mobile app later. What lives here is how a colour is *used*.
+   ------------------------------------------------------------------------- */
+
+/*
+ * Wider than the site's shell, and only here.
+ *
+ * `--shell-width` is 72rem because that is a comfortable reading measure for a
+ * parish website, and every other page keeps it. The groups board is not read
+ * — it is worked in, with a column of people on the left and as many group
+ * columns as the camp has on the right, and at 72rem the third group is always
+ * off the edge.
+ *
+ * A class of its own rather than `.wrap` with an override, because `.wrap` is
+ * on hundreds of elements and a rule that reached even one more of them would
+ * widen a page of prose past its measure.
+ */
+/*
+ * A camp section is a working surface, not a page of prose.
+ *
+ * `.band` pays 76px above and below, which is right for a page somebody reads
+ * top to bottom and absurd here: it put 152px of parchment between the band
+ * pills and the board they belong to, so arranging a group meant scrolling past
+ * nothing. The band is kept — it is what gives these screens the site's own
+ * rhythm and its full-bleed background — and only the padding is taken back.
+ */
+.camp-band {
+  padding-block: var(--space-md, 1.25rem);
+}
+
+.camp-band:first-of-type {
+  padding-top: var(--space-sm, 0.75rem);
+}
+
+.camp-wrap {
+  width: min(100%, 90rem);
+  margin-inline: auto;
+  padding-inline: var(--space-md, 1.25rem);
+  min-width: 0;
+}
+
+/* ---- the bar across the top -------------------------------------------- */
+
+.camp-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem) var(--space-md, 1.25rem);
+  width: min(100%, 90rem);
+  margin-inline: auto;
+  padding: var(--space-sm, 0.75rem) var(--space-md, 1.25rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.camp-bar__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5ch;
+  margin-inline-end: auto;
+}
+
+.camp-bar__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-bar__season {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-h3, 1.375rem);
+  color: var(--color-accent, #992a21);
+}
+
+.camp-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  flex-wrap: wrap;
+}
+
+.camp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.camp-tab {
+  display: inline-block;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill, 999px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  text-decoration: none;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.camp-tab:hover {
+  background: var(--color-paper, #f6e8e3);
+}
+
+.camp-tab.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-unsaved {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent, #992a21);
+}
+
+.camp-closed {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the figures on the front page ------------------------------------- */
+
+.camp-figures {
+  list-style: none;
+  margin: 0 0 var(--space-md, 1.25rem);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: var(--space-md, 1.25rem);
+}
+
+.camp-figure {
+  display: grid;
+  gap: 0.1rem;
+  padding: var(--space-sm, 0.75rem) var(--space-md, 1rem);
+  border-inline-start: 3px solid var(--color-accent, #992a21);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-figure__value {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-h2, 1.75rem);
+  line-height: 1.1;
+}
+
+.camp-figure__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-figure__hint,
+.camp-field__hint {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md, 1.25rem);
+}
+
+.camp-dates__week strong {
+  margin-inline-end: 0.5ch;
+}
+
+/* ---- the three cards ---------------------------------------------------- */
+
+.camp-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* `minmax(0, …)` on the track rather than `1fr`: a card holding a long
+     unbroken word has an intrinsic minimum wider than its share, which is how
+     a date input once pushed a whole admin screen 93px off a phone. */
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: var(--space-md, 1.25rem);
+}
+
+.camp-card {
+  display: grid;
+  gap: 0.35rem;
+  height: 100%;
+  padding: var(--space-md, 1.25rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-left: 3px solid var(--color-accent, #992a21);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  background: var(--color-paper-raised, #fdf7f4);
+  text-decoration: none;
+  color: inherit;
+}
+
+.camp-card:hover {
+  background: var(--color-paper, #f6e8e3);
+  border-color: var(--color-ink-faint, #6f5f5a);
+  border-left-color: var(--color-accent, #992a21);
+}
+
+.camp-card__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.6ch;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-h3, 1.375rem);
+}
+
+.camp-card__badge {
+  padding: 0.05rem 0.5rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+}
+
+.camp-card__blurb {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ---- settings ----------------------------------------------------------- */
+
+.camp-settings__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-settings__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-lg, 1.75rem);
+  align-items: start;
+}
+
+.camp-settings__group {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-md, 1.25rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  min-width: 0;
+}
+
+.camp-settings__group h3 {
+  margin: 0;
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.camp-settings__error {
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  border-inline-start: 3px solid var(--color-accent, #992a21);
+  background: var(--color-paper, #f6e8e3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-save {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-save--saved {
+  color: var(--color-accent, #992a21);
+}
+
+.camp-save--failed {
+  color: #b3261e;
+}
+
+/* ---- fields ------------------------------------------------------------- */
+
+.camp-field {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  /*
+   * Packed to the top of its grid cell.
+   *
+   * These sit in `.camp-grid` tracks, and a grid item stretches to the tallest
+   * row — so a field beside one carrying a hint line spread its label, its box
+   * and nothing else across the extra height, leaving a hand's width of
+   * parchment between "Phone" and the box to type it in.
+   */
+  align-content: start;
+}
+
+.camp-field__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+}
+
+.camp-grid {
+  display: grid;
+  /* minmax(0, …) again — a date input's intrinsic width is what pushed a whole
+     admin screen off a phone once, with nothing in `scrollWidth` to show it. */
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: var(--space-md, 1rem);
+  margin-block: var(--space-sm, 0.75rem);
+}
+
+.camp-money {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4ch;
+}
+
+.camp-money__unit {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-switch {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.camp-switch__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6ch;
+}
+
+.camp-switch__text {
+  display: grid;
+}
+
+.camp-switch__state {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-switch__state.is-on {
+  color: var(--color-accent, #992a21);
+}
+
+.camp-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6ch;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  margin-block: 0.3rem;
+}
+
+.camp-checks {
+  border: 0;
+  margin: var(--space-sm, 0.75rem) 0;
+  padding: 0;
+}
+
+.camp-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.6ch;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+/* ---- the day grid ------------------------------------------------------- */
+
+.camp-days {
+  border: 0;
+  margin: var(--space-sm, 0.75rem) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-days__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-days__title {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+}
+
+.camp-days__range {
+  margin-inline-start: 0.6ch;
+  font-weight: 400;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-days__all {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-accent, #992a21);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.camp-days__row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.camp-day {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.4rem 0.2rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  cursor: pointer;
+}
+
+/* The checkbox itself is the accessible control and is not drawn: the whole
+   box is the target, which is what makes this usable with a thumb. */
+.camp-day input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.camp-day.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-day:focus-within {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+}
+
+.camp-day__name {
+  font-weight: 600;
+}
+
+.camp-day__date {
+  opacity: 0.75;
+}
+
+/* ---- lists of registrations -------------------------------------------- */
+
+.camp-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  margin-bottom: var(--space-md, 1rem);
+}
+
+.camp-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.camp-pill,
+.camp-bandPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5ch;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  cursor: pointer;
+}
+
+.camp-pill em,
+.camp-bandPill em {
+  font-style: normal;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-pill.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-pill.is-on em {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.camp-search {
+  max-width: 18rem;
+}
+
+.camp-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.camp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: var(--space-sm, 0.75rem);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  text-align: start;
+  cursor: pointer;
+}
+
+.camp-row:hover {
+  background: var(--color-paper, #f6e8e3);
+}
+
+.camp-row__name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+  font-weight: 600;
+}
+
+.camp-row__who,
+.camp-row__days {
+  color: var(--color-ink-soft, #4b413e);
+  overflow-wrap: anywhere;
+}
+
+.camp-row__money {
+  justify-self: end;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-row__money.is-owing {
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+@media (max-width: 48rem) {
+  .camp-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .camp-row__money {
+    justify-self: start;
+  }
+}
+
+.camp-status {
+  padding: 0.05rem 0.5rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-paper, #f6e8e3);
+  border: 1px solid var(--color-rule, #e0cac3);
+  font-size: var(--type-xsmall, 0.8125rem);
+  font-weight: 400;
+}
+
+.camp-status--withdrawn {
+  text-decoration: line-through;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-empty {
+  padding: var(--space-md, 1.25rem);
+  border: 1px dashed var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.camp-empty--big {
+  padding: var(--space-lg, 1.75rem);
+  text-align: center;
+}
+
+/* ---- the sign-up queue -------------------------------------------------- */
+
+.camp-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-md, 1rem);
+}
+
+.camp-queue__card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md, 1rem);
+  justify-content: space-between;
+  padding: var(--space-md, 1.25rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-queue__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.75rem) var(--space-md, 1.25rem);
+  margin: 0.4rem 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-queue__facts dt {
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-queue__facts dd {
+  margin: 0;
+}
+
+.camp-queue__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm, 0.75rem);
+}
+
+/* ---- the editor --------------------------------------------------------- */
+
+.camp-editor {
+  display: grid;
+  gap: var(--space-lg, 1.75rem);
+}
+
+.camp-editor__head,
+.camp-editor__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+  justify-content: space-between;
+}
+
+.camp-editor__headActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-editor__head h2 {
+  margin: 0.2rem 0 0;
+}
+
+.camp-back {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent, #992a21);
+  cursor: pointer;
+}
+
+.camp-section {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding-top: var(--space-md, 1.25rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.camp-section h3 {
+  margin: 0;
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.camp-child {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-child__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-child__head h4 {
+  margin: 0;
+  font-size: var(--type-body, 1rem);
+}
+
+.camp-chip {
+  display: inline-flex;
+  align-items: center;
+}
+
+.camp-waiver {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper, #f6e8e3);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-waiver p {
+  margin: 0 0 0.6em;
+}
+
+.camp-problems ul {
+  margin: 0.4rem 0;
+}
+
+.camp-danger {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: #b3261e;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.camp-danger--small {
+  font-size: var(--type-xsmall, 0.8125rem);
+}
+
+.camp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-table th,
+.camp-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  text-align: start;
+}
+
+.camp-table__num {
+  text-align: end;
+}
+
+.camp-ledger {
+  list-style: none;
+  margin: var(--space-sm, 0.75rem) 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+  max-width: 26rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-ledger li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-ledger__owing strong {
+  color: var(--color-accent, #992a21);
+}
+
+.camp-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  align-items: center;
+  margin-block: var(--space-sm, 0.6rem);
+}
+
+.camp-add .input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+/* ---- the groups board --------------------------------------------------- */
+
+.camp-bands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/*
+ * A band pill wears its band's colour, and only when it is the one open.
+ *
+ * Unselected pills stay parchment with a colour dot, because twelve saturated
+ * pills in a row is a strip nobody can read a name off — the colour is there to
+ * be matched against a wristband, not to decorate a tab.
+ */
+.camp-bandPill::before {
+  content: '';
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  background: var(--camp-colour, var(--color-accent, #992a21));
+}
+
+.camp-bandPill.is-on {
+  background: var(--camp-colour, var(--color-accent, #992a21));
+  border-color: var(--camp-colour, var(--color-accent, #992a21));
+  color: var(--camp-ink, #fff);
+}
+
+.camp-bandPill.is-on::before {
+  background: var(--camp-ink, #fff);
+  opacity: 0.7;
+}
+
+.camp-bandPill--plain::before,
+.camp-bandPill--add::before {
+  display: none;
+}
+
+.camp-bandPill--plain.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-bandPill--add {
+  border-style: dashed;
+  color: var(--color-accent, #992a21);
+}
+
+.camp-newBand {
+  width: 100%;
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-gradePick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.camp-gradeBox {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.4rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  cursor: pointer;
+}
+
+.camp-gradeBox input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.camp-gradeBox.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-gradeBox.is-spoken:not(.is-on) {
+  opacity: 0.45;
+}
+
+.camp-gradeBox:focus-within {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+}
+
+.camp-boardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  margin-block: var(--space-md, 1rem) var(--space-sm, 0.75rem);
+  padding-inline-start: var(--space-sm, 0.6rem);
+  border-inline-start: 4px solid var(--camp-colour, var(--color-accent, #992a21));
+}
+
+.camp-boardHead h2 {
+  margin: 0;
+}
+
+.camp-boardHead__actions {
+  display: flex;
+  gap: var(--space-sm, 0.6rem);
+}
+
+.camp-bandEdit {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  margin-bottom: var(--space-md, 1rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-board {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  gap: var(--space-md, 1.25rem);
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .camp-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /*
+   * Stacked, the rail is above the groups rather than beside them, and a
+   * sticky box that is *already* at the top of the flow only pins the waiting
+   * list over the groups you are trying to drop into. Its own scroller goes
+   * too: two nested scroll areas on a phone is a page nobody can move.
+   */
+  .camp-rail {
+    position: static;
+    max-height: none;
+  }
+}
+
+/*
+ * The waiting list is sticky, and it is a column rather than a bar.
+ *
+ * A horizontal dock along the bottom was built and replaced: a roster is read
+ * down a column, and a bar made every drag cross the window. Sticky because the
+ * groups run past the fold and dragging to a target you cannot see is not a
+ * gesture anybody can make.
+ */
+.camp-rail {
+  position: sticky;
+  top: var(--space-md, 1rem);
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper, #f6e8e3);
+}
+
+.camp-rail h3 {
+  margin: 0 0 var(--space-sm, 0.6rem);
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.camp-rail h3 em {
+  font-style: normal;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-rail h4 {
+  margin: var(--space-sm, 0.6rem) 0 0.3rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-rail__hint {
+  margin: var(--space-sm, 0.6rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-accent, #992a21);
+}
+
+.camp-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-md, 1rem);
+  align-items: start;
+}
+
+.camp-group {
+  display: grid;
+  gap: 0.4rem;
+  padding: var(--space-sm, 0.6rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-top: 3px solid var(--camp-colour, var(--color-accent, #992a21));
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+  min-width: 0;
+}
+
+/* While somebody is holding a person, every group says it will take them. */
+.camp-group.is-target {
+  outline: 2px dashed var(--camp-colour, var(--color-accent, #992a21));
+  outline-offset: 2px;
+}
+
+.camp-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5ch;
+}
+
+.camp-group__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px dashed transparent;
+  background: none;
+  padding: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-subheading, 1.0625rem);
+  color: inherit;
+}
+
+.camp-group__name:hover:not([readonly]),
+.camp-group__name:focus {
+  border-bottom-color: var(--color-rule, #e0cac3);
+}
+
+.camp-group__count {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  white-space: nowrap;
+}
+
+.camp-group__empty {
+  margin: 0;
+  padding: var(--space-sm, 0.6rem);
+  border: 1px dashed var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  text-align: center;
+}
+
+.camp-group__delete {
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.camp-group__delete:hover {
+  color: #b3261e;
+}
+
+.camp-station__where {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.camp-station__where .input {
+  flex: 1 1 6rem;
+  min-width: 0;
+  font-size: var(--type-xsmall, 0.8125rem);
+}
+
+.camp-addGroup {
+  padding: var(--space-md, 1rem);
+  border: 1px dashed var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent, #992a21);
+  cursor: pointer;
+}
+
+.camp-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.camp-chips .camp-chip {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.camp-chip__grab {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5ch;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-inline-start: 3px solid var(--camp-colour, var(--color-ink-faint, #6f5f5a));
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  text-align: start;
+  cursor: grab;
+}
+
+.camp-chip.is-held .camp-chip__grab {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-chip.is-out .camp-chip__grab {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.camp-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camp-chip__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4ch;
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: inherit;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.camp-chip__flag {
+  padding: 0 0.35rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-paper, #f6e8e3);
+  color: var(--color-accent, #992a21);
+  font-size: var(--type-xsmall, 0.8125rem);
+}
+
+/*
+ * The leader star is a sibling of the chip's button, never a child of it.
+ *
+ * A control nested inside a `draggable` element sometimes starts a drag instead
+ * of firing — the same shape as the pointer capture that once killed delete in
+ * the photo manager.
+ */
+.camp-chip__lead {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  padding: 0 0.4rem;
+  color: var(--color-ink-faint, #6f5f5a);
+  cursor: pointer;
+}
+
+.camp-chip__lead.is-on {
+  background: var(--camp-colour, var(--color-accent, #992a21));
+  border-color: var(--camp-colour, var(--color-accent, #992a21));
+  color: var(--camp-ink, #fff);
+}
+
+.camp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.75rem);
+}
+
+/* ---- the register ------------------------------------------------------- */
+
+.camp-dayPick {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  margin-bottom: var(--space-sm, 0.75rem);
+}
+
+.camp-dayPick__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-dayPick__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.camp-dayTab {
+  display: grid;
+  justify-items: center;
+  min-width: 4.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  cursor: pointer;
+}
+
+.camp-dayTab em {
+  font-style: normal;
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.camp-dayTab.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-dayTab.is-on em {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.camp-tally {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-tally__miss {
+  color: var(--color-accent, #992a21);
+}
+
+.camp-tally__done {
+  color: #1f7a4d;
+}
+
+.camp-register {
+  margin-bottom: var(--space-lg, 1.75rem);
+}
+
+.camp-register__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.camp-register__head h3 {
+  margin: 0;
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.camp-register__rows {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.camp-mark {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+/* Here, and not yet collected — the state that matters at four o'clock. */
+.camp-mark--here {
+  border-inline-start: 3px solid #1f7a4d;
+}
+
+.camp-mark--gone {
+  opacity: 0.7;
+}
+
+.camp-mark.is-unexpected {
+  border-style: dashed;
+}
+
+.camp-mark__name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5ch;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  min-width: 0;
+}
+
+/*
+ * A tick is a big target, because it is pressed with a thumb at a gate while
+ * holding something else. 3.5rem is above the 44px everybody's guidance asks
+ * for, in both directions.
+ */
+.camp-tickBtn {
+  display: grid;
+  justify-items: center;
+  min-width: 3.5rem;
+  min-height: 2.6rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper, #f6e8e3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  cursor: pointer;
+}
+
+.camp-tickBtn.is-on {
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-tickBtn__label {
+  font-weight: 600;
+}
+
+.camp-tickBtn__time {
+  opacity: 0.8;
+}
+
+/* ---- once a year -------------------------------------------------------- */
+
+.camp-keeping {
+  display: grid;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.camp-keeping__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.camp-keeping__row p {
+  margin: 0.2rem 0 0;
+  max-width: 44ch;
+}
+
+.camp-seasons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.camp-seasons li {
+  display: flex;
+  gap: 0.8ch;
+}
+
+/* ---- the public sign-up ------------------------------------------------- */
+
+.camp-public {
+  max-width: 46rem;
+}
+
+.camp-public h3 {
+  margin-top: var(--space-lg, 1.75rem);
+  font-size: var(--type-subheading, 1.0625rem);
+}
+
+.camp-lede {
+  font-size: var(--type-lede, 1.125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ===========================================================================
+   Finance — /admin/finance
+   ===========================================================================
+
+   Every class here is prefixed `fin`, for the reason the allocation block
+   above gives at length: this stylesheet is global, has no modules, and a
+   screen made of "tiles", "lines", "totals" and "seasons" is a screen full of
+   words the rest of the site already uses. `.band` alone is the layout
+   primitive every section on this site is built from.
+
+   The palette is deliberately the ordinary one. A money screen invites red for
+   what is owed and green for what came in, and both would be wrong here: this
+   is a report a treasurer reads monthly, not an alert, and colouring the
+   arrears red makes an ordinary June — when nobody has paid yet — look like a
+   crisis. Emphasis is weight and rule lines instead.
+   ------------------------------------------------------------------------- */
+
+.fin__title {
+  font-size: var(--type-h1, 2rem);
+  margin-bottom: var(--space-md, 1.25rem);
+}
+
+.fin__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  padding-bottom: var(--space-sm, 0.75rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fin__monthPick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.fin__monthPick select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  /*
+   * `minmax(0, …)` is not available to a flex child, and a `<select>` has an
+   * intrinsic width set by its longest option — "September 2026" here. Without
+   * a min of zero it refuses to shrink and pushes the bar off a phone, which
+   * is the same failure the allocation screen hit with a date input.
+   */
+  min-width: 0;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink, #2f2723);
+}
+
+.fin__refresh {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+}
+
+.fin__refresh:hover:not(:disabled) {
+  border-color: var(--color-ink-faint, #6f5f5a);
+  color: var(--color-ink, #2f2723);
+}
+
+.fin__refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fin__error {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-accent, #992a21);
+}
+
+.fin__section {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+.fin__h2 {
+  margin: 0;
+  font-size: var(--type-h3, 1.35rem);
+}
+
+.fin__lede,
+.fin__foot,
+.fin__empty,
+.fin__asof {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+  /* The measure belongs on the paragraph, not on the container — a band that
+     narrows itself narrows the tables inside it too. */
+  max-width: 60ch;
+}
+
+.fin__lede {
+  margin: var(--space-xs, 0.4rem) 0 var(--space-md, 1.1rem);
+}
+
+.fin__foot {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fin__empty {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fin__asof {
+  margin-top: var(--space-xl, 2.5rem);
+  padding-top: var(--space-sm, 0.75rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the figures themselves --------------------------------------------- */
+
+.fin__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: var(--space-sm, 0.75rem);
+}
+
+.fin__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--space-sm, 0.8rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+/* The total, and only the total. A left rule in the accent rather than a fill:
+   the figure is the emphasis, and a coloured panel would make the container
+   the loudest thing on a screen that is nothing but figures. */
+.fin__tile--strong {
+  border-left: 3px solid var(--color-accent, #992a21);
+}
+
+.fin__tileLabel {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fin__tileValue {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-h3, 1.35rem);
+  /* Every figure on this screen is read down a column against another figure,
+     so the digits have to be the same width or the columns stop lining up. */
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #2f2723);
+}
+
+.fin__num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fin__sub {
+  display: block;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 400;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- one camp season ---------------------------------------------------- */
+
+.fin__seasons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-md, 1.25rem);
+}
+
+.fin__season {
+  height: 100%;
+  padding: var(--space-md, 1.1rem) var(--space-lg, 1.4rem) var(--space-md, 1.1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.fin__seasonHead h3 {
+  margin: 0;
+  font-size: var(--type-h3, 1.35rem);
+}
+
+.fin__seasonHead p {
+  margin: 0.15rem 0 var(--space-sm, 0.75rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fin__ledger {
+  margin: 0;
+  padding-top: var(--space-xs, 0.4rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.fin__line {
+  display: grid;
+  /* The label takes the slack; the figure never shrinks. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--space-sm, 0.6rem);
+  align-items: baseline;
+  padding: 0.2rem 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.fin__line dt,
+.fin__line dd {
+  margin: 0;
+}
+
+.fin__line dt {
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.fin__line--strong {
+  font-weight: 600;
+  color: var(--color-ink, #2f2723);
+}
+
+.fin__seasonNote {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.fin__methods {
+  list-style: none;
+  margin: var(--space-sm, 0.75rem) 0 0;
+  padding: var(--space-sm, 0.6rem) 0 0;
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  display: grid;
+  gap: 0.15rem;
+}
+
+.fin__methods li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--space-sm, 0.6rem);
+  align-items: baseline;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* The payment count sits under the figure, in the second column. */
+.fin__methods li .fin__sub {
+  grid-column: 2;
+  text-align: right;
+}
+
+.fin__statuses {
+  margin: var(--space-sm, 0.75rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ---- the forms table ---------------------------------------------------- */
+
+.fin__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  /* `fixed` so a long form title cannot widen the whole table past the band —
+     the title column takes the slack and wraps, the figures never move. */
+  table-layout: fixed;
+}
+
+.fin__table th,
+.fin__table td {
+  padding: var(--space-xs, 0.45rem) var(--space-sm, 0.6rem);
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.fin__table thead th {
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.fin__table tbody th {
+  font-weight: 600;
+  color: var(--color-ink, #2f2723);
+  /* A form's title is the one thing here that can be long. */
+  overflow-wrap: anywhere;
+}
+
+.fin__table thead th:not(:first-child),
+.fin__table td {
+  text-align: right;
+}
+
+.fin__table th:first-child {
+  width: 45%;
+}
+
+/* ===========================================================================
+   Future Plans — /about/future-plans
+   ===========================================================================
+
+   Three buildings that do not exist yet, shown as ten renderings, one video,
+   four figures, a use schedule and a dated spine. Nothing on the page is
+   interactive except the browser's own video controls, so this block carries
+   the whole design of it — there is no client component anywhere to hide a
+   style decision in.
+
+   Every class is `future-` prefixed and none of them is a bare word. One
+   stylesheet, no modules: a generic `.film`, `.figures` or `.uses` declared here
+   would reach into every other page that ever wants one, which has already
+   happened once, when a `.shelf` written for the programs panel flattened the
+   bookstore.
+
+   Deliberately close to the `who-` block above rather than sharing with it. The
+   two pages are adjacent in the About menu and should read as one family, but a
+   shared `.about-plate` would mean a change made for one page silently landing
+   on the other — and these two already want different things, because this one
+   has to hold a 16:9 video and two line drawings that /about/who-we-are has no
+   equivalent of.
+
+   Fallbacks are the default theme's real values, not approximations. A misspelt
+   custom property does not error; it falls through to the fallback and looks
+   like a deliberate choice, so the fallback has to be right. The whole /events
+   grid was off-palette for weeks exactly this way.
+   =========================================================================== */
+
+/*
+ * Every grid here spaces its children with `gap`. The browser's own
+ * `p { margin: 1em 0 }` is not reset globally, so without this each child adds
+ * a second, em-sized space on top of the gap — and because it is em-sized, the
+ * biggest type gets the biggest space, which is how a "short" hero ended up
+ * 444px tall on the tour.
+ *
+ * Scoped to the containers that use `gap`, not to `.future *`: the prose bodies
+ * want `.prose`'s own paragraph rhythm and must not be flattened by this.
+ */
+.future-hero__inner > *,
+.future-head > *,
+.future-plate > *,
+.future-film > *,
+.future-figure > * {
+  margin: 0;
+}
+
+/* ── The opening band ─────────────────────────────────────────────────────── */
+
+/*
+ * Short, and shorter on a phone. The subject of this page is the film in the
+ * band immediately below, and every pixel of hero is a pixel between the reader
+ * and it — the same reasoning /livestream's header band was cut for.
+ */
+.future-hero {
+  padding-block: var(--space-lg, 1.5rem);
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .future-hero {
+    padding-block: var(--space-xl, 2.5rem);
+  }
+}
+
+.future-hero__inner {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: 48rem;
+}
+
+.future-hero__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 78%, var(--color-ink-inverse, #f9efec));
+}
+
+/*
+ * A `p` carrying the page's visible title — `PageHeader` has already rendered
+ * the hidden `h1`, and a second would give the document two. Styled as display
+ * type, marked up as what it is.
+ */
+.future-hero__title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.future-hero__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The display serif, opted into by name.
+ *
+ * A bare `h2` on this site is the UI *sans* face: the `h1, h2, h3, h4, nav, .ui`
+ * rule lands later in this file than the one setting the display serif, so sans
+ * wins and a page that wants the serif has to ask. This page is continuous
+ * description across eight bands, and sans headings through the middle of it
+ * read as a different document — the same call /about/who-we-are made.
+ */
+.future-what h2,
+.future-a h2,
+.future-b h2,
+.future-c h2,
+.future-uses-band h2,
+.future-land h2,
+.future-stands h2,
+.future-team-band h2 {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.75rem);
+  line-height: var(--leading-tight, 1.15);
+}
+
+/*
+ * "Building A", "Building B", "Building C" — the label above each of the three
+ * headings, in the accent and in the UI face so it cannot be mistaken for part
+ * of the heading.
+ *
+ * A `p`, not an `h3`. It sits *above* its `h2`, and a heading level nested the
+ * wrong way round is worse for a screen reader than no heading at all.
+ */
+.future-tag {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #731d16);
+  margin-bottom: var(--space-xs, 0.25rem);
+}
+
+/* A band's own header — eyebrow, heading, lede — where the band has no split. */
+.future-head {
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+  max-width: var(--measure, 68ch);
+  margin-bottom: var(--space-xl, 2.5rem);
+}
+
+.future-head__eyebrow {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #731d16);
+}
+
+/* ── The film ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The band the video sits in.
+ *
+ * Its own band, on paper, rather than inside the deep hero: a 16:9 poster on
+ * the dark ground reads as a rectangular hole cut in the page, which is the
+ * fault `.band--deep` was given a gradient to avoid in the first place.
+ */
+.future-film {
+  margin: 0;
+  display: grid;
+  /*
+   * **`minmax(0, 1fr)`, not the implicit `auto` column**, and this was a real
+   * bug: a grid's implicit column is sized to its widest child, the chapter
+   * scroller's widest child is fourteen chips laid end to end, and the whole
+   * figure came out 719px wide inside a 375px phone — taking the video with it,
+   * because the video is `max-width: 100%` of whatever this column is. The
+   * scroller can only scroll if its container refuses to grow for it.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-sm, 0.5rem);
+  justify-items: center;
+}
+
+/*
+ * **`aspect-ratio`, not a padding-top box.** The element carries `width` and
+ * `height` attributes so the browser already reserves the right space before
+ * the poster lands; this keeps that reservation exact once CSS takes over, and
+ * it means the poster and the film cannot disagree about the shape of the box
+ * on the frame between them.
+ *
+ * Capped by height as well as width, for the reason `.who-plate--full` is: a
+ * 76rem band on a laptop makes this 684px tall, which is most of a screen, and
+ * the reader still has eight bands to go. `62vh` bounds the *screen* rather
+ * than the layout, which is why it is a viewport unit and not a rem figure.
+ *
+ * **`width: auto`, not `width: 100%`**, and it is not a stylistic preference.
+ * With `width: 100%` the box stays band-wide while `max-height` shrinks it, so
+ * the element goes wider than 16:9 and the poster sits letterboxed between two
+ * bars of the background — which is exactly what it did on the first render.
+ * `width: auto` with `aspect-ratio` lets the height cap drive the width, so the
+ * box is always the shape of the film.
+ *
+ * `background` still matters. `preload="none"` means there is a moment with a
+ * poster and no film behind it, and the browser default there is black — a
+ * black flash on a warm beige page. The theme's own ground is the closer
+ * neighbour.
+ */
+.future-film__video {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 62vh;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-ink, #1c1614) 16%, transparent);
+  background: color-mix(in srgb, var(--color-accent-strong, #731d16) 12%, var(--color-paper-sunken, #eeddd7));
+  /* The poster is 16:9 and so is the film, so nothing is ever cropped here —
+     this only decides what happens in the gap while the browser is deciding. */
+  object-fit: contain;
+}
+
+/*
+ * The cue line along the bottom of the film.
+ *
+ * ---------------------------------------------------------------------------
+ * **`::cue` reaches inside the browser's own shadow DOM and only a fixed set of
+ * properties are allowed through it** — colour, background, font, opacity,
+ * text-decoration, and little else. Position, width and padding are not among
+ * them; the browser owns where the cue box sits. So this styles the type and
+ * the plate behind it and does not try to move it.
+ *
+ * The default is white on a hard black box, which on this page sits under an
+ * oxblood masthead and above warm beige paper and reads as a YouTube overlay.
+ * The theme's own deep ground at 82% is the same plate the site uses everywhere
+ * else, and it is the reason the cues look like part of the page rather than
+ * part of the player.
+ *
+ * **Not `--font-display`.** These are one-line labels read while something is
+ * moving behind them, which is the job the UI sans face exists for, and a serif
+ * at 15px over an animated background is where legibility goes to die.
+ *
+ * Chrome scales cue text with the video element's size and Safari does not, so
+ * a rem figure here is a floor rather than a promise. It is set at the small
+ * size on purpose — the film is the thing being watched.
+ * ---------------------------------------------------------------------------
+ */
+.future-film__video::cue {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-inverse, #f9efec);
+  background: color-mix(in srgb, var(--color-accent-strong, #731d16) 82%, #000);
+}
+
+/*
+ * Only seen if the browser refuses the file, which in practice means a text
+ * browser or a locked-down corporate build. It is inside `<video>`, so it needs
+ * to read as prose rather than inherit nothing.
+ */
+.future-film__fallback {
+  padding: var(--space-md, 1rem);
+  font-size: var(--type-small, 0.9rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* Centred as a block under a centred film, but the sentence inside it starts at
+   the left — a two-line caption set centred reads as a pull quote. */
+.future-film__caption {
+  max-width: min(100%, var(--measure, 68ch));
+  text-align: start;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── Prose beside a picture ───────────────────────────────────────────────── */
+
+.future-split {
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+}
+
+@media (min-width: 60rem) {
+  .future-split {
+    /*
+     * `minmax(0, …)` on both tracks, not `1fr` and `22rem`. A grid item's
+     * implicit minimum is its content, and the figures row and the use
+     * schedule below both contain unbreakable strings — that is exactly how a
+     * date input pushed the whole camp admin 93px off a phone.
+     */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    gap: var(--space-xl, 2.5rem);
+    align-items: start;
+  }
+
+  /*
+   * Picture on the left instead. Used for Buildings A and C, so that the three
+   * building sections alternate: three splits down a page with the plate on the
+   * same side every time reads as a sidebar the eye learns to skip.
+   *
+   * Only above 60rem — in one column, `order` would put the picture before the
+   * paragraph it belongs to.
+   */
+  .future-split--flipped {
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+  }
+
+  .future-split--flipped .future-split__plate {
+    order: -1;
+  }
+}
+
+/* A split and the `.wrap` under it inside one band: the band's padding is
+   around the pair, not between them. */
+.future-split + .wrap {
+  margin-top: var(--space-xl, 2.5rem);
+}
+
+/* ── A plate ──────────────────────────────────────────────────────────────── */
+
+/*
+ * One picture and its caption. No lightbox anywhere on this page, for the
+ * reason /about/who-we-are has none: a picture here supports a paragraph the
+ * reader is in the middle of, and a modal that takes the screen — and focus,
+ * and body scroll — is a way of losing their place.
+ */
+.future-plate {
+  margin: 0;
+  display: grid;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.future-plate__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  /*
+   * White, not `--color-paper-raised`. Two of these are line drawings on a
+   * white sheet, and a warm beige showing through the margins of a site plan
+   * makes it look like a scan of a photocopy. The renderings have their own
+   * sky to the edge and never see this.
+   */
+  background: #fff;
+}
+
+.future-plate__caption {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * A picture across the width of the band.
+ *
+ * The two drawings need this more than anything else on the page does: a site
+ * plan at 24rem is a grey smudge, and the only reason it is here is that a
+ * reader can find Rice Road on it.
+ *
+ * Capped by height as well as width, as `.who-plate--full` is. Everything here
+ * is between 16:9 and 1.64:1, so height is rarely the binding constraint — but
+ * `62vh` is what guarantees that no single picture fills the viewport on a
+ * short laptop screen, and this page has five full-width plates on it.
+ */
+.future-plate--full {
+  margin-block: var(--space-xl, 2.5rem);
+  justify-items: center;
+}
+
+.future-plate--full .future-plate__img {
+  width: auto;
+  max-width: 100%;
+  max-height: 62vh;
+}
+
+.future-plate--full .future-plate__caption {
+  max-width: min(100%, var(--measure, 68ch));
+  text-align: start;
+}
+
+/* ── The four figures ─────────────────────────────────────────────────────── */
+
+/*
+ * `auto-fit` with a 13rem floor rather than a fixed four columns: four abreast
+ * on a laptop, two on a tablet, one on a phone, and no breakpoint anywhere. The
+ * floor is set by "parking spaces", the longest label.
+ *
+ * `minmax(0, …)` inside the `repeat`, so that a figure whose note wraps to four
+ * lines cannot push its own column wider than its share.
+ */
+.future-figures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+}
+
+.future-figure {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  /* The rule sits on the reading edge rather than around the whole tile: four
+     boxes in a row is a dashboard, and this is a paragraph broken into four. */
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+.future-figure__value {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-title, 2.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-accent-strong, #731d16);
+  /* Tabular so the four values sit on one baseline grid whatever the digits. */
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.future-figure__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink, #1c1614);
+}
+
+/*
+ * Where the number came from, in the smallest type on the page.
+ *
+ * Not decoration and not a footnote: this is the page's whole claim to be
+ * believed. A reader who wants to know whether "570 seats" is a wish or a
+ * filing gets told, without having to leave the line.
+ */
+.future-figure__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* ── The use schedule ─────────────────────────────────────────────────────── */
+
+.future-uses {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  max-width: 62rem;
+}
+
+.future-uses__row {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+  padding-block: var(--space-md, 1rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+.future-uses__row:first-child {
+  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+/*
+ * From 44rem the name and the area part company: the name stays left, the area
+ * goes hard right so the seven figures form a column the eye can add up.
+ *
+ * Below that they stack, which is deliberate — a right-aligned figure 3rem from
+ * the label it belongs to is harder to read on a phone than one directly under
+ * it, and the alternative (a two-column grid at phone width) is what puts a
+ * horizontal scrollbar on the page.
+ */
+.future-uses__term {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+}
+
+@media (min-width: 44rem) {
+  .future-uses__term {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-lg, 1.5rem);
+  }
+}
+
+.future-uses__name {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.future-uses__area {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.4rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-accent-strong, #731d16);
+  font-variant-numeric: lining-nums tabular-nums;
+  white-space: nowrap;
+}
+
+/* "sq ft" set small beside the figure, so the number keeps the column. */
+.future-uses__unit {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* `dd` carries a browser default `margin-inline-start: 40px`. */
+.future-uses__what {
+  margin: 0;
+  max-width: var(--measure, 68ch);
+  font-size: var(--type-small, 0.95rem);
+  line-height: var(--leading-relaxed, 1.6);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* On `band--tinted`, where the ground is darker, the soft ink loses too much
+   against it. Same correction the who-we-are spine needs. */
+.band--tinted .future-uses__what {
+  color: var(--color-ink, #1c1614);
+}
+
+/* ── The dated spine ──────────────────────────────────────────────────────── */
+
+.future-chron {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-lg, 1.5rem);
+  max-width: 58rem;
+}
+
+.future-chron__row {
+  display: grid;
+  gap: var(--space-xs, 0.25rem);
+}
+
+/*
+ * Two columns from 40rem up, not 60rem: this is a narrow list of short lines
+ * and it wants the date beside the sentence as early as the date fits.
+ *
+ * `minmax(0, 1fr)` on the second track for the usual reason — the implicit
+ * minimum of a grid item is its content, and one unbroken word would otherwise
+ * push the row wider than the page.
+ *
+ * 11rem rather than the who-we-are spine's 7.5, and measured rather than
+ * guessed: these are months and years, not bare years, and "November 2025" set
+ * in the display serif at `--type-heading` is a little over 9rem. At 7.5 every
+ * row wrapped; at 9 the three longest still did.
+ */
+@media (min-width: 40rem) {
+  .future-chron__row {
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: var(--space-lg, 1.5rem);
+    align-items: baseline;
+  }
+}
+
+/*
+ * The date, in the display serif and in the accent, so the eye can run down the
+ * column without reading. Not a heading: a screen reader jumping by heading
+ * through this page should land on the eight sections, not on seven dates.
+ */
+.future-chron__when {
+  font-family: var(--font-display, Georgia, serif);
+  /*
+   * `--type-lede`, not `--type-heading`, and that is a measurement rather than
+   * a taste. The theme's `--type-heading` is 1.75rem; "November 2025" set in
+   * the display serif at that size is a shade over 11rem and wrapped to two
+   * lines in the 11rem column, which put the date out of line with the sentence
+   * beside it on three of the seven rows. At `--type-lede` it is about 8rem and
+   * every row fits. The fallback here has to match the token for the same
+   * reason — a misspelling that falls through to a smaller number would look
+   * like a deliberate choice and hide the bug.
+   */
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-accent-strong, #731d16);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.future-chron__what {
+  margin: 0;
+  max-width: var(--measure, 68ch);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* The last row is "Next", which has no date and is the one a reader most needs
+   to land on. It gets the weight the dates get, in ink rather than accent, so
+   it reads as the end of the list and not as another date. */
+.future-chron__row:last-child .future-chron__when {
+  color: var(--color-ink, #1c1614);
+}
+
+.future-stands__foot {
+  margin-top: var(--space-xl, 2.5rem);
+  max-width: var(--measure, 68ch);
+}
+
+/* ── The team, and the credit ─────────────────────────────────────────────── */
+
+/*
+ * The row of consultants' marks.
+ *
+ * ---------------------------------------------------------------------------
+ * **These are seven logos that agree about nothing.** MDM's is a single line of
+ * type at 12.5:1; dsk's is a square block at 1:1. That is a factor of twelve,
+ * and it is what makes a row of unrelated trademarks hard to lay out.
+ *
+ * The first attempt gave every mark an identical box and fitted it inside with
+ * `object-fit: contain`. Tidy grid, wrong result: a square mark fills its box
+ * and a 12.5:1 wordmark is limited by the box's *width*, so it came out 18px
+ * tall and MDM and Foley Buhl Roberts were illegible — in a band whose whole
+ * job is to be read.
+ *
+ * **So the marks are normalised by height and the cards are sized by their
+ * contents.** Every logo is set to the same 3rem, which is the measurement a
+ * reader's eye actually compares, and its card grows to whatever width that
+ * needs — 49px for dsk, 600px for MDM. This is what every real logo wall does,
+ * and the reason is that equal height is what makes seven unrelated marks read
+ * as one row.
+ *
+ * `flex-wrap` rather than a grid, because the whole point is that the columns
+ * are not equal. `min-width` stops a square mark's card collapsing to a stamp
+ * beside its wide neighbours.
+ *
+ * A white card under each. Every one of these was drawn for white paper, and
+ * several are dark type with no background of their own — on the tinted band's
+ * dusty rose they would read as smudges. The card is the honest presentation
+ * and the one the trademark owners would recognise.
+ * ---------------------------------------------------------------------------
+ */
+.future-marks {
+  list-style: none;
+  margin: 0 0 var(--space-xl, 2.5rem);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md, 1rem);
+  align-items: stretch;
+}
+
+.future-mark {
+  display: grid;
+  place-items: center;
+  /* Hug the contents, but never below a square mark's own width. */
+  flex: 0 1 auto;
+  min-width: 9rem;
+  max-width: 100%;
+  padding: var(--space-md, 1rem) var(--space-lg, 1.25rem);
+  background: #fff;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+/*
+ * `height`, not `max-height`, and that is the normalisation: every mark is
+ * exactly this tall and takes whatever width its own proportions ask for.
+ *
+ * `max-width: 100%` is the phone escape hatch — MDM at 3rem is 600px wide,
+ * which is wider than a phone, and there it shrinks below the common height
+ * rather than pushing the page sideways. Everything else is comfortably inside
+ * a phone's width and never sees this.
+ */
+.future-mark__img {
+  display: block;
+  height: 3rem;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/*
+ * Nine firms. Two columns from 44rem, because these are nine short blocks and a
+ * single column of them down an 80rem band is a lot of white to the right.
+ *
+ * `minmax(0, 1fr)` on both tracks, not `1fr`: "Mechanical, electrical, plumbing
+ * and fire protection" is the longest role on the page and a grid item's
+ * implicit minimum is its content.
+ */
+.future-team {
+  margin: 0 0 var(--space-xl, 2.5rem);
+  padding: 0;
+  display: grid;
+  gap: var(--space-lg, 1.5rem) var(--space-xl, 2.5rem);
+  max-width: 62rem;
+}
+
+@media (min-width: 44rem) {
+  .future-team {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.future-team__row {
+  display: grid;
+  gap: 0.15rem;
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+}
+
+.future-team__role {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.future-team__firm {
+  margin: 0;
+  color: var(--color-ink, #1c1614);
+  font-weight: 600;
+}
+
+/* The town, on its own line under the firm. `display: block` rather than a `br`
+   — the town is a second fact about the firm, not a line break in one. */
+.future-team__town {
+  display: block;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  font-weight: 400;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * The picture credit, and it is visible rather than folded away.
+ *
+ * /about/our-belief and /about/patron-saints put theirs in a shut drawer,
+ * because free-licence attribution is an obligation to a photographer nobody is
+ * going to look up. This one is doing a different job: telling a reader looking
+ * at a photorealistic aerial view that it is a drawing of an unbuilt building.
+ * That belongs on the page, at a size somebody reads.
+ */
+.future-credit {
+  max-width: var(--measure, 68ch);
+  padding-inline-start: var(--space-md, 1rem);
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.55);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── The marks band, under the film ───────────────────────────────────────── */
+
+/*
+ * The consultants' logos, immediately under the video.
+ *
+ * They started at the foot of the page beside the list of names, which is where
+ * a credit goes. This is not a credit. A reader who has just watched a
+ * photorealistic animation of a building that does not exist is at their most
+ * sceptical in the second after it ends, and a row of seven engineering firms'
+ * marks answers that in about a second — which only works if it is the next
+ * thing on the screen. The *names*, with their roles and towns, stay at the
+ * foot for the reader who got that far.
+ *
+ * Shallow top padding from `band--tight-start` and shallow bottom padding here:
+ * the ground does not change at either seam, so the band has to sit close to
+ * the film above it or it reads as a separate subject.
+ */
+.future-marks-band {
+  padding-bottom: var(--space-xl, 2.5rem);
+}
+
+/*
+ * One line naming the architects, above the row.
+ *
+ * An `h2` because it is the heading of a section — but it is set at body size
+ * rather than as display type, which is the whole trick. At `--type-heading` in
+ * the serif it competes with "Three buildings, one courtyard" in the band
+ * below and reads as the page's subject; at body size in the UI face it reads
+ * as what it is, a caption for the row of marks under it.
+ *
+ * `strong` inside it carries the architects' name, so the one thing a reader
+ * skimming picks out of the sentence is the firm.
+ */
+.future-marks-band__head {
+  max-width: var(--measure, 68ch);
+  margin: 0 0 var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  font-weight: 400;
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.future-marks-band__head strong {
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+/* In this band the row is the whole content, so it carries no bottom margin of
+   its own — the band's padding is the space under it. It keeps the margin at
+   the foot of the page, where the list of names follows it. */
+.future-marks-band .future-marks {
+  margin-bottom: 0;
+}
+
+/* ── The offering ─────────────────────────────────────────────────────────── */
+
+/*
+ * The closing band, and the only place on this page that asks for anything.
+ *
+ * `band--deep`, which bookends the page against the hero — the same thing the
+ * homepage does, and the reason is the same: a long page of alternating beiges
+ * needs to be closed rather than to stop.
+ *
+ * Centred, unlike every other band here. Eight bands of left-aligned prose have
+ * trained the reader's eye to one edge, and breaking that is what makes the
+ * last one read as a different kind of thing — an address rather than more
+ * description.
+ */
+.future-give {
+  text-align: center;
+}
+
+.future-give__inner {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  justify-items: center;
+  max-width: 44rem;
+}
+
+.future-give__inner > * {
+  margin: 0;
+}
+
+.future-give h2 {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: var(--type-heading, 1.75rem);
+  line-height: var(--leading-tight, 1.15);
+}
+
+.future-give__lede {
+  font-size: var(--type-lede, 1.25rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 84%, transparent);
+}
+
+/*
+ * The fund instruction, and it is boxed because it is an instruction rather
+ * than a sentiment.
+ *
+ * Tithe.ly's form opens on the general fund and has no documented parameter for
+ * preselecting another, so an offering meant for the building lands in the
+ * wrong place unless the giver changes it themselves. That makes this the one
+ * line on the page a reader has to actually act on, and it sits *above* the
+ * button rather than below it — an instruction printed under the thing it is
+ * about is an instruction read after the fact.
+ *
+ * The gold rule and ground are the same pair the figures and the credit use, at
+ * the weights `band--deep` needs: a 55%-gold hairline vanishes on oxblood.
+ */
+.future-give__fund {
+  padding: var(--space-md, 1rem) var(--space-lg, 1.5rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  border-radius: var(--radius-md, 0.5rem);
+  background: color-mix(in srgb, #000 14%, transparent);
+  line-height: var(--leading-relaxed, 1.6);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+/* The fund's exact name, which is the only string on this page a visitor has to
+   match against something in somebody else's interface. */
+.future-give__fund strong {
+  color: var(--color-gold, #daa728);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Flow content, not a paragraph — `GiveButton` puts a `<dialog>` beside its
+   trigger and a dialog inside a `<p>` is a hydration error. See the note at the
+   call site. It exists only to give the button a line of its own. */
+.future-give__act {
+  display: flex;
+  justify-content: center;
+}
+
+.future-give__note {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 76%, transparent);
+}
+
+/*
+ * Inline links on the deep ground.
+ *
+ * ---------------------------------------------------------------------------
+ * **This is the first inline link on a `band--deep` anywhere on the site**, and
+ * it found a real hole: the site's link colour is `--color-accent`, the deep
+ * band's ground is `--color-accent-strong`, and #992a21 on #5a1512 is about
+ * 1.6:1. "More ways to give" was legible only because it was underlined.
+ *
+ * Fixed here rather than sitewide as `.band--deep a`, and that restraint is
+ * deliberate: every other deep band on this site reaches its destinations
+ * through `.button`, which has its own inverted treatment further up this file,
+ * and a blanket rule would have to fight that selector for every one of them.
+ * If a second deep band ever grows an inline link, promote this — do not copy
+ * it.
+ *
+ * Gold rather than white so it still reads as a link at a glance, mixed toward
+ * the inverse ink to clear contrast on the ground: the masthead makes the same
+ * mix for the same reason, and gold at full strength on raw `accentStrong` is
+ * 3.5:1. `:not(.button)` so the give button keeps its own solid-gold fill.
+ * ---------------------------------------------------------------------------
+ */
+.future-give a:not(.button) {
+  color: color-mix(in srgb, var(--color-gold, #b08d43) 74%, var(--color-ink-inverse, #f9efec));
+  text-underline-offset: 0.2em;
+}
+
+.future-give a:not(.button):hover,
+.future-give a:not(.button):focus-visible {
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+/*
+ * "Open the full sheet" — the link at the end of a drawing's caption.
+ *
+ * Only on the two sheets from the permit set, and only there because a drawing
+ * is a document rather than a picture: a site plan is 340px wide on a phone and
+ * its street names are unreadable, so the reader needs the file itself. The
+ * renderings get no such link — there is nothing in one that is not visible at
+ * band width.
+ *
+ * Set apart from the caption sentence it follows by weight and by the underline
+ * offset, not by putting it on its own line. It is the last clause of the
+ * caption, and a link on its own line under a two-line caption reads as a
+ * button, which invites a click from readers who did not want the raw file.
+ */
+.future-plate__open {
+  white-space: nowrap;
+  font-weight: 600;
+  text-underline-offset: 0.2em;
+}
+
+/* ===========================================================================
+   Future Plans — the interactive layer
+   ===========================================================================
+
+   Added after the page was built, when Tommy asked for it to be more
+   interactive and more animated. Four things: chapter buttons under the film,
+   a gallery that opens, hover states on the plates, and scroll-driven reveals.
+
+   **Everything here is additive, and every selector in it needs JavaScript to
+   have run.** The chapter list, the gallery buttons and the lightbox only exist
+   in the DOM if a client component put them there; the reveals key off a
+   `data-reveal` attribute that `Reveals.tsx` sets and the server never emits.
+   Turn scripting off and the page is exactly what it was — nine bands of prose
+   and pictures, all visible, nothing waiting on an event that will not fire.
+
+   That property is not an accident and it is the thing to preserve when editing
+   this block. The failure mode of scroll animation is a page whose content
+   never appears, and the only reliable way to rule it out is to make the
+   hidden state unreachable without the script that undoes it.
+   =========================================================================== */
+
+/* ── The film's chapter list ──────────────────────────────────────────────── */
+
+/*
+ * Fourteen buttons that seek the video, built at runtime from its own cue
+ * track — see `Film.tsx` for why they are not declared twice.
+ *
+ * A horizontal scroller rather than a wrapping block, and that is a real
+ * choice: wrapped, fourteen chapters are five rows of chips and the film's
+ * caption ends up below the fold on a laptop. Scrolled, it is one row that
+ * says "there is more this way", which is also true.
+ */
+.future-chapters {
+  width: 100%;
+  /* The other half of the fix above: a flex or grid item's automatic minimum
+     size is its content, so without this the row still refuses to shrink below
+     fourteen chips however narrow the column is. */
+  min-width: 0;
+  margin-top: var(--space-sm, 0.5rem);
+}
+
+.future-chapters__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-xs, 0.25rem);
+  display: flex;
+  gap: var(--space-xs, 0.4rem);
+  overflow-x: auto;
+  /* Each chapter snaps to the left edge, so a flick lands on a chapter rather
+     than halfway across one. `proximity`, not `mandatory`: mandatory fights a
+     reader who is scrolling the row to read it rather than to choose. */
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  /*
+   * Fade the last few pixels out, so the row says "there is more this way"
+   * without a chrome arrow. `mask-image` rather than a gradient overlay,
+   * because an overlay would sit above the chips and eat clicks on the last
+   * one — and because this has to work over three different band grounds.
+   */
+  mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+}
+
+/*
+ * `flex: 0 0 auto` on the list item, so a chip is as wide as its own label up
+ * to `max-width` and the row scrolls past the end. Without it fourteen chips
+ * share the row's width equally, every label truncates to four characters, and
+ * a control that says "0:33 The pia…" is worse than no control.
+ */
+.future-chapters__list > li {
+  flex: 0 0 auto;
+  display: grid;
+}
+
+.future-chapters__item {
+  scroll-snap-align: start;
+  display: grid;
+  gap: 0.1rem;
+  /* `nowrap` plus a max-width: a chapter is one line of a sentence, and a chip
+     that wraps to three lines makes the row as tall as the film. */
+  max-width: 15rem;
+  padding: var(--space-xs, 0.4rem) var(--space-sm, 0.7rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-normal, 1.4);
+  text-align: start;
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.future-chapters__item:hover {
+  border-color: color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
+  background: #fff;
+}
+
+.future-chapters__item:active {
+  transform: translateY(1px);
+}
+
+/*
+ * The chapter the film is currently inside. `aria-current` rather than a class,
+ * so the state is in the accessibility tree as well as on the screen — a
+ * screen-reader user tabbing this row is told which one they are in.
+ */
+.future-chapters__item[aria-current='true'] {
+  border-color: var(--color-accent-strong, #731d16);
+  background: #fff;
+  color: var(--color-ink, #1c1614);
+}
+
+.future-chapters__at {
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--color-accent-strong, #731d16);
+  font-weight: 600;
+}
+
+.future-chapters__what {
+  /* One line, clipped. The full text is on screen in the caption line anyway
+     when the film reaches that chapter, so this is a label rather than the
+     content — and fourteen chips of equal height is what makes the row read as
+     a control instead of a paragraph. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── The gallery ──────────────────────────────────────────────────────────── */
+
+/*
+ * Ten thumbnails. `auto-fill` with a 15rem floor: five across a wide laptop,
+ * three on a tablet, two on a phone, no breakpoint written anywhere.
+ *
+ * `auto-fill` rather than `auto-fit` — with ten items and a wide viewport
+ * `auto-fit` collapses the empty tracks and stretches the last row's cells to
+ * odd widths; `auto-fill` keeps the column rhythm.
+ */
+.future-gallery {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-md, 1rem);
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+}
+
+.future-gallery__cell {
+  display: grid;
+}
+
+/*
+ * The whole cell is the button — picture and label together. A picture that is
+ * a link with a separate caption that is not gives a keyboard user two stops
+ * for one thing and a mouse user a dead zone under the image.
+ */
+.future-gallery__button {
+  display: grid;
+  gap: var(--space-xs, 0.4rem);
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  cursor: zoom-in;
+  font: inherit;
+  color: inherit;
+}
+
+.future-gallery__thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  background: var(--color-paper-raised, #fdf7f4);
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.future-gallery__button:hover .future-gallery__thumb,
+.future-gallery__button:focus-visible .future-gallery__thumb {
+  transform: translateY(-3px) scale(1.012);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent);
+}
+
+.future-gallery__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  line-height: var(--leading-normal, 1.45);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ── The lightbox ─────────────────────────────────────────────────────────── */
+
+/*
+ * A `<dialog>` in the top layer, so it needs no z-index to clear the sticky
+ * masthead. The UA stylesheet gives dialogs a border, a white ground and a
+ * `max-width: calc(100% - 6px)`; all three have to go.
+ */
+.future-lightbox {
+  width: min(96vw, 78rem);
+  max-width: none;
+  max-height: 94vh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md, 0.5rem);
+  background: color-mix(in srgb, var(--color-accent-strong, #731d16) 14%, #14100f);
+  color: var(--color-ink-inverse, #f9efec);
+  overflow: hidden;
+}
+
+.future-lightbox::backdrop {
+  background: color-mix(in srgb, var(--color-accent-strong, #731d16) 22%, rgba(0, 0, 0, 0.82));
+  backdrop-filter: blur(2px);
+}
+
+.future-lightbox__inner {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+  padding: var(--space-md, 1rem);
+}
+
+/*
+ * Bounded by height as well as width. The pictures are 16:9 and a 78rem dialog
+ * makes one 700px tall, which on a laptop is taller than the window — the
+ * dialog would then scroll, and a lightbox you have to scroll is a worse
+ * version of the page you left.
+ */
+.future-lightbox__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: calc(var(--radius-md, 0.5rem) - 2px);
+  background: #000;
+}
+
+.future-lightbox__caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 0.6rem);
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+}
+
+.future-lightbox__count {
+  font-variant-numeric: lining-nums tabular-nums;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 62%, transparent);
+}
+
+/*
+ * The controls sit over the top-right of the picture rather than under it, so
+ * that "close" is where a reader's hand already is and the picture keeps the
+ * full height of the dialog.
+ */
+.future-lightbox__controls {
+  position: absolute;
+  inset-block-start: var(--space-md, 1rem);
+  inset-inline-end: var(--space-md, 1rem);
+  display: flex;
+  gap: var(--space-xs, 0.4rem);
+}
+
+.future-lightbox__step,
+.future-lightbox__close {
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 34%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+  background: color-mix(in srgb, #000 52%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9rem);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.future-lightbox__step {
+  /* 2.4rem square is 38px, above the 24px minimum target size and close enough
+     to 44 with the gap between them. The glyphs are ‹ and › at 1.4rem. */
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.future-lightbox__close {
+  padding-inline: var(--space-sm, 0.7rem);
+}
+
+.future-lightbox__step:hover,
+.future-lightbox__close:hover {
+  background: color-mix(in srgb, #000 72%, transparent);
+}
+
+/* ── Hover on the plates ──────────────────────────────────────────────────── */
+
+/*
+ * A shallow lift on the pictures beside prose. Not on the full-width plates or
+ * the two drawings: those are not interactive, nothing happens if you click
+ * them, and a hover state that promises an action there is a lie. The split
+ * plates get it because they are the page's rhythm and a page that responds to
+ * the cursor at all feels less like a PDF.
+ */
+.future-split__plate .future-plate__img {
+  transition:
+    transform 260ms ease,
+    box-shadow 260ms ease;
+}
+
+.future-split__plate:hover .future-plate__img {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
+}
+
+/* ── Scroll reveals ───────────────────────────────────────────────────────── */
+
+/*
+ * ---------------------------------------------------------------------------
+ * **`[data-reveal]` is set by JavaScript, never by the server**, and that
+ * inversion is the whole safety property of this block. With scripting off, or
+ * before hydration, or if `Reveals.tsx` throws, no element carries the
+ * attribute and none of these rules match — the page is simply the page. The
+ * alternative arrangement, where CSS hides everything and JavaScript reveals
+ * it, is how a site ends up blank for the people whose browser had one bad
+ * afternoon.
+ *
+ * This replaced a CSS `animation-timeline: view()` version. That one needed no
+ * JavaScript and was nicer for it, but its start state was `opacity: 0` in the
+ * stylesheet — the exact failure above — and Firefox still has scroll timelines
+ * behind a flag. See the note at the top of `Reveals.tsx`.
+ *
+ * The `prefers-reduced-motion` guard is belt and braces: `Reveals.tsx` already
+ * returns early and never sets the attribute, so this media query only matters
+ * if somebody changes the preference *after* the marks are on the page.
+ * ---------------------------------------------------------------------------
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .future [data-reveal] {
+    opacity: 0;
+    transform: translateY(1.25rem);
+    /*
+     * `transform` on a slightly longer, slightly overshooting curve than
+     * `opacity`: the fade should be finished before the movement is, or the
+     * block appears to keep drifting after it has arrived.
+     */
+    transition:
+      opacity 460ms ease-out,
+      transform 620ms cubic-bezier(0.16, 0.84, 0.36, 1);
+    /* Hint the compositor for the two properties that are actually changing,
+       and only while the element is still waiting — `will-change` left on
+       sixty elements forever is sixty needlessly promoted layers. */
+    will-change: opacity, transform;
+  }
+
+  .future [data-reveal][data-shown] {
+    opacity: 1;
+    transform: none;
+    will-change: auto;
+  }
 }

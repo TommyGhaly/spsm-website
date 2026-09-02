@@ -272,35 +272,70 @@ service cloud.firestore {
      * every visitor's browser, so they have to be world-readable anyway.
      */
     /*
-     * One key on the camp's settings, writable by the people who run the camp.
+     * The camp's own settings, writable by the people who run the camp.
      *
      * -----------------------------------------------------------------------
      * A second match on a path `config/{docId}` already covers, exactly like
      * the shop's `sections` block above. Firestore grants if **any** matching
-     * rule allows, so this can only widen — and what it widens is one boolean.
+     * rule allows, so this can only widen.
      *
-     * `servantSignUp` is the switch that decides whether `/forms/summer-camp`
-     * shows a public sign-up form to anybody who opens it. That is a decision
-     * about the camp, made by whoever is running the camp, several times a
-     * season — the list opens in the spring and closes when the groups are
-     * built. `config` is otherwise superadmin-only and deliberately not
-     * delegable through /access, because it is where the site is pointed at its
-     * backends; making the camp's open/closed sign a support request to the one
-     * person holding that claim is how it ends up permanently open.
+     * It widened on 2 Sep 2026, from the single `servantSignUp` boolean to
+     * everything on the document **except `programId`**, and the exception is
+     * the whole rule. `programId` names the ministry whose grant opens the camp;
+     * a camp administrator who could write it could point the camp at a
+     * ministry somebody else administers, or at one they administer and were
+     * never given the camp for. Every other key — the season, the week dates,
+     * the fee, the waiver, the two form switches — is a decision *about running
+     * this camp*, made by whoever is running it, several times a season.
      *
-     * Everything else in this document stays shut: the season, the fee, the
-     * waiver text and its version are all still superadmin-only, because each
-     * of them changes what a family is charged or what they agreed to.
+     * The argument for keeping the fee and the waiver shut was that both change
+     * what a family is charged or what they agreed to. True, and it is the camp
+     * that sets both: routing them through the one person holding `superadmin`
+     * made the fee a support request in the week registrations open, which is
+     * how a camp ends up taking money at last year's price. `waiverVersion`
+     * sits beside `waiverText` for the same reason — a text change nobody may
+     * version is worse than one they may.
      *
      * `resource.data.programId` and not the incoming one, so this cannot be
-     * used to move the camp to a ministry the writer happens to administer.
+     * used to move the camp to a ministry the writer happens to administer,
+     * and `hasOnly` refuses a write that adds a key nothing here has vouched
+     * for.
      * -----------------------------------------------------------------------
      */
     match /config/camp {
       allow read: if true;
       allow update: if adminsProgram(resource.data.programId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['servantSignUp'])
-        && request.resource.data.servantSignUp is bool;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'season', 'baseCents', 'weeks', 'weekStarts',
+             'waiverVersion', 'waiverText', 'note',
+             'servantSignUp', 'familyRegistration',
+             'updatedAt', 'updatedBy',
+           ])
+        // Attributable, like every other write on this site. `updatedBy` is
+        // optional only because the switches were written without it before
+        // this rule existed and a settings document already carrying somebody
+        // else's uid must still be editable.
+        && (!('updatedBy' in request.resource.data.diff(resource.data).affectedKeys())
+             || request.resource.data.updatedBy == request.auth.uid)
+        // The types rules can actually see. `weeks` is bounded because a
+        // mistyped 400 draws four hundred day checkboxes on the form, and
+        // `baseCents` because a mistyped fee is money.
+        && (!('season' in request.resource.data) || request.resource.data.season is string)
+        && (!('baseCents' in request.resource.data)
+             || (request.resource.data.baseCents is int
+                 && request.resource.data.baseCents >= 0
+                 && request.resource.data.baseCents <= 200000))
+        && (!('weeks' in request.resource.data)
+             || (request.resource.data.weeks is int
+                 && request.resource.data.weeks >= 1
+                 && request.resource.data.weeks <= 6))
+        && (!('weekStarts' in request.resource.data)
+             || (request.resource.data.weekStarts is list
+                 && request.resource.data.weekStarts.size() <= 6))
+        && (!('servantSignUp' in request.resource.data)
+             || request.resource.data.servantSignUp is bool)
+        && (!('familyRegistration' in request.resource.data)
+             || request.resource.data.familyRegistration is bool);
     }
 
     match /config/theme {
@@ -1398,18 +1433,21 @@ service cloud.firestore {
         && doc.season.size() > 0
         && doc.season.size() <= 120
         /*
-         * The camp is arranged per week, so the top level is `weeks` and the
-         * bands and stations are inside each one — out of reach here, like the
-         * groups always were. Six is `MAX_CAMP_WEEKS`.
+         * One arrangement for the whole camp, so the bands and the stations
+         * are back at the top level where they started. Sixteen is `MAX_BANDS`
+         * and forty is `MAX_STATIONS`; the groups inside a band and the people
+         * inside a group stay out of reach here, as they always were.
          *
-         * A document written before the weeks existed has `bands` at the top
-         * and no `weeks`; it is still readable, because `parseCampAllocation`
-         * lifts it into week one, but it cannot be written back in that shape.
-         * That is the right way round: every write comes from the screen, and
+         * A document written while the camp was arranged per week has `weeks`
+         * at the top and no `bands`. It is still *readable* — the parser lifts
+         * week one out of it — but it cannot be written back in that shape, and
+         * that is the right way round: every write comes from the screen, and
          * the screen has already converted it.
          */
-        && doc.weeks is list
-        && doc.weeks.size() <= 6;
+        && doc.bands is list
+        && doc.bands.size() <= 16
+        && doc.stations is list
+        && doc.stations.size() <= 40;
     }
 
     /* ======================================================================

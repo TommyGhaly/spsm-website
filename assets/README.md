@@ -254,3 +254,65 @@ They were chosen against two rejected candidates worth recording:
 The derivatives are cropped to 5:2 in `optimize-assets.mjs` rather than by CSS,
 because both places that show them — the card and the form banner — want a wide,
 short frame, and a phone should not download a 3:2 file to crop away a third.
+
+### `assets/future/` — the new church
+
+Ten pictures for `/about/future-plans`, added 2026-09-01. **The only set here
+that is not a photograph and not an icon: it is a building that does not exist
+yet.**
+
+Eight are single frames lifted from a flythrough animation; two are sheets
+rendered out of the permit set with the title block cropped away, which is the
+only alteration either drawing gets. `credits.json` records, per file, which
+document it came from and — for the frames — the timestamp, so that "is this
+still what the building looks like" is a question somebody can answer in a
+minute rather than by eye.
+
+| Source document | What it is |
+| --- | --- |
+| `20260319_St Philopater_Flythrough.mp4` | 3 min 30 s, 1080p, 538 MB. Delivered 2026-03-19. The eight renderings and the video on the page both come from this. |
+| `compiled_coptic_church_plan_-_12-22-25_1_0.pdf` | 33 sheets, 56 MB. The regulatory set of 2025-08-26 with two revisions, compiled 2025-12-22. Sheets G1 and G7 are on the page; the area schedules and the zoning table are where the page's numbers come from. |
+| `250620_ Renderings.pdf` | 4 sheets, 13 MB. Grey-and-white renderings of Building A alone, 2025-06-18. **Not used** — the flythrough shows the same three views in colour, nine months later. Kept because it is the earliest dated view of the design. |
+
+**All three are gitignored** — 607 MB between them — which is the one exception
+to the rule at the top of this file. See the note in `.gitignore`. Keep the
+masters; the parish paid for them. They just do not belong in git history, where
+nothing can ever be taken out again.
+
+**Nothing here is free-licensed.** It is work the church commissioned from
+Dewing Schmid Kearns Architects + Planners. That is why `/about/future-plans`
+carries a *visible* credit line rather than the hidden drawer
+`/about/our-belief` and `/about/patron-saints` use: with Commons material the
+licence is the obligation, and here the obligation is not letting a reader
+mistake a photorealistic aerial view for a photograph, or a drawing filed with a
+planning board for a building.
+
+The two sheets are rendered from the PDF at 1.6× with PyMuPDF, cropped to
+`(40, 24) – (2566, 1566)` in PDF points to drop the title block and the sheet
+border. The eight frames are pulled with `ffmpeg -ss <t> -frames:v 1`, at the
+timestamps in `credits.json`. Both write PNG rather than JPEG, because these
+came off a video decoder and a PDF renderer rather than a camera and a JPEG
+intermediate would add generation loss for nothing.
+
+#### The video is committed, not generated
+
+`apps/website/public/video/future-flythrough-720.mp4` is not built by
+`npm run assets` — it is not an image, and its master is not in the repository.
+It was made once, by hand, and is committed:
+
+```
+ffmpeg -i "assets/Future Plans/20260319_St Philopater_Flythrough.mp4" \
+  -c:v libx264 -preset slow -crf 28 -profile:v high -level 4.0 \
+  -pix_fmt yuv420p -vf "scale=1280:-2" -an -movflags +faststart \
+  apps/website/public/video/future-flythrough-720.mp4
+```
+
+538 MB in, 33 MB out. `-an` drops the audio: the master carries a music track
+whose licence nobody has checked, an architectural walk-through is not something
+anybody needs to hear, and it saved about 6 MB. `+faststart` moves the index to
+the front so the file starts playing before it has finished arriving.
+
+The page loads it with `preload="none"` behind a poster, so those 33 MB never
+leave the server unless a visitor presses play. If the flythrough is ever
+re-cut, re-run the command above **and** re-pull the eight stills — their
+timestamps will have moved.

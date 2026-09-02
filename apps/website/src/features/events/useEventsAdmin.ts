@@ -1,8 +1,7 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
-import { hasRole, type SpsmClaims } from '@spsm/shared';
-import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
+import { type SpsmClaims } from '@spsm/shared';
+import { useScreenGrants } from '@/lib/screenGrants';
 
 /**
  * Whether the person reading an event page may change it.
@@ -20,12 +19,24 @@ import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
  * affordances cost them nothing new either. Same reasoning, at more length, in
  * `features/programs/useProgramAdmin`.
  *
- * ## Simpler than the programs one, and it should stay that way
+ * ## It fetches a member document now, and the note here used to deny it
  *
- * `useProgramAdmin` has to fetch a member document, because editing a ministry
- * needs a per-ministry grant. Events do not: `firestore.rules` says
- * `allow write: if hasRole('staff')` on `/events/{eventId}` and nothing more, so
- * the claim in the token is the whole answer and there is nothing to await.
+ * This file said: *`useProgramAdmin` has to fetch a member document, because
+ * editing a ministry needs a per-ministry grant. Events do not — the claim in
+ * the token is the whole answer and there is nothing to await.* That was true
+ * of `allow write: if hasRole('staff')`, and it stopped being true when the
+ * allocation screen at /access was built: the rule is `hasScreen('events')`, so
+ * whether somebody may edit the calendar is a fact on their member document.
+ * With the role ladder now gone entirely, that is true of every permission on
+ * this site bar one — see packages/shared/src/claims.ts.
+ *
+ * `useScreenGrants` does the fetch, once per session and shared with the other
+ * gated panels, and answers from the token alone for the superadmin.
+ *
+ * The distinction from `useProgramAdmin` survives, and it is the one that
+ * matters: this is the parish **calendar**. A ministry's gatherings are
+ * `programAdmin`, a different axis, granted per program on the same screen. The
+ * youth servant who runs Summercamp does not thereby get the liturgy schedule.
  *
  * ## Not a security boundary
  *
@@ -41,17 +52,6 @@ export interface EventsAdminSession {
 }
 
 export function useEventsAdmin(): EventsAdminSession {
-  const auth = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-
-  const signedIn = auth.kind === 'signed-in';
-  const claims = signedIn ? auth.claims : null;
-
-  return {
-    // `restoring` and `signing-in` are both "we do not know yet". Reporting
-    // ready on those would flash the Edit control away again a moment later for
-    // somebody who does have the role.
-    ready: auth.kind === 'signed-out' || signedIn,
-    claims,
-    canEdit: claims !== null && hasRole(claims, 'staff'),
-  };
+  const { ready, claims, canAdmin } = useScreenGrants();
+  return { ready, claims, canEdit: canAdmin('events') };
 }

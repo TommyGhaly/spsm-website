@@ -32,8 +32,35 @@ import type { Passport } from './passport';
  * ---------------------------------------------------------------------------
  */
 export function Passport({ passport }: { passport: Passport }) {
-  const { stamped, ready, count } = passport;
+  const { stamped, ready, count, reset } = passport;
   const total = TOUR_STATIONS.length;
+
+  /*
+   * Clearing it takes two presses.
+   * -------------------------------------------------------------------------
+   * The reward at the foot of the page can clear the passport in one, because
+   * a reader has to have scrolled the whole tour to reach it. This button is
+   * in a strip that is stuck to the top of the screen for the entire visit,
+   * an inch from six stamps that are also the navigation — so a one-press
+   * version is a thumb-slip that throws away five stations in a crowded hall.
+   *
+   * The arming un-arms itself after a few seconds, so a passport is never
+   * left one stray tap from empty.
+   */
+  const [arming, setArming] = useState(false);
+
+  useEffect(() => {
+    if (!arming) return undefined;
+    const timer = window.setTimeout(() => setArming(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [arming]);
+
+  // Nothing to clear before storage has been read, and nothing to clear on an
+  // empty passport. The button keeps its box in both cases rather than being
+  // dropped from the row: this strip's height is what every station's
+  // `scroll-margin` is measured against, and a control that appears when
+  // storage lands would shift the six stamps sideways under the reader's thumb.
+  const clearable = ready && count > 0;
 
   return (
     <nav className="tour-passport" aria-label="Tour passport">
@@ -73,6 +100,29 @@ export function Passport({ passport }: { passport: Passport }) {
           );
         })}
       </ol>
+
+      <button
+        type="button"
+        className={`tour-passport__reset${arming ? ' is-arming' : ''}`}
+        onClick={() => {
+          if (!arming) {
+            setArming(true);
+            return;
+          }
+          setArming(false);
+          reset();
+        }}
+        // `inert`, not unmounted: see `clearable`. It takes the box out of the
+        // tab order and off the accessibility tree while keeping it in layout.
+        inert={!clearable}
+        aria-label={
+          arming
+            ? `Press again to clear all ${count} stamps`
+            : 'Start the passport over'
+        }
+      >
+        {arming ? 'Sure?' : 'Reset'}
+      </button>
     </nav>
   );
 }
@@ -99,7 +149,8 @@ export function StampButton({
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const done = passport.ready && passport.stamped.has(station);
-  const { stamp } = passport;
+  const { stamp, resetSeq } = passport;
+  const armed = useRef(true);
 
   useEffect(() => {
     const node = sentinel.current;
@@ -107,15 +158,38 @@ export function StampButton({
     // running for the whole visit is six observers doing nothing.
     if (!node || done || typeof IntersectionObserver === 'undefined') return undefined;
 
+    /*
+     * `resetSeq` is a dependency so that every station rebuilds its observer
+     * when the passport is cleared — including the stations that were not
+     * stamped, whose `done` did not change. A fresh observer delivers a first
+     * callback describing where its sentinel is *now*, which is what the
+     * arming below needs.
+     *
+     * Disarmed on a reset, armed on the first mount. An observer always
+     * reports an element already on screen as intersecting the moment it
+     * starts watching, so without this, pressing Reset in the sticky strip
+     * while reading station 4 would stamp station 4 again before the reader's
+     * thumb was off the button — and the passport would look broken. Leaving
+     * the screen is what arms it; a deep link from a printed QR code still
+     * stamps on arrival, because that is a first mount.
+     */
+    armed.current = resetSeq === 0;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) stamp(station);
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            armed.current = true;
+          } else if (armed.current) {
+            stamp(station);
+          }
+        }
       },
       { rootMargin: '0px 0px -20% 0px' },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [station, stamp, done]);
+  }, [station, stamp, done, resetSeq]);
 
   return (
     <div className="tour-stampline" ref={sentinel}>

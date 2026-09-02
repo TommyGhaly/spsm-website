@@ -12,6 +12,7 @@ import {
   type RollupOrder,
 } from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
+import { BUDGETS, CAPS, exclusive, throttled } from './rateLimit.js';
 
 /**
  * Turning the raw event stream into the numbers the admin reads.
@@ -227,7 +228,12 @@ function recentDays(now: Date, count: number): string[] {
  * ever sees is an hour with a `computedAt` on the page saying so.
  */
 export const rollupBookstoreStats = onSchedule(
-  { schedule: 'every 60 minutes', timeZone: PARISH_TIME_ZONE, timeoutSeconds: 300 },
+  {
+    schedule: 'every 60 minutes',
+    timeZone: PARISH_TIME_ZONE,
+    timeoutSeconds: 300,
+    maxInstances: CAPS.scheduled,
+  },
   async () => {
     for (const day of recentDays(new Date(), REWRITE_DAYS)) {
       await rollupDay(day);
@@ -243,19 +249,50 @@ export const rollupBookstoreStats = onSchedule(
  * writes the stats documents — and an unauthenticated caller could otherwise
  * make the parish pay for a full-collection scan as often as they liked.
  */
-export const refreshBookstoreStats = onRequest({ cors: false }, async (req, res) => {
-  const caller = await callerOf(req);
-  if (!mayManageOrders(caller)) {
-    res.status(caller ? 403 : 401).json({ error: 'Not permitted.' });
-    return;
-  }
+export const refreshBookstoreStats = onRequest(
+  { cors: false, maxInstances: CAPS.rebuild },
+  async (req, res) => {
+    // The cheap gate, before a token is verified.
+    if (throttled(req, res, { bucket: 'stats:address', max: BUDGETS.adminAddress })) return;
 
-  try {
-    const days = recentDays(new Date(), REWRITE_DAYS);
-    for (const day of days) await rollupDay(day);
-    res.status(200).json({ ok: true, days });
-  } catch (error) {
-    console.error('[stats] refresh failed', error);
-    res.status(500).json({ error: 'Could not refresh the statistics.' });
-  }
-});
+    const caller = await callerOf(req);
+    if (!(await mayManageOrders(caller))) {
+      res.status(caller ? 403 : 401).json({ error: 'Not permitted.' });
+      return;
+    }
+
+    // A rewrite of several days of events, each a scan of that day's documents.
+    // Six a minute for a button; the hold below stops two overlapping and writing
+    // the same day's rollup twice.
+    if (
+      throttled(req, res, {
+        bucket: 'statsRebuild',
+        max: BUDGETS.rebuild,
+        identity: caller!.uid,
+        message: 'The statistics were just rebuilt. Please wait a minute before asking again.',
+      })
+    ) {
+      return;
+    }
+
+    const release = exclusive('bookstoreRollup');
+    if (!release) {
+      // Already running here. 409 rather than 429: the caller is not over a
+      // budget, the work is simply in progress — and a page that says so can wait
+      // for it instead of asking again.
+      res.status(409).json({ error: 'The statistics are being rebuilt right now.' });
+      return;
+    }
+
+    try {
+      const days = recentDays(new Date(), REWRITE_DAYS);
+      for (const day of days) await rollupDay(day);
+      res.status(200).json({ ok: true, days });
+    } catch (error) {
+      console.error('[stats] refresh failed', error);
+      res.status(500).json({ error: 'Could not refresh the statistics.' });
+    } finally {
+      release();
+    }
+  },
+);

@@ -5,6 +5,7 @@ import { ChurchCalendar } from '@/features/calendar';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 import { PARISH_TIME_ZONE } from '@/lib/dates';
+import { getParishConfig } from '@/lib/config';
 
 export const metadata: Metadata = {
   title: 'Church Calendar',
@@ -41,6 +42,9 @@ export const metadata: Metadata = {
  * page of its own. `ChurchCalendar` explains that at more length.
  */
 export default async function CalendarPage() {
+  /* The office's address and telephone number, for the sign-in help. */
+  const parish = await getParishConfig();
+
   /*
    * The site's own events, whole, at build time.
    *
@@ -100,7 +104,16 @@ export default async function CalendarPage() {
         for: the thing on the page *is* the page.
       */}
       <PageBody flush wide>
-        <ChurchCalendar features={features} />
+        {/*
+          The office's own address and number, for the sign-in help below the
+          calendar. Read here rather than in the component because the component
+          is a client one and `config/parish` is a build-time read — the same
+          arrangement /contact uses for the identical pair of facts.
+        */}
+        <ChurchCalendar
+          features={features}
+          office={{ email: parish.email, phone: parish.phone }}
+        />
       </PageBody>
     </>
   );

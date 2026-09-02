@@ -237,8 +237,84 @@ function firstVariation(
   return {
     id: str(variation?.['id']),
     price: variationData?.['price_money'],
-    tracked: variationData?.['track_inventory'] === true,
+    tracked: tracksInventory(variationData),
   };
+}
+
+/**
+ * Whether Square is counting copies of this variation.
+ *
+ * ---------------------------------------------------------------------------
+ * Square states this in two places and the parish's real catalog uses the one
+ * this function was originally missing.
+ *
+ * `track_inventory` on `item_variation_data` is the variation-wide default.
+ * `location_overrides[].track_inventory` is the per-location answer, and it is
+ * what the Square dashboard writes when you switch tracking on for a location
+ * — which is the only way a single-location merchant ever does it. Every book
+ * in the parish's production catalog carries the override and *no* top-level
+ * flag, so reading only the top-level one reported "not tracked" for all ten
+ * while Square held real counts of one to three copies each.
+ *
+ * That is not a cosmetic miss. `stockOf` maps "not tracked" to `stockCount:
+ * null`, `squareCheckout` only refuses a line at `stockCount === 0`, and so a
+ * book with the last copy already sold stayed on the shop and stayed buyable.
+ *
+ * Any location tracking it counts as tracked. The parish has one location, and
+ * `parseInventoryCounts` likewise keys on the variation alone — a merchant with
+ * two shops would need a location id threaded through both, which is a change
+ * to make when there is a second shop and not before.
+ *
+ * Exported because `squareProductStock` has to *write* this flag, and a writer
+ * that puts it somewhere this function does not look is a switch that appears
+ * to work and does nothing. `trackInventoryPatch` below is the matching setter;
+ * the two belong together and neither should be reimplemented at a call site.
+ * ---------------------------------------------------------------------------
+ */
+export function tracksInventory(variationData: Record<string, unknown> | null): boolean {
+  if (variationData?.['track_inventory'] === true) return true;
+
+  const overrides = variationData?.['location_overrides'];
+  if (!Array.isArray(overrides)) return false;
+  return overrides.some((raw) => asRecord(raw)?.['track_inventory'] === true);
+}
+
+/**
+ * An `item_variation_data` that tracks inventory, or does not, as asked.
+ *
+ * ---------------------------------------------------------------------------
+ * The counterpart to `tracksInventory`, and the reason it is a function rather
+ * than one line at the call site: **the flag has to be written everywhere that
+ * function reads it.**
+ *
+ * Setting only the top-level `track_inventory` looks right and is a no-op on
+ * every book the parish actually has. Those all carry
+ * `location_overrides[{ track_inventory: true }]` and no top-level flag, and an
+ * override wins for its location — so "stop counting" would write `false` at
+ * the top, leave the override saying `true`, and the next sync would read the
+ * book back as tracked with its old count. The staff button would appear to do
+ * nothing, twice: once in Square and once on the shop.
+ *
+ * So both are set. Overrides are rewritten in place rather than dropped —
+ * they carry other per-location settings (`price_money`, `sellable`) that are
+ * none of this function's business.
+ * ---------------------------------------------------------------------------
+ */
+export function trackInventoryPatch(
+  variationData: Record<string, unknown> | null,
+  tracked: boolean,
+): Record<string, unknown> {
+  const data: Record<string, unknown> = { ...(variationData ?? {}), track_inventory: tracked };
+
+  const overrides = variationData?.['location_overrides'];
+  if (Array.isArray(overrides) && overrides.length > 0) {
+    data['location_overrides'] = overrides.map((raw) => {
+      const override = asRecord(raw);
+      return override ? { ...override, track_inventory: tracked } : raw;
+    });
+  }
+
+  return data;
 }
 
 /** What this variation's stock is, given what we know about inventory. */
@@ -323,4 +399,36 @@ function str(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Which Firestore document a mirrored product belongs in.
+ *
+ * ---------------------------------------------------------------------------
+ * The document id is a slug of the name, and it has to keep being that for
+ * every product the mirror has never seen — a readable `/bookstore` URL is the
+ * reason `slugify` exists rather than keying on Square's opaque ids.
+ *
+ * But a name can now be changed from the shop's own edit panel, and a slug
+ * recomputed from the new name is a *different document*. Left alone, one
+ * rename would: create a second row, prune the first as "no longer in Square",
+ * and take the parish's `section` and the build's baked cover down with it —
+ * while any completed order still pointing at the old slug turned into a
+ * dangling line item.
+ *
+ * So Square's own id is the join wherever one already exists, and the slug is
+ * only ever how a *new* document gets named. A renamed book keeps the document,
+ * the URL, the category and the cover it had, and only its `name` changes,
+ * which is the whole of what was asked for.
+ *
+ * @param existingByObjectId `squareCatalogObjectId` → the document id already
+ *   holding it. Products created outside Square have no id and are absent, so
+ *   they fall through to the slug exactly as before.
+ * ---------------------------------------------------------------------------
+ */
+export function mirrorDocumentId(
+  product: { slug: string; squareCatalogObjectId: string },
+  existingByObjectId: ReadonlyMap<string, string>,
+): string {
+  return existingByObjectId.get(product.squareCatalogObjectId) ?? product.slug;
 }

@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { aboutHref, aboutPage } from '@/features/content';
 import { BeliefScreen } from '@/features/belief';
 import { PageHeader } from '@/components/PageHeader';
+import { MoreOfAbout } from '@/components/MoreOfAbout';
 
 /**
  * Our Belief — the Creed, and what it means.
@@ -53,9 +53,12 @@ export default function OurBeliefPage() {
       */}
       <BeliefScreen />
 
-      <div className="wrap belief-back">
-        <Link href="/about">All of About</Link>
-      </div>
+      {/*
+        The foot: the other four parts of About, and the way back to the index.
+        It replaced a bare `.wrap` holding one "All of About" link — see
+        `MoreOfAbout` for why a correct link still looked wrong there.
+      */}
+      <MoreOfAbout current="our-belief" />
     </>
   );
 }

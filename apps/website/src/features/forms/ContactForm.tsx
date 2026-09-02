@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { FormDefinition, ParishConfig } from '@spsm/shared';
+import type { FormAnswers, FormDefinition, ParishConfig } from '@spsm/shared';
 import { FormRenderer } from './FormRenderer';
 import { readFormBySlug, type WithId } from './data';
 
@@ -100,7 +100,7 @@ export function ContactForm({ parish }: { parish: ParishConfig }) {
           <>
             {' '}
             {/* Punctuation stripped for the dialler, exactly as ContactDetails does it. */}
-            Or ring <a href={`tel:${parish.phone.replace(/[^\d+]/g, '')}`}>{parish.phone}</a>.
+            or call <a href={`tel:${parish.phone.replace(/[^\d+]/g, '')}`}>{parish.phone}</a>.
           </>
         )}
       </p>
@@ -126,7 +126,40 @@ export function ContactForm({ parish }: { parish: ParishConfig }) {
   return (
     <>
       {form.blurb && <p className="note">{form.blurb}</p>}
-      <FormRenderer form={form} />
+      <FormRenderer form={form} initialAnswers={subjectFromQuery(form)} />
     </>
   );
+}
+
+/**
+ * `?about=<option>` in the address, turned into a chosen subject.
+ *
+ * ---------------------------------------------------------------------------
+ * Why the address bar gets to fill in a field at all.
+ *
+ * The sign-in help at the foot of /calendar sends a servant here to ask for a
+ * church account. Sending them to a bare contact form and trusting them to pick
+ * the right line out of a select is how that request arrives filed under "A
+ * general question" — and the point of the subject column in the submissions
+ * table is that the office can tell these apart at a glance.
+ *
+ * Nothing here is trusted. The value is matched against the options on the
+ * *stored* form and dropped if it is not one of them, so a link that has gone
+ * stale — an option renamed in the builder, a value someone typed by hand —
+ * opens an ordinary empty form rather than one carrying an answer the server
+ * will refuse on submit. Only the subject field can be filled this way; there is
+ * no general "prefill any field from the URL", which would let a link put words
+ * in somebody's message.
+ * ---------------------------------------------------------------------------
+ */
+function subjectFromQuery(form: FormDefinition): FormAnswers {
+  if (typeof window === 'undefined') return {};
+
+  const wanted = new URLSearchParams(window.location.search).get('about');
+  if (!wanted) return {};
+
+  const subject = form.fields.find((field) => field.key === 'subject');
+  if (!subject || !subject.options.some((option) => option.value === wanted)) return {};
+
+  return { subject: wanted };
 }

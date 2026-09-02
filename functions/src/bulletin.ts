@@ -31,6 +31,7 @@
  * reader could see, and that is a bug nobody would think to look for.
  */
 import { onRequest } from 'firebase-functions/v2/https';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
@@ -76,6 +77,7 @@ const CACHE_CONTROL = 'public, max-age=0, s-maxage=30, stale-while-revalidate=30
 export const bulletin = onRequest(
   {
     secrets: [ANNOUNCEMENTS_SERVICE_ACCOUNT],
+    maxInstances: CAPS.bulletin,
     // Same origin through the Hosting rewrite in firebase.json. Nothing here is
     // secret — this is the sheet pinned up in the narthex — but there is no
     // reason for another site to read it through the parish's own credential
@@ -87,6 +89,14 @@ export const bulletin = onRequest(
       res.status(405).json({ error: 'This endpoint is read-only; use GET.' });
       return;
     }
+
+    /*
+     * Generous, and it has to be: the homepage polls this once a minute per open
+     * tab, and on a Sunday the whole congregation is behind the church's one
+     * address. What this refuses is a script, not a parish. The CDN is what
+     * actually carries the load — see CACHE_CONTROL below.
+     */
+    if (throttled(req, res, { bucket: 'bulletin', max: BUDGETS.bulletin })) return;
 
     try {
       const config = await integrations();

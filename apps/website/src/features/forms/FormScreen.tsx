@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { FormDefinition } from '@spsm/shared';
+import { builtInForm, parseFormDefinition, type FormDefinition } from '@spsm/shared';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 import { FormRenderer } from './FormRenderer';
+import { FormEmbed } from './FormEmbed';
 import { VehicleForm } from './VehicleForm';
 import { readFormBySlug, type WithId } from './data';
 
@@ -59,10 +60,13 @@ export function FormScreen() {
         // An unpublished form reads as missing rather than as an error. The
         // rules refuse the read to anyone without the staff claim, so a draft
         // is a 404 to the public — which is what it should look like.
-        setState(form && form.published ? { kind: 'form', form } : { kind: 'missing' });
+        setState(
+          form && form.published ? { kind: 'form', form } : fallbackFor(slug) ?? { kind: 'missing' },
+        );
       })
       .catch(() => {
-        if (!cancelled) setState({ kind: 'error' });
+        if (cancelled) return;
+        setState(fallbackFor(slug) ?? { kind: 'error' });
       });
 
     return () => {
@@ -128,7 +132,18 @@ export function FormScreen() {
           Most forms have no picture and get nothing here. An empty decorative
           box would be worse than none.
         */}
-        {form.image && (
+        {/*
+          The band is skipped on an embedded form, and that is not a small
+          exception — it is the difference between the page reading as ours and
+          reading as a pile of headers.
+
+          A framed Breeze or Tithe.ly form arrives with its own crest and its own
+          coloured header bar, which we cannot touch. Our band on top of that put
+          four pieces of chrome above the first question: masthead, photograph,
+          their crest, their bar. The picture still earns its keep on the card on
+          /forms, which is where it was asked for.
+        */}
+        {form.image && form.kind !== 'embed' && (
           <div className="fx__banner">
             <img src={form.image} alt="" aria-hidden="true" loading="eager" decoding="async" />
           </div>
@@ -157,10 +172,25 @@ function FormBody({ form }: { form: WithId<FormDefinition> }) {
   }
 
   /*
-   * An external form is somebody else's — Breeze, today. Linked rather than
-   * rendered, because Breeze's API has no endpoint that accepts a submission:
-   * a native copy of a Breeze form would collect answers Breeze never hears
-   * about, while the office keeps checking Breeze and finding it empty.
+   * Somebody else's form — Tithe.ly's or Breeze's — framed under our header and
+   * our picture.
+   *
+   * The answers belong to whoever hosts it and stay there; see `FormEmbed` for
+   * what that means and why the "open in a new tab" link above the frame is not
+   * optional. An `embed` form with no address falls through to the renderer
+   * below and shows an empty form, which the builder lints against.
+   */
+  if (form.kind === 'embed' && form.externalUrl) {
+    return (
+      <FormEmbed url={form.externalUrl} title={form.title} host={hostOf(form.externalUrl)} />
+    );
+  }
+
+  /*
+   * An external form is somebody else's. Linked rather than rendered, because
+   * a form we do not host cannot accept a submission from us: a native copy
+   * would collect answers its owner never hears about, while the office keeps
+   * checking the other system and finding it empty.
    */
   if (form.kind === 'external' && form.externalUrl) {
     return (
@@ -178,6 +208,61 @@ function FormBody({ form }: { form: WithId<FormDefinition> }) {
   }
 
   return <FormRenderer form={form} />;
+}
+
+/**
+ * Whose page this is, for the sentence under the frame.
+ *
+ * The bare hostname, minus a `www.` and minus a subdomain that says nothing —
+ * "tithe.ly" rather than "give.tithe.ly", but "stphilopaterstmina.breezechms.com"
+ * kept whole would be worse than useless, so it is trimmed to the registrable
+ * part. Wrong for a two-part public suffix like `.co.uk`; neither host is one,
+ * and a full PSL for one sentence is not a trade worth making.
+ */
+function hostOf(url: string): string {
+  try {
+    const parts = new URL(url).hostname.replace(/^www\./, '').split('.');
+    return parts.slice(-2).join('.');
+  } catch {
+    return 'another website';
+  }
+}
+
+/**
+ * The built-in definition for this address, when there is one.
+ *
+ * ---------------------------------------------------------------------------
+ * Two forms have a copy in the code, and it is used exactly here.
+ *
+ * `/forms/vehicle-registration` is on an NFC tag in the car park and
+ * `/forms/contact` is behind every "ask the church office" link on the site.
+ * Neither address can be corrected by editing a file, so neither may depend on
+ * a Firestore document existing and being readable: a seeder that has not been
+ * run, a document somebody deleted from the console, or a network that is
+ * simply down would otherwise turn a physical tag into a "form not found" page
+ * on a Sunday morning.
+ *
+ * So a *failed or empty* read of one of those two slugs falls back to
+ * `builtInForm`. Note the order — the stored document wins whenever there is
+ * one, because staff edit these like any other form and this must never
+ * overwrite that. This is the floor, not the source of truth.
+ *
+ * Every other slug is unaffected: no document, no form, 404 as before.
+ * ---------------------------------------------------------------------------
+ */
+function fallbackFor(slug: string): { kind: 'form'; form: WithId<FormDefinition> } | null {
+  const draft = builtInForm(slug);
+  if (!draft) return null;
+  console.warn(
+    `[forms] ${slug} could not be read from Firestore; showing the built-in copy. ` +
+      'Run `npm run forms -- --write` if the document is missing.',
+  );
+  /*
+   * Through the parser rather than cast, so a built-in and a stored form are
+   * the same shape by construction — including the audit fields, which this
+   * copy has never had because it has never been written.
+   */
+  return { kind: 'form', form: { id: slug, ...parseFormDefinition(slug, draft) } };
 }
 
 /**

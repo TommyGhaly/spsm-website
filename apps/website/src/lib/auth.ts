@@ -5,7 +5,9 @@
  * never signs in — the calendar, the bulletin, giving, and contact details are
  * all public, and vehicle registration and the parish forms are written
  * anonymously. Sign-in exists for exactly two things: the servants schedule and
- * the admin surface.
+ * the admin surface. Being able to sign in *is* the qualification for the first
+ * of those and buys nothing towards the second — see
+ * packages/shared/src/claims.ts.
  *
  * That is why Microsoft is the only provider enabled on the project (verified:
  * `defaultSupportedIdpConfigs` lists `microsoft.com` and nothing else). Servants
@@ -31,7 +33,7 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
-import { DEFAULT_CLAIMS, isKnownRole, type SpsmClaims, type Group, GROUPS } from '@spsm/shared';
+import { DEFAULT_CLAIMS, parseClaims, type SpsmClaims } from '@spsm/shared';
 import { firebaseApp, usingEmulators } from './firebase';
 import { setSessionHint } from './authHint';
 
@@ -83,7 +85,7 @@ export function auth(): Auth {
   }
 
   // See `usingEmulators` — the admin cannot be developed against the real
-  // project, because getting a role there means being a real member of the
+  // project, because getting an account there means being a real member of the
   // parish directory. Connected here, inside the one-time construction, so it
   // cannot run twice: `connectAuthEmulator` throws once the instance is used.
   if (usingEmulators()) {
@@ -133,17 +135,126 @@ export function signOut(): Promise<void> {
 }
 
 /**
+ * Delete the signed-in account, and end the session.
+ *
+ * ---------------------------------------------------------------------------
+ * Two things are removed and only one of them can be removed from here.
+ *
+ * An account on this site is a Firebase Auth user *and* a `members/{uid}`
+ * document — the second is what says which areas the person administers, and no
+ * rule lets a member delete their own. So this does not call the SDK's
+ * `deleteUser()`; it posts to `/api/account/delete`, which does both halves
+ * with the Admin SDK in the one order that fails safe. `functions/src/account.ts`
+ * carries that argument at length.
+ *
+ * The ID token is the whole of the request. There is no uid in the body and
+ * there must never be one: the endpoint acts on whoever the verified token says
+ * is calling, which is what makes it impossible to aim at somebody else.
+ * ---------------------------------------------------------------------------
+ *
+ * `getIdToken(true)` forces a refresh rather than using the cached token, and
+ * that is not caution for its own sake. The endpoint verifies with
+ * `checkRevoked: true`, so a token minted up to an hour ago — the ordinary case
+ * for a tab that has been open all morning — is re-checked against the tenant
+ * anyway; forcing the refresh here means a stale-token 401 surfaces as a
+ * sign-in problem before anything is deleted, rather than as a failure halfway
+ * through.
+ *
+ * The local sign-out at the end is deliberate and is not merely tidying. The
+ * user is gone from Firebase, but this tab still holds their session in
+ * localStorage: `onAuthChange` would not necessarily hear about it until the
+ * SDK next tried to refresh the token, leaving the header showing the initials
+ * of an account that no longer exists. Signing out locally is what makes the
+ * menu agree with reality immediately.
+ *
+ * ---------------------------------------------------------------------------
+ * **It happens on success only, and that is a fix rather than a preference.**
+ *
+ * This was written as a `finally`, on the reasoning that a session whose fate
+ * we are unsure of is one to get out of. Tried against an endpoint that was not
+ * deployed yet, that reasoning produced the worst behaviour this whole feature
+ * has: the request 404s, nothing is deleted, and the person is signed out
+ * anyway — which unmounts the confirmation dialog, throws away the error
+ * message with it, and leaves them looking at a signed-out masthead. From the
+ * outside that is indistinguishable from having worked. They would have gone
+ * away believing an account that still exists had been deleted.
+ *
+ * There is no case that wants the old behaviour. A network failure, a 401, a
+ * 404, a 429 and the superadmin 409 all mean nothing was deleted, so the
+ * session is still valid and still theirs. The one genuinely partial outcome —
+ * the 500 where the member document went but the auth user did not — leaves an
+ * account that can sign in and holds no areas, which is a state worth *staying*
+ * in long enough to read the sentence telling them to contact the office.
+ *
+ * So: sign out when the account is actually gone, and otherwise leave the
+ * session alone and let the error reach the screen.
+ * ---------------------------------------------------------------------------
+ */
+export async function deleteOwnAccount(): Promise<void> {
+  const user = auth().currentUser;
+  if (!user) throw new Error('You are not signed in.');
+
+  let token: string;
+  try {
+    token = await user.getIdToken(true);
+  } catch {
+    throw new Error('Your sign-in has expired. Sign in again and retry.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('/api/account/delete', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // A network failure, not a refusal. Worth saying differently: nothing has
+    // been deleted, and retrying is the right move.
+    throw new Error('Could not reach the church server. Check your connection and retry.');
+  }
+
+  const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+  if (!response.ok) {
+    /*
+     * A non-JSON body here means the Hosting rewrite for this path is missing
+     * in production, or there is no Functions emulator behind the dev proxy
+     * locally — the same pair of causes `features/forms/data.ts` documents on
+     * its own endpoint. Neither is something the person clicking can fix, so
+     * they get a sentence and the console gets the detail.
+     */
+    if (!body.error) {
+      console.error(
+        `[account] ${response.status} from /api/account/delete with no JSON error. ` +
+          'In production that is a missing Hosting rewrite; locally it is a missing ' +
+          'Functions emulator. See docs/local-dev.md.',
+      );
+    }
+    throw new Error(body.error ?? 'The account could not be deleted. Please try again.');
+  }
+
+  // Deleted. Now, and only now, is this session over.
+  await signOut().catch((error: unknown) => {
+    // The account is gone from Firebase either way, so this is not worth
+    // reporting as a failure to delete — but it does mean the header may lag
+    // until the SDK next fails to refresh the token, which is worth a line.
+    console.warn('[account] the account was deleted but the local sign-out failed:', error);
+  });
+}
+
+/**
  * Sign in as a seeded emulator account. **Local development only.**
  *
  * Throws unless `usingEmulators()`, so this cannot run against the real project
  * even if a button for it were left on screen — and the real project has no
  * password provider enabled anyway, deliberately.
  *
- * It exists because the admin is otherwise undevelopable: every role check
- * needs a signed-in user with a claim, and against production the only way to
- * get one is to be a real member of the parish directory. Seed a user in the
- * Auth emulator, give it a claim, and the whole admin becomes testable — and
- * destructive actions can be tried without doing them to the parish.
+ * It exists because the admin is otherwise undevelopable: every check needs a
+ * signed-in user with an allocation, and against production the only way to get
+ * one is to be a real member of the parish directory. Seed a user in the Auth
+ * emulator, give it a `superadmin` claim and a member document, and the whole
+ * admin becomes testable — and destructive actions can be tried without doing
+ * them to the parish.
  */
 export async function signInWithEmulatorAccount(email: string, password: string): Promise<User> {
   if (!usingEmulators()) {
@@ -155,27 +266,25 @@ export async function signInWithEmulatorAccount(email: string, password: string)
 }
 
 /**
- * Roles come from the ID token, never from a Firestore document.
+ * The two claims, read off the ID token.
  *
- * `forceRefresh` matters more here than it looks: `beforeUserCreated` sets the
- * role while the very first token is being minted, so a first-time signer-in
- * has it immediately — but a role *change* made by an admin does not appear
- * until the token refreshes, which is up to an hour. Anywhere a promotion needs
- * to take effect now, pass `true`.
+ * `superadmin` decides things. `screens` decides nothing here — it is a lagging
+ * mirror of the member document kept for `storage.rules`, which cannot read
+ * Firestore — and the only reason a browser looks at it at all is
+ * `useScreenGrants`, which compares it against the document to know whether the
+ * token needs refreshing. Read the grants from `useScreenGrants`, never here.
+ *
+ * `forceRefresh` matters more than it looks: `enforceTenantOnCreate` sets the
+ * block while the very first token is being minted, so a first-time signer-in
+ * has its shape immediately — but a *change*, made by `grant-admin.mjs` or by
+ * the grant mirror, does not appear until the token refreshes, which is up to
+ * an hour. Anywhere that has to take effect now, pass `true`.
  */
 export async function claimsOf(user: User | null, forceRefresh = false): Promise<SpsmClaims> {
   if (!user) return DEFAULT_CLAIMS;
 
   const token = await user.getIdTokenResult(forceRefresh);
-  const role = token.claims['role'];
-  const groups = token.claims['groups'];
-
-  return {
-    role: isKnownRole(role) ? role : DEFAULT_CLAIMS.role,
-    groups: Array.isArray(groups)
-      ? groups.filter((g): g is Group => (GROUPS as readonly unknown[]).includes(g))
-      : [],
-  };
+  return parseClaims(token.claims as Record<string, unknown>);
 }
 
 /**

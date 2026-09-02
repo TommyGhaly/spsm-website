@@ -89,8 +89,7 @@ export function HeroBand({
           <Icon name="photos" size={28} />
           <strong>{busy ? 'Uploading…' : 'Add a photograph'}</strong>
           <small>
-            Drop one here or choose a file. JPEG, PNG or WebP, up to 8MB — a wide one
-            works best.
+            Drop one here or choose a file. JPEG, PNG or WebP — a wide one works best.
           </small>
         </button>
       )}

@@ -235,7 +235,10 @@ export const NO_PAYMENT: FormPayment = { enabled: false, baseCents: 0, label: ''
 
 /**
  * `native`   — built in the drawer on /forms, drawn by `FormRenderer`.
- * `external` — a card that links out to somebody else's form. Breeze today.
+ * `embed`    — somebody else's form, framed on a page of ours. Tithe.ly and
+ *              Breeze today. The answers stay with whoever hosts it and never
+ *              reach this project.
+ * `external` — a card that links out to somebody else's form.
  * `vehicle`  — the parking registration: hand-written, and posts to Taksis.
  *
  * `vehicle` is a real component rather than a field list, because it needs
@@ -243,8 +246,130 @@ export const NO_PAYMENT: FormPayment = { enabled: false, baseCents: 0, label: ''
  * fixed colour set. Giving it a `kind` is what lets it appear on the hub, be
  * reordered, and be unpublished like any other form without pretending it is
  * data.
+ *
+ * `embed` exists for the same reason `external` does — a form we do not own
+ * cannot be collected here — but it answers the objection `external` never
+ * did. A card that links out sends somebody to a page with a different
+ * masthead, and the parish then has a form on the internet that does not look
+ * like the parish's. Framing it keeps our header, our footer and our picture
+ * around a form that is still entirely its owner's, which is also the honest
+ * shape: **nothing an embedded form collects is stored here.**
+ *
+ * Deliberately one kind rather than one per vendor. Both of the parish's hosts
+ * — Tithe.ly for anything that takes money, Breeze for the request forms — are
+ * the same arrangement from this project's side: an address, a frame, and no
+ * submissions. The single vendor-specific detail is in `embedFormUrl`, and it
+ * is three lines. See `FormScreen` for the escape hatch that has to exist
+ * because a framed page can always refuse.
  */
-export type FormKind = 'native' | 'external' | 'vehicle';
+export type FormKind = 'native' | 'embed' | 'external' | 'vehicle';
+
+/** Every kind, for the parser. A stored `kind` outside this set reads as `native`. */
+const FORM_KINDS = new Set<FormKind>(['native', 'embed', 'external', 'vehicle']);
+
+/**
+ * Stored values that are no longer the name of a kind.
+ *
+ * ---------------------------------------------------------------------------
+ * `embed` was called `tithely` for about half an hour on 1 Sep 2026, and a real
+ * form was created in that window.
+ *
+ * The rename was right — the kind covers Breeze as well, and a vendor's name on
+ * it was actively misleading — but it was a rename of a value **already written
+ * to a live database**, which is a different and worse thing than renaming a
+ * type. Firestore holds what it was given; nothing migrates on its own.
+ *
+ * What that cost, exactly: the parser fell through to `native`, so a form that
+ * was a framed Breeze registration became a native form with zero questions,
+ * and the page drew an empty box where the form had been. No error, nothing in
+ * the console — the failure of an unknown enum value is always silence.
+ *
+ * So this map, rather than a migration script. It is one line, it fixes every
+ * copy including ones in a backup or on somebody's laptop, and it costs nothing
+ * at read time. Saving such a form in the builder rewrites it as `embed`, so
+ * the map empties itself over time — but it does not get deleted when it looks
+ * empty, because that is unknowable from here.
+ *
+ * **The lesson is the general one**: a `kind`, a `status`, a `section` — any
+ * string this project persists — cannot be renamed in the type alone. Either
+ * accept the old spelling here, or write and run a migration.
+ * ---------------------------------------------------------------------------
+ */
+const RENAMED_KINDS: Readonly<Record<string, FormKind>> = {
+  tithely: 'embed',
+};
+
+/** Kinds whose answers are never stored in this project. */
+export function keepsNoSubmissions(kind: FormKind): boolean {
+  return kind === 'embed' || kind === 'external';
+}
+
+/* ---------------------------------------------------------------------------
+ * Addresses of forms we do not host
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The hosts the parish's own forms actually live on.
+ *
+ * ---------------------------------------------------------------------------
+ * A warning, not a gate — and the distinction is the whole design.
+ *
+ * `EmbedImport` refuses nothing. Somebody with the `forms` grant pasting an
+ * address is trusted, and a list of hosts written today would eventually refuse
+ * a real form the parish had moved somewhere else, which is a worse failure
+ * than the one it prevents. What this buys is a sentence at the moment of
+ * pasting: an address that is neither Tithe.ly's nor Breeze's is usually a typo
+ * or a link to the wrong page, and saying so then is far cheaper than
+ * discovering an empty rectangle on /forms a week later.
+ *
+ * Both hosts were checked and send no `X-Frame-Options` and no CSP
+ * `frame-ancestors` on their form pages, which is what makes framing them
+ * possible at all. Neither promises to keep it that way — hence the escape
+ * hatch above every embed.
+ * ---------------------------------------------------------------------------
+ */
+const EMBED_HOSTS = ['tithe.ly', 'tithely.com', 'breezechms.com'];
+
+export function isKnownFormHost(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    // `https:` only. A framed `http:` page inside an `https:` document is
+    // blocked by the browser as mixed content, and the symptom is a blank box
+    // with nothing in the console that names the cause.
+    if (url.protocol !== 'https:') return false;
+    return EMBED_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The address to put in the frame.
+ *
+ * Almost always the address as pasted. `give.tithe.ly` is the one exception and
+ * the one piece of vendor knowledge in this file: `context=modal` is Tithe.ly's
+ * own parameter — the same one their `give.js` requests for an embed — and it
+ * is what makes the framed page behave as an embed rather than a full page with
+ * its own navigation. `features/giving/config.ts` carries the long version,
+ * including why we frame it ourselves instead of using their script.
+ *
+ * Nothing is appended for any other host. Adding a query parameter a server has
+ * never heard of is how a working URL becomes a 404, and Breeze's form pages
+ * are already the bare form.
+ */
+export function embedFormUrl(value: string): string {
+  const raw = value.trim();
+  try {
+    const url = new URL(raw);
+    if (url.hostname === 'give.tithe.ly' && !url.searchParams.has('context')) {
+      url.searchParams.set('context', 'modal');
+      return url.toString();
+    }
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
 
 export interface FormDefinition extends AuditFields {
   /** URL segment: /forms/<slug>. Lowercase, dashes. */
@@ -294,7 +419,14 @@ export interface FormDefinition extends AuditFields {
   closedMessage: string | null;
 
   kind: FormKind;
-  /** `external` only. Absolute URL — a Breeze form, usually. */
+  /**
+   * Where somebody else's form lives. `embed` and `external` only.
+   *
+   * One field for both rather than two, because it is the same fact — the
+   * address of a form this project does not hold — and the only difference is
+   * whether the page frames it or links to it. Two fields would let a form
+   * carry two different addresses and make "which one is live?" a question.
+   */
   externalUrl: string | null;
   /**
    * `vehicle` only. Push the submission into the Taksis project instead of
@@ -315,9 +447,6 @@ export interface FormDefinition extends AuditFields {
    * where a copy in an inbox would be a privacy problem.
    */
   confirmationEmailBody: string;
-
-  /** Set when this was imported from Breeze, so the provenance is not folklore. */
-  breezeFormId: string | null;
 }
 
 /**
@@ -493,7 +622,9 @@ export function parseFormDefinition(id: string, raw: unknown): FormDefinition {
   const record = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
   const kindRaw = str(record['kind']);
-  const kind: FormKind = kindRaw === 'external' || kindRaw === 'vehicle' ? kindRaw : 'native';
+  const kind: FormKind = FORM_KINDS.has(kindRaw as FormKind)
+    ? (kindRaw as FormKind)
+    : (RENAMED_KINDS[kindRaw] ?? 'native');
 
   const fields = (Array.isArray(record['fields']) ? record['fields'] : [])
     .map(parseField)
@@ -530,7 +661,6 @@ export function parseFormDefinition(id: string, raw: unknown): FormDefinition {
       'Thank you — the church office has your submission.',
     confirmationEmailBody: str(record['confirmationEmailBody']).trim(),
 
-    breezeFormId: nullableStr(record['breezeFormId']),
 
     createdAt: record['createdAt'] ?? null,
     updatedAt: record['updatedAt'] ?? null,

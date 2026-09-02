@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { aboutHref, aboutPage } from '@/features/content';
 import { WhoScreen } from '@/features/who';
 import { PageHeader } from '@/components/PageHeader';
+import { MoreOfAbout } from '@/components/MoreOfAbout';
 
 /**
  * Who We Are — the history, from Alexandria to Rice Road.
@@ -53,9 +53,12 @@ export default function WhoWeArePage() {
       */}
       <WhoScreen />
 
-      <div className="wrap who-back">
-        <Link href="/about">All of About</Link>
-      </div>
+      {/*
+        The foot: the other four parts of About, and the way back to the index.
+        It replaced a bare `.wrap` holding one "All of About" link — see
+        `MoreOfAbout` for why a correct link still looked wrong there.
+      */}
+      <MoreOfAbout current="who-we-are" />
     </>
   );
 }

@@ -5,7 +5,7 @@
  * `getServerSecrets` is exported but guards itself at runtime — see that file.
  */
 export * from './collections.js';
-export * from './roles.js';
+export * from './claims.js';
 export * from './screens.js';
 export * from './programAdmin.js';
 export * from './config.js';
@@ -13,6 +13,7 @@ export * from './timezones.js';
 export * from './firestoreRest.js';
 export * from './youtube.js';
 export * from './castr.js';
+export * from './xlsx.js';
 
 export * from './schema/common.js';
 export * from './schema/bulletin.js';
@@ -32,8 +33,14 @@ export * from './schema/servants.js';
 export * from './schema/theme.js';
 export * from './schema/commerce.js';
 export * from './schema/analytics.js';
+export * from './schema/finance.js';
 export * from './schema/vehicles.js';
 export * from './schema/forms.js';
+export * from './schema/builtInForms.js';
+export * from './schema/camp.js';
+export * from './schema/campAllocation.js';
+export * from './schema/campAttendance.js';
+export * from './camp/allocationWorkbook.js';
 export * from './schema/taksis.js';
 
 export * from './payments/provider.js';

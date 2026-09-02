@@ -20,7 +20,7 @@
  * part. `firestore.rules` allows a read when the document is approved **or** the
  * reader administers its program, and Firestore judges a *list* by what it could
  * return rather than what it does. An unfiltered pending query is therefore
- * provable only by `hasRole('admin')`, and a program lead with a grant on
+ * provable only by `isSuper()`, and a program lead with a grant on
  * Summercamp was refused the entire query — a flat `permission-denied` that
  * looks exactly like a broken screen. `where('programId','==',…)` is what the
  * rule can prove for both of them, so scoping the queue to a ministry makes one
@@ -38,12 +38,20 @@
  * anonymous URL 403s there by design. `reviewUrl` uses `getDownloadURL`, which
  * carries credentials.
  *
- * The consequence worth knowing before wondering why a thumbnail is blank:
- * `storage.rules` gates those reads on `hasRole('staff')`, not on a program
- * grant. A volunteer with `programAdmin` over Summercamp and the role `member`
- * can list the queue and can approve from it, and will see "no preview" on every
- * row. Approving from a filename is a decision made blind; the queue says so
- * rather than pretending.
+ * **This used to be the worst gap on the screen and is now closed.**
+ * `storage.rules` gated those reads on `hasRole('staff')`, which is not a
+ * program grant — so a volunteer holding `programAdmin` over Summercamp could
+ * list the queue, could approve from it, and saw "no preview" on every row.
+ * Approving from a filename is a decision made blind.
+ *
+ * The rule is `signedIn()` now, because `storage.rules` cannot read Firestore
+ * and therefore cannot ask the question the queue is actually gated on: the path
+ * is keyed by `programEventId`, and mapping that to a program takes a lookup
+ * this file has no way to make. The property that mattered is unchanged — a
+ * submitter is anonymous and still cannot fetch back the file they sent — and
+ * *which* submissions somebody may act on is still the program grant, enforced
+ * on the `galleryMedia` document. See the long note on that prefix in
+ * storage.rules.
  */
 import {
   collection,
@@ -269,13 +277,15 @@ function afterMillis(ms: number): Promise<void> {
  *
  * ## Why a failed file delete does not stop the refusal
  *
- * `storage.rules` gates `delete` under `submissions/` on `hasRole('staff')`. A
- * program-scoped volunteer whose role is `member` may legitimately refuse a
- * photograph and legitimately cannot delete its bytes. Failing the whole
- * operation for them would leave an unwanted photograph sitting in the queue
- * with no way to clear it; carrying on leaves the file for the lifecycle rule,
- * which is exactly the backstop that rule is for. The failure is logged, not
- * hidden.
+ * `storage.rules` gates `delete` under `submissions/` on `signedIn()`, which
+ * every reviewer satisfies — so the case this tolerance was written for (a
+ * program-scoped volunteer whose role was `member`, refusing a photograph they
+ * could not delete the bytes of) no longer arises. It is kept because the
+ * general shape does: a bucket delete is a network call that can fail on its
+ * own, and failing the whole refusal would leave an unwanted photograph in the
+ * queue with no way to clear it. Carrying on leaves the file for the lifecycle
+ * rule, which is exactly the backstop that rule is for. The failure is logged,
+ * not hidden.
  *
  * ## And why it does not stall it either
  *

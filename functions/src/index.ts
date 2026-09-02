@@ -1,4 +1,5 @@
 import { onRequest } from 'firebase-functions/v2/https';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
@@ -11,9 +12,12 @@ import {
 
 initializeApp();
 
-// Sign-in and roles. See functions/src/auth.ts — Microsoft-only, restricted to
-// the parish Entra tenant, and tenant membership is what grants `servant`.
-export { enforceTenantOnCreate, setMemberRole } from './auth.js';
+// Sign-in, and the one claim mirror. See functions/src/auth.ts — Microsoft-only,
+// restricted to the parish Entra tenant, and tenant membership is worth an
+// account and the servants' rota. Everything else is allocated at /access;
+// `mirrorGrantsToClaims` copies those grants into the token for storage.rules,
+// which cannot read Firestore.
+export { enforceTenantOnCreate, mirrorGrantsToClaims } from './auth.js';
 
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
 export { squareCheckout } from './checkout.js';
@@ -34,6 +38,7 @@ export {
   squareProductImage,
   squareRemoveProductImage,
   squareProductStock,
+  squareProductDetails,
   squareArchiveProduct,
 } from './catalog.js';
 
@@ -57,18 +62,55 @@ export { squareRefund } from './refunds.js';
  * `firestore.rules` keeps `formSubmissions` closed to clients precisely so that
  * this is the only way in — see the note above that rule.
  *
- * The two Breeze endpoints are staff-only and answer 503 until BREEZE_API_KEY
- * and BREEZE_SUBDOMAIN are set. Nothing else depends on them.
+ * An embedded form never reaches this Function: it is framed on our page and
+ * submitted inside that frame to whoever hosts it — Tithe.ly or Breeze — which
+ * is what `kind: 'embed'` means. `formSubmit` refuses one that is posted here
+ * anyway, so a stale tab cannot quietly file a copy of somebody else's form in
+ * our collection.
+ *
+ * There were two Breeze endpoints beside this one, removed on 2026-09-01 with
+ * the Breeze importer they served. Their key — BREEZE_API_KEY — read the whole
+ * member database and had no other user, so it is now unset everywhere and can
+ * be revoked in Breeze.
  */
 export { formSubmit } from './forms/submit.js';
 
-export { breezeListForms, breezeImportForm } from './forms/breeze.js';
+/*
+ * A servant signing themselves up for camp.
+ *
+ * The one other endpoint anybody may post to without an account, and it is a
+ * Function for the same reasons `formSubmit` is: the season and the ministry a
+ * sign-up is filed under are read from `config/camp` here rather than taken
+ * from the request, whether sign-ups are open at all is a document rather than
+ * a field, and rules cannot rate-limit. It writes to `campServantRequests`,
+ * which is a waiting room — nothing here can write a registration.
+ */
+export { campServantRequest } from './camp/servantRequest.js';
+
+/*
+ * A servant deleting their own account.
+ *
+ * The only endpoint here whose caller is also its subject, and the only one
+ * that removes an identity rather than a record. It is a Function because the
+ * half of an account that lives in Firestore — `members/{uid}`, the document
+ * that says which areas somebody administers — is not deletable from a browser
+ * under any rule this site has, and should not be made so. See account.ts for
+ * the order the two halves are removed in and why it cannot be the other one.
+ */
+export { deleteOwnAccount } from './account.js';
 
 // Bookstore statistics. The shop writes one document per view and cart change
 // rather than incrementing a counter — a counter tops out near one write per
 // second and would fail first on the most popular book — so all the arithmetic
 // happens here, hourly, off the request path. See stats.ts.
 export { rollupBookstoreStats, refreshBookstoreStats } from './stats.js';
+
+// The parish's money, with the people taken out. Camp fees and paid form totals
+// live inside documents full of personal data, so no rule can hand a treasurer
+// one without the other; this reads them with the Admin SDK and writes
+// totals-only documents the `finance` grant can be given on its own. See
+// finance.ts, and the long note on `'finance'` in packages/shared/src/screens.ts.
+export { rollupFinanceStats, refreshFinanceStats } from './finance.js';
 
 // The active bulletin, read at request time. The homepage schedule was baked
 // into static HTML at build time, so making a different bulletin active in the
@@ -121,7 +163,11 @@ const SQUARE_WEBHOOK_SIGNATURE_KEY = defineSecret('SQUARE_WEBHOOK_SIGNATURE_KEY'
  * ---------------------------------------------------------------------------
  */
 export const squareWebhook = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_WEBHOOK_SIGNATURE_KEY], cors: false },
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_WEBHOOK_SIGNATURE_KEY],
+    cors: false,
+    maxInstances: CAPS.squareWebhook,
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       // A GET is what a person does when checking the URL is live. Say what
@@ -129,6 +175,17 @@ export const squareWebhook = onRequest(
       res.status(405).json({ error: 'This endpoint accepts POST from Square only.' });
       return;
     }
+
+    /*
+     * Ahead of the signature check, and high enough that Square never meets it.
+     *
+     * Verification is an HMAC over the whole body, so an unsigned flood costs
+     * real CPU per request even though every one of them is refused — this
+     * bounds that. Six hundred a minute is well above Square's burstiest
+     * redelivery after an outage, and a 429 is a non-2xx like any other, so
+     * Square would simply try again later if it ever did meet it.
+     */
+    if (throttled(req, res, { bucket: 'squareWebhook', max: BUDGETS.squareWebhook })) return;
 
     const signatureKey = SQUARE_WEBHOOK_SIGNATURE_KEY.value();
     if (!signatureKey) {

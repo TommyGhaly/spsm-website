@@ -162,12 +162,21 @@ have to hold on their own:
 | Rate limit | per App Check token, in the submit Function |
 
 **A submitter cannot read back what they uploaded.** `submissions/` is
-`allow read: if hasRole('staff')` — not `if false`, which is what this said and
-what the rule was until the queue needed to show a thumbnail. The property that
-matters is unchanged, because a submitter is not staff: a public-readable
-quarantine folder is an open file host, and the approval gate would be
-decorative. The consequence of the narrower rule is that a reviewer whose role
-is below `staff` sees "no preview" on every row and decides from the filename.
+`allow read: if request.auth != null` — not `if false`, which is what this said
+and what the rule was until the queue needed to show a thumbnail. The property
+that matters is unchanged, because **a submitter is anonymous**: they have no
+account and never will, which is the whole premise of the prefix. A
+public-readable quarantine folder is an open file host and the approval gate
+would be decorative; that is not what this is.
+
+It said `hasRole('staff')` for a while, which was no narrower in kind — it
+admitted the bookstore volunteer and the bulletin editor too — and it *excluded*
+the program leads who actually do the reviewing, so every row showed "no
+preview" and every decision was made from a filename. Storage rules cannot read
+Firestore, and the prefix is keyed by `programEventId`, so this file has no way
+to ask the question the queue is really gated on. Which submissions somebody may
+act on is still the program grant, enforced on the `galleryMedia` document in
+`firestore.rules`.
 
 Uploads are transcoded on approval, not on upload — an unapproved file should
 cost nothing but the bytes it sits on. iPhone photographs arrive as HEIC, which
@@ -209,7 +218,7 @@ place. That placement is also what makes the query legal for a volunteer rather
 than only for a superadmin. `firestore.rules` allows a read when the document is
 approved **or** the reader administers its program, and Firestore judges a list by
 what it *could* return: an unfiltered pending query is provable only by
-`hasRole('admin')`, so a program lead was refused the whole query rather than
+`isSuper()`, so a program lead was refused the whole query rather than
 given a slice of it. `where('programId','==',…)` is what the rule can prove for
 both. The trade is that nobody sees one queue across every ministry; somebody who
 runs three programs visits three pages.
