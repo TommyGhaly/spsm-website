@@ -32,8 +32,13 @@ import { Chronology, Clergy, Credits, Plate, Sanctuary, WidePlate } from './part
  *
  * Nor does it end by inviting anybody. There is no closing "come and see"
  * panel, for the reason one was cut from /about/our-belief: a history that
- * turns into an advertisement at the last band stops being a history. The page
- * ends on the six people who serve in the room it has just described.
+ * turns into an advertisement at the last band stops being a history. This
+ * screen ends on the six people who serve in the room it has just described.
+ *
+ * The route puts `MoreOfAbout` under it, and that is not a reversal of the
+ * above: it lists the other four parts of About with the ledes they already
+ * have, which is a way onward for a reader who has finished, not a pitch. What
+ * was cut was a band that asked for something.
  * ---------------------------------------------------------------------------
  */
 export function WhoScreen() {

@@ -8,7 +8,17 @@ SaaS that predates this repo and was documented nowhere until 2026-08-12.
 | Weekly announcements | **read only** | `weeklyannouncements-1d046` | **live** — read directly at build time |
 | Taksis pending vehicles | **write only** | `taksis-a8ba7` | **live** — pushed by `formSubmit`; shape pinned in `schema/taksis.ts` |
 | Church calendar | **read only** | Breeze ChMS | **live** — scraped by the `calendar` Function, rendered natively on `/calendar` |
-| Breeze forms | **read only** | Breeze ChMS API | inert — needs `BREEZE_API_KEY`; import only, Breeze cannot accept a submission |
+| Embedded forms | **embed only** | tithe.ly, breezechms.com | **live** — a form's address is framed on `/forms/<slug>`; its host keeps the answers, nothing is stored here |
+
+The Breeze **forms API** importer was removed on 2026-09-01 and with it the last
+user of `BREEZE_API_KEY`. It copied a Breeze form's questions across as a native
+draft. What the parish wanted instead was somebody else's form appearing on a
+*parish* page, which is what `kind: 'embed'` does — one address, framed under
+the church's masthead and picture, with an "open in a new tab" link above it
+because a framed page can always refuse. Both hosts were checked and send no
+`X-Frame-Options` and no CSP `frame-ancestors` on their form pages.
+
+The calendar row above is unaffected — it has never used the API.
 
 ## Breeze ChMS — the church calendar
 

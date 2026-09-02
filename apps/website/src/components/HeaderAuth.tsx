@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import Link from 'next/link';
+import { isSuperadmin } from '@spsm/shared';
 import {
+  deleteAccount,
   getServerSnapshot,
   getSnapshot,
   signIn,
@@ -9,6 +12,7 @@ import {
   subscribe,
   type AuthState,
 } from '@/lib/authStore';
+import { adminRows, useAdminAccess, type AdminSection } from '@/features/admin/sections';
 
 /**
  * Sign in with Microsoft, at the right-hand end of the masthead.
@@ -25,19 +29,27 @@ import {
  * share one subscription and one SDK load, because the state lives in the
  * module singleton in lib/authStore.ts rather than in either component.
  *
- * ## Why it navigates nowhere
+ * ## Why it navigates almost nowhere
  *
- * It used to carry a list of destinations. Both rows were wrong for it. One
+ * It used to carry a list of destinations, and both rows were wrong for it. One
  * pointed at /calendar, which is a nav link two inches to the left — a menu
  * whose only content is a link the header already shows is a menu that teaches
  * people it holds nothing. The other went to a staff-only events screen, which
- * is gone entirely.
+ * is gone entirely. So this said who you are and let you stop being them, and
+ * that was the whole of it: everywhere else, editing is reached from the page
+ * being edited rather than from a link to a separate section.
  *
- * So this says who you are and lets you stop being them, and that is the whole
- * of it. Everywhere else, editing is reached from the page being edited — an
- * Edit control that appears for whoever may use it — rather than from a link to
- * a separate section. Same argument as the top of AdminGate.tsx. Nothing here
- * is a security boundary either; `firestore.rules` is.
+ * **One row is back, and it is the exception that rule always had.** /access
+ * allocates areas to people, and its subject is a *person* — there is no page
+ * on this site whose contents are "what Marina may administer", so there is
+ * nowhere in-place for it to live. It renders for the superadmin and for
+ * nobody else, which is the only reason a menu is the right home for it: it is
+ * the one destination that depends on who is reading rather than on where they
+ * are. The page repeats the argument at more length.
+ *
+ * Hiding the row is a convenience, not a security boundary. This is a static
+ * export, so the address is in a public chunk and anybody can type it;
+ * `allow update: if isSuper()` on `/members/{uid}` is what refuses them.
  */
 export function HeaderAuth({ variant = 'bar' }: { variant?: 'bar' | 'panel' }) {
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
@@ -164,10 +176,37 @@ function BarAuth({ state }: { state: AuthState }) {
             </span>
           </div>
 
-          <p className="header-auth__role">
-            <span className="header-auth__roleDot" aria-hidden="true" />
-            {state.claims.role}
-          </p>
+          {/*
+            * The one label left, and it is drawn for almost nobody.
+            *
+            * This line used to print the role — "servant", "staff", "admin" —
+            * which was a useful thing to see because it was the thing that
+            * decided what you could do. There are no roles now: what somebody
+            * may do is a list of areas on their member document, and printing
+            * that here would mean a Firestore read on every menu open to render
+            * a sentence nobody came for. So the row appears only when there is
+            * something to say, which is when the person holds the one claim
+            * that still decides anything.
+            */}
+          {isSuperadmin(state.claims) && (
+            <p className="header-auth__role">
+              <span className="header-auth__roleDot" aria-hidden="true" />
+              Superadmin
+            </p>
+          )}
+
+          <AdminLinks onNavigate={() => setOpen(false)} />
+
+          {isSuperadmin(state.claims) && (
+            <Link
+              href="/access"
+              className="header-auth__link"
+              onClick={() => setOpen(false)}
+            >
+              <AreasGlyph />
+              <span>Areas</span>
+            </Link>
+          )}
 
           <button
             type="button"
@@ -180,6 +219,8 @@ function BarAuth({ state }: { state: AuthState }) {
             <SignOutGlyph />
             <span>Sign out</span>
           </button>
+
+          {!isSuperadmin(state.claims) && <DeleteAccount variant="menu" />}
         </div>
       )}
     </div>
@@ -199,11 +240,20 @@ function PanelAuth({ state }: { state: AuthState }) {
       <div className="nav-panel__auth">
         <p className="nav-panel__who">
           <span>{state.name}</span>
-          <span className="nav-panel__role">{state.claims.role}</span>
+          {isSuperadmin(state.claims) && (
+            <span className="nav-panel__role">Superadmin</span>
+          )}
         </p>
+        {isSuperadmin(state.claims) && (
+          <Link href="/access" className="nav-panel__button">
+            Areas
+          </Link>
+        )}
+        <PanelAdminLinks />
         <button type="button" className="nav-panel__button" onClick={() => void signOut()}>
           Sign out
         </button>
+        {!isSuperadmin(state.claims) && <DeleteAccount variant="panel" />}
       </div>
     );
   }
@@ -229,6 +279,283 @@ function PanelAuth({ state }: { state: AuthState }) {
   );
 }
 
+/* ---- deleting your own account ----------------------------------------- */
+
+/**
+ * Leave, and take the account with you.
+ *
+ * ---------------------------------------------------------------------------
+ * This reverses a decision, and the reversal is the point rather than an
+ * oversight — the note at the top of this file says the menu navigates almost
+ * nowhere and lists the two exceptions. This is not a third destination: it is
+ * an action on the one subject the menu already has, which is you. There is no
+ * page on this site whose contents are "your account", so unlike an edit to a
+ * gallery or a form there is nowhere in-place for it to live, and the control
+ * that already says who you are is the only honest home for the one that stops
+ * you being them. Asked for directly by Tommy on 2026-09-02.
+ *
+ * ## Two clicks, in one place, with the sentence between them
+ *
+ * The first click does nothing but replace the row with what deleting actually
+ * does; the second does it. A `window.confirm` was the alternative and is worse
+ * for this: it cannot say which account, it cannot be styled to look like the
+ * parish's site, and on a phone it is a system sheet over a nav panel that is
+ * itself a disclosure — two things to dismiss, which is the same objection
+ * `PanelAuth` already makes to a dropdown down there.
+ *
+ * Not a `<dialog>`, either. The confirmation belongs in the flow of the control
+ * that opened it, and a modal would trap focus over a menu that already handles
+ * Escape and outside-click for itself.
+ *
+ * ## The wording is not padding
+ *
+ * Two facts decide whether somebody wants this, and both are
+ * counter-intuitive enough that leaving them out would produce clicks people
+ * regret. Their Microsoft account is untouched — this site cannot delete it,
+ * and a servant asked to "delete your account" reasonably fears otherwise.
+ * And signing in again makes a *new* account with no areas, so this is not a
+ * door that locks behind them. `functions/src/account.ts` is the authority on
+ * both.
+ *
+ * ## Hidden for a superadmin, and that is not the guard
+ *
+ * The endpoint refuses a superadmin with a 409 so the parish cannot lose its
+ * last administrator by accident. Withholding the row here means they never
+ * meet a button that cannot work — the same convenience-not-a-boundary
+ * arrangement as the /access row above, and for the same reason: this is a
+ * static export, so the code is public and the server is what decides.
+ * ---------------------------------------------------------------------------
+ */
+function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const prefix = variant === 'menu' ? 'header-auth' : 'nav-panel';
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        className={`${prefix}__delete`}
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+        }}
+      >
+        {variant === 'menu' && <TrashGlyph />}
+        <span>Delete account</span>
+      </button>
+    );
+  }
+
+  return (
+    /*
+     * `role="group"` with a label rather than `alertdialog`. Nothing here traps
+     * focus or blocks the page, so announcing it as a dialog would promise a
+     * screen reader an interaction model this does not implement.
+     */
+    <div className={`${prefix}__confirm`} role="group" aria-label="Delete your account">
+      <p className={`${prefix}__confirmLead`}>Delete this account?</p>
+      <p className={`${prefix}__confirmBody`}>
+        Your sign-in and everything you have been given to administer are removed.
+        Your church Microsoft account is not touched, and signing in again will
+        make a new account with no areas.
+      </p>
+
+      {/*
+        The live region is on a wrapper that is always rendered while
+        confirming, not on the message itself. A region that appears at the same
+        moment as its text is not reliably announced — the assistive technology
+        has to have been watching the node before it changed.
+      */}
+      <p className={`${prefix}__confirmError`} role="alert">
+        {error}
+      </p>
+
+      <div className={`${prefix}__confirmActions`}>
+        {/*
+          Cancel first in the DOM, so it is what Tab reaches first and what a
+          phone thumb meets at the top of the pair. The destructive one is never
+          the default and never the nearest.
+        */}
+        <button
+          type="button"
+          className={`${prefix}__confirmCancel`}
+          onClick={() => {
+            setConfirming(false);
+            setError(null);
+          }}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={`${prefix}__confirmGo`}
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setError(null);
+            void deleteAccount()
+              .catch((cause: unknown) => {
+                /*
+                 * Stay open, stay in the confirming state, and put the reason
+                 * beside the button. `deleteAccount` throws rather than emitting
+                 * an `error` auth state precisely so this is possible — see the
+                 * note on it in lib/authStore.ts.
+                 */
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : 'The account could not be deleted. Please try again.',
+                );
+              })
+              /*
+               * No `setConfirming(false)` on success, and no unmount guard. A
+               * successful delete signs out, which flips the auth state and
+               * unmounts this whole subtree from both trees — so there is
+               * nothing left to tidy. `setBusy` runs only on the failure path
+               * for the same reason; calling it after a successful unmount
+               * would be a no-op React warns about in development.
+               */
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+        >
+          {busy ? 'Deleting…' : 'Delete my account'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- the admin entry ---------------------------------------------------- */
+
+/**
+ * The ways into the screens that are not *about* a page — one row each.
+ *
+ * ---------------------------------------------------------------------------
+ * The second exception to "this menu navigates almost nowhere", and it is the
+ * same exception as /access rather than a new one. Arranging four hundred
+ * children into camp groups, and reading what the church took in August, are
+ * tasks with their own tools rather than edits to anything a visitor can see —
+ * so there is no in-place home for either. Everything that *can* be edited in
+ * place still is, and nothing has moved here.
+ *
+ * **One row per section, not one row for the section list.** This drew a single
+ * row that named the screen when somebody had one and said "Admin" when they
+ * had two; at Tommy's direction it now lists Summer camp and Finance
+ * separately. `adminRows` carries the argument at length: the reason the row
+ * ever named a screen rather than the hub is that a hub whose entire content is
+ * the link you just clicked is a page nobody wants, and that is doubly true of
+ * two links. /admin still exists and still works; nothing here points at it.
+ *
+ * These differ from the /access row in who sees them, which is why /access is
+ * written out above rather than folded in here. That one is `superadmin` — a
+ * question the token already answers, for free. These are "do you run the camp"
+ * and "do you hold Finance", which live on the member document and cost a
+ * Firestore read. That is why this is a component of its own: the hook inside it
+ * mounts only when the menu is open, so the read never happens on the hundred
+ * page loads where nobody opens it.
+ *
+ * Draws nothing while the answer is unknown, and nothing when the answer is no.
+ * A greyed-out entry would be worse than an absent one — it would tell most of
+ * the parish that a part of the site exists which is not theirs, which is
+ * neither useful nor true. These screens are not a privilege; they are a job
+ * somebody was given.
+ * ---------------------------------------------------------------------------
+ */
+function AdminLinks({ onNavigate }: { onNavigate(): void }) {
+  const rows = adminRows(useAdminAccess());
+
+  return (
+    <>
+      {rows.map((row) => (
+        <Link
+          key={row.href}
+          href={row.href}
+          className="header-auth__link"
+          onClick={onNavigate}
+        >
+          <DoorGlyph glyph={row.glyph} />
+          <span>{row.menuLabel}</span>
+        </Link>
+      ))}
+    </>
+  );
+}
+
+/** The same, laid flat in the nav panel — which has no dropdown to close. */
+function PanelAdminLinks() {
+  const rows = adminRows(useAdminAccess());
+
+  return (
+    <>
+      {rows.map((row) => (
+        <Link key={row.href} href={row.href} className="nav-panel__button">
+          {row.menuLabel}
+        </Link>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The mark beside the row.
+ *
+ * The label and the address come from `sections.ts`, and so does the choice of
+ * which of these to draw — this file owns the drawing and not the deciding.
+ * The row used to be hardcoded to the camp's sun and the word "Summer camp",
+ * which was true while the camp allocation was the only screen behind this menu
+ * and would have labelled the treasurer's row "Summer camp" the moment a second
+ * one landed.
+ */
+function DoorGlyph({ glyph }: { glyph: AdminSection['glyph'] }) {
+  return glyph === 'camp' ? <CampGlyph /> : <FinanceGlyph />;
+}
+
+/**
+ * A sun. Decorative — the row it sits in carries the label.
+ *
+ * Was four panes, for a screen made of cards, back when the row said "Admin"
+ * and led to the list. The row names the camp now, so the mark should too.
+ */
+function CampGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+    </svg>
+  );
+}
+
+/**
+ * A coin. Decorative — the row it sits in carries the label.
+ *
+ * Not a dollar sign, which reads as a price tag, and not a ledger, which reads
+ * as bookkeeping somebody has to do. A coin is the money itself, which is what
+ * the screen is about.
+ */
+function FinanceGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.2v9.6M14.4 9.4a2.6 2.6 0 0 0-2.4-1.3c-1.4 0-2.4.8-2.4 1.9 0 2.6 4.8 1.4 4.8 4 0 1.1-1 1.9-2.4 1.9a2.6 2.6 0 0 1-2.4-1.3" />
+    </svg>
+  );
+}
+
+/*
+ * There was a `HubGlyph` here — four panes, for a row that said "Admin" and led
+ * to /admin. It went with that row: the panel lists the screens themselves now,
+ * so there is no hub row for a hub mark to sit in. /admin is still a working
+ * page; nothing links to it. See `adminRows` in features/admin/sections.ts.
+ */
+
 /* ---- bits -------------------------------------------------------------- */
 
 /** "Mina Guirguis" → "MG". Falls back to one letter, then to nothing. */
@@ -240,12 +567,44 @@ function initialsOf(name: string): string {
   return (first + last).toUpperCase();
 }
 
+/**
+ * Three sliders. Decorative — the row carries the label.
+ *
+ * Not a key or a shield, which is what a permissions screen usually gets. Both
+ * read as *security*, and this screen is not security — it is the arrangement
+ * of who looks after which part of the parish's site. Sliders say "set these",
+ * which is what it does.
+ */
+function AreasGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="10" cy="12" r="2" />
+      <circle cx="18" cy="18" r="2" />
+    </svg>
+  );
+}
+
 /** Decorative — the row it sits in carries the label. */
 function SignOutGlyph() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  );
+}
+
+/* A waste bin, at the same 15px and the same stroke as the sign-out arrow — the
+   two rows sit together and a glyph a hair heavier than its neighbour is the
+   kind of difference that reads as a mistake rather than as emphasis. */
+function TrashGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" />
     </svg>
   );
 }

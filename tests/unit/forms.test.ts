@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUILT_IN_FORM_IDS,
+  builtInForm,
+  builtInForms,
   computeTotalCents,
   identifySubmitter,
+  embedFormUrl,
+  isBuiltInForm,
+  isKnownFormHost,
+  keepsNoSubmissions,
   isFieldVisible,
   parseFormDefinition,
   submissionAnswers,
@@ -349,5 +356,186 @@ describe('problems are tied to their fields', () => {
     expect(validateSubmission(definition, {})).toEqual(
       validateSubmissionFields(definition, {}).map((p) => p.message),
     );
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * The two forms the church always has
+ * ------------------------------------------------------------------------ */
+
+/**
+ * `builtInForms()` is read by three things that must not disagree.
+ *
+ * The seeder writes these documents, the hub renders them as cards before
+ * Firestore has answered, and the form page falls back to them when the
+ * document is missing or unreadable — which is what keeps the NFC tag in the
+ * car park and every "contact the church office" link working on a site whose
+ * database is down. A drift between the copies would show up as a form that
+ * asks different questions depending on the state of the network.
+ */
+describe('the built-in forms', () => {
+  it('names exactly the two addresses printed outside this codebase', () => {
+    expect(BUILT_IN_FORM_IDS).toEqual(['contact', 'vehicle-registration']);
+    expect(isBuiltInForm('contact')).toBe(true);
+    expect(isBuiltInForm('vehicle-registration')).toBe(true);
+    expect(isBuiltInForm('van-request')).toBe(false);
+  });
+
+  it('gives every one a slug equal to its id', () => {
+    // The hub keys cards on slug and the rules key the delete guard on the
+    // document id. They are the same string for these two, and the builder
+    // makes the field read-only so they stay that way.
+    for (const { id, draft } of builtInForms()) {
+      expect(draft.slug).toBe(id);
+    }
+  });
+
+  it('ships them published, because unpublished is a silent 404 for a printed tag', () => {
+    for (const { draft } of builtInForms()) {
+      expect(draft.published).toBe(true);
+      expect(draft.open).toBe(true);
+    }
+  });
+
+  it('hands out a fresh object each call', () => {
+    // The hub maps over these on every render and the builder edits a draft in
+    // place. A shared object would let one screen's edit reach the other's.
+    const first = builtInForm('contact');
+    const second = builtInForm('contact');
+    expect(first).not.toBe(second);
+    expect(first).toEqual(second);
+  });
+
+  it('survives the parser it is fed through on the form page', () => {
+    // `FormScreen` runs the fallback through `parseFormDefinition` so a
+    // built-in and a stored form are the same shape by construction.
+    const parsed = parseFormDefinition('contact', builtInForm('contact'));
+    expect(parsed.kind).toBe('native');
+    expect(parsed.fields.map((field) => field.key)).toEqual([
+      'name',
+      'email',
+      'phone',
+      'subject',
+      'message',
+    ]);
+    // The contact form's whole purpose: `identifySubmitter` finds a name and an
+    // address by field *type*, so the review table's columns are only ever
+    // filled if these two are typed properly.
+    expect(identifySubmitter(parsed, { name: 'A parishioner', email: 'a@b.co' })).toEqual({
+      name: 'A parishioner',
+      email: 'a@b.co',
+      phone: null,
+    });
+  });
+
+  it('keeps the vehicle registration pointed at Taksis and free of fields', () => {
+    const vehicle = builtInForm('vehicle-registration');
+    expect(vehicle?.kind).toBe('vehicle');
+    expect(vehicle?.pushesToTaksis).toBe(true);
+    // Not unfinished: `VehicleForm` is hand-written, because a repeating driver
+    // list and a fixed colour set are things the builder cannot express.
+    expect(vehicle?.fields).toEqual([]);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Forms hosted by Tithe.ly
+ * ------------------------------------------------------------------------ */
+
+describe('the address of a form we do not host', () => {
+  it('recognises both hosts the parish actually uses', () => {
+    // The parish's own Breeze form, as pasted out of the address bar.
+    expect(
+      isKnownFormHost('https://stphilopaterstmina.breezechms.com/form/NewServicesandEvents98'),
+    ).toBe(true);
+    expect(isKnownFormHost('https://tithe.ly/event-registration/123')).toBe(true);
+    expect(isKnownFormHost('https://give.tithe.ly/?formId=abc')).toBe(true);
+    expect(isKnownFormHost('  https://get.tithely.com/forms/abc  ')).toBe(true);
+  });
+
+  it('does not recognise a lookalike, or an insecure address on a real host', () => {
+    // Framed pages load inside our own `https:` document, where an `http:`
+    // frame is blocked as mixed content — a blank box with nothing in the
+    // console that names the cause.
+    expect(isKnownFormHost('http://tithe.ly/forms/abc')).toBe(false);
+    expect(isKnownFormHost('https://tithe.ly.example.com/forms/abc')).toBe(false);
+    expect(isKnownFormHost('not a url')).toBe(false);
+  });
+
+  it('asks give.tithe.ly for its framed mode, and leaves every other host alone', () => {
+    /*
+     * `context=modal` is Tithe.ly's own parameter — the one their `give.js`
+     * requests for an embed. Adding it to a host that has never heard of it is
+     * how a working URL becomes a 404, so it is added to exactly one.
+     */
+    expect(embedFormUrl('https://give.tithe.ly/?formId=abc')).toBe(
+      'https://give.tithe.ly/?formId=abc&context=modal',
+    );
+    expect(embedFormUrl('https://tithe.ly/event-registration/123')).toBe(
+      'https://tithe.ly/event-registration/123',
+    );
+    expect(embedFormUrl('https://stphilopaterstmina.breezechms.com/form/Abc1')).toBe(
+      'https://stphilopaterstmina.breezechms.com/form/Abc1',
+    );
+  });
+
+  it('does not add a second context when the address already carries one', () => {
+    expect(embedFormUrl('https://give.tithe.ly/?formId=abc&context=embed')).toBe(
+      'https://give.tithe.ly/?formId=abc&context=embed',
+    );
+  });
+
+  it('hands back whatever it was given when that is not a URL at all', () => {
+    // The builder lints against this; the page must still render something
+    // rather than throwing inside an `src` attribute.
+    expect(embedFormUrl('  nonsense  ')).toBe('nonsense');
+  });
+});
+
+describe('which kinds keep their answers here', () => {
+  it('knows that an embedded or external form stores nothing on this site', () => {
+    /*
+     * Read in three places, and they have to agree: the form list hides the
+     * "Submissions" button, `formSubmit` refuses a post, and the builder says
+     * so under the address field. A form whose answers are with Breeze and
+     * whose card offers a submissions panel is a promise the site cannot keep.
+     */
+    expect(keepsNoSubmissions('embed')).toBe(true);
+    expect(keepsNoSubmissions('external')).toBe(true);
+    expect(keepsNoSubmissions('native')).toBe(false);
+    expect(keepsNoSubmissions('vehicle')).toBe(false);
+  });
+
+  it('reads a stored `embed` kind back as itself', () => {
+    // A kind the parser did not know would fall back to `native`, and a native
+    // form with no fields renders as an empty page where a form used to be.
+    const form = parseFormDefinition('festival', {
+      kind: 'embed',
+      externalUrl: 'https://tithe.ly/forms/abc',
+    });
+    expect(form.kind).toBe('embed');
+    expect(form.externalUrl).toBe('https://tithe.ly/forms/abc');
+  });
+
+  it('still reads a form stored under the old name for `embed`', () => {
+    /*
+     * `embed` was called `tithely` for half an hour on 1 Sep 2026 and a real
+     * form was created in that window. Renaming a value already written to a
+     * live database does not migrate it: the parser fell through to `native`,
+     * and a framed Breeze registration became a native form with no questions —
+     * an empty box, no error, nothing in the console.
+     */
+    const form = parseFormDefinition('form-mti8bj80', {
+      kind: 'tithely',
+      slug: 'new-service-request',
+      externalUrl: 'https://stphilopaterstmina.breezechms.com/form/NewServicesandEvents98',
+      published: true,
+    });
+    expect(form.kind).toBe('embed');
+    expect(keepsNoSubmissions(form.kind)).toBe(true);
+  });
+
+  it('still refuses a kind nobody has heard of', () => {
+    expect(parseFormDefinition('x', { kind: 'wordpress' }).kind).toBe('native');
   });
 });

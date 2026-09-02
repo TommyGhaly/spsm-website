@@ -17,10 +17,14 @@
  * A context would have needed a provider in the root layout, which is a server
  * component and is the one place we cannot put a client boundary.
  *
- * Read through `useAuthSession` in components/HeaderAuth.tsx; nothing else
- * should subscribe. /admin and /servants keep using `AdminGate` — they are
- * behind a gate that has already paid for the SDK, and they need the full user
- * object rather than the four fields kept here.
+ * Read through `useAuthSession` in components/HeaderAuth.tsx, or through
+ * `useScreenGrants` in lib/screenGrants.ts where a permission is the question.
+ * Nothing else should subscribe directly.
+ *
+ * There was a third reader, `components/AdminGate.tsx`, which took a `Role` and
+ * drew a refusal page. It went with the role ladder: nothing had imported it
+ * since /admin was rebuilt as a hub, and every gate on the site now asks
+ * `useScreenGrants` for one area rather than asking for a tier.
  */
 import { type SpsmClaims } from '@spsm/shared';
 import { hasSessionHint, setSessionHint } from './authHint';
@@ -36,7 +40,22 @@ export type AuthState =
   | { kind: 'signed-out' }
   | { kind: 'restoring' }
   | { kind: 'signing-in' }
-  | { kind: 'signed-in'; name: string; email: string | null; claims: SpsmClaims }
+  | {
+      kind: 'signed-in';
+      /**
+       * The Firebase uid.
+       *
+       * Carried on the state so a consumer can read the member document — and
+       * therefore the program grants, which deliberately are not in the token —
+       * without importing `./auth` for `currentUser`. That import would pull the
+       * whole Auth SDK into whatever bundle did it, which for anything mounted
+       * on a public page means shipping it to visitors who never sign in.
+       */
+      uid: string;
+      name: string;
+      email: string | null;
+      claims: SpsmClaims;
+    }
   | { kind: 'error'; message: string };
 
 /**
@@ -115,6 +134,7 @@ async function attach(): Promise<{ mod: AuthModule; signedIn: boolean }> {
           pendingSignIn = false;
           emit({
             kind: 'signed-in',
+            uid: user.uid,
             // `displayName` is what Entra sends and what a person recognises;
             // the email is the fallback for an account that has not set one.
             name: user.displayName ?? user.email ?? 'Signed in',
@@ -279,7 +299,7 @@ function explain(error: unknown): string {
   const message = error instanceof Error ? error.message : 'Sign-in failed.';
 
   // Closing the popup is a decision, not a failure — it puts you back where you
-  // started. Same carve-out as AdminGate, for the same reason.
+  // started, so there is nothing to report.
   if (message.includes('popup-closed-by-user') || message.includes('cancelled-popup')) {
     return '';
   }
@@ -340,6 +360,45 @@ function explain(error: unknown): string {
 }
 
 /**
+ * Force a fresh ID token and re-emit the session with whatever it now says.
+ *
+ * ---------------------------------------------------------------------------
+ * `superadmin` lives in a Firebase Auth custom claim, and a claim is baked into
+ * the ID token at the moment it is minted. `onAuthChange` resolves claims with
+ * `claimsOf(user)` — `forceRefresh` defaulting to **false** — so the header, and
+ * everything that reads the header's state, sees whatever was true when the
+ * browser last got a token. Firebase refreshes that roughly hourly.
+ *
+ * Which means a promotion is invisible for up to an hour to the person who just
+ * received it. /access was the screen that needed to force a refresh and did
+ * not: a freshly-made superadmin was told the page was not theirs, which reads
+ * exactly like `grant-admin.mjs` having failed.
+ *
+ * Note what this does **not** fix. The *allocation* — `screenAdmin` and
+ * `programAdmin` — is not a claim at all, precisely so that it never waits on a
+ * token; those are read from the member document by `lib/screenGrants.ts`. The
+ * one lagging copy of them is the `screens` mirror that `storage.rules` reads,
+ * and that module forces its own refresh when it notices the mirror is stale.
+ *
+ * Cheap, and safe to call on a hunch: it is one token round trip and it emits
+ * only when something is actually there to emit.
+ * ---------------------------------------------------------------------------
+ */
+export async function refreshClaims(): Promise<SpsmClaims | null> {
+  if (state.kind !== 'signed-in') return null;
+
+  const mod = await import('./auth');
+  const user = mod.auth().currentUser;
+  if (!user) return null;
+
+  const claims = await mod.claimsOf(user, true);
+  // Re-read `state` after the awaits: a sign-out during the round trip must not
+  // be overwritten with a signed-in state assembled before it happened.
+  if (state.kind === 'signed-in') emit({ ...state, claims });
+  return claims;
+}
+
+/**
  * Sign out, and end up signed out even when Firebase refuses to.
  *
  * This used to `await mod.signOut()` inside a bare `try/catch {}` and leave the
@@ -377,3 +436,34 @@ export async function signOut(): Promise<void> {
   }
 }
 
+
+/**
+ * Delete the signed-in account.
+ *
+ * The dynamic `import('./auth')` is the same rule as every other route out of
+ * this module and matters here for the same reason: this is reached from the
+ * masthead, which renders on every page, and a static import would put the
+ * ~150KB auth SDK in front of every parishioner reading the calendar. See the
+ * header of this file.
+ *
+ * ---------------------------------------------------------------------------
+ * Throws, unlike `signIn` and `signOut`, and that asymmetry is deliberate.
+ *
+ * Those two own the header's state: they emit `error` and the masthead draws
+ * whatever they last said, because a failed sign-in has nowhere else to be
+ * reported. This one is called from a confirmation dialog that is already on
+ * screen and already has somewhere to put a sentence — and the dialog must stay
+ * open on failure, with the account intact and the message beside the button
+ * that failed. Emitting an `error` state instead would replace the whole
+ * control with a message and take the dialog down with it, which reads as "it
+ * worked" for the one action where that guess is worst.
+ *
+ * There is no state to emit on success either. `deleteOwnAccount` signs out as
+ * its last act, so `onAuthChange` fires and this module reports `signed-out`
+ * through the ordinary path.
+ * ---------------------------------------------------------------------------
+ */
+export async function deleteAccount(): Promise<void> {
+  const mod = await import('./auth');
+  await mod.deleteOwnAccount();
+}

@@ -57,25 +57,41 @@ export function BeliefScreen() {
       <section className="band belief-opening" aria-labelledby="the-faith">
         <div className="wrap belief-split">
           <div className="belief-split__body prose">
-            <h2 id="the-faith">Theology is not a subject here</h2>
+            {/*
+              The Latin carries the `lang` attribute so a screen reader changes
+              voice for it rather than reading it as mispronounced English, and
+              the English line below is inside the `h2` — the gloss is part of
+              the heading, not a caption under it.
+            */}
+            <h2 id="the-faith" className="belief-opening__title">
+              <span lang="la">Lex orandi, lex credendi</span>
+              <span className="belief-opening__gloss">As the Church prays, so it believes</span>
+            </h2>
             <p>
-              Theology, in the Coptic Orthodox Church, is not a set of abstract propositions about
-              God discussed among clergy and scholars. It is what every member of the Church lives,
-              daily. The dogmas that state the faith all carry one message: communion with God the
-              Father, in Jesus Christ the incarnate Word, by His Holy Spirit.
+              The phrase is Prosper of Aquitaine&rsquo;s, written about 435 —{' '}
+              <i lang="la">ut legem credendi lex statuat supplicandi</i>, that the law of praying
+              establishes the law of believing. He was arguing that if you want to know what the
+              Church holds, listen to how it prays; the prayers came first, and the doctrine states
+              what was already being prayed.
+            </p>
+            <p>
+              So the faith belongs to the whole Church, not to its scholars. It is confessed aloud
+              by everyone present at every Liturgy, and carried out of the church into the week.
+              Every dogma the Church states says one thing: that man is called into communion with
+              God the Father, in Jesus Christ the incarnate Word, by His Holy Spirit.
             </p>
             <p>
               Redemption, membership of the Church, the reading of the Scriptures, the Kingdom of
               God within the soul, the company of the angels and the saints, the life of the age to
-              come — these are one thing, not six. The Church is not a school that researches and
-              teaches dogma. It is the body that worships God and serves mankind, works for the
-              renewal of this world, and waits for the world to come.
+              come — all of it holds together in that communion. The Church states its dogma in
+              order to live by it: to worship God, to serve mankind, to work for the renewal of this
+              world, and to wait for the world to come.
             </p>
             <p>
-              So what the Church believes, it also sings, fasts, paints and prays. The Creed below
-              is said standing, by everyone present, at every Divine Liturgy. The same faith is in
-              the icons on the walls, in the seven hours of the Agpeya, and in the fasts that take
-              up more than half the year.
+              So the faith is sung, painted and fasted as much as it is stated. The Creed below is
+              said standing, by everyone present, at every Divine Liturgy. The same faith is in the
+              icons on the walls, in the seven hours of the Agpeya, and in the fasts that take up
+              more than half the year.
             </p>
           </div>
           <Plate name="wadi-natrun-frescos" className="belief-split__plate" />

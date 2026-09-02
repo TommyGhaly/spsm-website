@@ -499,6 +499,23 @@ function NavTile({
           aria-hidden="true"
           loading="lazy"
           decoding="async"
+          /*
+           * `onLoad` alone misses the picture that was already there.
+           *
+           * A `load` event only fires for a decode that actually happens, and on
+           * the second visit to a page these come straight out of the memory
+           * cache — the element is complete before React finishes mounting it,
+           * the handler below never runs, `loaded` stays empty, and the tile
+           * decides it has no cover. So the menu showed its photographs to a
+           * first-time visitor and a plain red plate to everybody else, which is
+           * exactly backwards and reads as the pictures having been removed.
+           *
+           * `naturalWidth` as well as `complete`: a failed load is also
+           * "complete", and only the width tells the two apart.
+           */
+          ref={(element) => {
+            if (element?.complete && element.naturalWidth > 0) markLoaded(index);
+          }}
           onLoad={() => markLoaded(index)}
           onError={() => markFailed(index)}
         />

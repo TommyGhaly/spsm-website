@@ -1,8 +1,7 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
-import { hasRole, type SpsmClaims } from '@spsm/shared';
-import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
+import { type SpsmClaims } from '@spsm/shared';
+import { useScreenGrants } from '@/lib/screenGrants';
 
 /**
  * Whether the person reading /forms may build and review them.
@@ -12,17 +11,22 @@ import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
  * `useBookstoreAdmin`, and for the same reason: the auth SDK is loaded lazily,
  * only when a session hint says somebody is signed in.
  *
- * ## The role, and why it is `staff` alone
+ * ## The check, and why it is one grant and nothing else
  *
- * `firestore.rules` says `hasRole('staff')` for both `forms` and
- * `formSubmissions`, so this asks exactly that. No group is admitted, unlike the
- * bookstore's check which also lets a `bookstore` volunteer in — there is no
- * equivalent group in the rules here, and inventing one in the UI would show a
- * builder to somebody every write from which the rules would then refuse.
- *
- * A check *stricter* than the policy hides a feature from the people it was
+ * `firestore.rules` said `hasRole('staff')` for both `forms` and
+ * `formSubmissions`, and this asked exactly that, on the principle stated below
+ * — a check *stricter* than the policy hides a feature from the people it was
  * built for; a check *looser* than the policy shows a panel that cannot save.
- * Both are bugs. This one matches.
+ *
+ * There is no role now. Both rules are `hasScreen('forms')`, which is "the
+ * superadmin, or whoever holds the forms flag on their member document", and
+ * `useScreenGrants` asks that same question — short-circuiting on `superadmin`
+ * exactly as `hasScreen()` does, so the two cannot drift.
+ *
+ * Nothing else opens this. There was a `groups` axis alongside the ladder
+ * (`clergy`, `bookstore`, `parking`) and it never had a forms entry; it is gone
+ * too, and inventing a second door in the UI would show a builder to somebody
+ * whose every write the rules would refuse.
  *
  * ## Not a security boundary
  *
@@ -39,17 +43,6 @@ export interface FormsAdminSession {
 }
 
 export function useFormsAdmin(): FormsAdminSession {
-  const auth = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-
-  const signedIn = auth.kind === 'signed-in';
-  const claims = signedIn ? auth.claims : null;
-
-  return {
-    // `restoring` and `signing-in` are both "we do not know yet". Reporting
-    // ready on those would flash the control away again a moment later for
-    // somebody who does have the claim.
-    ready: auth.kind === 'signed-out' || signedIn,
-    claims,
-    canEdit: claims !== null && hasRole(claims, 'staff'),
-  };
+  const { ready, claims, canAdmin } = useScreenGrants();
+  return { ready, claims, canEdit: canAdmin('forms') };
 }

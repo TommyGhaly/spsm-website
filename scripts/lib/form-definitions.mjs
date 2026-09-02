@@ -1,3 +1,5 @@
+import { builtInForms } from '@spsm/shared';
+
 /**
  * The parish's forms, as one definition both seeders read.
  *
@@ -11,6 +13,10 @@
  * for something as free text that is plainly a date or a number, it is typed
  * properly here — "What is the date of the event?" is a date field rather than a
  * text box, which is most of the point of rebuilding rather than mirroring.
+ *
+ * The array below holds only the three rebuilt request forms. The contact form
+ * and the vehicle registration are in `@spsm/shared` — see `builtInForms` and
+ * `seedForms` at the foot of this file for why they had to move.
  */
 
 /** A field, with the defaults every field carries so the shape never varies. */
@@ -97,103 +103,6 @@ const GRADES = options(
 /* ------------------------------------------------------------------------ */
 
 const FORMS = [
-  {
-    slug: 'vehicle-registration',
-    image: '/img/stock-parking-lot-1000.webp',
-    title: 'Register a vehicle',
-    blurb:
-      'So the parking team can reach you if your car needs moving. Visitors and guests are welcome to register too — no account needed.',
-    icon: 'pin',
-    order: 10,
-    // The only one published by this script: it replaces a form people already
-    // use, and leaving it unpublished would take that away rather than move it.
-    published: true,
-    kind: 'vehicle',
-    pushesToTaksis: true,
-    fields: [],
-    confirmationMessage:
-      'Your vehicle is registered and waiting to be approved. Once it has been, your ' +
-      'license plate is recognised at the lot — there is no sticker to collect. ' +
-      'Contact the church office with any questions.',
-  },
-
-  {
-    slug: 'contact',
-    title: 'Contact the church office',
-    blurb:
-      'A question for the office, or a way for the church to reach you. No account needed.',
-    icon: 'mail',
-    /*
-     * No photograph, and this is the case `FormDefinition.image` was written
-     * for: there is no picture of "getting in touch". The ornamental tile is
-     * honest about being a mark rather than decoration standing in for a
-     * subject.
-     */
-    order: 1,
-    /*
-     * Published, like the vehicle registration and unlike the three Breeze
-     * rebuilds. There is no older version of this anywhere to
-     * take down first — the parish has had no way at all to be written to
-     * before now — so holding it back as a draft would leave the contact page
-     * with the same gap it has today.
-     */
-    published: true,
-    kind: 'native',
-    fields: [
-      /*
-       * Name and email are the whole point: this form exists as much to build a
-       * list the office can write back to as to carry any one question. Both
-       * required, and both are the *typed* field rather than free text —
-       * `identifySubmitter` finds the submitter by field type, not by label, and
-       * an email typed into a `shortText` box would leave the review table's
-       * Email column empty on every row.
-       */
-      field('name', 'shortText', 'Your name', { required: true }),
-      field('email', 'email', 'Email address', {
-        required: true,
-        help: 'Where the church will reply.',
-      }),
-      /*
-       * Optional, unlike on the four request forms, where the office has to be
-       * able to ring somebody back about a van. Making it required here would
-       * turn "I have a question" into a form that demands a phone number first,
-       * which is how a contact form stops being used.
-       */
-      field('phone', 'phone', 'Phone number', {
-        help: 'Only if you would rather be called than emailed.',
-      }),
-      field('subject', 'select', 'What is this about?', {
-        required: true,
-        options: options(
-          'A general question',
-          'Baptism, marriage, or a funeral',
-          'Confession or a visit from a father',
-          'Joining a service or a ministry',
-          'Donations and giving',
-          'Hall or facility booking',
-          'Something else',
-        ),
-      }),
-      field('message', 'longText', 'Your message', {
-        required: true,
-        placeholder: 'Tell the office what you need.',
-      }),
-    ],
-    confirmationMessage:
-      'Thank you — the church office has your message and will reply to the address you gave.',
-    /*
-     * A copy to the sender, which most of these forms deliberately do without.
-     *
-     * Nothing here is sensitive — a name, an address to reply to, and a question
-     * somebody chose to send — so a copy in their inbox is a record that they
-     * asked and when, which is exactly what they will want in a fortnight if
-     * nobody has replied.
-     */
-    confirmationEmailBody:
-      'Thank you for writing to St. Philopater Mercurius & St. Mina. ' +
-      'Your message has reached the church office, and a reply will come to this address.',
-  },
-
   {
     slug: 'van-request',
     image: '/img/stock-passenger-van-1000.webp',
@@ -310,9 +219,19 @@ const FORMS = [
   },
 ];
 
-/** Every seeded form, as plain objects. Callers add their own audit fields. */
+/**
+ * Every seeded form, as plain objects. Callers add their own audit fields.
+ *
+ * The two the church always has — the contact form and the vehicle
+ * registration — come from `@spsm/shared` rather than from the array above,
+ * because the site falls back to those same definitions when Firestore has no
+ * document for them. Defining them twice is how the seeded contact form and the
+ * fallback one start asking different questions.
+ */
 export function seedForms() {
-  return FORMS.map((form) => ({
+  const builtIn = builtInForms().map(({ id, draft }) => ({ ...draft, slug: draft.slug || id }));
+
+  return builtIn.concat(FORMS.map((form) => ({
     slug: form.slug,
     title: form.title,
     blurb: form.blurb,
@@ -336,6 +255,5 @@ export function seedForms() {
     confirmationMessage:
       form.confirmationMessage ?? 'Thank you — the church office has your request.',
     confirmationEmailBody: '',
-    breezeFormId: null,
-  }));
+  })));
 }

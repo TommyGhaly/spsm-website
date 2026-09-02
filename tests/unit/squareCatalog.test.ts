@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { mapSquareCatalog, parseInventoryCounts, slugify } from '@spsm/shared';
+import {
+  mapSquareCatalog,
+  mirrorDocumentId,
+  parseInventoryCounts,
+  slugify,
+  trackInventoryPatch,
+  tracksInventory,
+} from '@spsm/shared';
 
 /**
  * Mapping Square's catalog into bookstore products.
@@ -363,6 +370,75 @@ describe('mapSquareCatalog inventory', () => {
     expect(stock(TRACKED, undefined).get('Counted Book')).toBe(null);
     expect(stock(TRACKED).get('Counted Book')).toBe(null);
   });
+
+  /**
+   * The shape the parish's production catalog actually uses, and the one this
+   * mapping read past for months.
+   *
+   * Switching tracking on for a location in the Square dashboard writes
+   * `location_overrides[].track_inventory`, and leaves the variation-wide
+   * `track_inventory` unset. All ten books in the live Bookstore category carry
+   * exactly this: an override saying true, no top-level flag, and real counts
+   * of one to three copies. Reading only the top-level flag reported every one
+   * of them untracked, so a sold-out book stayed on the shop and stayed
+   * buyable — `squareCheckout` refuses a line only at `stockCount === 0`.
+   */
+  const OVERRIDDEN = [
+    { type: 'CATEGORY', id: 'CAT_BOOK', category_data: { name: 'Bookstore' } },
+    {
+      type: 'ITEM',
+      id: 'ITEM_C',
+      item_data: {
+        name: 'Counted At The Shop',
+        categories: [{ id: 'CAT_BOOK' }],
+        variations: [
+          {
+            id: 'VAR_C',
+            item_variation_data: {
+              price_money: { amount: 600, currency: 'USD' },
+              location_overrides: [{ location_id: 'LNEHSYVXMN51F', track_inventory: true }],
+            },
+          },
+        ],
+      },
+    },
+  ] as const;
+
+  it('reads tracking from a location override, not just the variation', () => {
+    expect(stock(OVERRIDDEN, new Map([['VAR_C', 2]])).get('Counted At The Shop')).toBe(2);
+    // And the same distinction holds: tracked with no row is genuinely nought.
+    expect(stock(OVERRIDDEN, new Map()).get('Counted At The Shop')).toBe(0);
+  });
+
+  /**
+   * An empty `location_overrides` is not tracking. "Holy Bible" is the live
+   * example — the one book in the parish's catalog with no override at all, and
+   * it must keep coming back null rather than being read as sold out.
+   */
+  it('leaves a variation with no override untracked', () => {
+    const none = [
+      OVERRIDDEN[0],
+      {
+        type: 'ITEM',
+        id: 'ITEM_D',
+        item_data: {
+          name: 'Uncounted Bible',
+          categories: [{ id: 'CAT_BOOK' }],
+          variations: [
+            {
+              id: 'VAR_D',
+              item_variation_data: {
+                price_money: { amount: 1500, currency: 'USD' },
+                location_overrides: [],
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(stock(none, new Map()).get('Uncounted Bible')).toBe(null);
+  });
 });
 
 describe('parseInventoryCounts', () => {
@@ -397,5 +473,81 @@ describe('parseInventoryCounts', () => {
         { catalog_object_id: 'VAR_A', state: 'IN_STOCK', quantity: 'many' },
       ]).size,
     ).toBe(0);
+  });
+});
+
+/**
+ * Renaming a book, which is the pair of behaviours that keeps a retitle from
+ * costing the parish a document.
+ */
+describe('mirrorDocumentId', () => {
+  const existing = new Map([['SQ_PASCHA', 'the-holy-pascha']]);
+
+  it('keeps the document a renamed book already lives in', () => {
+    // Square now calls it something else, so `mapSquareCatalog` slugified a new
+    // name — but the object id is the same book.
+    expect(
+      mirrorDocumentId({ slug: 'pascha-sermons', squareCatalogObjectId: 'SQ_PASCHA' }, existing),
+    ).toBe('the-holy-pascha');
+  });
+
+  it('names a book the mirror has never seen after its title', () => {
+    expect(
+      mirrorDocumentId({ slug: 'come-and-see', squareCatalogObjectId: 'SQ_NEW' }, existing),
+    ).toBe('come-and-see');
+  });
+
+  it('falls back to the slug when nothing has been mirrored yet', () => {
+    expect(
+      mirrorDocumentId({ slug: 'holy-bible', squareCatalogObjectId: 'SQ_BIBLE' }, new Map()),
+    ).toBe('holy-bible');
+  });
+});
+
+/**
+ * The setter has to write the flag everywhere `tracksInventory` reads it, or
+ * "stop counting" is a control that appears to work and does nothing. These
+ * assert the round trip rather than the shape.
+ */
+describe('trackInventoryPatch', () => {
+  it('turns tracking off in the location override as well as the top level', () => {
+    const variation = {
+      price_money: { amount: 600, currency: 'USD' },
+      location_overrides: [{ location_id: 'LNEHSYVXMN51F', track_inventory: true }],
+    };
+
+    expect(tracksInventory(variation)).toBe(true);
+    expect(tracksInventory(trackInventoryPatch(variation, false))).toBe(false);
+  });
+
+  it('turns it on for a variation that has never tracked', () => {
+    const variation = { price_money: { amount: 600, currency: 'USD' } };
+
+    expect(tracksInventory(variation)).toBe(false);
+    expect(tracksInventory(trackInventoryPatch(variation, true))).toBe(true);
+  });
+
+  /* Overrides carry per-location price and sellability too, and this function
+     has no business dropping them to set one boolean. */
+  it('leaves the rest of an override alone', () => {
+    const patched = trackInventoryPatch(
+      {
+        location_overrides: [
+          { location_id: 'L1', track_inventory: false, price_money: { amount: 500, currency: 'USD' } },
+        ],
+      },
+      true,
+    );
+
+    expect(patched['location_overrides']).toEqual([
+      { location_id: 'L1', track_inventory: true, price_money: { amount: 500, currency: 'USD' } },
+    ]);
+  });
+
+  it('does not invent an overrides array where there was none', () => {
+    expect(trackInventoryPatch({ price_money: { amount: 100, currency: 'USD' } }, true)).toEqual({
+      price_money: { amount: 100, currency: 'USD' },
+      track_inventory: true,
+    });
   });
 });

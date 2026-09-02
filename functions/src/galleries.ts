@@ -43,6 +43,7 @@
  * pointless. The bucket is US-EAST1 too, so the bytes never leave the region.
  */
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { CAPS } from './rateLimit.js';
 import { getStorage } from 'firebase-admin/storage';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
@@ -58,7 +59,23 @@ const REGION = 'us-east1';
  * function here is a submission that silently never appears, and this runs
  * once per photograph ever uploaded rather than once per page view.
  */
-const RUNTIME = { region: REGION, memory: '1GiB' as const, timeoutSeconds: 300 };
+const RUNTIME = {
+  region: REGION,
+  memory: '1GiB' as const,
+  timeoutSeconds: 300,
+  /*
+   * The cap with the largest bill behind it: one 1GiB instance per photograph,
+   * for up to five minutes each, and a batch of forty arrives as forty
+   * documents within a minute or two of each other.
+   *
+   * Meeting it costs a queue rather than a failure. A Firestore trigger that is
+   * shed is retried, so the fortieth photograph is transcoded a little later
+   * and the submitter sees nothing different — the queue on /events is a review
+   * queue, and a rendition arriving a minute after its row does not change what
+   * an administrator does with it.
+   */
+  maxInstances: CAPS.transcode,
+};
 
 /**
  * The long edge of a web rendition, in pixels.

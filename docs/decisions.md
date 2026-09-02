@@ -41,7 +41,8 @@ pages and free offline behaviour for the PWA.
 
 ### 7. Repo layout — **npm workspaces monorepo**
 
-`packages/shared` holds the Firestore schema, roles, and provider interfaces so
+`packages/shared` holds the Firestore schema, the authorization model, and the
+provider interfaces so
 the website and the app cannot drift on the two things that matter most —
 schemas and security rules. (npm workspaces rather than pnpm: npm 10 is already
 on the machine, one less dependency.)
@@ -353,6 +354,163 @@ the old behaviour was already "gone at the next deploy" rather than "gone now".
 
 **Revisit if:** anything else needs request-time freshness. Two such endpoints is
 a pattern worth naming; one is a section with an unusual cost of being wrong.
+
+---
+
+### 13. Authorization — **one claim, one allocation; the role ladder is gone**
+
+**Chosen 2026-08-31, at Tommy's direction:** *"get rid of the roles — I want
+everyone who signs in to have access to the servants calendar, and every other
+privilege is allocated in the admin manager."*
+
+**What went.** The `role` tier (`member < servant < staff < admin`) and the
+cross-cutting `groups` claims (`clergy`, `bookstore`, `parking`). Both were
+custom claims. `packages/shared/src/roles.ts` is now `claims.ts`, the
+`setMemberRole` callable is deleted, and `components/AdminGate.tsx` — a gate that
+took a `Role` and had not been imported since /admin was rebuilt as a hub — went
+with them.
+
+**What replaced it.**
+
+| | Where it lives | Lag |
+|---|---|---|
+| Signing in | nothing to store | none |
+| An allocation — `screenAdmin`, `programAdmin` | the member document | none |
+| `superadmin` | a custom claim, set by `scripts/grant-admin.mjs` | up to an hour |
+
+Signing in is Microsoft-only and restricted to the parish's Entra tenant, so
+authenticating at all means being clergy, staff or a servant of this church.
+That is now the whole qualification for the servants' rota — `servantEvents` is
+`allow read: if signedIn()` — and it buys nothing else. Every other privilege is
+a row on /access.
+
+**Why `superadmin` may be a claim when the allocation may not.** A grant changes
+in the course of ordinary work, and one that took an hour to arrive would be
+reported as broken every time it was used; the maps are therefore on the member
+document, read by `firestore.rules` with a `get()`. `superadmin` is set once, by
+hand, from a terminal — and it *has* to be the thing that is not grantable from
+a screen, because it is the power to grant everything else.
+
+**The costs, stated rather than discovered:**
+
+- **Storage rules cannot read Firestore.** So a bucket rule cannot ask whether
+  somebody holds the `events` flag, which would have left every hero image, form
+  picture and product photo writable only by a superadmin — or by anyone signed
+  in, which is worse. A `screens` claim now mirrors the map, maintained by
+  `mirrorGrantsToClaims` (a `members/{uid}` write trigger), read by
+  `storage.rules` and **by nothing else**. It lags by a token refresh, so
+  `useScreenGrants` compares it against the document it has just read and forces
+  a refresh when they disagree. If that comparison is ever removed, the symptom
+  is precise and baffling: the person granted Events can create the event and
+  cannot upload its photograph.
+- **Every Function-side check became a Firestore read.** `httpAuth.ts` answered
+  everything from the token because `role` was a claim; there is no role, so
+  `mayManageOrders` and `mayReadFinance` are now async wrappers around one
+  `mayAdminScreen`. One billed read per privileged call, on calls that are
+  already talking to Square over the network — and the point of it is that the
+  Functions and the rules decide from the same map.
+- **`submissions/` in the bucket widened from `staff` to any signed-in
+  account**, and this is the one place the change is a real loosening. Who may
+  review a submission is a *program* grant, and the prefix is keyed by
+  `programEventId` — a Firestore lookup this file cannot make. `staff` was no
+  narrower in kind (it admitted the bookstore volunteer too) and it excluded the
+  program leads who actually do the work, so every row showed "no preview". The
+  property that mattered is intact: a submitter is anonymous.
+- **`products` lost its broad write rule**, which is the one place the change
+  made a rule *narrower*. Firestore ORs matching rules, so the old
+  `allow write: if hasRole('staff')` beside the bounded `section`-only block
+  meant the validation never ran for staff. Promoting shop volunteers into that
+  broad line would have let a browser rewrite every price in the catalogue, so
+  the line went instead — nothing needed it, since the Square mirror uses the
+  Admin SDK.
+- **The `members` read narrowed to `isSelf(uid) || isSuper()`.** It was
+  `hasRole('staff')`, which handed the whole administrative tier everybody's
+  phone number for no caller that wanted it.
+- **Rules tests needed their own emulator projects.** A permission is a document
+  now, so one suite's `clearFirestore()` landing mid-run in another silently
+  revokes every grant in it — 282 passing sequentially, 254 in parallel, before
+  `createTestEnv` took a suite name.
+
+**What did not change:** the program-grant axis (`programAdmin`), which was
+already a document rather than a claim and was already the model this decision
+generalises; `campRegistrations`, which is still gated on a program grant and
+must never admit the `finance` flag; and the two undelegable screens, `members`
+and `config`.
+
+**Revisit if:** the parish wants more than one or two superadmins, or wants the
+role of granting to itself be delegable. Both are one flag away and both give up
+the property that makes this arrangement safe.
+
+### 14. Forms — **two the church always has, and the rest can be somebody else's**
+
+Three changes on 2026-09-01, all from the same conversation, plus one bug each
+that only a signed-out browser could have found.
+
+**The contact form and the vehicle registration are permanent.** Both addresses
+are printed on things this codebase cannot reach — an NFC tag and a card in the
+car park, every "ask the church office" link on the site and on the parish's
+stationery — so neither may depend on a Firestore document existing. Their
+definitions live in `packages/shared/src/schema/builtInForms.ts`; the seeder
+writes them, the hub merges them into every render, and `/forms/<slug>` falls
+back to them when the document is missing or unreadable. Delete is withheld in
+the drawer, refused in `deleteForm`, and refused by `firestore.rules` — the last
+of those being the one that holds. Everything else about them stays editable:
+blurb, picture, notification address, questions, confirmation.
+
+*What it costs:* two documents in a collection whose whole point is that the
+office manages it without a deploy, and a rule naming them by id. The
+alternative — accepting that a mis-click at eleven at night can 404 a printed
+tag — is worse.
+
+**`kind: 'embed'` replaces the Breeze field importer.** The old importer copied
+a Breeze form's questions across as a native draft, through a Function holding
+`BREEZE_API_KEY` — a credential that reads the whole member database. What the
+parish actually wanted was the *form* on a *parish page*: an address, framed
+under our masthead with our photograph, an "open in a new tab" link above it
+because a framed page can always refuse, and a line under it naming the host.
+Tithe.ly and Breeze both send no `X-Frame-Options` and no CSP
+`frame-ancestors`, which is what makes this possible; `give.tithe.ly` gets
+Tithe.ly's own `context=modal` and no other host is touched.
+
+*What it costs:* **nothing an embedded form collects reaches this project.** No
+submissions row, no notification, no total. That is not a shortcoming of the
+implementation — Tithe.ly has no forms API at all (§2) and Breeze's is
+read-and-delete — and the form list, the builder and the page each say so. The
+importer was removed with the last user of `BREEZE_API_KEY`; **that key can now
+be revoked in Breeze.** The parish calendar is unaffected: it scrapes the public
+embed token and has never used the API.
+
+**Servants sign themselves up for camp; families are still registered by the
+camp.** `/forms/summer-camp` shows a public form to anybody who opens it — no
+account, because half the camp's servants are teenagers who have never signed in
+to anything of the parish's. It posts to `campServantRequest`, which takes the
+season and the ministry from `config/camp` rather than from the request, clears
+the safeguarding flag and the assigned roles whatever was sent, and writes to
+`campServantRequests`. That collection is closed to every client:
+**accepting a sign-up is what writes the registration**, from the accepting
+administrator's own browser, under their own uid. Family registrations, and the
+children's medical notes they carry, never left the program grant.
+
+One switch was delegated with it. `servantSignUp` on `config/camp` is writable
+by a camp administrator through a one-key widening in the rules, because opening
+and closing the list is a decision the camp makes several times a season and
+`config` is otherwise superadmin-only and deliberately undelegable.
+
+*What it costs:* a queue somebody has to clear, and an open endpoint with a
+per-instance rate limit rather than a real one. App Check is the next step if it
+is ever needed; it is already initialised for the browser SDK.
+
+**Two bugs, both invisible while signed in.** `readFormBySlug` reads the exact
+document id first and falls back to a query on `slug`. For a visitor the `get`
+on a missing id *throws* — the public rule dereferences `resource.data`, which
+is an evaluation error on a null resource, and an error denies — so the fallback
+never ran; and the fallback query itself could return a draft, so it was refused
+as unprovable (decision #10 again). Staff never saw either, because their second
+`allow read: if hasScreen('forms')` answers without touching `resource`. Both
+are fixed and both now have rules tests. Separately, `useCampAdmin` returned the
+*committed defaults* to anyone signed out, which on a newly public page meant
+the wrong season and a waiver that never appeared; it reads `config/camp` for
+everybody now, which costs one world-readable document.
 
 ---
 

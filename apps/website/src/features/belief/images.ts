@@ -34,7 +34,7 @@ export const BELIEF_PICTURES = {
     short: 'Monastery wall paintings, Wadi al-Natrun',
     alt: 'Painted saints and angels filling the half-dome of a monastery apse, the plaster cracked with age.',
     caption:
-      'Wall paintings in a monastery church of Wadi al-Natrun, the desert north-west of Cairo where Coptic monasticism has kept an unbroken life since the fourth century.',
+      'Wall paintings in a monastery church in Wadi al-Natrun, the desert valley north-west of Cairo. Monks have lived there without a break since the fourth century.',
     width: 1280,
     height: 857,
     shape: 'wide',

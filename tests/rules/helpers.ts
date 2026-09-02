@@ -15,29 +15,57 @@ setLogLevel('silent');
 /**
  * Shared harness for the behavioural rules tests.
  *
- * The project id must start with `demo-` — that is what lets the emulator run
- * without real credentials, and it matches `npm run rules:check`.
+ * ---------------------------------------------------------------------------
+ * ## Every suite gets its own project id, and it is not optional
+ *
+ * These files run in parallel, each one clears Firestore in its own
+ * `beforeAll`, and the emulator scopes both the data and the loaded ruleset **by
+ * project id**. Sharing one id therefore means one suite's `clearFirestore()`
+ * lands in the middle of another's run and deletes its fixtures.
+ *
+ * That was survivable while the only fixtures were the documents under test: a
+ * missing document fails an `assertSucceeds` loudly, and the ruleset is
+ * identical whoever uploads it. It stopped being survivable when the role
+ * ladder was removed, because **a permission is now a document**. Every
+ * `hasScreen()` check reads `members/{uid}`, so a stray clear does not fail one
+ * assertion — it silently revokes every grant in the suite, and thirty tests
+ * report `permission-denied` on rules that are correct.
+ *
+ * Measured: 282 passing with `--fileParallelism=false`, 254 passing without,
+ * before this argument existed.
+ *
+ * So pass the suite's own name. The id must start with `demo-` — that is what
+ * lets the emulator run without real credentials — and it matches
+ * `npm run rules:check`.
+ * ---------------------------------------------------------------------------
  */
 const RULES_PATH = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
 const STORAGE_RULES_PATH = fileURLToPath(new URL('../../storage.rules', import.meta.url));
 
 /**
+ * @param suite This file's own name, for the project id. See above.
  * @param withStorage Load storage.rules too. **Opt-in, and it has to be.**
  *
  * Every suite that calls this uploads its rulesets to the emulator on setup and
- * tears them down again in `cleanup()`. The emulator holds one ruleset per
+ * tears them down again in `cleanup()`. The emulator held one ruleset per
  * service for the whole project, so a suite tearing down a service it never
- * used pulls it out from under whichever suite is using it — which surfaces as
- * "no Storage ruleset is currently loaded" in a suite whose own setup
+ * used pulled it out from under whichever suite was using it — which surfaced
+ * as "no Storage ruleset is currently loaded" in a suite whose own setup
  * succeeded, several files away from the cause.
  *
- * Firestore avoids this only because every suite loads it and the last write
- * wins with identical content. Storage is needed by exactly one suite, so that
- * suite is the only one that touches it.
+ * Per-suite project ids remove that hazard as well as the data one, so this
+ * argument is now belt and braces: only one suite needs Storage, and loading a
+ * ruleset it will never consult costs a round trip for nothing.
  */
-export async function createTestEnv(withStorage = false): Promise<RulesTestEnvironment> {
+export async function createTestEnv(
+  suite: string,
+  withStorage = false,
+): Promise<RulesTestEnvironment> {
   return initializeTestEnvironment({
-    projectId: 'demo-spsm',
+    // Lower-cased, because a project id may not contain capitals and the
+    // emulator's answer to one that does is `{"code":500,"status":"UNKNOWN"}`
+    // from `loadFirestoreRules` — which says nothing at all about the cause.
+    projectId: `demo-spsm-${suite.toLowerCase()}`,
     firestore: {
       rules: readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
@@ -66,28 +94,69 @@ export async function createTestEnv(withStorage = false): Promise<RulesTestEnvir
 }
 
 /**
- * Claim shapes matching packages/shared/src/roles.ts. Roles come from the ID
- * token, never from a Firestore document, so these are the only inputs the
- * policy is allowed to care about.
+ * Claim shapes matching packages/shared/src/claims.ts.
+ *
+ * ---------------------------------------------------------------------------
+ * There are two claims now, and only one of them decides anything.
+ *
+ * The role ladder (`member < servant < staff < admin`) and the `groups` claims
+ * are gone, so a context is one of exactly three things:
+ *
+ *   `asAnon`       no session. Sees the public site.
+ *   `asSignedIn`   a session and no allocation. **This is what almost every
+ *                  account in the parish is**, and what most of these tests
+ *                  measure against — it can read the servants' rota and
+ *                  nothing else.
+ *   `asSuper`      the one boolean claim. Passes every check.
+ *
+ * Everything between those two is a **screen or program grant on a member
+ * document**, which means a test that wants one has to seed
+ * `members/{uid}` under `withSecurityRulesDisabled` rather than pass a claim.
+ * That is the whole point of the change and it makes these tests slower to
+ * write; `access.test.ts` is the pattern to copy.
+ *
+ * `asScreens` is the exception, and it is for `storage.rules` only. Storage
+ * rules cannot read Firestore, so the grants are mirrored into a `screens`
+ * claim by `mirrorGrantsToClaims` — see the note in claims.ts. A Firestore test
+ * that reaches for `asScreens` is testing the wrong thing: firestore.rules
+ * ignores that claim entirely, on purpose, because it lags.
+ * ---------------------------------------------------------------------------
  */
 export const asAnon = (env: RulesTestEnvironment): RulesTestContext =>
   env.unauthenticatedContext();
 
-export const asMember = (env: RulesTestEnvironment, uid = 'member-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'member' });
+/**
+ * Somebody from the parish directory, holding nothing.
+ *
+ * Sign-in is Microsoft-only and tenant-restricted, so this is not "a stranger
+ * with an account" — it is a servant of the church who has not been allocated
+ * an area. The single most important fixture in these files: every `assertFails`
+ * that uses it is an assertion that signing in bought nothing.
+ */
+export const asSignedIn = (env: RulesTestEnvironment, uid = 'servant-1'): RulesTestContext =>
+  env.authenticatedContext(uid, {});
 
-export const asServant = (env: RulesTestEnvironment, uid = 'servant-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'servant' });
+/**
+ * The same thing, named for what the rota rules call it.
+ *
+ * Kept as its own export rather than collapsed into `asSignedIn` because the
+ * `servantEvents` and `calendar` rules genuinely are about servants, and a test
+ * that reads `asSignedIn` there loses the reason the rule is as wide as it is.
+ */
+export const asServant = asSignedIn;
 
-export const asStaff = (env: RulesTestEnvironment, uid = 'staff-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'staff' });
+/** The parish's site administrator. The only claim that grants anything. */
+export const asSuper = (env: RulesTestEnvironment, uid = 'admin-1'): RulesTestContext =>
+  env.authenticatedContext(uid, { superadmin: true });
 
-export const asAdmin = (env: RulesTestEnvironment, uid = 'admin-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'admin' });
-
-/** A facilities coordinator: legitimately staff, deliberately not clergy. */
-export const asClergy = (env: RulesTestEnvironment, uid = 'clergy-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'staff', groups: ['clergy'] });
-
-export const asParking = (env: RulesTestEnvironment, uid = 'parking-1'): RulesTestContext =>
-  env.authenticatedContext(uid, { role: 'member', groups: ['parking'] });
+/**
+ * A `screens` mirror, for `storage.rules` and nothing else.
+ *
+ * See the note above: firestore.rules does not read this claim, so asserting a
+ * Firestore rule with it will pass or fail for reasons unrelated to the grant.
+ */
+export const asScreens = (
+  env: RulesTestEnvironment,
+  screens: readonly string[],
+  uid = 'granted-1',
+): RulesTestContext => env.authenticatedContext(uid, { screens });

@@ -7,6 +7,7 @@ import {
   computeTotalCents,
   isFormUploadPath,
   identifySubmitter,
+  keepsNoSubmissions,
   parseFormDefinition,
   submissionAnswers,
   validateSubmission,
@@ -20,6 +21,7 @@ import {
 } from '../square.js';
 import { TAKSIS_SERVICE_ACCOUNT, pushVehicleRegistration } from './taksis.js';
 import { buildFormEmails } from './email.js';
+import { BUDGETS, CAPS, throttled } from '../rateLimit.js';
 
 /**
  * Every parish form arrives here.
@@ -47,44 +49,10 @@ import { buildFormEmails } from './email.js';
  * ---------------------------------------------------------------------------
  */
 
-/**
- * A speed bump, and it is worth being accurate about what it is not.
- *
- * This is a per-instance map, so it is not a rate limit in any strict sense:
- * Cloud Run scales to many instances, each with its own copy, and a determined
- * flood spreads across all of them. It stops the accidental case — a double tap,
- * a stuck retry loop, a script someone points at the endpoint for an afternoon —
- * and it costs one map lookup.
- *
- * The real defence against a sustained flood is App Check, which the site
- * already initialises for the browser SDK. If this endpoint ever needs more than
- * a speed bump, enforcing an App Check token here is the next step, not a bigger
- * map.
- */
-const RECENT = new Map<string, number[]>();
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 10;
-
-function tooMany(ip: string): boolean {
-  const now = Date.now();
-  const hits = (RECENT.get(ip) ?? []).filter((at) => now - at < WINDOW_MS);
-  hits.push(now);
-  RECENT.set(ip, hits);
-
-  // Unbounded growth across a long-lived instance is the one way this could
-  // itself become the problem. Cheap sweep, only when the map is large.
-  if (RECENT.size > 5_000) {
-    for (const [key, times] of RECENT) {
-      if (times.every((at) => now - at >= WINDOW_MS)) RECENT.delete(key);
-    }
-  }
-
-  return hits.length > MAX_PER_WINDOW;
-}
-
 export const formSubmit = onRequest(
   {
     cors: false,
+    maxInstances: CAPS.formSubmit,
     secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN, TAKSIS_SERVICE_ACCOUNT],
   },
   async (req, res) => {
@@ -93,9 +61,23 @@ export const formSubmit = onRequest(
       return;
     }
 
-    const ip = String(req.headers['x-forwarded-for'] ?? req.ip ?? 'unknown').split(',')[0]!.trim();
-    if (tooMany(ip)) {
-      res.status(429).json({ errors: ['Too many submissions from here. Please wait a minute.'] });
+    /*
+     * Unchanged in budget, and now answered with `Retry-After`. A client that is
+     * told how long to wait can wait; one that is not told retries immediately,
+     * which is how a refusal becomes the flood it was meant to prevent.
+     *
+     * `plural` because every other answer this endpoint gives is `{ errors: [] }`
+     * and the page reads that key — a 429 in the singular shape is a 429 the
+     * form cannot display.
+     */
+    if (
+      throttled(req, res, {
+        bucket: 'formSubmit',
+        max: BUDGETS.formSubmit,
+        plural: true,
+        message: 'Too many submissions from here. Please wait a minute.',
+      })
+    ) {
       return;
     }
 
@@ -144,9 +126,17 @@ export const formSubmit = onRequest(
       });
       return;
     }
-    if (form.kind === 'external') {
-      // Nothing should ever post here for an external form; the card links
-      // straight out. A clear 400 beats storing an answer Breeze will never see.
+    if (keepsNoSubmissions(form.kind)) {
+      /*
+       * Nothing should ever post here for a form we do not host — an `external`
+       * card links straight out, and an `embed` one is framed and submits to
+       * its own host inside that frame, which this origin cannot even see.
+       *
+       * A clear 400 beats storing an answer its owner will never see. The case
+       * this actually catches is a form whose kind was *changed* to one of
+       * these while somebody had it open: their tab still holds a native copy
+       * and will happily post it.
+       */
       res.status(400).json({ errors: ['That form is hosted elsewhere.'] });
       return;
     }

@@ -25,8 +25,18 @@ import { getStorage } from 'firebase/storage';
  * ---------------------------------------------------------------------------
  */
 
-/** 8MB, matching `isImage()` in storage.rules. Checked here to fail politely. */
-const MAX_BYTES = 8 * 1024 * 1024;
+/**
+ * The only size left, and it applies to the public path alone.
+ *
+ * `isImage()` in storage.rules has no size in it any more — a staff photograph
+ * of any size is fine, because a phone photograph routinely clears what used to
+ * be an "8MB, generous" ceiling and the person hitting it has already been
+ * trusted with the area. What stays bounded is the folder a *stranger* can
+ * write to, and this is the polite half of that: the rule is the enforcement,
+ * and checking here turns `storage/unauthorized` — which reads as "you are not
+ * allowed" — into a sentence about the file. Keep the two numbers in step.
+ */
+const PUBLIC_MAX_BYTES = 250 * 1024 * 1024;
 
 export type UploadResult =
   | { ok: true; path: string; url: string }
@@ -51,10 +61,23 @@ function safeName(original: string): string {
   return `${stamp}${random}-${cleaned || 'photo'}`;
 }
 
+/**
+ * Staff uploads: the file has to be an image, and nothing else is asked of it.
+ *
+ * The type check is not about size. A bucket that accepts `text/html` from a
+ * browser is one that will serve it back on our own domain to whoever follows
+ * a link, so `isImage()` still refuses it in the rules and this says so first.
+ */
 function checkFile(file: File): string | null {
-  if (!file.type.startsWith('image/')) return 'That is not an image file.';
-  if (file.size > MAX_BYTES) {
-    return `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB. The limit is 8MB.`;
+  return file.type.startsWith('image/') ? null : 'That is not an image file.';
+}
+
+/** The public attachment path, which keeps a bound. See `PUBLIC_MAX_BYTES`. */
+function checkPublicFile(file: File): string | null {
+  const problem = checkFile(file);
+  if (problem) return problem;
+  if (file.size > PUBLIC_MAX_BYTES) {
+    return `That image is ${(file.size / 1024 / 1024).toFixed(0)}MB, which is too large to send.`;
   }
   return null;
 }
@@ -106,7 +129,7 @@ export async function uploadFormPhoto(
   formSlug: string,
   file: File,
 ): Promise<{ ok: true; path: string } | { ok: false; reason: string }> {
-  const problem = checkFile(file);
+  const problem = checkPublicFile(file);
   if (problem) return { ok: false, reason: problem };
 
   const slug = toFormSlug(formSlug);

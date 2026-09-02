@@ -41,8 +41,10 @@
  * looking in the wrong place and is recorded here so nobody repeats it.)
  *
  * There is no Breeze *API* involved and no `BREEZE_API_KEY`. That key reads the
- * whole member database and is a far larger credential than this needs; see
- * forms/breeze.ts. This reads exactly what the embed token already publishes.
+ * whole member database and is a far larger credential than this needs; the one
+ * feature that used it — the forms importer — was removed on 2026-09-01, so
+ * nothing in this repo holds it any more. This reads exactly what the embed
+ * token already publishes.
  * ---------------------------------------------------------------------------
  *
  * ---------------------------------------------------------------------------
@@ -77,7 +79,8 @@ import {
   type CalendarOccurrence,
   type CalendarScope,
 } from '@spsm/shared';
-import { callerOf, hasRole } from './httpAuth.js';
+import { callerOf } from './httpAuth.js';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 
 /**
  * The zone every wall-clock string in the response is a reading of.
@@ -174,6 +177,7 @@ function remember(key: string, feed: CalendarFeed): void {
  */
 export const calendar = onRequest(
   {
+    maxInstances: CAPS.calendar,
     // Same origin, through the Hosting rewrite in firebase.json. The parish
     // calendar is public information, but there is no reason for another site to
     // read it through the parish's own Breeze quota — and the servants scope
@@ -185,6 +189,16 @@ export const calendar = onRequest(
       res.status(405).json({ error: 'This endpoint is read-only; use GET.' });
       return;
     }
+
+    /*
+     * Breeze's quota, and the range check below is not a substitute for this.
+     *
+     * That check bounds one request; this bounds a thousand of them. A visitor
+     * paging through /calendar spends a handful a minute and a script paging
+     * through a decade spends as many as it likes, and both look identical to
+     * the range check because every individual request is perfectly legal.
+     */
+    if (throttled(req, res, { bucket: 'calendar', max: BUDGETS.calendar })) return;
 
     const from = String(req.query['from'] ?? '');
     const to = String(req.query['to'] ?? '');
@@ -213,15 +227,22 @@ export const calendar = onRequest(
      */
     let scope: CalendarScope = 'parish';
     if (asked === 'servants') {
+      /*
+       * Signing in is the whole check, and that is deliberate rather than lax.
+       *
+       * There was a second test here — `hasRole(caller, 'servant')` — from when
+       * a role ladder existed and a first sign-in granted `servant`. Since
+       * every account that could authenticate got that role automatically, the
+       * test never refused anybody it had not already refused above; it only
+       * produced a second, more confusing failure message when a claim was
+       * missing. Sign-in is Microsoft-only and `enforceTenantOnCreate` rejects
+       * any account outside the parish's Entra directory, so having a session
+       * at all is the qualification. Same rule as `servantEvents` in
+       * firestore.rules, which is the other half of this schedule.
+       */
       const caller = await callerOf(req);
       if (caller === null) {
         res.status(401).json({ error: 'Sign in to see the servants calendar.' });
-        return;
-      }
-      if (!hasRole(caller, 'servant')) {
-        res.status(403).json({
-          error: 'Your account is not marked as a servant. Ask the church office to add you.',
-        });
         return;
       }
       scope = 'servants';

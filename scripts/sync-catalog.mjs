@@ -30,7 +30,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { mapSquareCatalog, parseInventoryCounts } from '../packages/shared/dist/index.js';
+import {
+  mapSquareCatalog,
+  mirrorDocumentId,
+  parseInventoryCounts,
+} from '../packages/shared/dist/index.js';
 import { accessToken, documentUrl, toFieldMap } from './lib/firestore-rest.mjs';
 
 process.loadEnvFile('.env');
@@ -44,9 +48,10 @@ const project = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
  * Write to the local Firestore emulator instead of the parish's project.
  *
  * `npm run dev:local` runs the site against the emulators, which is the only
- * way to work on anything role-gated. A catalog synced only to production is
- * therefore invisible in exactly the setup most local development uses — the
- * page renders its empty state and looks broken while production is fine.
+ * way to work on anything gated behind an allocation. A catalog synced only to
+ * production is therefore invisible in exactly the setup most local development
+ * uses — the page renders its empty state and looks broken while production is
+ * fine.
  */
 const emulator = process.argv.includes('--emulator');
 const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
@@ -166,13 +171,29 @@ async function readSquareCatalog() {
 async function existingSlugs(auth) {
   const url = `${docUrl('products')}?pageSize=300`;
   const response = await fetch(url, { headers: { Authorization: auth } });
-  if (response.status === 404) return new Set();
+  if (response.status === 404) return { present: new Set(), byObjectId: new Map() };
   if (!response.ok) {
     console.error(`Could not list products: HTTP ${response.status}`);
     process.exit(1);
   }
   const body = await response.json();
-  return new Set((body.documents ?? []).map((d) => d.name.split('/').pop()));
+
+  const present = new Set();
+  /*
+   * Square's id → the document already mirroring it. Without this a book
+   * renamed from the shop's edit panel would be written to a *new* document
+   * under its new slug, and the old one pruned — see `mirrorDocumentId`.
+   */
+  const byObjectId = new Map();
+
+  for (const document of body.documents ?? []) {
+    const id = document.name.split('/').pop();
+    present.add(id);
+    const squareId = document.fields?.squareCatalogObjectId?.stringValue;
+    if (squareId) byObjectId.set(squareId, id);
+  }
+
+  return { present, byObjectId };
 }
 
 /**
@@ -265,15 +286,21 @@ for (const item of skipped) {
 if (skipped.length > 0) console.log('');
 
 const auth = authorization();
-const present = await existingSlugs(auth);
+const { present, byObjectId } = await existingSlugs(auth);
+
+/** The document each product is written to — its existing one after a rename. */
+const docIdOf = (product) => mirrorDocumentId(product, byObjectId);
 
 for (const product of products) {
-  const verb = present.has(product.slug) ? 'update' : 'create';
+  const id = docIdOf(product);
+  const verb = present.has(id) ? 'update' : 'create';
   const price = `$${(product.price.amount / 100).toFixed(2)}`;
-  console.log(`  ${verb.padEnd(6)} ${price.padStart(8)}  ${product.slug}`);
+  const renamed = id === product.slug ? '' : `  (renamed; stays at ${id})`;
+  console.log(`  ${verb.padEnd(6)} ${price.padStart(8)}  ${product.slug}${renamed}`);
 }
 
-const stale = [...present].filter((slug) => !products.some((p) => p.slug === slug));
+const live = new Set(products.map(docIdOf));
+const stale = [...present].filter((slug) => !live.has(slug));
 if (stale.length > 0) {
   console.log(
     `\n  ${stale.length} document(s) in Firestore are not in Square: ${stale.join(', ')}`,
@@ -387,9 +414,13 @@ let created = 0;
 let updated = 0;
 
 for (const product of products) {
-  const existed = present.has(product.slug);
+  const id = docIdOf(product);
+  const existed = present.has(id);
   const body = {
     ...product,
+    // The document id, not the freshly slugified name — they differ after a
+    // rename, and the field must keep naming the document it lives in.
+    slug: id,
     /*
      * Every mirrored row is published, which is the decision taken on
      * 2026-08-17: show the whole Bookstore category and ignore Square's
@@ -429,7 +460,7 @@ for (const product of products) {
    * **Anything added to this document that the parish owns rather than Square
    * must be left off this list.** That is the whole contract.
    */
-  const url = new URL(docUrl(`products/${product.slug}`));
+  const url = new URL(docUrl(`products/${id}`));
   for (const field of fields) {
     url.searchParams.append('updateMask.fieldPaths', field);
   }
@@ -442,7 +473,7 @@ for (const product of products) {
 
   if (!response.ok) {
     const detail = await response.text();
-    console.error(`\nFailed to write ${product.slug}: HTTP ${response.status}\n${detail.slice(0, 400)}`);
+    console.error(`\nFailed to write ${id}: HTTP ${response.status}\n${detail.slice(0, 400)}`);
     process.exit(1);
   }
 

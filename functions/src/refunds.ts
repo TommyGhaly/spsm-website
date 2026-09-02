@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { COLLECTIONS, type Order } from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_SANDBOX_ACCESS_TOKEN,
@@ -40,15 +41,19 @@ import {
  * them has chosen to be.
  */
 export const squareRefund = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false, maxInstances: CAPS.refund },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified. See rateLimit.ts on why this
+    // one is loose and the uid gate below is not.
+    if (throttled(req, res, { bucket: 'refund:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       // 403 for a valid token without the claim, 401 for no usable token at
       // all — the two need different fixes and a volunteer should be told which.
       res.status(caller ? 403 : 401).json({
@@ -56,6 +61,25 @@ export const squareRefund = onRequest(
           ? 'Refunds are limited to the bookstore group and church staff.'
           : 'Sign in again — your session has expired.',
       });
+      return;
+    }
+
+    /*
+     * Ten a minute, on the person rather than the address.
+     *
+     * This endpoint moves money out of the parish's account, and a refund that
+     * fires twice because a volunteer clicked twice is a real loss — Square's
+     * idempotency key is the actual guard against that, and this is the second
+     * one. Nobody issues ten refunds in a minute by hand.
+     */
+    if (
+      throttled(req, res, {
+        bucket: 'refund',
+        max: BUDGETS.refund,
+        identity: caller!.uid,
+        message: 'That is a lot of refunds at once. Please wait a minute before the next.',
+      })
+    ) {
       return;
     }
 

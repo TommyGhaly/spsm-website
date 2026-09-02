@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSyncExternalStore } from 'react';
 import {
   canAdminProgram,
-  hasRole,
+  isSuperadmin,
   type ProgramAdmin,
   type SpsmClaims,
 } from '@spsm/shared';
@@ -122,10 +122,10 @@ export function useProgramAdmin(): ProgramAdminSession {
     claims,
     grants,
     // Creating a ministry is the superadmin's alone, matching
-    // `allow create, delete: if hasRole('admin')` on /programs in the rules.
-    // Drawing the control for somebody the rules will refuse is worse than not
-    // drawing it — see the `denied` branch of AdminGate for the same argument.
-    canManagePrograms: claims !== null && hasRole(claims, 'admin'),
+    // `allow create, delete: if isSuper()` on /programs in the rules. Drawing
+    // the control for somebody the rules will refuse is worse than not drawing
+    // it: the button works, the save fails, and nothing on screen says why.
+    canManagePrograms: isSuperadmin(claims),
     canEditProgram: (programId: string) => canAdminProgram(claims, grants, programId),
   };
 }

@@ -54,20 +54,25 @@ function machineTime(day: string, time: string | null): string {
 }
 
 /**
- * One entry, on one line.
+ * One entry: the time on the left, the title and its detail on the right.
  *
  * ---------------------------------------------------------------------------
- * Time, title, photograph — and nothing stacked.
+ * The end time is stacked under the start, and the rest is flat.
  *
- * This was three rows deep: the start time with the end time beneath it, the
- * title, then the location, the note and the contact each on their own line.
- * Accurate, and it made a Saturday with five services 320 pixels tall inside a
- * wheel that has to hold the tallest day in the week. Everything scrolled.
+ * This was once three rows deep — end time under start time, then the title,
+ * then the location, the note and the contact each on their own line — and it
+ * made a Saturday with five services 320 pixels tall inside a wheel that has to
+ * be as tall as the busiest day in the week. Everything scrolled.
  *
- * One line each halves that. The end time went because it is the least-asked
- * question on the page — somebody is checking what time to *arrive* — and the
- * trailing detail moved onto the same line after the title, dimmed, where it
- * costs nothing when it is absent and is still there when it is not.
+ * Flattening the *trailing detail* is what bought that back: location, note and
+ * contact run on after the title, dimmed, costing no height when they are
+ * absent. The end time was flattened along with them and should not have been.
+ * "8 AM" alone answers when to arrive and silently drops how long the thing
+ * runs, which is the question somebody planning a Saturday is actually asking —
+ * so it is back where it was, beneath the start, small.
+ *
+ * It costs one short line per entry and nothing at all on the entries that have
+ * no end, which is most of the bulletin's.
  * ---------------------------------------------------------------------------
  */
 export function Entry({
@@ -92,9 +97,22 @@ export function Entry({
         {occurrence.allDay ? (
           <span className="sched-entry__allday">All day</span>
         ) : (
-          <time className="sched-entry__start" dateTime={machineTime(day, occurrence.startTime)}>
-            {formatClock(occurrence.startTime)}
-          </time>
+          <>
+            <time className="sched-entry__start" dateTime={machineTime(day, occurrence.startTime)}>
+              {formatClock(occurrence.startTime)}
+            </time>
+            {/*
+              Only when there is an end, and only when it says something the
+              start did not. Breeze hands back a zero-length entry as an end
+              equal to its start, and "8 AM / until 8 AM" reads as a mistake in
+              the data rather than as an event with no stated finish.
+            */}
+            {occurrence.endTime && occurrence.endTime !== occurrence.startTime && (
+              <time className="sched-entry__end" dateTime={machineTime(day, occurrence.endTime)}>
+                until {formatClock(occurrence.endTime)}
+              </time>
+            )}
+          </>
         )}
       </p>
 

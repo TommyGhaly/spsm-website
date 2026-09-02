@@ -38,7 +38,7 @@
  *   node scripts/optimize-assets.mjs           # build everything
  *   node scripts/optimize-assets.mjs --check    # verify outputs are current
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -1084,7 +1084,137 @@ for (const [source, slug] of [
   }
 }
 
+// ── The new church ──────────────────────────────────────────────────────────
+// Ten pictures for /about/future-plans, added 2026-09-01. **The first set on
+// this site that is not a photograph and not an icon: it is a building that
+// does not exist yet**, drawn by Dewing Schmid Kearns for the church.
+//
+// Eight are single frames lifted out of the March 2026 flythrough animation and
+// two are sheets out of the December 2025 permit set, rendered from the PDF at
+// 1.6× with the title block cropped away — the only alteration either drawing
+// gets. Everything upstream of `assets/future/` lives outside the repository;
+// see the note there and in `assets/README.md`. `credits.json` records which
+// document and which timestamp each one came from, because "is this still what
+// the building looks like" is the question that will be asked about this page
+// and the answer has to be checkable.
+//
+// **Nothing here is free-licensed**, unlike the tour, the belief plates, the
+// saints and the who-we-are set. It is work the parish paid for. That is why
+// `features/future/parts.tsx` prints a visible line naming the architects
+// rather than a hidden credits drawer: with Commons material the licence is the
+// obligation, and here the obligation is not misleading anybody about who drew
+// it or how settled it is.
+//
+// **No crop and no `height`**, as everywhere else. Every source is 16:9 already
+// — 1920×1080 for the frames, 4042×2468 for the sheets — and CSS decides the
+// window. 1600 rather than the 1280 the other sets use: the site plan is a line
+// drawing whose street names have to survive, and a 1280 copy of it turns
+// "TURKEY HILL ROAD" into grey fur. Quality 80 for the same reason — thin black
+// lines on white are exactly what WebP spends its bits worst on.
+//
+// The source files are PNG, not the JPEG the other sets take: these came off a
+// video decoder and a PDF renderer rather than a camera, and re-encoding them
+// through JPEG first would add generation loss for nothing.
+{
+  const all = JSON.parse(readFileSync(join(SRC, 'future/credits.json'), 'utf8'));
+  // `gallery-` is the prefix, and it is load-bearing rather than a naming
+  // habit: the two sets get different outputs — the plates a 1600 and an 800,
+  // the gallery a 1600 and a cropped 480 thumbnail — so something has to tell
+  // them apart, and a prefix in one file beats a second credits list.
+  const entries = Object.entries(all);
+  const future = Object.fromEntries(entries.filter(([k]) => !k.startsWith('gallery-')));
+  const gallery = Object.fromEntries(entries.filter(([k]) => k.startsWith('gallery-')));
+
+  for (const name of Object.keys(future).sort()) {
+    const source = join(SRC, `future/${name}.png`);
+    write(join(PUBLIC, `img/future/${name}-1600.webp`), await webp(source, { width: 1600, quality: 80 }));
+    write(join(PUBLIC, `img/future/${name}-800.webp`), await webp(source, { width: 800, quality: 76 }));
+  }
+
+  // The gallery on the same page — ten more frames from the flythrough, shown
+  // as a grid of thumbnails that open full size in a dialog.
+  //
+  // **Three widths, not two, and the small one is a real crop.** The ten
+  // pictures in the set above are each read at something near their emitted
+  // size; a gallery thumbnail is 320px in a grid and a 1600px file behind it is
+  // 100 KB spent on a picture the size of a playing card. So: 480 for the grid,
+  // 1600 for the dialog, and nothing in between — a reader who opens one has
+  // asked for it, and the 1600 arrives then.
+  //
+  // The thumbnail is the only cropped output in this whole block. Everything
+  // else on this page is `fit: 'inside'` because a drawing must not lose its
+  // margins; a grid of ten wants one shape, and 3:2 out of the flythrough's
+  // 16:9 keeps the building and drops sky. `position: 'attention'` picks the
+  // window by entropy rather than taking the centre, which matters here because
+  // half these frames put the church off to one side.
+  for (const name of Object.keys(gallery).sort()) {
+    const source = join(SRC, `future/${name}.png`);
+    write(
+      join(PUBLIC, `img/future/${name}-1600.webp`),
+      await webp(source, { width: 1600, quality: 80 }),
+    );
+    write(
+      join(PUBLIC, `img/future/${name}-480.webp`),
+      await webp(source, { width: 480, height: 320, quality: 74, position: 'attention' }),
+    );
+  }
+}
+
+// ── The consultants' marks ──────────────────────────────────────────────────
+// The logos of the firms working on the new church, for the credentials band at
+// the foot of /about/future-plans. **Third-party trademarks, resized and
+// converted and not otherwise touched** — no crop, no recolour, no redraw. Same
+// treatment and same reasoning as the app icons on /apps; see assets/README.md.
+//
+// **Optional, and the page is built to be complete without them.** This block
+// is skipped entirely if `assets/future/logos/` is absent, and
+// `features/future/logos.ts` lists the directory at build time rather than
+// emitting a path per firm — so a firm with no mark renders as its name and a
+// missing file is never a broken image. Two of the nine (Code Red and Dillis &
+// Roy) may never have one.
+//
+// Whatever is dropped in gets used: the filename minus its extension is the
+// `slug` in `features/future/plan.ts`, so adding a mark is a file and a rebuild
+// rather than a code change. PNG or SVG in, WebP out.
+//
+// 240 and 480 rather than the 800/1600 above: these are shown at 120px tall in
+// a row and 480 covers that to 2× on any screen. `fit: 'inside'` with no height
+// keeps each mark whole — these are wordmarks of wildly different proportions,
+// from MDM's long single line to dsk's square, and a cover crop to a common
+// ratio would cut the words off. The row's CSS does the aligning.
+//
+// **A leading underscore means "not a logo".** `scripts/slice-logo-sheet.mjs`
+// leaves the composite sheet it cut the marks out of in this directory as
+// `_sheet.png` — renamed rather than deleted, because it is the only copy of
+// the artwork and the crop boxes may need adjusting against it later. Without
+// this skip that composite would be published as a tenth mark and the band
+// would show all seven logos again in one box.
+if (existsSync(join(SRC, 'future/logos'))) {
+  const logos = readdirSync(join(SRC, 'future/logos'))
+    .filter((file) => /\.(png|jpe?g|svg|webp)$/i.test(file) && !file.startsWith('_'))
+    .sort();
+
+  for (const file of logos) {
+    const slug = file.replace(/\.[^.]+$/, '');
+    const source = join(SRC, `future/logos/${file}`);
+    write(join(PUBLIC, `img/future/logos/${slug}-240.webp`), await webp(source, { width: 240, quality: 86 }));
+    write(join(PUBLIC, `img/future/logos/${slug}-480.webp`), await webp(source, { width: 480, quality: 84 }));
+  }
+}
+
 // ── Deliberately not built ──────────────────────────────────────────────────
+// public/video/future-flythrough-720.mp4
+//                       Not an image, so not this script's job, and it is
+//                       committed rather than regenerated: 720p CRF 28 out of
+//                       a 538 MB 1080p master that is **not** in the
+//                       repository. The command is recorded in
+//                       assets/README.md. If the flythrough is ever re-cut,
+//                       re-run it by hand and re-pull the eight stills above
+//                       — their timestamps are in assets/future/credits.json.
+// assets/Future Plans/  The three documents this page was written from: the
+//                       flythrough master, the June 2025 renderings, and the
+//                       33-sheet December 2025 permit set. 607 MB between
+//                       them, gitignored. See assets/README.md.
 // Coptic_cross_top_church.jpeg
 //                       381×524, which is too small for anything this site
 //                       still asks for. It had two jobs and has lost both:

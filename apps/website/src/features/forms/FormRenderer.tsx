@@ -42,8 +42,23 @@ type Stage =
   | { kind: 'sending' }
   | { kind: 'done'; paid: boolean };
 
-export function FormRenderer({ form }: { form: FormDefinition }) {
-  const [answers, setAnswers] = useState<FormAnswers>({});
+/**
+ * @param initialAnswers Answers the form opens with, rather than an empty set.
+ *   Read once, on mount — a later change does not reach back into a form
+ *   somebody has started filling in, which is the only safe reading of it: the
+ *   one caller passes a subject lifted from the URL, and a form that reset a
+ *   half-typed message because the address bar changed would be a bug nobody
+ *   would find twice. Unknown keys are harmless; `submissionAnswers` drops
+ *   anything not on a visible field on the way out.
+ */
+export function FormRenderer({
+  form,
+  initialAnswers,
+}: {
+  form: FormDefinition;
+  initialAnswers?: FormAnswers;
+}) {
+  const [answers, setAnswers] = useState<FormAnswers>(() => ({ ...initialAnswers }));
   const [problems, setProblems] = useState<FieldProblem[]>([]);
   const [stage, setStage] = useState<Stage>({ kind: 'filling' });
   /** The summary, so focus can be moved to it after a failed submit. */

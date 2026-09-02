@@ -1,8 +1,9 @@
 'use client';
 
 import { Suspense, lazy, useEffect, useState } from 'react';
-import type { FormDefinition } from '@spsm/shared';
+import { builtInForms, type FormDefinition } from '@spsm/shared';
 import { Icon, isIconName } from '@/components/Icon';
+import { useCampAdmin } from '@/features/camp';
 import { watchPublishedForms } from './data';
 import { useFormsAdmin } from './useFormsAdmin';
 
@@ -31,25 +32,144 @@ const FormsAdmin = lazy(() =>
 );
 
 /**
- * What the page shows before Firestore answers, and if it never does.
+ * Summer camp, as a card rather than a form definition.
  *
- * Deliberately the NFC destination rather than a spinner. It has been on a tag
- * in the car park for months; a hub that shows nothing at all while it waits is
- * a worse answer than one that shows the form most people arriving here are
- * looking for.
+ * It is not in the `forms` collection and cannot be: a camp registration
+ * repeats a child, carries a payment ledger written to over weeks, and has
+ * roles appended long after it was taken, none of which a `FormField` list can
+ * express. It has a route of its own instead — see
+ * `app/forms/summer-camp/page.tsx`.
+ *
+ * So the card is assembled here. A hardcoded entry in a list whose whole point
+ * is not being hardcoded deserves the same defence `FORMS_WITH_A_HOME` gets
+ * below: this is a consequence of a route existing in this codebase rather than
+ * a setting the parish office should have to understand, and it belongs next to
+ * the route.
+ *
+ * ---------------------------------------------------------------------------
+ * Two cards for one address, and which one you get depends on who you are.
+ *
+ * This used to appear only for somebody holding a program grant on the camp's
+ * ministry, because the page behind it was administrator-only in its entirety.
+ * Half of it no longer is: servants sign themselves up on an open form, and
+ * families are still registered by the camp at a desk. The page decides which
+ * of those you see from the same grant — this only decides what the card
+ * promises, so that a teenager and a camp director are not both told the form
+ * is "for the people who run the camp".
+ *
+ * The public card is not hidden when sign-ups are closed. `config/camp` is a
+ * second read this page has no other reason to make, and a card that leads to
+ * "the camp is not taking sign-ups at the moment" is a better answer than one
+ * that silently is not there — somebody sent a link by a friend needs to be
+ * told the list is shut, not left wondering.
+ * ---------------------------------------------------------------------------
  */
-const FALLBACK: readonly HubCard[] = [
-  {
-    slug: 'vehicle-registration',
-    href: '/forms/vehicle-registration',
-    title: 'Register a vehicle',
-    blurb:
-      'So the parking team can reach you if your car needs moving. Visitors and guests are welcome to register too.',
-    icon: 'pin',
-    image: '/img/stock-parking-lot-1000.webp',
-    external: false,
-  },
-] as const;
+const CAMP_CARD: HubCard = {
+  slug: 'summer-camp',
+  href: '/forms/summer-camp',
+  title: 'Serve at summer camp',
+  blurb:
+    'Sign up to serve — the days you can come, which half of the camp, and what ' +
+    'you would like to do. No account needed. Children are registered by the camp.',
+  icon: 'present',
+  image: null,
+  external: false,
+};
+
+/**
+ * A second card, for somebody who runs the camp, pointing somewhere else.
+ *
+ * It used to be the *same* address with different wording, because the one
+ * screen held both the public sign-up and the whole of the camp's admin. Since
+ * the rebuild those are two places: this hub is public and shows the sign-up,
+ * and everything a camp administrator does is at /admin/camp.
+ */
+const CAMP_ADMIN_CARD: HubCard = {
+  slug: 'summer-camp-admin',
+  href: '/admin/camp',
+  title: 'Run summer camp',
+  blurb:
+    'Registrations, groups and the daily register, with the camp\u2019s settings. ' +
+    'For the people who run the camp.',
+  icon: 'present',
+  image: null,
+  external: false,
+};
+
+/**
+ * Whether the camp is advertised on this page at all.
+ *
+ * ---------------------------------------------------------------------------
+ * **Back on as of 2 Sep 2026**, with the camp rebuilt. It was switched off on
+ * 1 Sep — one word, nothing deleted — and this is that word changed back.
+ *
+ * The switch stays because it is the right shape for the question it answers:
+ * the camp is a thing the parish runs for two weeks a year, and a hub that
+ * advertises it in February is a hub advertising something that is not
+ * happening. The finer control now lives in the camp's own settings —
+ * `servantSignUp` closes the form itself and the page then says so — and this
+ * remains the blunt one that takes the card off the hub entirely.
+ *
+ * The matching row in the account menu is in `features/admin/sections.ts` and
+ * carries the same note.
+ * ---------------------------------------------------------------------------
+ */
+const SHOW_CAMP: boolean = true;
+
+/**
+ * The two forms that are always on this page.
+ *
+ * ---------------------------------------------------------------------------
+ * Not a spinner substitute any more — a floor.
+ *
+ * This was one hardcoded card shown *only* while Firestore had not answered:
+ * the NFC destination, on the argument that a hub showing nothing while it
+ * waits is worse than one showing the form most people arriving here want.
+ * That argument was right and it under-reached. The same reasoning says the
+ * card must also survive a read that answers *successfully* without the
+ * document — a seeder that was never run, a document deleted from the console —
+ * because the tag in the car park is equally unhelped by an empty list that
+ * arrived quickly.
+ *
+ * So these are merged into every render: before the read, after a failed read,
+ * and after a successful one that did not include them. A stored document
+ * always wins over its built-in copy, because staff edit these two like any
+ * other form and this must never overwrite that.
+ *
+ * `builtInForms()` is the same definition the seeder writes and the form page
+ * falls back to. One copy, in `@spsm/shared`.
+ * ---------------------------------------------------------------------------
+ */
+/*
+ * A function, not a `const` — and this is not a style preference.
+ *
+ * As a module-level constant it ran at import time and called `toCard`, which
+ * reads `FORMS_WITH_A_HOME` further down this file. `function` declarations
+ * hoist; `const` declarations do not, so the map ran while that one was still
+ * in its temporal dead zone. It failed as `ReferenceError: Cannot access 'm'
+ * before initialization` during the static export of /forms — a build error
+ * naming a minified variable, from a file with no obvious ordering problem in
+ * it. Two cards is not a computation worth caching into that.
+ */
+function builtInCards(): HubCard[] {
+  return builtInForms().map(({ draft }) => toCard(draft as FormDefinition));
+}
+
+/**
+ * The live list, with the two permanent forms guaranteed present.
+ *
+ * Keyed on slug rather than id because that is what a card is addressed by, and
+ * a built-in's slug cannot be edited — the builder makes that field read-only
+ * for exactly this reason.
+ */
+function withBuiltIns(cards: readonly HubCard[]): HubCard[] {
+  const known = new Set(cards.map((card) => card.slug));
+  const missing = builtInCards().filter((card) => !known.has(card.slug));
+  // The built-ins first: `order` puts contact at 1 and the vehicle form at 10,
+  // ahead of the default 100 every other form is created with, and the live
+  // list arrives already sorted by that same field.
+  return [...missing, ...cards];
+}
 
 interface HubCard {
   slug: string;
@@ -63,15 +183,14 @@ interface HubCard {
 }
 
 export function FormsHub() {
-  const [cards, setCards] = useState<readonly HubCard[]>(FALLBACK);
-  const [live, setLive] = useState(false);
+  const [cards, setCards] = useState<readonly HubCard[]>(builtInCards);
   const admin = useFormsAdmin();
+  const camp = useCampAdmin();
 
   useEffect(() => {
     const stop = watchPublishedForms(
       (forms) => {
-        setCards(forms.map(toCard));
-        setLive(true);
+        setCards(withBuiltIns(forms.map(toCard)));
       },
       (error) => {
         // Keep whatever is on screen. An empty hub is the failure this guards
@@ -83,6 +202,23 @@ export function FormsHub() {
     return stop;
   }, []);
 
+  /*
+   * The camp card is appended rather than folded into `cards`, so a failed
+   * Firestore read cannot take it away: `cards` falls back to the built-in list
+   * when the subscription errors, and both a servant signing up and somebody
+   * who runs the camp should still find the form on a page that could not reach
+   * the database.
+   *
+   * Shown before `camp.ready`, deliberately — the public card is the honest
+   * default for a visitor, and waiting for a grant read that only a signed-in
+   * person triggers would make the card appear a beat late for everybody else.
+   * What `ready` decides is only whether it is swapped for the administrator's
+   * wording.
+   */
+  const visible = SHOW_CAMP
+    ? [...cards, CAMP_CARD, ...(camp.ready && camp.canEdit ? [CAMP_ADMIN_CARD] : [])]
+    : cards;
+
   return (
     <>
       <p className="note">
@@ -90,18 +226,14 @@ export function FormsHub() {
       </p>
 
       <ul className="forms">
-        {cards.map((card) => (
+        {visible.map((card) => (
           <li key={card.slug}>
             <FormCard card={card} />
           </li>
         ))}
       </ul>
 
-      {live && cards.length === 0 && (
-        <p className="note">
-          There are no forms published at the moment.
-        </p>
-      )}
+
 
       <p className="note forms__ask">
         Looking for something that is not here?{' '}
@@ -118,6 +250,7 @@ export function FormsHub() {
           <FormsAdmin />
         </Suspense>
       )}
+
     </>
   );
 }

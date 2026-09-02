@@ -76,9 +76,23 @@ export interface Member extends AuditFields {
   phone: string | null;
   photoPath: string | null;
 
-  /** Display mirror of custom claims. NOT authoritative. */
-  roleMirror: string;
-  groupsMirror: string[];
+  /**
+   * Display mirror of the one custom claim. NOT authoritative.
+   *
+   * Exists only so the allocation list at /access can label a row — a browser
+   * cannot read another account's claims, so this is the sole way that screen
+   * can say "ticking these boxes changes nothing for this person". Written
+   * `false` at sign-in and set by `scripts/grant-admin.mjs`; rules read the
+   * token and never this field, so a stale value is cosmetic.
+   *
+   * The `screenAdmin` and `programAdmin` maps that decide everything else are
+   * deliberately *not* on this interface. They are permissions rather than
+   * profile fields, they have their own parsers and their own types in
+   * ./screens.ts and ./programAdmin.ts, and folding them in here would invite
+   * `setDoc` of a whole `Member` — which is how somebody's allocation gets
+   * blanked by a profile edit.
+   */
+  superadminMirror: boolean;
 
   /** Which auth provider they came in through — Firebase or Entra ID. */
   authProvider: AuthProvider;

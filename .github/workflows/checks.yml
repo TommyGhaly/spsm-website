@@ -1,0 +1,140 @@
+# =============================================================================
+# The gate. Everything that can fail without a credential, on every push.
+# =============================================================================
+# Until this existed, .github/workflows held one job and it refreshed the
+# livestream archive. Nothing ran the tests, nothing ran the rules tests, and
+# nothing looked for a committed credential — so "the tests pass" meant "they
+# passed on somebody's laptop, at some point, probably".
+#
+# Deliberately needs no secrets at all. A workflow that needs a credential is a
+# workflow that silently stops running the day somebody rotates one, and this is
+# the one that must never stop running. `deploy` in refresh-archive.yml is the
+# job that needs the secret store; this one is on from the moment it lands.
+#
+# ## Why `rules` is its own job
+#
+# It needs a JVM and it starts two emulators, so it takes an order of magnitude
+# longer than the rest. Splitting it means a type error is reported in under a
+# minute instead of waiting behind an emulator boot — and the two failures mean
+# genuinely different things. A `checks` failure is "this code is wrong"; a
+# `rules` failure is "this policy denies something real", which is decision #10
+# and the reason that suite exists at all.
+#
+# Neither job is allowed to be the one people learn to ignore, so neither is
+# `continue-on-error` and neither is scheduled. They run on the change.
+# =============================================================================
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only. This workflow reports; it never writes to the repository.
+permissions:
+  contents: read
+
+# Supersede an in-flight run when the same branch is pushed again — unlike the
+# archive refresh, there is nothing to lose by cancelling: the answer for the
+# older commit stopped being interesting the moment a newer one arrived.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Types, unit tests, credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The website and the tests import @spsm/shared's compiled dist/, which is
+      # gitignored — so this is not an optimisation, it is the thing without
+      # which everything below fails to resolve. `npm test` does it too; done
+      # here so the typecheck can also see it.
+      - name: Build @spsm/shared
+        run: npm run build --workspace @spsm/shared
+
+      - name: Typecheck every workspace
+        run: npm run typecheck
+
+      # Pure functions, no emulator, no network, no credentials. About a second.
+      - name: Unit tests
+        run: npm test
+
+      # Compiles the Cloud Functions and bundles them exactly as a deploy does.
+      # Worth its own step: a Function that does not build is a deploy that fails
+      # halfway, and `npm test` never touches functions/src.
+      - name: Build the Cloud Functions
+        run: npm run build --workspace @spsm/functions
+
+      # ---------------------------------------------------------------------
+      # The security check, and the one worth understanding the limits of.
+      #
+      # There is no .env on a runner, so the half that hunts for the actual
+      # values from .env cannot run here and the script says so rather than
+      # reporting a pass it has not earned. What DOES run is the half that
+      # matters most in CI: eight credential shapes across every tracked file,
+      # and the assertion that .env and .secret.local are not in the index.
+      #
+      # That is precisely the check a pull request needs. A token pasted into a
+      # source file is the leak that actually happens, it is invisible in a
+      # diff of any size, and it is unrecoverable once it is in the history —
+      # so it has to be caught before the merge, not after.
+      # ---------------------------------------------------------------------
+      - name: No credentials in the tree
+        run: npm run audit:secrets
+
+  rules:
+    name: Firestore and Storage rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The emulators are Java. Pinned rather than relying on whatever the
+      # runner image ships, because that changes underneath you and the failure
+      # — an emulator that will not start — reads like a broken test suite.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      # Three rules suites import COLLECTIONS and friends from @spsm/shared.
+      - name: Build @spsm/shared
+        run: npm run build --workspace @spsm/shared
+
+      # `npm run test:rules` calls a bare `firebase`, so the CLI has to be on
+      # PATH. Installed rather than inlining an `npx firebase-tools ...` command
+      # here, so the workflow and a laptop run the *same* script and cannot
+      # drift into testing two different things. Pinned to 15 to match the
+      # version the deploy job uses.
+      - name: Install the Firebase CLI
+        run: npm install --global firebase-tools@15
+
+      # ---------------------------------------------------------------------
+      # What this catches that `rules:check` does not.
+      #
+      # `npm run rules:check` compiles the rules, and it has passed on a policy
+      # that denied every public list query on the site — see docs/decisions.md
+      # #10 — and on a Storage policy where no photograph could ever be deleted,
+      # because a delete carries no `request.resource` and the condition tested
+      # it anyway. Both compiled clean. Both were caught only by evaluating them
+      # against a running emulator, which is this.
+      # ---------------------------------------------------------------------
+      - name: Rules tests
+        run: npm run test:rules

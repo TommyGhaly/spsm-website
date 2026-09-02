@@ -32,11 +32,11 @@ import { useProgramAdmin } from './useProgramAdmin';
  * only for a superadmin — see the note at the top of review.ts. A queue scoped to
  * a ministry is one `where('programId','==',…)`, which is the thing
  * `firestore.rules` can prove; an unfiltered pending list is provable only by
- * `hasRole('admin')` and is refused outright for everybody else.
+ * `isSuper()` and is refused outright for everybody else.
  *
  * ## Who does not get one
  *
- * `canEditProgram` is `admin` or a **program** grant. Somebody holding a single
+ * `canEditProgram` is the superadmin or a **program** grant. Somebody holding a single
  * level — `programAdmin.events`, the volunteer who helps with one week — sees no
  * queue, here or anywhere.
  *

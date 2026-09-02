@@ -1,21 +1,21 @@
 /**
  * Who may administer which program galleries.
  *
- * A third permission axis, alongside `Role` in ./roles.ts and `ScreenAdmin` in
- * ./screens.ts. The three answer different questions:
+ * The second half of an allocation, alongside `ScreenAdmin` in ./screens.ts.
+ * The two answer different questions:
  *
- *   role         how much of the parish's administrative surface at all
  *   screenAdmin  which areas of the site
  *   programAdmin which *programs* within the galleries
+ *
+ * Both live on the member document, both are handed out at /access, and
+ * `superadmin` in ./claims.ts short-circuits both. There is no tier under it —
+ * see the note at the top of ./claims.ts for why the role ladder went.
  *
  * **Deliberately not folded into `screenAdmin.events`.** That flag means the
  * parish calendar. Handing the youth servant every Summercamp photograph must
  * not also hand them the Liturgy schedule, and one flag cannot express both.
  *
- * Like screen flags, these grant and never revoke: `role: 'admin'` already
- * opens everything, and a grant here is how somebody below admin is let into
- * one program. Client-side checks hide UI only — `firestore.rules` is the
- * enforcement.
+ * Client-side checks hide UI only — `firestore.rules` is the enforcement.
  */
 
 /**
@@ -75,11 +75,11 @@ function idList(value: unknown): string[] {
  * question, which is the one most screens should be asking.
  */
 export function canAdminProgram(
-  claims: { role?: string } | null | undefined,
+  claims: { superadmin?: boolean } | null | undefined,
   programAdmin: ProgramAdmin | null | undefined,
   programId: string,
 ): boolean {
-  if (claims?.role === 'admin') return true;
+  if (claims?.superadmin === true) return true;
   return programAdmin?.programs.includes(programId) === true;
 }
 
@@ -93,7 +93,7 @@ export function canAdminProgram(
  * fetch the event to answer this.
  */
 export function canAdminProgramEvent(
-  claims: { role?: string } | null | undefined,
+  claims: { superadmin?: boolean } | null | undefined,
   programAdmin: ProgramAdmin | null | undefined,
   programId: string,
   programEventId: string,
@@ -109,9 +109,9 @@ export function canAdminProgramEvent(
  * member with no grants gets no link, rather than a link to an empty page.
  */
 export function hasAnyProgramGrant(
-  claims: { role?: string } | null | undefined,
+  claims: { superadmin?: boolean } | null | undefined,
   programAdmin: ProgramAdmin | null | undefined,
 ): boolean {
-  if (claims?.role === 'admin') return true;
+  if (claims?.superadmin === true) return true;
   return (programAdmin?.programs.length ?? 0) > 0 || (programAdmin?.events.length ?? 0) > 0;
 }

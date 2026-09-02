@@ -34,9 +34,9 @@
  * `updateEventContent` writes the parish's copy directly, a second after somebody
  * stops typing. See its own note for what that trade gives up.
  *
- * Security lives in `firestore.rules` — `allow write: if hasRole('staff')` —
- * not here. Everything in this file is convenience for a person who already
- * has the claim.
+ * Security lives in `firestore.rules` — `allow write: if hasScreen('events')` —
+ * not here. Everything in this file is convenience for a person who has already
+ * been given the parish calendar at /access.
  */
 import {
   addDoc,
@@ -288,13 +288,14 @@ export function slugify(title: string): string {
 /**
  * The ceiling `storage.rules` enforces on `events/`, repeated here.
  *
- * Duplicated on purpose. The rule is the enforcement and this is not — but
- * without it a volunteer picks a 14MB photograph straight off a phone, waits for
- * the whole upload, and is then told `storage/unauthorized`, which reads as "you
- * are not allowed" rather than "that file is too big". Checking first turns an
- * incomprehensible rejection into a sentence. Keep the two numbers in step.
+ * There is no size limit any more, and the note that used to be here explained
+ * one: "without it a volunteer picks a 14MB photograph straight off a phone,
+ * waits for the whole upload, and is then told `storage/unauthorized`". The
+ * answer to that turned out not to be a friendlier refusal — a 14MB photograph
+ * off a phone is a normal photograph, and `isImage()` in storage.rules stopped
+ * carrying a size on 2026-09-01. What is left is the type, which the rules
+ * still enforce and which this still checks first so the message is a sentence.
  */
-export const HERO_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * Where an event's photograph lives.
@@ -334,12 +335,6 @@ function heroPath(slug: string, file: File): string {
 export async function uploadEventHero(file: File, slug: string): Promise<string> {
   if (!file.type.startsWith('image/')) {
     throw new Error('That file is not an image. Use a JPEG, PNG, or WebP.');
-  }
-  if (file.size > HERO_MAX_BYTES) {
-    throw new Error(
-      `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB. The limit is 8MB — ` +
-        'most photo apps can export a smaller copy.',
-    );
   }
   if (!slug) {
     throw new Error('Give the event a title first, so the photograph has somewhere to go.');
@@ -394,12 +389,13 @@ export interface ProgramLinkTarget {
  * `programEvents` reads as `isPublished(resource.data) || adminsProgramEvent(…)`.
  * Firestore judges a list by what it *could* return, so an unfiltered read is
  * allowed only when the second branch is true independently of any document —
- * which is `hasRole('admin')`, and nothing else. A `staff` user with no program
- * grant gets `permission-denied` on the whole query rather than a filtered list.
+ * which is `isSuper()`, and nothing else. Somebody holding the Parish calendar
+ * grant but no program grant gets `permission-denied` on the whole query rather
+ * than a filtered list.
  *
  * So: ask for everything, and on a refusal ask again for the published ones,
- * which any signed-in reader may have. An administrator sees drafts too; a staff
- * user sees the published occurrences, which is all they could link to anyway.
+ * which any reader may have. The superadmin sees drafts too; everybody else sees
+ * the published occurrences, which is all they could link to anyway.
  * The alternative — always filtering on `published` — would quietly hide a camp
  * that has been created but not yet published, which is exactly the one somebody
  * is most likely to be setting up.

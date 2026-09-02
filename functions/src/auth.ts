@@ -6,31 +6,36 @@
  * functions answer is not "who are you" — Entra already answered that — but
  * "are you from *this* parish, and what does that entitle you to."
  *
- * The model:
- *   tenant membership  -> `servant`, automatically, on first sign-in
- *   staff / admin      -> granted per person via `setMemberRole`, never inferred
+ * The model, since the role ladder was removed:
+ *
+ *   tenant membership  -> an account, and the servants' rota. Nothing else.
+ *   everything else    -> allocated at /access, onto the member document.
+ *   `superadmin`       -> `scripts/grant-admin.mjs`, by hand, and nowhere else.
+ *
+ * There is no `setMemberRole` callable any more, and its absence is the point:
+ * the only privilege that is a *claim* is the one that hands out every other
+ * privilege, and it is set from a terminal rather than from a screen. See
+ * packages/shared/src/claims.ts.
  *
  * That first line makes the Entra app registration a security control rather
  * than a convenience: if it is switched from single-tenant to multi-tenant,
- * every Microsoft account on earth becomes a servant. `beforeUserCreated`
- * re-checks the tenant so that a change in the Azure portal cannot silently
- * open the door here.
+ * every Microsoft account on earth gets an account here and can read the rota.
+ * `beforeUserCreated` re-checks the tenant so that a change in the Azure portal
+ * cannot silently open the door.
  */
 import { beforeUserCreated, HttpsError as AuthHttpsError } from 'firebase-functions/identity';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { CAPS } from './rateLimit.js';
 import { defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
-  DEFAULT_SIGNIN_ROLE,
-  GROUPS,
-  ROLES,
+  DEFAULT_CLAIMS,
   defaultScreenAdmin,
-  isKnownRole,
-  type Group,
-  type Role,
+  parseScreenAdmin,
+  screensFromGrants,
 } from '@spsm/shared';
 
 /**
@@ -122,10 +127,10 @@ function presentedTenant(event: {
 /**
  * Runs while the very first ID token is being minted, which is the entire
  * reason it is a blocking function rather than an `onUserCreated` trigger.
- * Claims returned here are present in that first token, so a servant signs in
- * once and is immediately a servant. The non-blocking version would set the
- * claim *after* the token existed, leaving a first session that is
- * authenticated but role-less — a state every caller then has to handle.
+ * Claims returned here are present in that first token, so the shape every
+ * caller reads is there from the first request. The non-blocking version would
+ * set them *after* the token existed, leaving a first session whose claim block
+ * is missing keys — a state every caller then has to handle.
  */
 export const enforceTenantOnCreate = beforeUserCreated(
   // `idToken: true` is load-bearing, not a tuning knob. Blocking functions do
@@ -146,7 +151,7 @@ export const enforceTenantOnCreate = beforeUserCreated(
     if (event.credential?.providerId && event.credential.providerId !== MICROSOFT_PROVIDER) {
       // Microsoft is the only provider enabled on the project, so this is
       // unreachable unless someone enables another one in the console. Refusing
-      // here means that turning on a provider cannot, by itself, mint servants.
+      // here means that turning on a provider cannot, by itself, mint accounts.
       logger.error('Rejected sign-in from an unexpected provider', {
         providerId: event.credential.providerId,
       });
@@ -158,8 +163,8 @@ export const enforceTenantOnCreate = beforeUserCreated(
 
     if (!expected) {
       // Fail closed. An unset param is a deployment mistake, and the failure it
-      // would otherwise cause — granting `servant` to anyone who can reach
-      // Microsoft — is exactly the one worth refusing to guess about.
+      // would otherwise cause — handing the servants' rota to anyone who can
+      // reach Microsoft — is exactly the one worth refusing to guess about.
       logger.error('AZURE_TENANT_ID is not configured; refusing to create an account.');
       throw new AuthHttpsError('failed-precondition', 'Sign-in is not configured yet.');
     }
@@ -201,23 +206,38 @@ export const enforceTenantOnCreate = beforeUserCreated(
       );
     }
 
-    logger.info('Provisioning a new servant', {
+    logger.info('Provisioning a new account', {
       uid: user.uid,
       email: user.email ?? null,
     });
 
-    // Best-effort, and deliberately not awaited into the rejection path: the
-    // profile is a display record — a name for an admin list — while the claims
-    // below are what actually decide anything. Firestore being briefly unhappy is
-    // not a reason to refuse someone entry to the servants schedule, and the
-    // record is recreated by `setMemberRole` the first time their role changes.
-    //
-    // (`onUserCreated` would be the natural home for this, but firebase-functions
-    // v7 ships it at runtime without type declarations, so it is not a supported
-    // API to build on.)
+    /*
+     * Best-effort, and deliberately not awaited into the rejection path.
+     *
+     * This mattered less when the profile was a display record beside a `role`
+     * claim that decided everything; it matters more now, because the document
+     * this writes **is** the person's permissions and nothing else is. A member
+     * with no document holds no grants — which is the correct failing direction,
+     * and the reason a Firestore hiccup here is still not a reason to refuse
+     * somebody entry to the servants schedule. The allocation screen writes to
+     * this document with `updateDoc`, which needs it to exist; if it does not,
+     * signing out and back in recreates it.
+     *
+     * (`onUserCreated` would be the natural home for this, but firebase-functions
+     * v7 ships it at runtime without type declarations, so it is not a supported
+     * API to build on.)
+     */
     await createMemberProfile(user.uid, user.email ?? null, user.displayName ?? null);
 
-    return { customClaims: { role: DEFAULT_SIGNIN_ROLE } };
+    /*
+     * The claims a first sign-in is worth: none of them true.
+     *
+     * Returned rather than omitted so the block always has its shape — the
+     * `screens` mirror in particular, which `storage.rules` reads with a
+     * default and which `mirrorGrantsToClaims` below overwrites the moment
+     * anybody is granted anything.
+     */
+    return { customClaims: { ...DEFAULT_CLAIMS, screens: [] } };
   },
 );
 
@@ -237,16 +257,24 @@ async function createMemberProfile(
           phone: null,
           photoPath: null,
 
-          // Display mirrors, never authoritative — firestore.rules reads the
-          // token and never this document.
-          roleMirror: DEFAULT_SIGNIN_ROLE,
-          groupsMirror: [],
+          /*
+           * A display copy of the one claim, never authoritative — rules read
+           * the token and never this field. It exists so the allocation list at
+           * /access can say "this person is a superadmin and ticking boxes for
+           * them changes nothing", which is otherwise unanswerable from a
+           * browser: claims are not readable across accounts.
+           *
+           * Written here as `false` and by `scripts/grant-admin.mjs` when it
+           * promotes somebody. If the two ever disagree the claim wins and the
+           * screen is wrong, which is a cosmetic bug by construction.
+           */
+          superadminMirror: false,
 
           /*
            * Per-screen admin, every screen closed. See @spsm/shared/screens.
            *
-           * Unlike the mirrors above this one *is* authoritative — it is the
-           * only record of which areas a non-admin may manage, and there is no
+           * Unlike the mirror above this one *is* authoritative — it is the
+           * only record of which areas somebody may manage, and there is no
            * claim behind it. Which makes the `screenAdmin` clause in
            * firestore.rules load-bearing: without it the `allow update: if
            * isSelf(uid)` rule for profile edits would let anyone flip their own
@@ -282,58 +310,90 @@ async function createMemberProfile(
 }
 
 /**
- * Grant or change a role.
+ * Mirror the screen grants into the custom claims, for `storage.rules`.
  *
- * Writes the claims *and* the display mirror on the member document, because
- * those are two different stores that drift the moment anything updates one
- * without the other. Claims stay authoritative — `firestore.rules` reads the
- * token and never this document, so a stale mirror is a cosmetic bug rather
- * than a privilege escalation.
+ * ---------------------------------------------------------------------------
+ * ## Why this function has to exist
+ *
+ * Firebase **Storage rules cannot read Firestore.** Firestore rules can, and
+ * do — `memberScreens()` in firestore.rules reads the allocation straight off
+ * the member document, so a grant is live on the grantee's next page load. A
+ * bucket rule has no such option: the token is the only thing it can see.
+ *
+ * Without a mirror the choices for every hero image, form picture, product
+ * photo and clergy portrait were "superadmin only" — which would leave the
+ * person who was given Events unable to upload the photograph for the event
+ * they were given — or "anybody signed in", which hands the whole bucket to
+ * every account in the parish directory. Neither is what /access promises.
+ *
+ * So the flags are copied into a `screens` claim whenever the document changes,
+ * and `storage.rules` reads that. **Nothing else may read it.** It is a lagging
+ * copy by construction, and the authoritative map is the document.
+ *
+ * ## The lag, and who closes it
+ *
+ * A claim reaches a browser when the ID token refreshes — up to an hour. This
+ * function runs in seconds; the token is the slow part. `useScreenGrants` in
+ * the website compares the token's list against the document it has just read
+ * and forces a refresh when they disagree, so in practice the person who was
+ * granted an area a moment ago can upload immediately. If that comparison is
+ * ever removed, this lag comes back as "the grant works everywhere except
+ * pictures, for a while".
+ *
+ * ## Preserving `superadmin`
+ *
+ * `setCustomUserClaims` replaces the entire block rather than merging, so the
+ * existing claims are read and spread first. Getting this wrong would demote
+ * the parish's administrator the first time anybody edited their profile —
+ * silently, and recoverable only by re-running `grant-admin.mjs`.
+ *
+ * ## Why a write-triggered function rather than a callable
+ *
+ * The allocation screen writes the member document directly, guarded by
+ * `firestore.rules`. Routing it through a callable instead would move that
+ * policy out of the rules file and into TypeScript, which is the opposite of
+ * how everything else here is arranged. A trigger keeps the rules
+ * authoritative and makes the mirror a consequence of the write rather than a
+ * thing a caller has to remember.
+ * ---------------------------------------------------------------------------
  */
-export const setMemberRole = onCall<{
-  uid: string;
-  role: Role;
-  groups?: Group[];
-}>({ cors: false }, async (request) => {
-  if (request.auth?.token?.['role'] !== 'admin') {
-    throw new HttpsError('permission-denied', 'Only an admin can change roles.');
-  }
+export const mirrorGrantsToClaims = onDocumentWritten(
+  { document: `${COLLECTIONS.members}/{uid}`, maxInstances: CAPS.claims },
+  async (event) => {
+    const uid = event.params['uid'];
+    if (!uid) return;
 
-  const { uid, role, groups = [] } = request.data ?? {};
+    const before = screensFromGrants(parseScreenAdmin(event.data?.before?.get('screenAdmin')));
+    const after = screensFromGrants(parseScreenAdmin(event.data?.after?.get('screenAdmin')));
 
-  if (typeof uid !== 'string' || uid.length === 0) {
-    throw new HttpsError('invalid-argument', 'uid is required.');
-  }
-  if (!isKnownRole(role)) {
-    throw new HttpsError('invalid-argument', `role must be one of: ${ROLES.join(', ')}`);
-  }
-  if (!Array.isArray(groups) || groups.some((g) => !(GROUPS as readonly string[]).includes(g))) {
-    throw new HttpsError('invalid-argument', `groups must be from: ${GROUPS.join(', ')}`);
-  }
-  if (uid === request.auth?.uid && role !== 'admin') {
-    // Locking yourself out is recoverable only by someone else with admin, or
-    // by the bootstrap script. Cheap to prevent, expensive to undo.
-    throw new HttpsError('failed-precondition', 'You cannot demote yourself.');
-  }
+    // Every profile edit — a phone number, a notification preference — fires
+    // this. Comparing first means only an actual permission change costs a
+    // `getUser` and a `setCustomUserClaims`, which are not free and which
+    // invalidate nothing else about the session.
+    if (before.join(',') === after.join(',')) return;
 
-  await getAuth().setCustomUserClaims(uid, { role, groups });
+    try {
+      const existing = (await getAuth().getUser(uid)).customClaims ?? {};
 
-  await getFirestore()
-    .collection(COLLECTIONS.members)
-    .doc(uid)
-    .set(
-      {
-        roleMirror: role,
-        groupsMirror: groups,
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: request.auth?.uid ?? null,
-      },
-      { merge: true },
-    );
+      // Spread, never replace. `superadmin` lives in this same block and is set
+      // only by `grant-admin.mjs`; overwriting it here would demote the parish's
+      // administrator as a side effect of somebody editing their own profile.
+      await getAuth().setCustomUserClaims(uid, { ...existing, screens: after });
 
-  logger.info('Role changed', { uid, role, groups, by: request.auth?.uid });
-
-  // The subject keeps their old claims until their ID token refreshes, which
-  // is up to an hour. Anything acting on this immediately must force-refresh.
-  return { uid, role, groups };
-});
+      logger.info('Mirrored screen grants into claims', { uid, screens: after });
+    } catch (error) {
+      /*
+       * Logged and swallowed, and the failing direction is the safe one.
+       *
+       * A member document exists for every account, but an account can be
+       * deleted while its document survives — `getUser` then throws
+       * `auth/user-not-found`, and there is nothing to fix. More importantly,
+       * throwing here would retry the trigger against a document whose write
+       * has already committed: the Firestore grant is live either way, and only
+       * the picture uploads are affected. Failing loudly would not make the
+       * mirror land any sooner.
+       */
+      logger.error('Could not mirror screen grants into claims', { uid, error });
+    }
+  },
+);

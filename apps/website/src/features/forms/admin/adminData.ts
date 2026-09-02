@@ -16,11 +16,11 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  isBuiltInForm,
   toFormSlug,
   type FormAnswers,
   type FormDefinition,
   type FormDraft,
-  type FormField,
   type SubmissionStatus,
 } from '@spsm/shared';
 import { auth } from '@/lib/auth';
@@ -81,7 +81,60 @@ export async function writeForm(id: string, draft: FormDraft): Promise<void> {
  * title stored on each one, so they remain legible after the form is gone.
  */
 export async function deleteForm(id: string): Promise<void> {
+  /*
+   * The two forms the church always has cannot be deleted from here, and
+   * `firestore.rules` refuses the delete as well.
+   *
+   * Two checks for one rule is not belt and braces for its own sake. This one
+   * exists so the failure is a sentence in the drawer rather than a
+   * `permission-denied` in the console — the list already withholds the button,
+   * so anything that reaches here has come from a caller that did not know, and
+   * telling it plainly is more useful than letting Firestore answer. The rule is
+   * the one that actually holds.
+   */
+  if (isBuiltInForm(id)) {
+    throw new Error(
+      'The contact form and the vehicle registration are permanent — the church’s own ' +
+        'links and the car park tags point at them. Close it to submissions instead.',
+    );
+  }
   await deleteDoc(doc(db(), COLLECTIONS.forms, id));
+}
+
+/**
+ * Put the forms in this order, top to bottom.
+ *
+ * ---------------------------------------------------------------------------
+ * Renumbers everything, rather than swapping two.
+ *
+ * A swap is the obvious implementation and it does nothing here. `blankForm`
+ * creates every form with `order: 100`, so most of the collection shares one
+ * value and the hub falls back to sorting those by title — exchanging the
+ * numbers of two forms that both read 100 changes nothing on screen, and the
+ * arrow looks broken.
+ *
+ * So a reorder assigns 10, 20, 30 … down the list the administrator is looking
+ * at. Gaps of ten so a future "insert here" has somewhere to go, and only the
+ * documents whose number actually changed are written — reordering the last two
+ * of nine forms costs two writes, not nine.
+ *
+ * One `updateDoc` each rather than a `writeBatch`: the rule on `forms` is
+ * evaluated per document either way, the counts are single digits, and a batch
+ * would make a partial failure invisible. If one write is refused the rest still
+ * land, the list refreshes from the server, and the arrow that did not take
+ * simply looks like it did not take.
+ * ---------------------------------------------------------------------------
+ */
+export async function setFormOrder(
+  ids: string[],
+  current: Map<string, number>,
+): Promise<void> {
+  const writes = ids
+    .map((id, index) => ({ id, order: (index + 1) * 10 }))
+    .filter((entry) => current.get(entry.id) !== entry.order)
+    .map((entry) => setFormFlags(entry.id, { order: entry.order }));
+
+  await Promise.all(writes);
 }
 
 /** Publish/unpublish and open/close, without a full rewrite of the document. */
@@ -176,73 +229,6 @@ export async function setSubmissionStatus(
 
 export async function deleteSubmission(id: string): Promise<void> {
   await deleteDoc(doc(db(), COLLECTIONS.formSubmissions, id));
-}
-
-/* ---------------------------------------------------------------------------
- * Breeze import
- * ------------------------------------------------------------------------ */
-
-export interface BreezeForm {
-  id: string;
-  name: string;
-  url: string;
-  archived: boolean;
-}
-
-/**
- * The parish's Breeze forms, through the Function that holds the API key.
- *
- * Never called directly from the browser and never could be. A Breeze API key is
- * a bearer credential that reads the whole member database — addresses, giving
- * records — so it lives in the Functions runtime and this asks a Function that
- * returns only the forms.
- */
-export async function listBreezeForms(): Promise<
-  { ok: true; forms: BreezeForm[] } | { ok: false; reason: string }
-> {
-  const idToken = await auth().currentUser?.getIdToken();
-  if (!idToken) return { ok: false, reason: 'You are not signed in.' };
-
-  const response = await fetch('/api/forms/breeze-list', {
-    headers: { Authorization: `Bearer ${idToken}` },
-  });
-
-  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) {
-    return { ok: false, reason: String(body['error'] ?? 'Breeze could not be reached.') };
-  }
-  return { ok: true, forms: (body['forms'] as BreezeForm[]) ?? [] };
-}
-
-/**
- * One Breeze form's fields, mapped onto ours.
- *
- * The mapping is done in the Function rather than here because it needs the same
- * `FormField` shape the validator uses, and because Breeze's field types do not
- * line up one to one — some of theirs (`name`, `address`) are compound and
- * become several of ours.
- */
-export async function importBreezeForm(
-  breezeFormId: string,
-): Promise<{ ok: true; fields: FormField[]; title: string } | { ok: false; reason: string }> {
-  const idToken = await auth().currentUser?.getIdToken();
-  if (!idToken) return { ok: false, reason: 'You are not signed in.' };
-
-  const response = await fetch('/api/forms/breeze-import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-    body: JSON.stringify({ breezeFormId }),
-  });
-
-  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) {
-    return { ok: false, reason: String(body['error'] ?? 'That form could not be imported.') };
-  }
-  return {
-    ok: true,
-    fields: (body['fields'] as FormField[]) ?? [],
-    title: String(body['title'] ?? 'Imported form'),
-  };
 }
 
 export type { WithId };

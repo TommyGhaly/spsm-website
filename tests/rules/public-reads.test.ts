@@ -5,7 +5,10 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { collection, doc, getDoc, getDocs, query, where, setDoc } from 'firebase/firestore';
-import { createTestEnv, asAnon, asStaff, asAdmin } from './helpers.js';
+import { createTestEnv, asAnon, asSignedIn, asSuper } from './helpers.js';
+
+/** Holds the About pages and nothing else. The grant is seeded below. */
+const asContent = (env: RulesTestEnvironment) => env.authenticatedContext('content-1', {});
 
 /**
  * The decision #10 regression suite.
@@ -22,7 +25,7 @@ import { createTestEnv, asAnon, asStaff, asAdmin } from './helpers.js';
 let env: RulesTestEnvironment;
 
 beforeAll(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv('public-reads');
   // Cleared once, here. Re-clearing before every test races with the seed that
   // follows it and silently drops fixtures — see the note in writes.test.ts.
   // Every seed below is an idempotent upsert, and no other suite writes to
@@ -39,6 +42,17 @@ beforeEach(async () => {
   // under test.
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+
+    // The allocation `asContent` runs on. Every check in `hasScreen()` reads
+    // this document, so without it that context is an ordinary signed-in
+    // account.
+    await setDoc(doc(db, 'members', 'content-1'), {
+      displayName: 'content-1',
+      email: 'content@spsmwayland.org',
+      screenAdmin: { content: true },
+      programAdmin: { programs: [], events: [] },
+    });
+
     await setDoc(doc(db, 'content', 'about'), {
       section: 'about',
       title: 'About the parish',
@@ -61,6 +75,28 @@ beforeEach(async () => {
       publishAt: new Date('2026-01-01T00:00:00Z'),
       order: 30,
     });
+    /*
+     * A form whose document id is NOT its slug, which is the case the two
+     * reads on /forms/<slug> exist for. Renaming a form's address in the
+     * builder leaves the id behind, so the exact `get` misses and the query
+     * below it is the only thing that finds the form.
+     */
+    await setDoc(doc(db, 'forms', 'form-mti86az7'), {
+      slug: 'new-services-and-events',
+      title: 'New services and events',
+      kind: 'embed',
+      externalUrl: 'https://stphilopaterstmina.breezechms.com/form/NewServicesandEvents98',
+      published: true,
+      fields: [],
+    });
+    await setDoc(doc(db, 'forms', 'form-draft'), {
+      slug: 'not-ready',
+      title: 'Half-built',
+      kind: 'native',
+      published: false,
+      fields: [],
+    });
+
     // No `published` and no `publishAt`: events do not have them any more.
     await setDoc(doc(db, 'events', 'festival'), {
       slug: 'festival',
@@ -166,18 +202,33 @@ describe('anonymous reads are still bounded', () => {
   });
 });
 
-describe('staff bypass the published filter', () => {
-  it('lets staff list everything, including drafts', async () => {
-    const db = asStaff(env).firestore();
+describe('the content grant bypasses the published filter', () => {
+  /*
+   * `asStaff` used to stand here, and the tier is what made these pass. The
+   * grant is a flag on a member document now, so the fixture has to be seeded
+   * — and the assertion below is stronger for it: a signed-in account with no
+   * allocation is refused the drafts, which under the old ladder was true of
+   * nobody who could reach this screen at all.
+   */
+  it('lets the About-pages editor list everything, including drafts', async () => {
+    const db = asContent(env).firestore();
     await assertSucceeds(getDocs(collection(db, 'content')));
     await assertSucceeds(getDoc(doc(db, 'content', 'draft')));
   });
 
-  it('lets staff write content but not a member below that tier', async () => {
+  it('refuses a signed-in member with no grant', async () => {
+    const db = asSignedIn(env).firestore();
+    await assertFails(getDoc(doc(db, 'content', 'draft')));
+    await assertFails(
+      setDoc(doc(db, 'content', 'about'), { section: 'about', title: 'Defaced', published: true }),
+    );
+  });
+
+  it('lets the About-pages editor write content', async () => {
     await assertSucceeds(
-      setDoc(doc(asStaff(env).firestore(), 'content', 'about'), {
+      setDoc(doc(asContent(env).firestore(), 'content', 'about'), {
         section: 'about',
-        title: 'Edited by staff',
+        title: 'Edited by the content editor',
         published: true,
       }),
     );
@@ -196,15 +247,21 @@ describe('config is world-readable and admin-written', () => {
     );
   });
 
-  it('denies staff writes — repainting the site is an admin action', async () => {
+  /*
+   * `config` is deliberately not delegable — it is in ADMIN_SCREENS and /access
+   * does not offer the row, because this is where the site is pointed at its
+   * backends. So the widest allocation the parish can hand out is still refused
+   * here, which is what this asserts.
+   */
+  it('denies a granted editor — pointing the site at its backends is the superadmin’s', async () => {
     await assertFails(
-      setDoc(doc(asStaff(env).firestore(), 'config', 'integrations'), { livestream: {} }),
+      setDoc(doc(asContent(env).firestore(), 'config', 'integrations'), { livestream: {} }),
     );
   });
 
-  it('allows admin writes', async () => {
+  it('allows superadmin writes', async () => {
     await assertSucceeds(
-      setDoc(doc(asAdmin(env).firestore(), 'config', 'integrations'), {
+      setDoc(doc(asSuper(env).firestore(), 'config', 'integrations'), {
         livestream: { enabled: false },
       }),
     );
@@ -228,22 +285,84 @@ describe('config is world-readable and admin-written', () => {
     await assertSucceeds(getDoc(doc(asAnon(env).firestore(), 'config', 'theme')));
   });
 
-  it('denies anonymous and staff writes to config/theme', async () => {
-    // Restyling the whole site is an admin action. It is also a defacement
-    // vector — the parsed document is interpolated into every page's <style>.
+  it('denies anonymous writes, and writes from a grant that is not theme', async () => {
+    // Restyling the whole site is the superadmin's or the Colours-and-type
+    // grant's. It is also a defacement vector — the parsed document is
+    // interpolated into every page's <style>.
     await assertFails(
       setDoc(doc(asAnon(env).firestore(), 'config', 'theme'), { color: { accent: '#000000' } }),
     );
+    // Holding About pages is not holding Colours and type. This is the
+    // assertion that the carve-out for `config/theme` reads its own flag rather
+    // than admitting anybody with any allocation.
     await assertFails(
-      setDoc(doc(asStaff(env).firestore(), 'config', 'theme'), { color: { accent: '#000000' } }),
+      setDoc(doc(asContent(env).firestore(), 'config', 'theme'), { color: { accent: '#000000' } }),
     );
   });
 
-  it('allows admin writes to config/theme', async () => {
+  it('allows superadmin writes to config/theme', async () => {
     await assertSucceeds(
-      setDoc(doc(asAdmin(env).firestore(), 'config', 'theme'), {
+      setDoc(doc(asSuper(env).firestore(), 'config', 'theme'), {
         color: { accent: '#8c2f26' },
       }),
     );
+  });
+});
+
+/**
+ * Finding a form by its slug when that is not its document id.
+ *
+ * ---------------------------------------------------------------------------
+ * Two failures met here, and neither is visible to a signed-in developer.
+ *
+ * `readFormBySlug` reads the exact id first and falls back to a query. For
+ * anybody holding the `forms` grant both work, because their `allow read: if
+ * hasScreen('forms')` answers without touching `resource`. For a visitor:
+ *
+ *  1. **The `get` on a missing id throws rather than coming back empty.** The
+ *     public rule is `isPublished(resource.data)`; on a document that does not
+ *     exist, `resource` is null, the dereference is an evaluation error, and an
+ *     error denies. The page has to catch that and carry on to the query.
+ *  2. **The query has to constrain `published`.** Firestore judges a list by
+ *     what it could return, so `where('slug','==',…)` alone could yield a
+ *     draft and is refused outright — decision #10, arriving on the page as
+ *     "the form could not be loaded" for a form that is published.
+ *
+ * Both were found by opening an embedded Breeze form signed out.
+ * ---------------------------------------------------------------------------
+ */
+describe('a published form, read by its slug', () => {
+  it('denies the exact get on an id that does not exist', async () => {
+    // Not a curiosity: this is the *first* read the page makes, on every form
+    // whose slug and id differ. It must be caught rather than propagated.
+    await assertFails(getDoc(doc(asAnon(env).firestore(), 'forms', 'new-services-and-events')));
+  });
+
+  it('allows the slug query the page falls back to', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, 'forms'),
+          where('slug', '==', 'new-services-and-events'),
+          where('published', '==', true),
+        ),
+      ),
+    );
+  });
+
+  it('refuses the same query without the published constraint', async () => {
+    // The regression this suite exists for. Dropping the second `where` makes
+    // every embedded form 404 for the public and for nobody else.
+    const db = asAnon(env).firestore();
+    await assertFails(
+      getDocs(query(collection(db, 'forms'), where('slug', '==', 'new-services-and-events'))),
+    );
+  });
+
+  it('still keeps a draft form to the people building it', async () => {
+    const db = asAnon(env).firestore();
+    await assertFails(getDoc(doc(db, 'forms', 'form-draft')));
+    await assertSucceeds(getDoc(doc(asSuper(env).firestore(), 'forms', 'form-draft')));
   });
 });

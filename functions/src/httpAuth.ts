@@ -12,25 +12,38 @@
  * that looks nothing like the rest of the codebase's authorization, which is
  * exactly why it is in a file of its own with this comment on it.
  *
- * The claims read here are the same two axes as roles.ts: `role` is a linear
- * tier, `groups` are cross-cutting capabilities. They come out of the verified
- * ID token, never out of a Firestore document — a member who could grant
- * themselves `staff` by editing their own profile would be able to refund
- * orders to their own card.
+ * ## What changed when the role ladder went
+ *
+ * This file used to answer everything from the token: `role` was a claim, so
+ * `hasRole(caller, 'staff')` was free and synchronous. There is no role now.
+ * The one claim left is `superadmin`, and every other privilege is a flag in
+ * the `screenAdmin` map on the member document — which means **every check here
+ * is a Firestore read and every check here is async.** `mayReadFinance` was
+ * already in that shape for exactly this reason; the rest have joined it.
+ *
+ * That is one billed read per privileged call, on calls that are already
+ * talking to Square over the network. It buys the property the whole change is
+ * for: this file and `firestore.rules` decide from the same map, so a grant
+ * made at /access cannot work in one and be refused by the other.
+ *
+ * **Do not read the `screens` claim here to avoid the read.** That claim exists
+ * for `storage.rules`, which cannot reach Firestore; it lags by up to a token
+ * refresh, and a Function that trusted it would refuse somebody for an hour
+ * after they were granted the area — or, worse, admit them for an hour after
+ * they were removed from it. The document is the fact.
  * ---------------------------------------------------------------------------
  */
 import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 import type { Request } from 'firebase-functions/v2/https';
-import { type Group, type Role } from '@spsm/shared';
+import { COLLECTIONS, type AdminScreen } from '@spsm/shared';
 
 export interface Caller {
   uid: string;
   email: string;
-  role: Role;
-  groups: Group[];
+  /** The parish's site administrator. Everything else is an allocation. */
+  superadmin: boolean;
 }
-
-const RANK: Record<Role, number> = { member: 0, servant: 1, staff: 2, admin: 3 };
 
 /**
  * Verify the `Authorization: Bearer` header, or return null.
@@ -47,13 +60,10 @@ export async function callerOf(req: Request): Promise<Caller | null> {
 
   try {
     const decoded = await getAuth().verifyIdToken(match[1], true);
-    const role = (decoded['role'] as Role) ?? 'member';
-    const groups = Array.isArray(decoded['groups']) ? (decoded['groups'] as Group[]) : [];
     return {
       uid: decoded.uid,
       email: typeof decoded.email === 'string' ? decoded.email : '',
-      role: role in RANK ? role : 'member',
-      groups,
+      superadmin: decoded['superadmin'] === true,
     };
   } catch (error) {
     // A bad token is a 401, not a 500. Logged at info because an expired token
@@ -63,15 +73,48 @@ export async function callerOf(req: Request): Promise<Caller | null> {
   }
 }
 
-export function hasRole(caller: Caller | null, role: Role): boolean {
-  return caller != null && RANK[caller.role] >= RANK[role];
+/**
+ * Mirrors `hasScreen()` in firestore.rules: the superadmin, or the person given
+ * this area at /access.
+ *
+ * The single authorization predicate in this file, and everything below is a
+ * named call to it. Async, and it has to be — the grant is a field on a
+ * Firestore document rather than a claim, for the reasons in the header above.
+ * Await it; a forgotten `await` here is a truthy Promise and an open door.
+ *
+ * The superadmin short-circuits before the read, which is not only a saving:
+ * the parish's first administrator is bootstrapped by `grant-admin.mjs` and may
+ * have no member document at all.
+ */
+export async function mayAdminScreen(
+  caller: Caller | null,
+  screen: AdminScreen,
+): Promise<boolean> {
+  if (!caller) return false;
+  if (caller.superadmin) return true;
+
+  const snapshot = await getFirestore().collection(COLLECTIONS.members).doc(caller.uid).get();
+  return snapshot.get(`screenAdmin.${screen}`) === true;
 }
 
-export function inGroup(caller: Caller | null, group: Group): boolean {
-  return caller != null && caller.groups.includes(group);
+/**
+ * Mirrors the `orders` and `products` rules: whoever runs the shop.
+ *
+ * This was `inGroup(caller, 'bookstore') || hasRole(caller, 'staff')`. The
+ * group and the flag named the same people and the tier named everybody, so
+ * both collapsed into the one grant /access actually hands out.
+ */
+export function mayManageOrders(caller: Caller | null): Promise<boolean> {
+  return mayAdminScreen(caller, 'bookstore');
 }
 
-/** Mirrors the `orders` rule: bookstore volunteers, or anyone staff and above. */
-export function mayManageOrders(caller: Caller | null): boolean {
-  return inGroup(caller, 'bookstore') || hasRole(caller, 'staff');
+/**
+ * Mirrors `hasScreen('finance')` in firestore.rules: the treasurer.
+ *
+ * Deliberately not `mayManageOrders`. The shop's volunteer packs parcels and
+ * the treasurer reconciles takings, and /access offers them as two rows because
+ * they are two jobs.
+ */
+export function mayReadFinance(caller: Caller | null): Promise<boolean> {
+  return mayAdminScreen(caller, 'finance');
 }

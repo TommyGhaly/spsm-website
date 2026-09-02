@@ -83,16 +83,59 @@ function sortForms<T extends FormDefinition>(forms: T[]): T[] {
  * form whose slug was edited after creation keeps its original id, and a query
  * is the only thing that finds it. Doing the cheap exact read first means the
  * normal case costs one document rather than a collection query.
+ *
+ * ---------------------------------------------------------------------------
+ * The `catch` is not defensive tidying. Without it the fallback never ran.
+ *
+ * `firestore.rules` reads `forms` with `allow read: if isPublished(resource.data)`.
+ * On a document id that does not exist, `resource` is null, `resource.data` is
+ * an evaluation error, and an error **denies** — so the cheap exact read does
+ * not come back empty for a visitor, it comes back `permission-denied` and
+ * throws, taking the query below with it and rendering "the form could not be
+ * loaded" on a form that is published and perfectly readable one line further
+ * down. A signed-in staff member never saw it, because their second `allow
+ * read: if hasScreen('forms')` answers without dereferencing anything.
+ *
+ * Found by opening an embedded form signed out. It was latent from the day the
+ * builder allowed a slug to be edited; the embed importer made it the normal
+ * case, because those forms are created with the slug as their id and any later
+ * rename separates the two.
+ * ---------------------------------------------------------------------------
  */
 export async function readFormBySlug(slug: string): Promise<WithId<FormDefinition> | null> {
-  const direct = await getDoc(doc(db(), COLLECTIONS.forms, slug));
-  if (direct.exists()) {
-    const form = withId(direct.id, direct.data());
-    if (form.slug === slug) return form;
+  try {
+    const direct = await getDoc(doc(db(), COLLECTIONS.forms, slug));
+    if (direct.exists()) {
+      const form = withId(direct.id, direct.data());
+      if (form.slug === slug) return form;
+    }
+  } catch {
+    // Almost always "there is no document with that id", arriving as a denial.
+    // The query below is the real answer either way; if the collection is
+    // genuinely unreachable it will fail too, and that failure is the one the
+    // page should report.
   }
 
+  /*
+   * `published` is in the query, and it is not a convenience filter.
+   *
+   * The public read rule is `allow read: if isPublished(resource.data)`, and
+   * Firestore judges a *list* by what it could return rather than what it did.
+   * A query on `slug` alone could return an unpublished form, so it cannot be
+   * proven and is refused outright for anybody without the `forms` grant —
+   * decision #10 again, arriving here as "the form could not be loaded" on a
+   * form that is published and readable.
+   *
+   * Two equality filters need no composite index; Firestore merges the
+   * single-field ones. Nothing is lost by it either: `FormScreen` renders an
+   * unpublished form as missing whoever is looking.
+   */
   const matches = await getDocs(
-    query(collection(db(), COLLECTIONS.forms), where('slug', '==', slug)),
+    query(
+      collection(db(), COLLECTIONS.forms),
+      where('slug', '==', slug),
+      where('published', '==', true),
+    ),
   );
   const first = matches.docs[0];
   return first ? withId(first.id, first.data()) : null;

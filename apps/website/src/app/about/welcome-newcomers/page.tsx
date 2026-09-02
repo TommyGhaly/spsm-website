@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { aboutHref, aboutPage } from '@/features/content';
 import { TourScreen } from '@/features/tour';
 import { PageHeader } from '@/components/PageHeader';
+import { MoreOfAbout } from '@/components/MoreOfAbout';
 
 /**
  * Welcome, Newcomers — the festival tour.
@@ -57,9 +57,12 @@ export default function WelcomeNewcomersPage() {
       */}
       <TourScreen />
 
-      <div className="wrap tour-back">
-        <Link href="/about">All of About</Link>
-      </div>
+      {/*
+        The foot: the other four parts of About, and the way back to the index.
+        It replaced a bare `.wrap` holding one "All of About" link — see
+        `MoreOfAbout` for why a correct link still looked wrong there.
+      */}
+      <MoreOfAbout current="welcome-newcomers" />
     </>
   );
 }

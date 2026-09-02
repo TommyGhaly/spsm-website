@@ -245,8 +245,35 @@ async function callCatalog(path: string, body: unknown): Promise<Record<string, 
     body: JSON.stringify(body),
   });
 
-  const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new Error(String(json['error'] ?? 'That did not work.'));
+  /*
+   * Read the body as text first, then try JSON.
+   *
+   * `response.json().catch(() => ({}))` collapsed two very different failures
+   * into one blank message. Every Function here answers with `{ error }`, so a
+   * body that will not parse means the request never reached one — a missing
+   * Hosting rewrite answering with the 404 page, or a dev proxy with nothing
+   * behind it answering `500 Internal Server Error` as plain text. Both then
+   * reported "That did not work." with the status thrown away, and both cost an
+   * afternoon on 2026-09-01: once when the Functions emulator was down, and
+   * again when this very endpoint was called before its rewrite was deployed.
+   *
+   * The status is the whole diagnosis, so it is in the sentence.
+   */
+  const answer = await response.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = JSON.parse(answer) as Record<string, unknown>;
+  } catch {
+    if (!response.ok) {
+      throw new Error(
+        `The server answered ${response.status} and not in the usual way, which ` +
+          'normally means this page is newer than what is deployed. Try again, and ' +
+          'tell whoever looks after the site if it keeps happening.',
+      );
+    }
+  }
+
+  if (!response.ok) throw new Error(String(json['error'] ?? `That did not work (${response.status}).`));
   return json;
 }
 
@@ -308,4 +335,33 @@ export async function setProductStock(slug: string, count: number | null): Promi
  */
 export async function archiveProduct(slug: string): Promise<void> {
   await callCatalog('product-archive', { slug });
+}
+
+/**
+ * Change what Square owns about a book: its title, its price, its description.
+ *
+ * All three are on the sync's field mask, so none of them can be a Firestore
+ * write — a value typed into the document survives until the next sync and then
+ * reverts. The Function edits the Square item and mirrors the result back, which
+ * is what the shop's live refresh picks up seconds later.
+ *
+ * One call for all three, so editing a book is one round trip and one Square
+ * catalog version rather than three. Only the keys present are touched; an
+ * absent one is left alone rather than cleared.
+ *
+ * The slug, and so the product's URL, deliberately does not change with the
+ * title: a new slug is a new document, and would cost the book its category, its
+ * baked cover and its link from every past order.
+ */
+export interface ProductDetails {
+  name?: string;
+  description?: string;
+  priceCents?: number;
+}
+
+export async function setProductDetails(
+  slug: string,
+  details: ProductDetails,
+): Promise<void> {
+  await callCatalog('product-details', { slug, ...details });
 }

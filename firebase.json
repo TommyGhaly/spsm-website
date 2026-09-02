@@ -11,17 +11,19 @@
     "//rewrites": "Still no catch-all to /404.html. A Hosting rewrite preserves the URL and returns 200, so every nonexistent path would serve the 404 page as a success and get indexed as duplicate content. With no rewrite, Hosting serves out/404.html with a real 404 status \u2014 which is what src/app/not-found.tsx emits it for. The /events/** entry below is the ONE deliberate exception and is scoped to that prefix for exactly that reason. It works because Hosting resolves in a fixed order \u2014 redirects, then exact static files, then rewrites \u2014 so /events and /events/some-liturgy are served from disk and never reach it; only a path with no file falls through. Order matters within this array too: it is first-match, so the three /api entries must stay ABOVE the glob or checkout would render a gallery shell. /api/bulletin is the homepage schedule's live read: it follows config/active_bulletin in the announcements project, because the section is baked into static HTML at build time and would otherwise never change until a redeploy.",
     "rewrites": [
       {
-        "//forms": "The forms endpoints. `submit` is what every parish form posts to \u2014 it validates against the stored definition, prices the answers server-side, takes the Square payment, and pushes a vehicle registration into the Taksis project. The two Breeze entries are staff-only and answer 503 until BREEZE_API_KEY is set. All three stay ABOVE the /forms/** glob below, for the first-match reason the note at the top of this array gives for the /api entries.",
+        "//forms": "The forms endpoint. `submit` is what every parish form posts to \u2014 it validates against the stored definition, prices the answers server-side, takes the Square payment, and pushes a vehicle registration into the Taksis project. It stays ABOVE the /forms/** glob below, for the first-match reason the note at the top of this array gives for the /api entries. Two Breeze endpoints sat here until 2026-09-01 and went with the Breeze importer.",
         "source": "/api/forms/submit",
         "function": "formSubmit"
       },
       {
-        "source": "/api/forms/breeze-list",
-        "function": "breezeListForms"
+        "//camp": "A servant signing themselves up. Unauthenticated like /api/forms/submit, and above the /forms/** glob for the same first-match reason \u2014 the page it is posted from is /forms/summer-camp.",
+        "source": "/api/camp/servant-request",
+        "function": "campServantRequest"
       },
       {
-        "source": "/api/forms/breeze-import",
-        "function": "breezeImportForm"
+        "//account": "A servant deleting their own account. Authenticated \u2014 it acts on whoever the verified ID token says is calling and takes no uid from the request body, so there is no version of this endpoint that deletes somebody else. Above the /forms/** glob for the same first-match reason as the two entries before it.",
+        "source": "/api/account/delete",
+        "function": "deleteOwnAccount"
       },
       {
         "source": "/api/square/checkout",
@@ -56,6 +58,10 @@
         "function": "squareProductStock"
       },
       {
+        "source": "/api/square/product-details",
+        "function": "squareProductDetails"
+      },
+      {
         "source": "/api/square/product-archive",
         "function": "squareArchiveProduct"
       },
@@ -66,6 +72,11 @@
       {
         "source": "/api/square/stats-refresh",
         "function": "refreshBookstoreStats"
+      },
+      {
+        "//finance": "Recomputing the camp and form money on demand. Not under /api/square \u2014 none of it goes near Square. Writes, so it is guarded by the same grant that reads the documents it writes; see functions/src/finance.ts.",
+        "source": "/api/finance/refresh",
+        "function": "refreshFinanceStats"
       },
       {
         "source": "/api/bulletin",
@@ -90,7 +101,7 @@
         "destination": "/form.html"
       }
     ],
-    "//redirects": "REMOVED: /calendar -> /events. It was written when /calendar was only a Wix URL, and then this site grew a real /calendar page. Hosting evaluates redirects BEFORE it looks for static files, so the redirect won and the Calendar link in the main nav 301'd away from the page it points at — in production only, because `next dev` knows nothing about this file. Anything added here from now on must be checked against apps/website/src/app for a route of the same name. Every URL below is one the Wix site published, taken from its sitemap while it was still up \u2014 after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Titles lie, so each destination was checked by loading the page: /team-3 is titled 'Calendar & Events' and is the activities page, NOT the clergy page it sounds like \u2014 the clergy bios are on /who-we-are. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) but all three are empty Wix templates with no content; they land on /welcome because that is where a newcomer following an old link should end up, not because there is anything to preserve. Wix filed ministries and past events alike under `projects` \u2014 /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line. The last entry is not a Wix URL: /clergy was a page on this site until the biographies moved into the homepage as disclosures, and anyone who typed it, bookmarked it, or linked it during development should land on the section rather than on a 404.",
+    "//redirects": "REMOVED: /calendar -> /events. It was written when /calendar was only a Wix URL, and then this site grew a real /calendar page. Hosting evaluates redirects BEFORE it looks for static files, so the redirect won and the Calendar link in the main nav 301'd away from the page it points at \u2014 in production only, because `next dev` knows nothing about this file. Anything added here from now on must be checked against apps/website/src/app for a route of the same name. Every URL below is one the Wix site published, taken from its sitemap while it was still up \u2014 after the cutover that list is unrecoverable. 301 rather than 302: these moves are permanent, and a 302 tells search engines to keep indexing the old URL. The source paths are Wix template names nobody chose, which is the whole reason for this table: /projects-7-2 is the ministry that feeds the homeless, and no one could read, guess, or say that out loud. Titles lie, so each destination was checked by loading the page: /team-3 is titled 'Calendar & Events' and is the activities page, NOT the clergy page it sounds like \u2014 the clergy bios are on /who-we-are. Mapping notes: /lesson-* are catechism pages (Intro, Young Christ, Saint Mina) but all three are empty Wix templates with no content; they land on /welcome because that is where a newcomer following an old link should end up, not because there is anything to preserve. Wix filed ministries and past events alike under `projects` \u2014 /projects-7-1, -7-2, -7-3 are the ongoing College & Young Professionals, Mother of Mercy, and St. Simon for Seniors ministries and now land on their own named anchors under /ministries; /projects-7, -7-4, -8 are the 2024 and 2023 festivals and Summer Camp 2024, which have already happened, so the calendar is the honest destination rather than a page invented for them. /portfolio already 404s on Wix and is redirected anyway, because it costs one line. The last entry is not a Wix URL: /clergy was a page on this site until the biographies moved into the homepage as disclosures, and anyone who typed it, bookmarked it, or linked it during development should land on the section rather than on a 404.",
     "redirects": [
       {
         "source": "/who-we-are",
@@ -202,6 +213,59 @@
           {
             "key": "Cache-Control",
             "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "//": "The flythrough on /about/future-plans, and its cue track. 33 MB, and it AUTOPLAYS \u2014 so without this every visit to that page refetches it under Hosting's one-hour default, and the page is linked from the About menu on every page of the site. A day of caching with a week of stale-while-revalidate: long enough that a reader who comes back tomorrow pays nothing, short enough that a re-cut of the film reaches everybody within a day. NOT `immutable`, unlike the /_next/static rule above \u2014 those filenames carry a content hash and these do not, so the file at this path can genuinely change.",
+        "source": "/video/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400, stale-while-revalidate=604800"
+          }
+        ]
+      },
+      {
+        "//": "The security headers, on every response Hosting serves \u2014 pages, assets, and the /api/** rewrites onto Cloud Functions alike. Hosting applies the first matching `source` per header name, so this glob sits BELOW the /_next/static/** cache entry and never competes with it: they set different header names.",
+        "//csp": "Content-Security-Policy, and the two things worth knowing before editing it. (1) `script-src` carries 'unsafe-inline' and cannot not carry it. A nonce has to be minted per response by a server, and Decision #6 says there is no server \u2014 the site is a static export and Next hydrates through inline <script> blocks that are part of every exported page. What this still buys is the host allowlist: an injected <script src=\"https://somewhere-else\"> does not load, which is the shape most third-party compromises actually take. (2) `img-src` is deliberately open to https:. An image cannot execute, and a book added in Square today gets a cover URL on a Square-owned host we have never seen \u2014 a tight list there would silently blank new covers, which is exactly the sort of failure that gets a whole CSP deleted six months later. Every other directive is an explicit list and should stay one. The named hosts, so a removal is a decision rather than a tidy-up: gstatic and www.google.com are reCAPTCHA Enterprise, which is App Check; squarecdn is the Web Payments SDK loader, js.squareup.com is where the Apple Pay and Google Pay buttons come from, and pci-connect.squareup.com is where a card is tokenised \u2014 all three are named twice because Square's sandbox is a different host rather than a different path, and a policy that only knew production would fail in dev in a way nobody would connect to this file; maps.google.com is the map on /contact; youtube is the player on /livestream; give.tithe.ly is the giving form we frame ourselves rather than let give.js open a tab; spsm-database.firebaseapp.com is the hidden iframe Firebase Auth signs Microsoft accounts in through, and removing it breaks every sign-in.",
+        "//csp-connect": "www.google.com and www.gstatic.com are in `connect-src` as well as `script-src`, and that pair is load-bearing rather than belt-and-braces. reCAPTCHA Enterprise does not finish its work in the script it loads: it POSTs the assessment to https://www.google.com/recaptcha/enterprise/clr with `fetch`, which `connect-src` governs and `script-src` does not. Without them the script loads, the request is refused by the policy, App Check never mints a token, and because App Check enforcement is ON for Firestore and Storage, EVERY browser read of either comes back `permission-denied` \u2014 the forms list falls back to its two built-ins, /events sits on \"Loading\u2026\" forever, and a signed-in servant has no grants. None of that reproduces locally: `lib/firebase.ts` uses the App Check DEBUG TOKEN on localhost, which is a bypass, so the reCAPTCHA exchange never happens on a laptop. This was the whole of \"production does not work anything like local\" on 2026-09-02. Note the reCAPTCHA key ALSO has its own domain allowlist, which is separate from this file and has to contain whatever host the site is served from.",
+        "//frame-ancestors": "frame-ancestors 'none' and X-Frame-Options DENY say the same thing twice, on purpose \u2014 the second is for anything old enough not to read the first. Nothing may frame this site. If the parish ever wants a page of it embedded somewhere (the Wix site at www.spsmwayland.org is the only plausible candidate), both of these have to change together, and 'self' is not enough \u2014 it must name that origin.",
+        "//hsts": "A year, without includeSubDomains or preload, and that restraint is the point. Hosting already serves HSTS on its own domains; this is what follows the site onto a custom domain. includeSubDomains would bind every subdomain of spsmwayland.org to HTTPS the moment one visitor loaded this site \u2014 including any the parish still runs elsewhere, which would go dark with no way to reach them and no way to take it back inside a year.",
+        "//coop": "same-origin-allow-popups, not same-origin. Sign-in is a Microsoft popup opened by the Firebase SDK, and it has to be able to talk back to the window that opened it; same-origin severs that and the popup closes having signed nobody in.",
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://js.squareup.com https://js.squareupsandbox.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https://firebasestorage.googleapis.com https://*.firebasestorage.app; worker-src 'self' blob:; connect-src 'self' https://www.google.com https://www.gstatic.com https://*.googleapis.com https://*.firebasestorage.app https://spsm-database.firebaseapp.com https://pci-connect.squareup.com https://connect.squareup.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareupsandbox.com https://connect.squareupsandbox.com; frame-src 'self' https://www.google.com https://maps.google.com https://www.youtube.com https://www.youtube-nocookie.com https://give.tithe.ly https://web.squarecdn.com https://sandbox.web.squarecdn.com https://spsm-database.firebaseapp.com https://js.squareup.com https://js.squareupsandbox.com; upgrade-insecure-requests"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), usb=(), payment=(self \"https://web.squarecdn.com\" \"https://sandbox.web.squarecdn.com\")"
+          },
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "Cross-Origin-Resource-Policy",
+            "value": "same-site"
           }
         ]
       }

@@ -36,11 +36,15 @@ import { db, storage } from '@/lib/firebase';
 /**
  * The ceiling `storage.rules` puts on `submissions/`, repeated for the message.
  *
- * Far higher than the 8MB on event hero images, and deliberately: this is a
- * photograph straight off a phone rather than one an administrator chose and
- * exported. A modern phone photograph is routinely 12MB and a short 4K clip is
- * very much larger, so a limit set for the admin's convenience would reject
- * most of what the parish actually receives.
+ * The one bound that still exists on this site, along with the twin on
+ * `formUploads/`, and for the same reason: both are paths an *unauthenticated*
+ * caller can write to. The staff image paths lost their 8MB ceiling on
+ * 2026-09-01 because refusing a trusted volunteer's phone photograph protected
+ * nothing; a stranger writing to a billed bucket is a different question.
+ *
+ * 250MB rather than something tighter because this is a photograph straight off
+ * a phone rather than one an administrator chose and exported. A modern phone
+ * photograph is routinely 12MB and a short 4K clip is very much larger.
  *
  * Checked here as well as there so somebody who picks a 400MB video is told
  * before they wait for the upload, rather than after it with

@@ -31,18 +31,48 @@ import { Icon } from './Icon';
  * camp or to the list of ministries, and "← Summercamp" answers it where "←
  * Back" makes them guess.
  */
+/**
+ * ## It can go back within a page as well as to another one
+ *
+ * `onBack` renders a `<button>` instead of a link, for the case where "back" is
+ * a view change rather than a navigation — the camp registration form returning
+ * from one family's record to the register, for instance. Same markup, same
+ * class, same arrow: somebody who has learned what this control looks like
+ * should not have to learn a second one because the destination happens not to
+ * have a URL.
+ *
+ * A real `<button>` rather than a link with a click handler, because a link
+ * that goes nowhere is a link a middle-click opens in a blank tab.
+ */
 export function BackLink({
   href,
   label,
+  onBack,
 }: {
-  href: string;
+  /** Ignored when `onBack` is given. */
+  href?: string;
   /** The destination's own name — "Events", "Summercamp". */
   label: string;
+  onBack?: () => void;
 }) {
-  return (
-    <Link className="back-link" href={href}>
+  const inner = (
+    <>
       <Icon name="back" size={16} />
       <span>{label}</span>
+    </>
+  );
+
+  if (onBack) {
+    return (
+      <button type="button" className="back-link back-link--button" onClick={onBack}>
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link className="back-link" href={href ?? '/'}>
+      {inner}
     </Link>
   );
 }

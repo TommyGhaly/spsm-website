@@ -18,7 +18,7 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import { createTestEnv, asAnon, asServant, asAdmin } from './helpers.js';
+import { createTestEnv, asAnon, asServant, asSuper } from './helpers.js';
 
 /**
  * Program galleries: the queries the site issues, and the ones an attacker
@@ -47,11 +47,11 @@ const WEEK_1 = 'week-1-2027';
 const WEEK_2 = 'week-2-2027';
 
 /** Holds Summercamp outright: every event under it, this year and every year. */
-const asProgramLead = (e: RulesTestEnvironment) => e.authenticatedContext('lead-1', { role: 'servant' });
+const asProgramLead = (e: RulesTestEnvironment) => e.authenticatedContext('lead-1', {});
 /** Helps with one week only. Must not inherit Week 2. */
-const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol-1', { role: 'servant' });
+const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol-1', {});
 /** Signed in, trusted with nothing. */
-const asOutsider = (e: RulesTestEnvironment) => e.authenticatedContext('nobody-1', { role: 'servant' });
+const asOutsider = (e: RulesTestEnvironment) => e.authenticatedContext('nobody-1', {});
 
 function media(over: Record<string, unknown> = {}) {
   return {
@@ -82,7 +82,7 @@ function media(over: Record<string, unknown> = {}) {
 }
 
 beforeAll(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv('program-galleries');
   await env.clearFirestore();
 });
 
@@ -136,15 +136,12 @@ beforeEach(async () => {
     // The grants themselves. Written here through the bypass because in
     // production only a superadmin can set them — which is the next suite down.
     await setDoc(doc(db, 'members', 'lead-1'), {
-      roleMirror: 'servant', groupsMirror: [],
       programAdmin: { programs: [SUMMERCAMP], events: [] },
     });
     await setDoc(doc(db, 'members', 'vol-1'), {
-      roleMirror: 'servant', groupsMirror: [],
       programAdmin: { programs: [], events: [WEEK_1] },
     });
     await setDoc(doc(db, 'members', 'nobody-1'), {
-      roleMirror: 'servant', groupsMirror: [],
       programAdmin: { programs: [], events: [] },
     });
   });
@@ -453,7 +450,7 @@ describe('photographs whose ministry was deleted', () => {
 
   it('lets a parish administrator give one a ministry', async () => {
     await assertSucceeds(
-      updateDoc(doc(asAdmin(env).firestore(), 'galleryMedia', 'rogue-1'), {
+      updateDoc(doc(asSuper(env).firestore(), 'galleryMedia', 'rogue-1'), {
         programId: SUMMERCAMP, programEventId: WEEK_1, groupId: null,
       }),
     );
@@ -482,7 +479,7 @@ describe('photographs whose ministry was deleted', () => {
 
   it('denies a program lead deleting one for good', async () => {
     await assertFails(deleteDoc(doc(asProgramLead(env).firestore(), 'galleryMedia', 'rogue-1')));
-    await assertSucceeds(deleteDoc(doc(asAdmin(env).firestore(), 'galleryMedia', 'rogue-1')));
+    await assertSucceeds(deleteDoc(doc(asSuper(env).firestore(), 'galleryMedia', 'rogue-1')));
   });
 });
 
@@ -750,7 +747,7 @@ describe('program grants', () => {
   });
 
   it('lets a superadmin do all of it', async () => {
-    const db = asAdmin(env).firestore();
+    const db = asSuper(env).firestore();
     await assertSucceeds(updateDoc(doc(db, 'programs', SENIORS), { name: 'St. Simon' }));
     await assertSucceeds(updateDoc(doc(db, 'galleryMedia', 'pending-1'), { status: 'rejected' }));
     await assertSucceeds(deleteDoc(doc(db, 'programEvents', WEEK_2)));
@@ -767,7 +764,6 @@ describe('a member cannot grant themselves a program', () => {
     const db = asServant(env, 'fresh-1').firestore();
     await assertFails(
       setDoc(doc(db, 'members', 'fresh-1'), {
-        roleMirror: 'member', groupsMirror: [],
         programAdmin: { programs: [SUMMERCAMP], events: [] },
       }),
     );
@@ -777,7 +773,6 @@ describe('a member cannot grant themselves a program', () => {
     const db = asServant(env, 'fresh-2').firestore();
     await assertSucceeds(
       setDoc(doc(db, 'members', 'fresh-2'), {
-        roleMirror: 'member', groupsMirror: [],
         programAdmin: { programs: [], events: [] },
       }),
     );

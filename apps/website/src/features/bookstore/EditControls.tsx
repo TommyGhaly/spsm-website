@@ -1,13 +1,15 @@
 'use client';
 
 import {
+  type ReactNode,
   useEffect,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from 'react';
+import { EditColumn } from '@/components/EditColumn';
 import {
   MAX_SECTIONS,
   MAX_SECTION_LABEL,
@@ -18,6 +20,7 @@ import {
   type Product,
 } from '@spsm/shared';
 import type { ShopProduct } from './shopData';
+import { usePendingEdit, usePendingEdits } from './pendingEdits';
 
 /** A category being dragged: which one, where it would land, and how far. */
 interface Drag {
@@ -140,96 +143,32 @@ function useWriter(onChanged: () => void, onError: (message: string) => void) {
   return { busy, saved, write };
 }
 
-/** "Saving…", then "Saved", then nothing. Absolutely positioned; costs no layout. */
-function SaveState({ busy, saved }: { busy: boolean; saved: boolean }) {
-  return (
-    <span
-      className={busy ? 'bkedit__state is-working' : saved ? 'bkedit__state is-saved' : 'bkedit__state'}
-      aria-live="polite"
-    >
-      {busy ? 'Saving…' : saved ? 'Saved' : ''}
-    </span>
-  );
-}
 
-/* -------------------------------------------------------------------------- */
-/* One book                                                                    */
-/* -------------------------------------------------------------------------- */
-
-export function BookControls({
-  product,
-  doc,
-  sections,
-  onChanged,
-  onError,
+/**
+ * "Saving…", then "Saved", then nothing — and "Edited" while a change is held.
+ *
+ * Absolutely positioned; costs no layout. The `dirty` state is the card's half
+ * of the save bar: the bar says *how many* books are waiting, and this says
+ * *which*. Without it the only feedback for pressing `+` would be the number
+ * changing, which is indistinguishable from a control that has not been wired up.
+ *
+ * `busy` still wins, because the writes it reports — a photograph, a removal —
+ * are the ones that do go out immediately.
+ */
+function SaveState({
+  busy,
+  saved,
+  dirty = false,
 }: {
-  /** What the shelf is rendering — the shopper's view, and what stock reads. */
-  product: ShopProduct;
-  /** The document behind it, when the staff read has landed. Pictures need it. */
-  doc: DocOf<Product> | undefined;
-  sections: BookstoreSection[];
-  onChanged: () => void;
-  onError: (message: string) => void;
+  busy: boolean;
+  saved: boolean;
+  dirty?: boolean;
 }) {
-  const [confirming, setConfirming] = useState(false);
-  const { busy, saved, write } = useWriter(onChanged, onError);
-
-  // Reset if this card becomes a different book — a half-opened confirmation
-  // must not carry over to the next one.
-  useEffect(() => setConfirming(false), [product.slug]);
-
+  const state = busy ? 'is-working' : saved ? 'is-saved' : dirty ? 'is-held' : '';
   return (
-    <div className={busy ? 'bkedit is-busy' : 'bkedit'}>
-      {/*
-        The one thing on this card that reports back. Absolutely positioned, so
-        it costs no layout at all: this block was deliberately rewritten to half
-        its old height, and buying feedback with a permanent empty row would give
-        that back. `aria-live` so it is announced rather than only seen — a
-        stepper that says nothing for 700ms is worse without sight, not better.
-      */}
-      <SaveState busy={busy} saved={saved} />
-
-      <Field label="In stock">
-        <StockStepper product={product} busy={busy} onWrite={write} />
-      </Field>
-
-      <Field label="Pictures">
-        <Pictures product={product} doc={doc} busy={busy} onWrite={write} onError={onError} />
-      </Field>
-
-      {sections.length > 0 && (
-        <Field label="Category">
-          <select
-            className="bkedit__select"
-            value={product.section ?? ''}
-            aria-label={`Category for ${product.name}`}
-            disabled={busy}
-            onChange={(event) => {
-              const next = event.target.value || null;
-              void write(async () => {
-                const { setProductSection } = await import('./adminData');
-                await setProductSection(product.slug, next);
-              });
-            }}
-          >
-            <option value="">— none —</option>
-            {sections.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
-
-      <RemoveProduct
-        product={product}
-        busy={busy}
-        confirming={confirming}
-        onConfirming={setConfirming}
-        onWrite={write}
-      />
-    </div>
+    <span className={state ? `bkedit__state ${state}` : 'bkedit__state'} aria-live="polite">
+      {busy ? 'Saving…' : saved ? 'Saved' : dirty ? 'Edited' : ''}
+    </span>
   );
 }
 
@@ -274,31 +213,52 @@ export function ProductSettings({
   onChanged,
   onError,
   onRemoved,
+  /**
+   * Inside the editing column, which supplies its own heading and saved state.
+   *
+   * Repeating them here would put the book's name twice within about 60px of
+   * itself, and two "Saved" indicators that could disagree — the column's is
+   * driven by the save bar, this one by the immediate writes.
+   */
+  bare = false,
 }: {
   product: ShopProduct;
   doc: DocOf<Product> | undefined;
   sections: BookstoreSection[];
   onChanged: () => void;
   onError: (message: string) => void;
-  /** Close the dialog: the book it was describing is no longer on the shop. */
+  /** Close the dialog, or clear the selection: the book is no longer on the shop. */
   onRemoved: () => void;
+  bare?: boolean | undefined;
 }) {
   const [confirming, setConfirming] = useState(false);
   const { busy, saved, write } = useWriter(onChanged, onError);
+  const pending = usePendingEdit(product.slug, {
+    stockCount: product.stockCount ?? null,
+    section: product.section ?? null,
+  });
 
   useEffect(() => setConfirming(false), [product.slug]);
 
   return (
     <div className={busy ? 'bkpanel is-busy' : 'bkpanel'}>
-      <div className="bkpanel__head">
-        <h3 className="bkpanel__title">Shop settings</h3>
-        <SaveState busy={busy} saved={saved} />
-      </div>
+      {!bare && (
+        <div className="bkpanel__head">
+          <h3 className="bkpanel__title">Book settings</h3>
+          <SaveState busy={busy} saved={saved} dirty={pending.dirty} />
+        </div>
+      )}
 
       <p className="bkpanel__note">
-        Square owns the title, the price and the description — this screen holds
-        the four things the church sets.
+        Stock, category and pictures are saved with the bar at the foot of the
+        shop. The title, price and description go straight to Square.
       </p>
+
+      {/* No block heading: every field inside carries its own label, and a
+          "Details" heading above three labelled boxes is a word doing nothing. */}
+      <div className="bkpanel__block">
+        <ProductDetailsForm product={product} busy={busy} onWrite={write} />
+      </div>
 
       <div className="bkpanel__block">
         <h4 className="bkpanel__label">Pictures</h4>
@@ -307,7 +267,6 @@ export function ProductSettings({
           doc={doc}
           busy={busy}
           variant="panel"
-          onWrite={write}
           onError={onError}
         />
         {/*
@@ -317,17 +276,18 @@ export function ProductSettings({
         */}
         {doc && doc.imagePaths.length > 1 && (
           <p className="bkpanel__aside">
-            The first is the cover the shop shows. Reorder them in Square.
+            The first picture is the one shown on the shelf. Reorder them in
+            Square.
           </p>
         )}
         {!doc && (
-          <p className="bkpanel__aside">Reading this product’s pictures…</p>
+          <p className="bkpanel__aside">Loading pictures…</p>
         )}
       </div>
 
       <div className="bkpanel__block">
         <h4 className="bkpanel__label">In stock</h4>
-        <StockStepper product={product} busy={busy} onWrite={write} />
+        <StockStepper product={product} busy={busy} />
       </div>
 
       {sections.length > 0 && (
@@ -335,16 +295,10 @@ export function ProductSettings({
           <h4 className="bkpanel__label">Category</h4>
           <select
             className="bkedit__select bkpanel__select"
-            value={product.section ?? ''}
+            value={pending.section ?? ''}
             aria-label={`Category for ${product.name}`}
             disabled={busy}
-            onChange={(event) => {
-              const next = event.target.value || null;
-              void write(async () => {
-                const { setProductSection } = await import('./adminData');
-                await setProductSection(product.slug, next);
-              });
-            }}
+            onChange={(event) => pending.setSection(event.target.value || null)}
           >
             <option value="">— none —</option>
             {sections.map((row) => (
@@ -368,6 +322,182 @@ export function ProductSettings({
           onDone={onRemoved}
         />
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The book's own details: title, price, description                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The three things Square owns, edited together and saved on demand.
+ *
+ * ---------------------------------------------------------------------------
+ * Not held for the save bar, and not saved on blur either.
+ *
+ * The bar exists for the stepper, the category and the pictures — edits that are
+ * cheap, reversible, and made across several books in a row. These are none of
+ * those: they are one book at a time, they go to Square, and they change what
+ * the book is called and what it costs on the till as well as on the shop. An
+ * explicit button is the honest control for that.
+ *
+ * Saving on blur was the first attempt at the title and is worse than either:
+ * tabbing past a field you only meant to read renames a book in Square, and
+ * there is nothing to press to undo it.
+ *
+ * ## One button for the three
+ *
+ * They were going to be three controls with three buttons, which is three round
+ * trips and — because `catalog.version.updated` triggers a mirror — three full
+ * catalog syncs to change one book. `setProductDetails` sends only what
+ * actually differs, so pressing Save once after editing all three is one write.
+ *
+ * The fields re-seed when the panel moves to a different book *or* when a saved
+ * value comes back changed. `product` is the live document, so without the
+ * second half a successful save would leave the boxes showing what you typed and
+ * the button still lit as though nothing had happened.
+ * ---------------------------------------------------------------------------
+ */
+function ProductDetailsForm({
+  product,
+  busy,
+  onWrite,
+}: {
+  product: ShopProduct;
+  busy: boolean;
+  onWrite: (run: () => Promise<void>) => Promise<boolean>;
+}) {
+  /*
+   * Dollars as typed, cents when sent. `Math.round`, never `trunc`: `4.35 * 100`
+   * is `434.99999999999994` in binary floating point, and truncating charges a
+   * cent less than the parish set. Same arithmetic as the add form.
+   */
+  const asDollars = (cents: number) => (cents / 100).toFixed(2);
+
+  const [name, setName] = useState(product.name);
+  const [price, setPrice] = useState(asDollars(product.amount));
+  const [description, setDescription] = useState(product.description);
+
+  useEffect(() => {
+    setName(product.name);
+    setPrice(asDollars(product.amount));
+    setDescription(product.description);
+  }, [product.slug, product.name, product.amount, product.description]);
+
+  const title = name.trim().replace(/\s+/g, ' ');
+  const blurb = description.trim();
+
+  const cents = (() => {
+    const trimmed = price.trim().replace(/^\$/, '');
+    if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
+    const value = Math.round(Number(trimmed) * 100);
+    return value > 0 && value <= 100_000 ? value : null;
+  })();
+
+  const titleChanged = title.length > 0 && title !== product.name;
+  const priceChanged = cents !== null && cents !== product.amount;
+  const blurbChanged = blurb !== product.description;
+  /* A price box that cannot be parsed blocks Save rather than being ignored —
+     silently keeping the old price after somebody typed a new one is worse. */
+  const priceBroken = price.trim() !== '' && cents === null;
+  const changed = (titleChanged || priceChanged || blurbChanged) && !priceBroken && title.length > 0;
+
+  const save = async () => {
+    if (!changed || busy) return;
+    await onWrite(async () => {
+      const { setProductDetails } = await import('./adminData');
+      await setProductDetails(product.slug, {
+        ...(titleChanged ? { name: title } : {}),
+        ...(priceChanged ? { priceCents: cents } : {}),
+        ...(blurbChanged ? { description: blurb } : {}),
+      });
+    });
+  };
+
+  /* Enter saves from either single-line box, Escape abandons the lot. The
+     description is a textarea, where Enter is a newline and must stay one. */
+  const keys = (event: ReactKeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void save();
+    } else if (event.key === 'Escape') {
+      setName(product.name);
+      setPrice(asDollars(product.amount));
+      setDescription(product.description);
+    }
+  };
+
+  return (
+    <div className="bkdetails">
+      <label className="bkdetails__row">
+        <span className="bkdetails__label">Title</span>
+        <input
+          type="text"
+          className="bkrename__input"
+          value={name}
+          disabled={busy}
+          maxLength={120}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={keys}
+        />
+      </label>
+
+      <label className="bkdetails__row">
+        <span className="bkdetails__label">Price</span>
+        <span className="bkdetails__money">
+          <span aria-hidden="true">$</span>
+          <input
+            type="text"
+            className={priceBroken ? 'bkrename__input is-wrong' : 'bkrename__input'}
+            value={price}
+            inputMode="decimal"
+            aria-label={`Price of ${product.name} in dollars`}
+            aria-invalid={priceBroken}
+            disabled={busy}
+            onChange={(event) => setPrice(event.target.value)}
+            onKeyDown={keys}
+          />
+        </span>
+      </label>
+
+      <label className="bkdetails__row">
+        <span className="bkdetails__label">Description</span>
+        <textarea
+          className="bkdetails__text"
+          value={description}
+          rows={3}
+          maxLength={2000}
+          placeholder="A line about it — shown under the title on the shelf."
+          disabled={busy}
+          onChange={(event) => setDescription(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') keys(event);
+          }}
+        />
+      </label>
+
+      {priceBroken && (
+        <p className="bkpanel__aside bkpanel__aside--wrong">
+          A price like 8 or 8.50, up to $1,000.00.
+        </p>
+      )}
+
+      <div className="bkdetails__go">
+        <button
+          type="button"
+          className="button button--small"
+          disabled={busy || !changed}
+          onClick={() => void save()}
+        >
+          Save to Square
+        </button>
+      </div>
+
+      <p className="bkpanel__aside">
+        Goes to Square, so the till shows it too. The web address stays as it is,
+        so nobody’s bookmark or past receipt breaks.
+      </p>
     </div>
   );
 }
@@ -414,7 +544,10 @@ function RemoveProduct({
 
   return (
     <div className="bkedit__confirm">
-      <p>Off the website and out of the Square register. Past orders keep it.</p>
+      <p>
+        This takes the book off the website and out of the Square register.
+        Past orders keep it.
+      </p>
       <div className="bkedit__confirmrow">
         <button
           type="button"
@@ -457,15 +590,6 @@ function RemoveProduct({
  * uppercase labels each took a line of their own and the block ran to half the
  * height of the cover above it — a lot of empty card for four settings.
  */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="bkedit__field">
-      <span className="bkedit__label">{label}</span>
-      <span className="bkedit__control">{children}</span>
-    </div>
-  );
-}
-
 /**
  * How many are on the shelf, as a stepper.
  *
@@ -476,79 +600,30 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
  * an emptied text box must never read as "stop counting", because a volunteer
  * clearing the field to mean *never mind* would take the book off the shop.
  *
- * **The writes are debounced, and that is not polish.** Every save is a call to
- * Square's inventory API through a Cloud Function, and a stepper invites four
- * quick presses. Firing one request per press would send four, out of order,
- * with the last one to arrive winning — so the count on the shelf would be
- * whichever request Square happened to answer last.
+ * **This no longer writes anything.** It used to debounce a call to Square's
+ * inventory API ~700ms after the last press, which meant the card decided when
+ * your edit was sent and a run of presses across several books was a run of
+ * round trips. The number now changes here and waits on the bar at the foot of
+ * the shop. See `pendingEdits.tsx` for what is held and what still acts at once.
  *
- * So the number moves at once and the write follows once, ~700ms after the last
- * press. The draft is held in a ref as well as in state because the timer's
- * callback closes over the value from the render that created it — the same
- * batching trap `bookstoreEvents` hit, where a fast run of clicks collapsed into
- * one because the updater's side effect ran against a stale copy.
+ * That also removes the whole class of bug the debounce needed guarding against
+ * — stale closures, out-of-order responses, re-seeding from a document mid-press
+ * — because there is no longer anything in flight to be out of order with.
  * ---------------------------------------------------------------------------
  */
 function StockStepper({
   product,
   busy,
-  onWrite,
 }: {
   product: ShopProduct;
   busy: boolean;
-  onWrite: (run: () => Promise<void>) => Promise<boolean>;
 }) {
-  const stock = product.stockCount ?? null;
-  const [draft, setDraft] = useState(stock ?? 0);
-  const wanted = useRef<number | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /* What the document holds, readable from inside the debounce callback — which
-     closes over the render that scheduled it and would otherwise restore a
-     count from several presses ago. */
-  const held = useRef(stock);
-  held.current = stock;
+  const { stockCount, setStock, nudge } = usePendingEdit(product.slug, {
+    stockCount: product.stockCount ?? null,
+    section: product.section ?? null,
+  });
 
-  /*
-   * Re-seed from the document, but never while a press is still waiting to be
-   * written — the refresh after an earlier save would otherwise snap the number
-   * back to the count from before the press somebody just made.
-   */
-  useEffect(() => {
-    if (wanted.current === null) setDraft(stock ?? 0);
-  }, [product.slug, stock]);
-
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-
-  const save = (count: number | null) =>
-    onWrite(async () => {
-      const { setProductStock } = await import('./adminData');
-      await setProductStock(product.slug, count);
-    });
-
-  const nudge = (by: number) => {
-    setDraft((was) => {
-      const next = Math.max(0, Math.min(99_999, was + by));
-      wanted.current = next;
-      return next;
-    });
-
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      void (async () => {
-        const target = wanted.current;
-        wanted.current = null;
-        timer.current = null;
-        if (target === null || target === held.current) return;
-        // Refused: put back what Square still holds, so the card never shows a
-        // count that was not accepted.
-        if (!(await save(target))) setDraft(held.current ?? 0);
-      })();
-    }, 700);
-  };
-
-  if (stock === null) {
+  if (stockCount === null) {
     return (
       <span className="bkedit__untracked">
         <span className="bkedit__value">not counted</span>
@@ -556,9 +631,9 @@ function StockStepper({
           type="button"
           className="bkedit__power"
           disabled={busy}
-          title="Have Square start counting this product"
-          aria-label="Start counting this product"
-          onClick={() => void save(0)}
+          title="Start tracking stock for this book"
+          aria-label="Start tracking stock"
+          onClick={() => setStock(0)}
         >
           start counting
         </button>
@@ -572,13 +647,13 @@ function StockStepper({
         type="button"
         className="bkstep__btn"
         aria-label={`One fewer ${product.name}`}
-        disabled={busy || draft === 0}
+        disabled={busy || stockCount === 0}
         onClick={() => nudge(-1)}
       >
         −
       </button>
-      <output className={draft === 0 ? 'bkstep__n is-out' : 'bkstep__n'} aria-live="polite">
-        {draft}
+      <output className={stockCount === 0 ? 'bkstep__n is-out' : 'bkstep__n'} aria-live="polite">
+        {stockCount}
       </output>
       <button
         type="button"
@@ -593,19 +668,18 @@ function StockStepper({
         type="button"
         className="bkedit__power"
         disabled={busy}
-        title="Have Square stop counting this product"
-        aria-label="Stop counting this product"
-        onClick={() => void save(null)}
+        title="Stop tracking stock for this book"
+        aria-label="Stop tracking stock"
+        onClick={() => setStock(null)}
       >
         stop counting
       </button>
       {/* Zero is the one state worth a word — it takes the product off the shop.
           Beside the stepper rather than as a badge on its own line. */}
-      {draft === 0 && <span className="bkstep__flag">sold out</span>}
+      {stockCount === 0 && <span className="bkstep__flag">sold out</span>}
     </span>
   );
 }
-
 /**
  * Add a photograph, or take one off. Square holds both.
  *
@@ -629,17 +703,18 @@ function Pictures({
   doc,
   busy,
   variant = 'row',
-  onWrite,
   onError,
 }: {
   product: ShopProduct;
   doc: DocOf<Product> | undefined;
   busy: boolean;
   variant?: 'row' | 'panel';
-  onWrite: (run: () => Promise<void>) => Promise<boolean>;
   onError: (message: string) => void;
 }) {
-  const [uploading, setUploading] = useState(false);
+  /* Reading the file and shrinking it, not sending it — nothing goes to Square
+     until Save. Still worth a state: `downscale` decodes a phone photograph,
+     which is long enough to look like nothing happened. */
+  const [reading, setReading] = useState(false);
   /*
    * A file is being dragged over this card's picture row.
    *
@@ -651,20 +726,69 @@ function Pictures({
    */
   const [over, setOver] = useState(0);
   const picker = useRef<HTMLInputElement>(null);
-  const images = doc?.imagePaths ?? [];
 
-  const upload = async (file: File) => {
-    setUploading(true);
+  const {
+    addedImages,
+    removedImages,
+    holdImage,
+    unholdImage,
+    markImageRemoved,
+    unmarkImageRemoved,
+  } = usePendingEdit(product.slug, {
+    stockCount: product.stockCount ?? null,
+    section: product.section ?? null,
+  });
+
+  const saved = doc?.imagePaths ?? [];
+
+  /*
+   * What to show: every saved photograph, then every one chosen here.
+   *
+   * A photograph marked for removal is *not* dropped from this list — it stays,
+   * dimmed, with a way to put it back. That is the point of holding the edit at
+   * all: a removal you cannot see is a removal you cannot change your mind
+   * about, and before this change the only undo was re-uploading the file.
+   *
+   * The order is exactly what `save` performs — removals, then additions
+   * appended — so the tiles are a true preview of the result, cover included.
+   */
+  const tiles = [
+    ...saved.map((url) => ({
+      key: url,
+      src: url,
+      removed: removedImages.includes(url),
+      undo: () => unmarkImageRemoved(url),
+      off: () => markImageRemoved(url),
+    })),
+    ...addedImages.map((image) => ({
+      key: image.id,
+      src: image.dataUrl,
+      removed: false,
+      undo: undefined,
+      off: () => unholdImage(image.id),
+    })),
+  ];
+
+  /* Which tile the shop will use as the cover: the first one still standing. */
+  const coverKey = tiles.find((tile) => !tile.removed)?.key;
+
+  const take = async (files: readonly File[]) => {
+    const pictures = files.filter((one) => one.type.startsWith('image/'));
+    // Said rather than ignored: a dropped PDF looks like it worked otherwise.
+    if (pictures.length === 0) {
+      onError('That file is not a picture.');
+      return;
+    }
+
+    setReading(true);
     try {
-      const shrunk = await downscale(file);
-      await onWrite(async () => {
-        const { uploadProductImage } = await import('./adminData');
-        await uploadProductImage(product.slug, shrunk);
-      });
+      /* Sequentially, so several large photographs do not decode at once and
+         lock the tab up on the machine in the church office. */
+      for (const file of pictures) holdImage(await downscale(file));
     } catch (cause) {
       onError(cause instanceof Error ? cause.message : 'That picture could not be read.');
     } finally {
-      setUploading(false);
+      setReading(false);
       // Cleared so choosing the same file twice fires `change` again — a retry
       // after a failure otherwise does nothing at all.
       if (picker.current) picker.current.value = '';
@@ -687,12 +811,6 @@ function Pictures({
     return true;
   };
 
-  const remove = (url: string) =>
-    void onWrite(async () => {
-      const { removeProductImage } = await import('./adminData');
-      await removeProductImage(product.slug, url);
-    });
-
   const panel = variant === 'panel';
   const Box = panel ? 'div' : 'span';
   const Tile = panel ? 'div' : 'span';
@@ -708,24 +826,26 @@ function Pictures({
       onDrop={(event) => {
         if (!accept(event)) return;
         setOver(0);
-        if (uploading || busy) return;
-        const file = Array.from(event.dataTransfer.files).find((one) =>
-          one.type.startsWith('image/'),
-        );
-        // Said rather than ignored: a dropped PDF looks like it worked otherwise.
-        if (!file) onError('That file is not a picture.');
-        else void upload(file);
+        if (reading || busy) return;
+        void take(Array.from(event.dataTransfer.files));
       }}
     >
-      {images.map((url, index) => (
-        <Tile className="bkpix__one" key={url}>
-          {/* A plain `img`: these are Square CDN URLs the export build knows
-              nothing about, and `next/image` would need every host in
-              `remotePatterns` for a thumbnail this size. */}
-          <img src={url} alt="" loading="lazy" />
+      {tiles.map((tile, index) => (
+        <Tile
+          className={tile.removed ? 'bkpix__one is-removed' : 'bkpix__one'}
+          key={tile.key}
+        >
+          {/* A plain `img`: saved ones are Square CDN URLs the export build
+              knows nothing about, and `next/image` would need every host in
+              `remotePatterns` for a thumbnail this size. A held one is a
+              `data:` URL, which it could not take at all. */}
+          <img src={tile.src} alt="" loading="lazy" />
+
           {/* The first is what the shop shows, and saying so is the difference
               between "why is that one the cover" and knowing. */}
-          {index === 0 && <span className="bkpix__cover">cover</span>}
+          {tile.key === coverKey && <span className="bkpix__cover">cover</span>}
+          {tile.removed && <span className="bkpix__gone">removing</span>}
+
           {/*
             On the card this is a × that appears on approach, because a row of
             badges over every thumbnail is what made that block look busy. In the
@@ -734,66 +854,65 @@ function Pictures({
             "discoverable on hover" is not a property a destructive control on a
             touchscreen can have.
           */}
-          <button
-            type="button"
-            className={panel ? 'bkpix__off' : 'bkpix__del'}
-            disabled={busy}
-            aria-label={`Remove picture ${index + 1} of ${images.length} from ${product.name}`}
-            title="Remove this picture"
-            onClick={() => remove(url)}
-          >
-            {panel ? 'Remove' : '×'}
-          </button>
+          {tile.removed ? (
+            <button
+              type="button"
+              className={panel ? 'bkpix__off' : 'bkpix__del'}
+              disabled={busy}
+              aria-label={`Keep picture ${index + 1} on ${product.name}`}
+              title="Put this picture back"
+              onClick={tile.undo}
+            >
+              {panel ? 'Put back' : '↺'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={panel ? 'bkpix__off' : 'bkpix__del'}
+              disabled={busy}
+              aria-label={`Remove picture ${index + 1} of ${tiles.length} from ${product.name}`}
+              title="Remove this picture"
+              onClick={tile.off}
+            >
+              {panel ? 'Remove' : '×'}
+            </button>
+          )}
         </Tile>
       ))}
 
       <button
         type="button"
         className="bkpix__add"
-        disabled={uploading || busy}
-        title="Add a picture — or drag one in"
+        disabled={reading || busy}
+        title="Add a picture, or drag one in"
         aria-label={`Add a picture to ${product.name}`}
         onClick={() => picker.current?.click()}
       >
         {panel ? (
           <>
             <span className="bkpix__addmark" aria-hidden="true">
-              {uploading ? '…' : '+'}
+              {reading ? '…' : '+'}
             </span>
             <span className="bkpix__addword">
-              {uploading ? 'Sending…' : over > 0 ? 'Drop it here' : 'Add a picture'}
+              {reading ? 'Reading…' : over > 0 ? 'Drop it here' : 'Add a picture'}
             </span>
           </>
-        ) : uploading ? (
+        ) : reading ? (
           '…'
         ) : (
           '+'
         )}
       </button>
 
-      {/*
-        The empty state carries the instruction, and only the empty state.
-        A book that already has its picture does not need to be told twice how to
-        add another, and eleven copies of the sentence is what would make this
-        block noisy. Hidden from assistive technology because the button beside
-        it already says the same thing.
-
-        The panel's add tile says all of this on its own face, so it gets none.
-      */}
-      {!panel && images.length === 0 && !uploading && (
-        <span className="bkpix__hint" aria-hidden="true">
-          {over > 0 ? 'Drop it here' : 'or drop one here'}
-        </span>
-      )}
-
       <input
         ref={picker}
         type="file"
         accept="image/*"
+        multiple
         className="visually-hidden"
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) void upload(file);
+          const files = Array.from(event.target.files ?? []);
+          if (files.length > 0) void take(files);
         }}
       />
     </Box>
@@ -1105,7 +1224,7 @@ export function CategoryPills({
       className={drag?.moved ? 'shop-filters is-editing is-dragging' : 'shop-filters is-editing'}
       ref={row}
       role="group"
-      aria-label="Categories — drag a pill to reorder it"
+      aria-label="Categories — drag to reorder"
     >
       <button
         type="button"
@@ -1400,28 +1519,41 @@ export function AddProductTile({
   sections,
   onChanged,
   onError,
+  /**
+   * `tile` is the last cell of the shelf grid, which is what this was.
+   * `panel` is the editing column, which has no grid and cannot hold an `<li>`.
+   *
+   * Two shells around one `NewProduct`, the same arrangement `Pictures` uses for
+   * the same reason: all the difficulty is in the form — the price parsing, the
+   * held photographs, the create-then-upload order — and none of it differs
+   * between the two places it can appear.
+   */
+  variant = 'tile',
 }: {
   sections: BookstoreSection[];
   onChanged: () => void;
   onError: (message: string) => void;
+  variant?: 'tile' | 'panel' | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const Shell = variant === 'panel' ? 'div' : 'li';
+  const shell = variant === 'panel' ? 'bkadd-panel' : 'book book--add';
 
   if (!open) {
     return (
-      <li className="book book--add">
+      <Shell className={shell}>
         <button type="button" className="bkadd" onClick={() => setOpen(true)}>
           <span className="bkadd__plus" aria-hidden="true">
             +
           </span>
           <span className="bkadd__word">Add a product</span>
         </button>
-      </li>
+      </Shell>
     );
   }
 
   return (
-    <li className="book book--add is-open">
+    <Shell className={`${shell} is-open`}>
       <NewProduct
         sections={sections}
         onClose={() => setOpen(false)}
@@ -1431,7 +1563,7 @@ export function AddProductTile({
         }}
         onError={onError}
       />
-    </li>
+    </Shell>
   );
 }
 
@@ -1462,6 +1594,40 @@ function NewProduct({
   const [description, setDescription] = useState('');
   const [section, setSection] = useState('');
   const [busy, setBusy] = useState(false);
+  /*
+   * Pictures chosen for a book that does not exist yet.
+   *
+   * Local state rather than `pendingEdits`, because everything there is keyed by
+   * slug and this product has no slug until Square has given it one. Same
+   * `downscale` and the same `data:` URLs, so the tiles preview identically to
+   * the ones on a saved card.
+   */
+  const [pictures, setPictures] = useState<{ id: string; dataUrl: string }[]>([]);
+  const [reading, setReading] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+
+  const takePictures = async (files: readonly File[]) => {
+    const chosen = files.filter((one) => one.type.startsWith('image/'));
+    if (chosen.length === 0) {
+      onError('That file is not a picture.');
+      return;
+    }
+    setReading(true);
+    try {
+      for (const file of chosen) {
+        const dataUrl = await downscale(file);
+        setPictures((was) => [
+          ...was,
+          { id: globalThis.crypto?.randomUUID?.() ?? `p-${was.length}-${Date.now()}`, dataUrl },
+        ]);
+      }
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : 'That picture could not be read.');
+    } finally {
+      setReading(false);
+      if (picker.current) picker.current.value = '';
+    }
+  };
 
   /*
    * Dollars as typed, cents when sent. `Math.round`, never `trunc`: `4.35 * 100`
@@ -1476,16 +1642,40 @@ function NewProduct({
   })();
 
   const submit = async () => {
-    if (!name.trim() || cents === null || busy) return;
+    if (!name.trim() || cents === null || busy || reading) return;
     setBusy(true);
     try {
-      const { createProduct } = await import('./adminData');
-      await createProduct({
+      const { createProduct, uploadProductImage } = await import('./adminData');
+      const slug = await createProduct({
         name: name.trim(),
         description: description.trim(),
         priceCents: cents,
         section: section || null,
       });
+
+      /*
+       * The book first, then its photographs, and the order is forced: an image
+       * is attached to a catalog object, so there is nothing to attach one to
+       * until Square has minted the item and told us its slug.
+       *
+       * A picture that fails therefore fails *after* the book exists. Saying so
+       * and leaving the book is the honest outcome — the alternative is deleting
+       * a product the parish just created because one photograph did not upload,
+       * and the pictures can be added again from the card in a second.
+       */
+      for (const picture of pictures) {
+        try {
+          await uploadProductImage(slug, picture.dataUrl);
+        } catch (cause) {
+          onError(
+            `"${name.trim()}" was added, but a picture did not upload` +
+              `${cause instanceof Error ? `: ${cause.message}` : '.'} ` +
+              'Add it from the book’s own settings.',
+          );
+          break;
+        }
+      }
+
       onAdded();
     } catch (cause) {
       onError(cause instanceof Error ? cause.message : 'The product could not be added.');
@@ -1537,10 +1727,57 @@ function NewProduct({
           ))}
         </select>
       )}
+      {/*
+        The pictures, on the add form.
+        Same tiles as a saved card so the two read as one control, and the same
+        drag target — a volunteer adding a book has the cover on the desktop in
+        front of them, and making them add the book first and photograph it
+        second was an extra step for no reason.
+      */}
+      <span className="bknew__pix">
+        {pictures.map((picture, index) => (
+          <span className="bkpix__one" key={picture.id}>
+            <img src={picture.dataUrl} alt="" />
+            {index === 0 && <span className="bkpix__cover">cover</span>}
+            <button
+              type="button"
+              className="bkpix__del"
+              disabled={busy}
+              aria-label={`Remove picture ${index + 1}`}
+              title="Remove this picture"
+              onClick={() => setPictures((was) => was.filter((one) => one.id !== picture.id))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <button
+          type="button"
+          className="bkpix__add"
+          disabled={reading || busy}
+          title="Add a picture"
+          aria-label="Add a picture to this new book"
+          onClick={() => picker.current?.click()}
+        >
+          {reading ? '…' : '+'}
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          multiple
+          className="visually-hidden"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            if (files.length > 0) void takePictures(files);
+          }}
+        />
+      </span>
+
       <button
         type="button"
         className="button button--small"
-        disabled={busy || !name.trim() || cents === null}
+        disabled={busy || reading || !name.trim() || cents === null}
         onClick={() => void submit()}
       >
         {busy ? 'Adding…' : 'Add to Square'}
@@ -1608,4 +1845,150 @@ async function downscale(file: File, max = 1600): Promise<string> {
   } catch {
     return original();
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* The editing column                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything about the selected book, down the right, with the shelf narrowed
+ * to fit beside it.
+ *
+ * ---------------------------------------------------------------------------
+ * **This is a reversal, and the note it replaces argued the other way.** The
+ * settings used to sit on each card, and the comment there said a column had
+ * been tried and judged *"way too confusing"* — that a book on a shelf "has a
+ * whole card" and needs no panel, unlike a photograph buried in a strip inside a
+ * section. Tommy has asked for the column back: *"I want the editing products to
+ * function similar to editing the pictures in events where it all shows up on
+ * the side when selecting a specific product."*
+ *
+ * Worth doing again rather than arguing, because what made it fail was a bug
+ * rather than the shape — the same bug that sank the galleries' first column.
+ * `.rail--bleed` is `width: 100vw`, so a full-bleed rail measured itself against
+ * the *window* and ran on underneath the panel; "the column took a third of the
+ * horizontal space" was that, not a judgement about columns. `--edit-gutter`
+ * fixed it, and the events column has been the good one ever since.
+ *
+ * The other half of the case is the one `editMode.tsx` makes and time has
+ * proved: **every new thing an administrator can change adds a control next to
+ * the thing it changes, and that does not converge.** The card carried a
+ * stepper, a picture row and a category select; this week it would also have
+ * carried a title field. Four controls on a 12rem tile, on a grid of ten.
+ *
+ * ## Never empty, never instructions
+ *
+ * With no book selected it shows the shop's own settings — the categories and
+ * Add a book. That is the rule the galleries' column learned the hard way: the
+ * arrangement before it died of being permanently present and mostly full of
+ * help text, so a column that is always there has to earn its space in every
+ * state.
+ *
+ * Deliberately *not* here: the delivery charge, the fulfilment line and the
+ * returns notice. An in-place editor for exactly those was built on this page
+ * once and rejected — *"I don't want it to be for editing."* They live in
+ * `config/bookstore` and are edited in the Firebase console.
+ * ---------------------------------------------------------------------------
+ */
+export function ShopInspector({
+  editing,
+  product,
+  doc,
+  sections,
+  groups,
+  onDone,
+  onSelect,
+  onChanged,
+  onError,
+  children,
+}: {
+  editing: boolean;
+  /** The selected book, or undefined for the shop itself. */
+  product: ShopProduct | undefined;
+  doc: DocOf<Product> | undefined;
+  sections: BookstoreSection[];
+  /** How many books sit under each category, for the shop-wide view. */
+  groups: { id: string; label: string; count: number }[];
+  onDone: () => void;
+  onSelect: (slug: string | null) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  /** The Add-a-book form, passed in so the column does not own its state. */
+  children?: ReactNode;
+}) {
+  const { count, saving } = usePendingEdits();
+
+  return (
+    <EditColumn
+      on={editing}
+      kind={product ? 'Book' : 'Shop'}
+      title={product ? product.name : 'The bookstore'}
+      /*
+       * The column's indicator reads from the save bar rather than from the last
+       * write, because on this page edits are *held*. "Saved" beside three
+       * unsaved changes would be a lie, and it is the one question the header
+       * exists to answer.
+       */
+      saving={saving}
+      onBack={product ? () => onSelect(null) : undefined}
+      backLabel="Back to the shop"
+      onDone={onDone}
+    >
+      {product ? (
+        <ProductSettings
+          bare
+          product={product}
+          doc={doc}
+          sections={sections}
+          onChanged={onChanged}
+          onError={onError}
+          /* The book was archived, so there is nothing left to describe. Back to
+             the shop rather than an empty panel about a book that is gone. */
+          onRemoved={() => onSelect(null)}
+        />
+      ) : (
+        <div className="bkpanel">
+          <p className="bkpanel__note">
+            {count > 0
+              ? 'Pick a book to change it. Your held changes are on the bar at the foot of the shop.'
+              : 'Pick a book to change its title, price, description, pictures, stock or category.'}
+          </p>
+
+          <div className="bkpanel__block">
+            <h4 className="bkpanel__label">Categories</h4>
+            {groups.length > 0 ? (
+              <ul className="bkcats">
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <span className="bkcats__name">{group.label}</span>
+                    {/* The count is the useful half: an empty category is the
+                        thing somebody is most likely looking for here, and it is
+                        invisible on the shelf because nothing renders under it. */}
+                    <span className="bkcats__n">
+                      {group.count} {group.count === 1 ? 'book' : 'books'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="bkpanel__aside">
+                No categories yet. Add one from the row above the shelf.
+              </p>
+            )}
+            <p className="bkpanel__aside">
+              Rename, reorder and add categories on the pills above the shelf.
+            </p>
+          </div>
+
+          {children && (
+            <div className="bkpanel__block bkpanel__block--last">
+              <h4 className="bkpanel__label">Add a book</h4>
+              {children}
+            </div>
+          )}
+        </div>
+      )}
+    </EditColumn>
+  );
 }

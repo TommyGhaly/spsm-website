@@ -2,8 +2,14 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { defineString } from 'firebase-functions/params';
-import { COLLECTIONS, mapSquareCatalog, parseInventoryCounts } from '@spsm/shared';
+import {
+  COLLECTIONS,
+  mapSquareCatalog,
+  mirrorDocumentId,
+  parseInventoryCounts,
+} from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
+import { BUDGETS, CAPS, exclusive, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_SANDBOX_ACCESS_TOKEN,
@@ -217,12 +223,27 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
   const existing = await collection.get();
   const present = new Set(existing.docs.map((doc) => doc.id));
 
+  /*
+   * Square's id → the document already mirroring it, so a book renamed from the
+   * shop's edit panel updates in place instead of forking a second row under
+   * its new slug. See `mirrorDocumentId`.
+   */
+  const byObjectId = new Map<string, string>();
+  for (const doc of existing.docs) {
+    const squareId = doc.get('squareCatalogObjectId') as string | undefined;
+    if (squareId) byObjectId.set(squareId, doc.id);
+  }
+
   const now = new Date();
   let written = 0;
 
   for (const product of products) {
+    const id = mirrorDocumentId(product, byObjectId);
     const fields: MirrorFields = {
-      slug: product.slug,
+      // The document id, not `product.slug` — they differ after a rename, and
+      // the two must not drift: `useLiveCatalog` and the checkout both look a
+      // product up by this field and expect to find the document it names.
+      slug: id,
       name: product.name,
       description: product.description,
       price: product.price,
@@ -243,7 +264,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
       // The sync is not a person. Null is the schema's value for that, and what
       // the rules already expect on rows nobody edited.
       updatedBy: null,
-      ...(present.has(product.slug) ? {} : { createdAt: now }),
+      ...(present.has(id) ? {} : { createdAt: now }),
     };
 
     /*
@@ -262,7 +283,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
      * rather than lingering: an emptied `imagePaths` really does empty here,
      * which is the "when I decide to delete them they should delete" half.
      */
-    await collection.doc(product.slug).set(fields, { merge: true });
+    await collection.doc(id).set(fields, { merge: true });
     written += 1;
   }
 
@@ -276,7 +297,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
    * created some other way is not Square's to retire. Reached only after the
    * two refusals above, so this cannot run on a failed or empty read.
    */
-  const live = new Set(products.map((product) => product.slug));
+  const live = new Set(products.map((product) => mirrorDocumentId(product, byObjectId)));
   let unpublished = 0;
 
   for (const doc of existing.docs) {
@@ -316,6 +337,7 @@ export const syncSquareCatalog = onSchedule(
     schedule: 'every 15 minutes',
     secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
     timeoutSeconds: 300,
+    maxInstances: CAPS.scheduled,
   },
   async () => {
     const result = await mirrorCatalog();
@@ -340,25 +362,54 @@ export const syncSquareCatalog = onSchedule(
  * claim as the rest of the catalog editing.
  */
 export const refreshSquareCatalog = onRequest(
-  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false },
+  { secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN], cors: false, maxInstances: CAPS.rebuild },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
       return;
     }
 
+    // The cheap gate, before a token is verified.
+    if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return;
+
     const caller = await callerOf(req);
-    if (!mayManageOrders(caller)) {
+    if (!(await mayManageOrders(caller))) {
       res.status(caller ? 403 : 401).json({ error: 'Not permitted.' });
       return;
     }
 
-    const result = await mirrorCatalog();
-    if (result.failure) {
-      res.status(502).json({ error: result.failure });
+    // Every call walks Square's whole catalog and rewrites the mirror. The
+    // schedule does this anyway; the button is for not waiting for it.
+    if (
+      throttled(req, res, {
+        bucket: 'catalogRebuild',
+        max: BUDGETS.rebuild,
+        identity: caller!.uid,
+        message: 'The shop was just refreshed from Square. Please wait a minute.',
+      })
+    ) {
       return;
     }
 
-    res.status(200).json({ ok: true, ...result });
+    const release = exclusive('catalogMirror');
+    if (!release) {
+      // Two mirrors running at once write the same documents from two reads of
+      // Square and the later write wins, which is how a photograph that was
+      // just added comes back missing.
+      res.status(409).json({ error: 'The shop is being refreshed right now.' });
+      return;
+    }
+
+    try {
+      const result = await mirrorCatalog();
+      if (result.failure) {
+        res.status(502).json({ error: result.failure });
+        return;
+      }
+
+      res.status(200).json({ ok: true, ...result });
+    } finally {
+      release();
+    }
   },
 );

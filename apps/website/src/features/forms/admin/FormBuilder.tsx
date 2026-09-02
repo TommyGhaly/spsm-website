@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   MAX_FIELDS,
+  isBuiltInForm,
   isChoiceField,
   isDecorative,
+  isKnownFormHost,
   toFormSlug,
   visibleFields,
   type FieldCondition,
@@ -15,7 +17,7 @@ import {
   type FormOption,
 } from '@spsm/shared';
 import { FieldInput } from '../FormFields';
-import { uploadFormPicture } from '../uploads';
+import { PicturePicker } from './PicturePicker';
 import { writeForm, type WithId } from './adminData';
 
 /**
@@ -40,34 +42,6 @@ import { writeForm, type WithId } from './adminData';
  * and that.
  * ---------------------------------------------------------------------------
  */
-
-/**
- * Pictures a form may wear.
- *
- * The four stock photographs first: each one says what a form is *for* — a car
- * park, a van, a group meeting, a gathering — which is the job a generic
- * photograph can do honestly. Their licence and photo ids are recorded in
- * `assets/README.md`, unlike every other stock image this repo inherited.
- *
- * The parish's own images follow, for a form where they genuinely fit.
- *
- * A fixed list rather than a free text box, because a box here is how a form
- * ends up hotlinking a photograph from somebody else's website.
- *
- * Notable absence: the Crucifixion icon. It is genuine and beautiful, and an
- * icon is venerated rather than used as page furniture — nobody should meet it
- * at the top of a form about parking a car.
- */
-const PICTURES: { value: string | null; label: string }[] = [
-  { value: '/img/stock-parking-lot-1000.webp', label: 'Car park' },
-  { value: '/img/stock-passenger-van-1000.webp', label: 'Passenger van' },
-  { value: '/img/stock-small-group-1000.webp', label: 'Small group' },
-  { value: '/img/stock-gathering-1000.webp', label: 'Gathering' },
-  { value: '/img/home-sanctuary-1000.webp', label: 'The sanctuary (ours)' },
-  { value: '/img/cross-coptic-360.webp', label: 'Coptic cross (ours)' },
-  { value: '/img/hero-glass-1000.webp', label: 'Stained glass' },
-  { value: null, label: 'No picture' },
-];
 
 const TYPE_LABELS: Record<FormFieldType, string> = {
   shortText: 'Short text',
@@ -208,6 +182,13 @@ export function FormBuilder({
               }}
             />
           )}
+          {draft.kind === 'embed' && (
+            <p className="note">
+              The host draws the questions on this one. There is nothing to build here,
+              and no submissions arrive here either — the title, the blurb and the
+              picture above are what the church controls.
+            </p>
+          )}
           {draft.kind === 'vehicle' && (
             <p className="note">
               The vehicle registration is built in code, not from fields — it has a
@@ -228,9 +209,22 @@ function Settings({
   draft,
   edit,
 }: {
-  draft: FormDraft;
+  draft: WithId<FormDraft>;
   edit: (patch: Partial<FormDraft>) => void;
 }) {
+  /*
+   * The two forms the church always has are edited here like any other, with
+   * two exceptions: the address and the kind.
+   *
+   * Both are pointed at from outside this codebase — an NFC tag in the car
+   * park, the contact links across the site and on the parish's stationery —
+   * so renaming one is not an edit, it is a 404 discovered by somebody standing
+   * in a car park on a Sunday. Everything that makes the form *useful* to edit
+   * stays open: the blurb, the picture, the questions, the notification
+   * address, the confirmation.
+   */
+  const builtIn = isBuiltInForm(draft.id);
+
   return (
     <div className="fxb__section">
       <h3>The form</h3>
@@ -247,7 +241,7 @@ function Settings({
              * form's URL is on posters and in emails, and quietly rewriting it
              * because a typo in the title got fixed breaks every one of them.
              */
-            const following = draft.slug === toFormSlug(draft.title);
+            const following = !builtIn && draft.slug === toFormSlug(draft.title);
             edit(following ? { title, slug: toFormSlug(title) } : { title });
           }}
         />
@@ -255,8 +249,15 @@ function Settings({
 
       <label className="field">
         <span>Address</span>
-        <input value={draft.slug} onChange={(event) => edit({ slug: toFormSlug(event.target.value) })} />
-        <small>/forms/{draft.slug || '…'}</small>
+        <input
+          value={draft.slug}
+          readOnly={builtIn}
+          onChange={(event) => edit({ slug: toFormSlug(event.target.value) })}
+        />
+        <small>
+          /forms/{draft.slug || '…'}
+          {builtIn && ' — fixed. The car park tags and the church’s own links use it.'}
+        </small>
       </label>
 
       <label className="field">
@@ -265,7 +266,11 @@ function Settings({
         <small>One or two sentences, shown on the card and above the form.</small>
       </label>
 
-      <PicturePicker draft={draft} edit={edit} />
+      <PicturePicker
+        slug={draft.slug || draft.id}
+        value={draft.image}
+        onChange={(image) => edit({ image })}
+      />
 
 
       <div className="field-row">
@@ -300,18 +305,21 @@ function Settings({
               onChange={(event) => edit({ kind: event.target.value as FormDraft['kind'] })}
             >
               <option value="native">Built here</option>
-              <option value="external">Links out (Breeze)</option>
+              <option value="embed">Shown on our page (Tithe.ly, Breeze)</option>
+              <option value="external">Links out</option>
             </select>
           )}
         </label>
-        <label className="field field--narrow">
-          <span>Order</span>
-          <input
-            type="number"
-            value={draft.order}
-            onChange={(event) => edit({ order: Number(event.target.value) || 0 })}
-          />
-        </label>
+        {/*
+          No "Order" box any more.
+
+          It was a number nobody could use: every form is created at 100, so
+          getting one above another meant opening both, working out what the
+          other one said, and typing a smaller number. The forms list has arrows
+          now, which renumber the whole list — two controls for one property
+          would let a stray 100 typed here jump a form to the end for reasons
+          invisible from the list.
+        */}
       </div>
 
       {draft.kind === 'external' && (
@@ -320,12 +328,30 @@ function Settings({
           <input
             type="url"
             value={draft.externalUrl ?? ''}
+            placeholder="https://…"
+            onChange={(event) => edit({ externalUrl: event.target.value.trim() || null })}
+          />
+          <small>
+            The card links straight here, in a new tab. Answers go wherever the form
+            is hosted; nothing arrives at the church site.
+          </small>
+        </label>
+      )}
+
+      {draft.kind === 'embed' && (
+        <label className="field">
+          <span>The form&apos;s address</span>
+          <input
+            type="url"
+            value={draft.externalUrl ?? ''}
             placeholder="https://stphilopaterstmina.breezechms.com/form/…"
             onChange={(event) => edit({ externalUrl: event.target.value.trim() || null })}
           />
           <small>
-            The card links straight here. Answers go to Breeze, not to the church
-            site — Breeze&apos;s API cannot accept a submission from us.
+            Framed inside /forms/{draft.slug || '…'}, under the church&apos;s own header
+            and picture. The form stays its host&apos;s: <strong>answers are kept by
+            Tithe.ly or Breeze and never reach this site</strong>, so there is nothing
+            to review here. Sign in there to read them.
           </small>
         </label>
       )}
@@ -453,98 +479,6 @@ function Settings({
             what a page displays can never change what a card is charged.
           </p>
         </>
-      )}
-    </div>
-  );
-}
-
-/**
- * Choosing or uploading the form's picture.
- *
- * The dropdown is the shortlist — the four stock photographs and the parish's
- * own images. The upload beside it is the answer to "none of those is my van":
- * a parish that has a photograph of its own hall should not be limited to a
- * list a developer wrote months ago.
- *
- * The thumbnail is shown at the card's real 5:2 crop, which is the only way the
- * one genuine failure is visible before it ships: a tall photograph whose
- * subject is cropped out entirely by a wide, short box.
- */
-function PicturePicker({
-  draft,
-  edit,
-}: {
-  draft: FormDraft & { id?: string };
-  edit: (patch: Partial<FormDraft>) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const file = useRef<HTMLInputElement>(null);
-
-  /* An uploaded picture is a URL that is not in the list, so the select would
-     otherwise fall back to showing the first option and misreport what the form
-     is actually wearing. */
-  const known = PICTURES.some((picture) => picture.value === (draft.image ?? null));
-
-  async function upload(chosen: File | undefined) {
-    if (!chosen) return;
-    setFailed(null);
-    setBusy(true);
-    const result = await uploadFormPicture(draft.slug || draft.id || 'form', chosen);
-    setBusy(false);
-    if (!result.ok) {
-      setFailed(result.reason);
-      return;
-    }
-    edit({ image: result.url });
-  }
-
-  return (
-    <div className="fxb__picture">
-      <label className="field">
-        <span>Picture</span>
-        <select
-          value={known ? draft.image ?? '' : '__uploaded'}
-          onChange={(event) => edit({ image: event.target.value || null })}
-        >
-          {!known && <option value="__uploaded">Uploaded picture</option>}
-          {PICTURES.map((picture) => (
-            <option key={picture.label} value={picture.value ?? ''}>
-              {picture.label}
-            </option>
-          ))}
-        </select>
-        <small>Shown on the card on /forms, and as a band above the form itself.</small>
-      </label>
-
-      <div className="fxb__picture-actions">
-        <button
-          type="button"
-          className="button button--ghost"
-          disabled={busy}
-          onClick={() => file.current?.click()}
-        >
-          {busy ? 'Uploading…' : 'Upload a photo…'}
-        </button>
-        <input
-          ref={file}
-          type="file"
-          accept="image/*"
-          className="visually-hidden"
-          onChange={(event) => void upload(event.target.files?.[0])}
-        />
-      </div>
-
-      {failed && (
-        <div className="notice notice--alarm" role="alert">
-          <p>{failed}</p>
-        </div>
-      )}
-
-      {draft.image && (
-        <span className="fxb__thumb">
-          <img src={draft.image} alt="" />
-        </span>
       )}
     </div>
   );
@@ -1005,6 +939,15 @@ function lint(form: FormDraft): string[] {
   if (!form.slug) problems.push('The form has no address.');
   if (form.kind === 'external' && !form.externalUrl) {
     problems.push('This form links out, but has no link.');
+  }
+  if (form.kind === 'embed') {
+    if (!form.externalUrl) {
+      problems.push('This form is shown from somewhere else, but has no address.');
+    } else if (!isKnownFormHost(form.externalUrl)) {
+      problems.push(
+        'That address is not a Tithe.ly or Breeze one, so it may refuse to appear inside the page.',
+      );
+    }
   }
   if (form.kind === 'native' && form.fields.length === 0) {
     problems.push('There are no questions.');

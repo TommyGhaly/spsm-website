@@ -11,12 +11,18 @@
  * exactly as they are.
  * ---------------------------------------------------------------------------
  *
- * Four forms, and the vehicle one is the odd one out.
+ * Five forms, in two groups.
  *
- *   vehicle-registration  — `kind: 'vehicle'`, rendered by a hand-written
- *                           component, writes to the Taksis project rather than
- *                           to us. Published, because it replaces the form at
- *                           /parking that people already use.
+ *   contact               — the two the church always has. They come from
+ *   vehicle-registration    `@spsm/shared`, because the site falls back to the
+ *                           same definitions when Firestore has no document for
+ *                           them: `/forms/vehicle-registration` is on an NFC tag
+ *                           in the car park and `/forms/contact` is behind every
+ *                           "ask the church office" link on the site, and
+ *                           neither address can be corrected by editing a file.
+ *                           Both are published here; neither can be deleted
+ *                           afterwards, by this script or by anybody — see the
+ *                           `forms` block in firestore.rules.
  *   van-request           — the three Breeze forms, rebuilt natively with their
  *   new-service-request      conditional fields intact. Created **unpublished**:
  *   events-request          each is still live in Breeze, and publishing one

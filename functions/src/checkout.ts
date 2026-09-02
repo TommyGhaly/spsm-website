@@ -16,6 +16,7 @@ import {
   type Product,
 } from '@spsm/shared';
 import { callerOf } from './httpAuth.js';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_ENVIRONMENT,
@@ -124,6 +125,7 @@ async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<Books
 export const squareCheckout = onRequest(
   {
     secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    maxInstances: CAPS.squareCheckout,
     // Same origin through the Hosting rewrite, so no cross-origin access is
     // needed or wanted: this endpoint moves money and should not be callable
     // from another site's page.
@@ -132,6 +134,27 @@ export const squareCheckout = onRequest(
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'POST only.' });
+      return;
+    }
+
+    /*
+     * Every call here creates an order in the parish's real Square account and
+     * spends a Square API call doing it. Unauthenticated, necessarily — a buyer
+     * on this site has no account — so the address is all there is to key on.
+     *
+     * Twelve a minute is far above a person buying books and far below anything
+     * that would fill the Square dashboard with junk orders. It is deliberately
+     * not as tight as the order lookup: a shopper who fails a card, corrects it
+     * and fails again is on their third checkout in under a minute and has done
+     * nothing wrong.
+     */
+    if (
+      throttled(req, res, {
+        bucket: 'squareCheckout',
+        max: BUDGETS.squareCheckout,
+        message: 'Too many checkout attempts from here. Please wait a minute and try again.',
+      })
+    ) {
       return;
     }
 

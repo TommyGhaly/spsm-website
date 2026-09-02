@@ -6,6 +6,7 @@ import { CardPayment } from "./CardPayment";
 import { DragRail } from "@/components/DragRail";
 import { Icon } from "@/components/Icon";
 import { Cover } from "./Cover";
+import { PendingEditsProvider, SaveBar, usePendingEdits } from "./pendingEdits";
 import { money } from "./money";
 import { track, trackProduct, trackSearch, trackViewOnce } from "./track";
 import { Suspense, lazy } from "react";
@@ -45,9 +46,6 @@ const BookstoreAdmin = lazy(() =>
  * allowed to. A volunteer who opens /bookstore to buy a book downloads none of
  * it.
  */
-const BookControls = lazy(() =>
-  import("./EditControls").then((m) => ({ default: m.BookControls })),
-);
 const CategoryPills = lazy(() =>
   import("./EditControls").then((m) => ({ default: m.CategoryPills })),
 );
@@ -56,6 +54,9 @@ const AddProductTile = lazy(() =>
 );
 const ProductSettings = lazy(() =>
   import("./EditControls").then((m) => ({ default: m.ProductSettings })),
+);
+const ShopInspector = lazy(() =>
+  import("./EditControls").then((m) => ({ default: m.ShopInspector })),
 );
 
 export { money };
@@ -104,15 +105,23 @@ export function Shop({
    */
   const admin = useBookstoreAdmin();
   /*
-   * Whether the shop is being arranged rather than shopped.
+   * Whether the shop is being arranged rather than shopped, and which book the
+   * editing column is describing.
    *
-   * Plain local state, and deliberately not the `EditModeProvider` the galleries
-   * use. That context earns its keep by carrying a *selection* — which of many
-   * nested things a side panel is describing — and there is no side panel here
-   * any more: every control sits on the thing it changes, so nothing needs to
-   * know what is selected. See EditControls.tsx.
+   * ---------------------------------------------------------------------------
+   * Still plain local state rather than the galleries' `EditModeProvider`, even
+   * though there is a column again. That context carries a five-branch
+   * `Selection` union for an arbitrarily deep tree of sections, media and
+   * levels; the shop selects a book or it selects the shop. `string | null` is
+   * the whole of it, and widening the shared union to hold a slug would put a
+   * bookstore concern in the signature of every gallery component.
+   *
+   * `null` means the shop itself, which is what the column shows when nothing is
+   * picked — never an empty column, and never one full of instructions.
+   * ---------------------------------------------------------------------------
    */
   const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
 
   /*
    * What makes an edit show up on the shelf.
@@ -124,6 +133,26 @@ export function Shop({
    */
   const [nonce, setNonce] = useState(0);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  /*
+   * `body.is-editing` is what narrows the page to leave room for the column —
+   * see `.is-editing` in globals.css. On `body` rather than the article because
+   * the column is `position: fixed` and the shelf is measured against the
+   * viewport.
+   *
+   * Removed on the way out *and* on unmount: navigating away from the shop with
+   * the column open would otherwise leave every other page padded. Selection is
+   * dropped at the same time, so re-entering edit mode starts at the shop rather
+   * than on whichever book was last looked at.
+   */
+  useEffect(() => {
+    if (!editing) {
+      setSelected(null);
+      return;
+    }
+    document.body.classList.add('is-editing');
+    return () => document.body.classList.remove('is-editing');
+  }, [editing]);
   /* Every editing refusal lands here, once, above the shelf. */
   const [editError, setEditError] = useState<string | null>(null);
   /* The documents behind the shelf, for the one control that needs Square's own
@@ -371,6 +400,44 @@ export function Shop({
    */
   const pills = useMemo(() => groupProducts(products, sections), [products, sections]);
 
+  /*
+   * The row as a shopper sees it: every category the parish has made, in order,
+   * whether or not anything is filed under it yet.
+   *
+   * ---------------------------------------------------------------------------
+   * This used to be `pills` itself, gated on there being more than one of them,
+   * and the reasoning was that a lone pill beside "All" is a choice between the
+   * whole shop and the whole shop. True, and beside the point: it meant a
+   * category could be made, be visible in Edit, be offered in every book's
+   * Category menu — and be invisible to visitors, with nothing on the page to
+   * say why. `groupProducts` dropping empty categories compounded it, so filing
+   * every book into one category hid the row again.
+   *
+   * Tommy's instruction is that the row is furniture, not a conditional:
+   * *"always under the search bar"*. So it is drawn from `sections`, exactly as
+   * the editing row is, and the two now agree. A category with nothing in it
+   * shows a `0` and leads to the "Nothing in this category" line below, which is
+   * a truthful answer rather than a missing control.
+   *
+   * The catch-all keeps its old rule — it exists only when something is actually
+   * unfiled, because a "Everything else (0)" pill describes nothing.
+   * ---------------------------------------------------------------------------
+   */
+  const rowPills = useMemo(() => {
+    const countOf = new Map(pills.map((group) => [group.id, group.items.length]));
+    const row = sections.map((section) => ({
+      id: section.id as string | null,
+      label: section.label,
+      count: countOf.get(section.id) ?? 0,
+    }));
+
+    const unfiled = pills.find((group) => group.id === null);
+    if (unfiled) {
+      row.push({ id: null, label: UNSORTED_LABEL, count: unfiled.items.length });
+    }
+    return row;
+  }, [pills, sections]);
+
   /** Which pill is chosen. `undefined` is "All", which is not a section id. */
   const [pill, setPill] = useState<string | null | undefined>(undefined);
 
@@ -409,7 +476,8 @@ export function Shop({
   );
 
   return (
-    <div className="shop-page">
+    <PendingEditsProvider onSaved={refresh} onError={setEditError}>
+      <div className="shop-page">
       {/*
         One row: the name of the shop, the search, and the basket.
         
@@ -479,28 +547,38 @@ export function Shop({
         nothing while editing because Done lives in that feature's side column.
         There is no column here, so the one pill has to say both things.
       */}
-      {admin.ready && admin.canReview && (
+      {admin.ready && (admin.canReview || admin.canEdit) && (
         <div className="shop-tools">
-          <Suspense fallback={null}>
-            <BookstoreAdmin />
-          </Suspense>
-          <button
-            type="button"
-            className={editing ? 'shop-edit is-on' : 'shop-edit'}
-            aria-pressed={editing}
-            onClick={() => setEditing((was) => !was)}
-          >
-            {editing ? 'Done' : 'Edit the shop'}
-          </button>
+          {/*
+            Two permissions, not one, and the corner may hold either alone.
+
+            The drawer *reviews* — orders and figures — and is `canReview`, which
+            the finance grant also opens. Edit *changes what the shop is* and is
+            `canEdit`, which it does not: a treasurer who could rewrite the
+            catalog would be a treasurer whose every save the rules refuse. See
+            the head of useBookstoreAdmin.
+          */}
+          {admin.canReview && (
+            <Suspense fallback={null}>
+              <BookstoreAdmin />
+            </Suspense>
+          )}
+          {admin.canEdit && (
+            <EditToggle
+              editing={editing}
+              onToggle={() => setEditing((was) => !was)}
+              onBlocked={setEditError}
+            />
+          )}
         </div>
       )}
 
       {/*
         The categories, under the search bar.
 
-        Only when there is more than one, because a single pill beside "All" is
-        a choice between the whole shop and the whole shop. `groupProducts`
-        already drops empty categories, so this is the honest test.
+        Always, as soon as the parish has made a category — see `rowPills`. The
+        row used to appear only when two of them held books, which meant a new
+        category was visible in Edit and invisible to everybody else.
 
         While editing, the *same row* is rendered by `CategoryPills` with the
         editing affordances on the pills themselves — drag to reorder, rename in
@@ -523,7 +601,7 @@ export function Shop({
           />
         </Suspense>
       ) : (
-        pills.length > 1 && (
+        rowPills.length > 0 && (
           <div className="shop-filters" role="group" aria-label="Filter by category">
             <button
               type="button"
@@ -535,7 +613,7 @@ export function Shop({
               <span className="shop-filter__n">{products.length}</span>
             </button>
 
-            {pills.map((group) => (
+            {rowPills.map((group) => (
               <button
                 key={group.id ?? '__unfiled'}
                 type="button"
@@ -544,7 +622,7 @@ export function Shop({
                 onClick={() => setPill(group.id)}
               >
                 {group.label || UNSORTED_LABEL}
-                <span className="shop-filter__n">{group.items.length}</span>
+                <span className="shop-filter__n">{group.count}</span>
               </button>
             ))}
           </div>
@@ -552,20 +630,23 @@ export function Shop({
       )}
 
       {/*
-        What this screen can and cannot change, said once.
+        How this screen works, said once.
 
-        The first question a volunteer asks here is why the title and the price
-        are not editable, and the honest answer is short: Square owns them,
-        because the till and the card reader read the same record and the next
-        `npm run catalog` would overwrite anything typed in. Saying it once above
-        the shelf is the right altitude — the same reasoning that keeps the error
-        notice here rather than putting an empty error slot on all eleven cards.
+        It used to answer "why can I not change the title", which is no longer a
+        question — the title is editable now. What a volunteer needs told instead
+        is where the controls went: the cards carry none, and pressing one opens
+        the column. That is not discoverable by looking at a shelf of covers.
+
+        The price and description are still Square's, and still worth naming here
+        rather than only inside the column, for the same reason the error notice
+        lives here: it is the one place that is true of every book, so it does
+        not need repeating on each of them.
       */}
       {editing && (
         <p className="shop-hint">
-          Stock, pictures and categories are edited here. Titles, prices and
-          descriptions come from Square — change those in Square and they arrive
-          on the next sync.
+          Press a book to change it in the panel on the right. Title, price and
+          description go straight to Square; stock, category and pictures are
+          saved with the bar at the foot of the shop.
         </p>
       )}
 
@@ -617,11 +698,20 @@ export function Shop({
             product={product}
             inCart={cart[product.slug] ?? 0}
             editing={editing}
-            doc={docs.get(product.slug)}
-            sections={sections}
-            onChanged={refresh}
-            onError={setEditError}
+            selected={editing && selected === product.slug}
             onOpen={() => {
+              /*
+               * While editing, pressing a card selects it into the column
+               * instead of opening the shopper's enlarged view. Pressing the
+               * selected one again goes back to the shop's own settings, so the
+               * card is a toggle rather than a one-way trip — the column's
+               * "Back to the shop" says the same thing, but the card is where
+               * the hand already is.
+               */
+              if (editing) {
+                setSelected((was) => (was === product.slug ? null : product.slug));
+                return;
+              }
               trackProduct('detail', product.slug);
               setOpen(product);
             }}
@@ -629,13 +719,6 @@ export function Shop({
           />
         ))}
 
-        {/* The last tile, where the next book goes. Inside the `<ul>` so it is a
-            cell of the same grid rather than a control beside it. */}
-        {editing && (
-          <Suspense fallback={null}>
-            <AddProductTile sections={sections} onChanged={refresh} onError={setEditError} />
-          </Suspense>
-        )}
       </ul>
 
       {/*
@@ -1036,7 +1119,97 @@ export function Shop({
           )}
         </Dialog>
       )}
-    </div>
+
+      {/* Fixed to the window, so it never moves the shelf. Renders nothing
+          until an edit is held — see pendingEdits.tsx. */}
+      {/*
+        The editing column, and the bar that sends what it holds.
+
+        Both are fixed and portalled out of the article, so their order here is
+        source order only. The column is `Suspense`-wrapped like every other
+        editing chunk — a volunteer who opens /bookstore to buy a book downloads
+        none of it.
+      */}
+      {editing && (
+        <Suspense fallback={null}>
+          <ShopInspector
+            editing={editing}
+            product={selected ? products.find((p) => p.slug === selected) : undefined}
+            doc={selected ? docs.get(selected) : undefined}
+            sections={sections}
+            groups={pills.map((group) => ({
+              id: group.id ?? '',
+              label: group.label || UNSORTED_LABEL,
+              count: group.items.length,
+            }))}
+            onDone={() => setEditing(false)}
+            onSelect={setSelected}
+            onChanged={refresh}
+            onError={setEditError}
+          >
+            <AddProductTile
+              variant="panel"
+              sections={sections}
+              onChanged={refresh}
+              onError={setEditError}
+            />
+          </ShopInspector>
+        </Suspense>
+      )}
+
+      {editing && <SaveBar />}
+      </div>
+    </PendingEditsProvider>
+  );
+}
+
+/**
+ * "Edit the shop" / "Done", and the one thing Done must not do.
+ *
+ * ---------------------------------------------------------------------------
+ * Its own component because it has to read the held edits, and the provider
+ * wraps what `Shop` *returns* — a `usePendingEdits()` in Shop's own body would
+ * run above the provider and always see an empty set.
+ *
+ * Leaving edit mode with changes still held would throw them away silently, and
+ * the person doing it would have no way of knowing: the cards would simply go
+ * back to the saved numbers. So Done refuses while anything is waiting and says
+ * why. It does not offer to save for you — Save and Discard are both already on
+ * the bar, and quietly choosing one of them on somebody's behalf is how a stock
+ * count nobody agreed to ends up in Square.
+ * ---------------------------------------------------------------------------
+ */
+function EditToggle({
+  editing,
+  onToggle,
+  onBlocked,
+}: {
+  editing: boolean;
+  onToggle: () => void;
+  onBlocked: (message: string) => void;
+}) {
+  const { count } = usePendingEdits();
+  const held = editing && count > 0;
+
+  return (
+    <button
+      type="button"
+      className={editing ? 'shop-edit is-on' : 'shop-edit'}
+      aria-pressed={editing}
+      title={held ? 'Save or discard your changes first' : undefined}
+      onClick={() => {
+        if (held) {
+          onBlocked(
+            `${count} ${count === 1 ? 'book has' : 'books have'} changes that have not been ` +
+              'saved. Save or discard them before leaving edit mode.',
+          );
+          return;
+        }
+        onToggle();
+      }}
+    >
+      {editing ? 'Done' : 'Edit the shop'}
+    </button>
   );
 }
 
@@ -1073,24 +1246,24 @@ function Book({
   product,
   inCart,
   editing,
-  doc,
-  sections,
+  selected,
   onOpen,
   onAdd,
-  onChanged,
-  onError,
 }: {
   product: ShopProduct;
   inCart: number;
-  /** Staff are arranging the shop, so the card carries its own settings. */
+  /**
+   * Staff are arranging the shop.
+   *
+   * The card carried its own settings until 2026-09-01 and now carries none —
+   * pressing it selects the book into the editing column instead. See the note
+   * on `ShopInspector` for why that reversed.
+   */
   editing: boolean;
-  /** The product document, for the picture control. Absent until the read lands. */
-  doc: DocOf<Product> | undefined;
-  sections: BookstoreSection[];
+  /** This is the book the column is describing. */
+  selected: boolean;
   onOpen: () => void;
   onAdd: () => void;
-  onChanged: () => void;
-  onError: (message: string) => void;
 }) {
   const soldOut = product.stockCount === 0;
 
@@ -1136,15 +1309,29 @@ function Book({
   }, [product.slug]);
 
   return (
-    <li className={editing ? 'book is-editing' : 'book'} ref={card}>
+    <li
+      className={`book${editing ? ' is-editing' : ''}${selected ? ' is-selected' : ''}`}
+      ref={card}
+    >
       {/* `title` because the card's own heading is clamped to three lines —
           Square's longest runs to five. The whole of it is in the dialog this
           opens, and here on hover. */}
+      {/*
+        One button, two jobs, told apart by the mode.
+
+        While editing it selects the book into the column; otherwise it opens the
+        enlarged view a shopper sees. Not two buttons: the whole cover is the
+        target either way, and a separate "edit this one" affordance on every
+        card is the thing moving to a column was meant to remove.
+
+        `aria-pressed` only while editing, because only then is it a toggle.
+      */}
       <button
         type="button"
         className="book__open"
         onClick={onOpen}
         title={product.name}
+        {...(editing ? { 'aria-pressed': selected } : {})}
       >
         <span className="book__frame">
           <Cover product={product} className="book__cover" />
@@ -1188,29 +1375,6 @@ function Book({
         )}
       </div>
 
-      {/*
-        The settings, in the space the card already occupies.
-
-        This replaced a properties column down the right of the window — Tommy's
-        judgement on that arrangement was that it was *"way too confusing"*, and
-        that most of it belongs *"in the space that the product already takes up
-        rather than on the side view"*. He is right for this page specifically:
-        the galleries' column exists because a photograph inside a strip inside a
-        section has no room of its own to hold anything, and a book on a shelf
-        has a whole card. Nothing here has to be looked up in a panel to know
-        which book it belongs to.
-      */}
-      {editing && (
-        <Suspense fallback={null}>
-          <BookControls
-            product={product}
-            doc={doc}
-            sections={sections}
-            onChanged={onChanged}
-            onError={onError}
-          />
-        </Suspense>
-      )}
     </li>
   );
 }
@@ -1444,30 +1608,14 @@ function Detail({
           )}
 
           {/*
-            Arranging the shop, not buying from it.
+            This screen used to become the enlarged settings while Edit was on.
 
-            The buybox is the shopper's question — a quantity and Add to basket —
-            and nobody editing the catalog is also purchasing from it. So while
-            Edit is on this screen becomes the enlarged settings for this one
-            book: the pictures at a size where they can be judged rather than
-            merely counted, and Remove as a word beside each one.
-
-            The title, price and description above stay exactly as they are.
-            Square owns all three, and seeing them is how somebody notices one is
-            wrong — which is a thing to fix in Square, and the panel says so.
+            It cannot any more, and the branch that did it is gone rather than
+            left unreachable: while editing, pressing a card selects the book
+            into the column instead of opening this dialog, so there is no way
+            in. The settings it held are the same `ProductSettings` the column
+            renders — one editing surface, which is the point of the column.
           */}
-          {editing ? (
-            <Suspense fallback={null}>
-              <ProductSettings
-                product={product}
-                doc={doc}
-                sections={sections}
-                onChanged={onChanged}
-                onError={onError}
-                onRemoved={onClose}
-              />
-            </Suspense>
-          ) : (
           <div className="buybox">
             <p className="buybox__price">
               {money(product.amount, product.currency)}
@@ -1527,7 +1675,6 @@ function Detail({
               <p className="buybox__in">{inCart} already in your basket</p>
             )}
           </div>
-          )}
         </div>
       </div>
 

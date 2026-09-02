@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
+  ACCOUNT_SUBJECT_VALUE,
   applyCalendarDetails,
   groupByDay,
-  hasRole,
   mergeCalendarSources,
   type CalendarDetail,
   type CalendarOccurrence,
 } from '@spsm/shared';
-import { getSnapshot, getServerSnapshot, subscribe } from '@/lib/authStore';
+import { getSnapshot, getServerSnapshot, signIn, subscribe } from '@/lib/authStore';
+import { useScreenGrants } from '@/lib/screenGrants';
 import {
   getBulletinOccurrences,
   getSchedule,
@@ -21,7 +22,23 @@ import { AddEntry } from './AddEntry';
 import { EventDialog } from './EventDialog';
 import { rangeFor, step, todayInParish, type CalendarView } from './range';
 import { WeekView } from './WeekView';
+import { ScheduleSkeleton } from './Skeleton';
 import { MonthView } from './MonthView';
+
+/**
+ * Where to send somebody whose sign-in will not work.
+ *
+ * The church office's own address and telephone number, read from
+ * `config/parish` by the page and handed down — not written out here, so that
+ * correcting either is an edit staff can make and not a deploy. Either may be
+ * empty on a project nobody has filled that document in for, and the help at
+ * the foot of the page drops whichever is missing rather than printing a blank
+ * line or an empty `mailto:`.
+ */
+export interface CalendarOffice {
+  email: string;
+  phone: string;
+}
 
 /**
  * The church calendar: this week, or this month.
@@ -59,7 +76,13 @@ import { MonthView } from './MonthView';
  * *screen*. Nobody signs in to see a page; they sign in to see more of this one.
  * ---------------------------------------------------------------------------
  */
-export function ChurchCalendar({ features }: { features: CalendarOccurrence[] }) {
+export function ChurchCalendar({
+  features,
+  office,
+}: {
+  features: CalendarOccurrence[];
+  office: CalendarOffice;
+}) {
   /*
    * Opens on the month.
    *
@@ -96,14 +119,49 @@ export function ChurchCalendar({ features }: { features: CalendarOccurrence[] })
   /* ---- who is reading ---------------------------------------------------- */
 
   const session = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const isServant = session.kind === 'signed-in' && hasRole(session.claims, 'servant');
   /*
+   * The servants' rota is shown to anybody signed in, and that is the model
+   * rather than a shortcut. This asked `hasRole(session.claims, 'servant')`
+   * back when a first sign-in granted that role automatically — so it always
+   * meant "signed in", and it now says so. `servantEvents` in firestore.rules
+   * is `signedIn()` for the same reason: sign-in is Microsoft-only and
+   * restricted to the parish's Entra directory, so having a session is being on
+   * the rota.
+   */
+  const isServant = session.kind === 'signed-in';
+  /**
+   * Whether to offer sign-in at all — and `restoring` counts as "do not".
+   *
+   * A returning servant's first client render is `restoring` while Firebase
+   * checks the session hint, and drawing the offer through that would flash
+   * "sign in to see the servants schedule" at somebody who is already signed in
+   * and about to be shown it. The prerendered HTML says `signed-out`, so this
+   * does appear for a fraction of a second before hydration on a returning
+   * servant's page load; that is the same trade the masthead's own sign-in
+   * control makes, and it is the right way round — the signed-out majority get
+   * the honest answer painted immediately.
+   */
+  const signedOut = session.kind !== 'signed-in' && session.kind !== 'restoring';
+  /*
+   * Whether to draw the edit controls — the `events` grant, not the role.
+   *
+   * This asked `hasRole(session.claims, 'staff')`, which matched the rules on
+   * `scheduleEntries` and `calendarDetails` at the time. Both are now
+   * `hasScreen('events')`, so the role check became the stricter-than-policy
+   * case: somebody given the parish calendar at /access would have been served
+   * every write by the rules and shown no control to make one with.
+   *
+   * `useScreenGrants` answers from the token for a superadmin and reads the
+   * member document only for everybody else, so a signed-out visitor still
+   * triggers nothing.
+   *
    * Not a security boundary, and worth saying so where somebody will read it:
    * this decides whether the edit controls are *drawn*. `firestore.rules` is
    * what decides whether a write lands, and a member who edits this check out
    * of their own browser still cannot save anything.
    */
-  const isStaff = session.kind === 'signed-in' && hasRole(session.claims, 'staff');
+  const { canAdmin: canAdminScreenHere } = useScreenGrants();
+  const mayEditCalendar = canAdminScreenHere('events');
 
   /**
    * Whether to ask for the servants calendar. On by default for a servant.
@@ -300,9 +358,10 @@ export function ChurchCalendar({ features }: { features: CalendarOccurrence[] })
   const includesServants = result?.kind === 'ok' && result.feed.includesServants;
 
   /** The occurrence the dialog is showing, and which of its days was clicked. */
-  const [opened, setOpened] = useState<{ occurrence: CalendarOccurrence; day: string } | null>(
-    null,
-  );
+  const [opened, setOpened] = useState<{
+    occurrence: CalendarOccurrence;
+    day: string;
+  } | null>(null);
 
   /*
    * Re-read from `byDay` rather than kept as the object that was clicked, so
@@ -316,155 +375,321 @@ export function ChurchCalendar({ features }: { features: CalendarOccurrence[] })
         opened.occurrence);
 
   return (
-    <section className="schedule" aria-busy={pending > 0}>
-      <header className="schedule__bar">
-        <div className="schedule__views" role="group" aria-label="Calendar view">
-          <ViewButton current={view} value="week" onPick={setView}>
-            Week
-          </ViewButton>
-          <ViewButton current={view} value="month" onPick={setView}>
-            Month
-          </ViewButton>
-        </div>
+    <>
+      <section className="schedule" aria-busy={pending > 0}>
+        <header className="schedule__bar">
+          <div className="schedule__views" role="group" aria-label="Calendar view">
+            <ViewButton current={view} value="week" onPick={setView}>
+              Week
+            </ViewButton>
+            <ViewButton current={view} value="month" onPick={setView}>
+              Month
+            </ViewButton>
+          </div>
 
-        <div className="schedule__nav">
-          <button
-            type="button"
-            className="schedule__step"
-            onClick={() => setAnchor((at) => (at ? step(view, at, -1) : at))}
-            disabled={anchor === null}
-            aria-label={view === 'week' ? 'Previous week' : 'Previous month'}
-          >
-            <Chevron direction="left" />
-          </button>
+          <div className="schedule__nav">
+            <button
+              type="button"
+              className="schedule__step"
+              onClick={() => setAnchor((at) => (at ? step(view, at, -1) : at))}
+              disabled={anchor === null}
+              aria-label={view === 'week' ? 'Previous week' : 'Previous month'}
+            >
+              <Chevron direction="left" />
+            </button>
 
-          {/*
-            An `aria-live` region, because the heading is the only thing that
-            says the view moved. A sighted reader sees the whole grid change;
-            somebody on a screen reader pressed a button labelled "next week"
-            and needs to hear which week they landed on.
-          */}
-          <h2 className="schedule__range" aria-live="polite">
-            {range ? range.label : ' '}
-          </h2>
+            {/*
+              An `aria-live` region, because the heading is the only thing that
+              says the view moved. A sighted reader sees the whole grid change;
+              somebody on a screen reader pressed a button labelled "next week"
+              and needs to hear which week they landed on.
+            */}
+            <h2 className="schedule__range" aria-live="polite">
+              {range ? range.label : ' '}
+            </h2>
 
-          <button
-            type="button"
-            className="schedule__step"
-            onClick={() => setAnchor((at) => (at ? step(view, at, 1) : at))}
-            disabled={anchor === null}
-            aria-label={view === 'week' ? 'Next week' : 'Next month'}
-          >
-            <Chevron direction="right" />
-          </button>
+            <button
+              type="button"
+              className="schedule__step"
+              onClick={() => setAnchor((at) => (at ? step(view, at, 1) : at))}
+              disabled={anchor === null}
+              aria-label={view === 'week' ? 'Next week' : 'Next month'}
+            >
+              <Chevron direction="right" />
+            </button>
 
-          <button
-            type="button"
-            className="schedule__today"
-            onClick={() => {
-              setAnchor(todayInParish());
-              setRecentre((count) => count + 1);
-            }}
-            /*
-             * In the month view this is disabled once the month containing
-             * today is on screen, because there is nothing further for it to do.
-             *
-             * In the week view it stays live even then, and that is the whole
-             * point: the wheel can be scrolled two days off today while today
-             * is still in the range, and the old rule disabled the one control
-             * that brings it back. Somebody reading Wednesday then has no way
-             * to return to today except by scrolling and counting.
-             */
-            disabled={
-              today === null ||
-              (view === 'month' && range !== null && today >= range.from && today <= range.to)
-            }
-          >
-            Today
-          </button>
-        </div>
-      </header>
+            <button
+              type="button"
+              className="schedule__today"
+              onClick={() => {
+                setAnchor(todayInParish());
+                setRecentre((count) => count + 1);
+              }}
+              /*
+               * In the month view this is disabled once the month containing
+               * today is on screen, because there is nothing further for it to do.
+               *
+               * In the week view it stays live even then, and that is the whole
+               * point: the wheel can be scrolled two days off today while today
+               * is still in the range, and the old rule disabled the one control
+               * that brings it back. Somebody reading Wednesday then has no way
+               * to return to today except by scrolling and counting.
+               */
+              disabled={
+                today === null ||
+                (view === 'month' && range !== null && today >= range.from && today <= range.to)
+              }
+            >
+              Today
+            </button>
+          </div>
+        </header>
 
-      {deniedNote && (
-        <div className="notice notice--alarm" role="alert">
-          <h3>The servants schedule was not available</h3>
-          <p>{deniedNote}</p>
-          <p className="note">
-            The rest of the calendar below is the parish schedule, which is unaffected.
-          </p>
-        </div>
-      )}
-
-      <Body
-        view={view}
-        range={range}
-        byDay={byDay}
-        today={today}
-        result={result}
-        pending={pending > 0}
-        recentre={recentre}
-        onOpen={(occurrence, day) => setOpened({ occurrence, day })}
-      />
-
-      {/*
-        The servants switch sits at the foot rather than above the calendar.
-
-        It is a control a few dozen people touch once, and it was the first
-        thing between the stepper and the week — a band of blue explaining a
-        distinction to somebody who had come to find out when the Liturgy is.
-        Down here it is still the first thing a servant looks for, because it is
-        the only blue on the page.
-      */}
-      <footer className="schedule__foot">
-        <Legend showServants={includesServants} />
-        {isServant && (
-          <div className="schedule__servants">
-            <label className="schedule__switch">
-              <input
-                type="checkbox"
-                checked={wantServants}
-                onChange={(event) => {
-                  setDeniedNote(null);
-                  setWantServants(event.target.checked);
-                }}
-              />
-              <span>Include the servants schedule</span>
-            </label>
-            <p className="schedule__servants-note">
-              {includesServants
-                ? 'Signed in with your church account, so the servants entries are in the calendar above and marked.'
-                : wantServants
-                  ? 'Loading the servants entries…'
-                  : 'Showing only what everyone else sees.'}
+        {deniedNote && (
+          <div className="notice notice--alarm" role="alert">
+            <h3>The servants schedule was not available</h3>
+            <p>{deniedNote}</p>
+            <p className="note">
+              The rest of the calendar below is the parish schedule, which is unaffected.
             </p>
           </div>
         )}
 
+        <Body
+          view={view}
+          range={range}
+          byDay={byDay}
+          today={today}
+          result={result}
+          recentre={recentre}
+          onOpen={(occurrence, day) => setOpened({ occurrence, day })}
+        />
+
         {/*
-          The add control sits with the calendar rather than on a screen of its
-          own — the site's settled pattern, and it earns it here: whoever is
-          adding a service is looking at the week they are adding it to.
+          The servants switch sits at the foot rather than above the calendar.
 
-          It defaults to the day in view, so adding something to the week you
-          are reading is one field shorter.
+          It is a control a few dozen people touch once, and it was the first
+          thing between the stepper and the week — a band of blue explaining a
+          distinction to somebody who had come to find out when the Liturgy is.
+          Down here it is still the first thing a servant looks for, because it is
+          the only blue on the page.
         */}
-        {isStaff && (
-          <AddEntry
-            defaultDay={today ?? range?.from ?? ''}
-            onAdded={() => setReload((count) => count + 1)}
-          />
-        )}
-      </footer>
+        <footer className="schedule__foot">
+          <Legend showServants={includesServants} />
+          {isServant && (
+            <div className="schedule__servants">
+              <label className="schedule__switch">
+                <input
+                  type="checkbox"
+                  checked={wantServants}
+                  onChange={(event) => {
+                    setDeniedNote(null);
+                    setWantServants(event.target.checked);
+                  }}
+                />
+                <span>Include the servants schedule</span>
+              </label>
+              <p className="schedule__servants-note">
+                {includesServants
+                  ? 'Signed in with your church account, so the servants entries are in the calendar above and marked.'
+                  : wantServants
+                    ? 'Loading the servants entries…'
+                    : 'Showing only what everyone else sees.'}
+              </p>
+            </div>
+          )}
 
-      <EventDialog
-        occurrence={openedNow}
-        day={opened?.day ?? null}
-        detail={openedNow ? (layers.details.get(openedNow.id) ?? null) : null}
-        mayEdit={isStaff}
-        onClose={() => setOpened(null)}
-        onChanged={() => setReload((count) => count + 1)}
-      />
-    </section>
+          {/*
+            The signed-out half of the servants switch: one line, in the same
+            place the switch itself occupies for somebody who has signed in.
+
+            Deliberately not a band, not a card, and not azure. A visitor who
+            came to find out when the Liturgy is should be able to read past
+            this without it having interrupted them — the servants schedule is
+            not something the church is selling, it is a thing a few dozen
+            people need and everybody else does not. The offer is a sentence and
+            a link, and the explanation of *how* is further down the page, where
+            it interrupts nobody.
+          */}
+          {signedOut && (
+            <p className="schedule__signin">
+              Serving?{' '}
+              <button
+                type="button"
+                className="schedule__signin-link"
+                onClick={() => void signIn()}
+                disabled={session.kind === 'signing-in'}
+              >
+                {session.kind === 'signing-in' ? 'Opening Microsoft…' : 'Sign in'}
+              </button>{' '}
+              with your church account and the servants schedule appears in the calendar above.
+            </p>
+          )}
+
+          {/*
+            The add control sits with the calendar rather than on a screen of
+            its own — the site's settled pattern, and it earns it here: whoever
+            is adding a service is looking at the week they are adding it to.
+
+            It defaults to the day in view, so adding something to the week you
+            are reading is one field shorter.
+          */}
+          {mayEditCalendar && (
+            <AddEntry
+              defaultDay={today ?? range?.from ?? ''}
+              onAdded={() => setReload((count) => count + 1)}
+            />
+          )}
+        </footer>
+
+        <EventDialog
+          occurrence={openedNow}
+          day={opened?.day ?? null}
+          detail={openedNow ? (layers.details.get(openedNow.id) ?? null) : null}
+          mayEdit={mayEditCalendar}
+          onClose={() => setOpened(null)}
+          onChanged={() => setReload((count) => count + 1)}
+        />
+      </section>
+
+      {signedOut && <SignInHelp office={office} busy={session.kind === 'signing-in'} />}
+    </>
+  );
+}
+
+/**
+ * How to sign in, what to do when it refuses you, and how to be given an
+ * account — below the calendar, and only for somebody who is not signed in.
+ *
+ * ---------------------------------------------------------------------------
+ * Why this is on /calendar and not a page of its own
+ *
+ * Because the question is asked here. The servants schedule is part of this
+ * calendar rather than a screen behind a door — `ChurchCalendar`'s own comment
+ * explains why — so "how do I see the rota" is a question somebody has while
+ * looking at the rota's page, and answering it on a separate route means the
+ * answer is one more thing to go and find. It also means the line in the footer
+ * above can be one sentence: everything it does not say is directly below.
+ *
+ * Three columns, in the order the trouble happens: how it works, what to do
+ * when it does not, and what to do if you were never given an account. The
+ * third is the one with a form behind it, and it is deliberately last — most
+ * people who read this have an account and have forgotten which button opens
+ * it.
+ *
+ * Hidden entirely from anybody signed in. A servant who is already looking at
+ * their own rota does not need instructions for getting to it, and the church
+ * office's number is on /contact where it belongs for every other purpose.
+ * ---------------------------------------------------------------------------
+ */
+function SignInHelp({ office, busy }: { office: CalendarOffice; busy: boolean }) {
+  return (
+    <aside className="signin-help" aria-labelledby="signin-help-heading">
+      <h2 className="signin-help__title" id="signin-help-heading">
+        Signing in
+      </h2>
+
+      <div className="signin-help__cols">
+        <section className="signin-help__col">
+          <h3>How to sign in</h3>
+          <ol className="signin-help__steps">
+            <li>
+              Press the circle at the top right of any page — on a phone it is at the foot of
+              the menu.
+            </li>
+            <li>
+              Microsoft asks for your church account, the address ending{' '}
+              <span className="signin-help__nowrap">@spsmwayland.org</span>, and its password.
+            </li>
+            <li>
+              You are returned here, and the servants entries are in the calendar above, marked,
+              with a switch at its foot to set them aside again.
+            </li>
+          </ol>
+          <p>
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={() => void signIn()}
+              disabled={busy}
+            >
+              {busy ? 'Opening Microsoft…' : 'Sign in with Microsoft'}
+            </button>
+          </p>
+        </section>
+
+        <section className="signin-help__col">
+          <h3>If it will not let you in</h3>
+          {/*
+            The refusal this actually produces, named. Sign-in is restricted to
+            the church's own Microsoft directory — see the single-tenant note in
+            docs/api-keys.md — so a personal Outlook or Hotmail address does not
+            fail because something is broken, it fails because it is not a church
+            account, and somebody who is told that stops trying to fix it.
+          */}
+          <p>
+            A personal Microsoft, Outlook, or Hotmail address is refused: only accounts in the
+            church&rsquo;s own directory can sign in. Check that you are using your church
+            address, and that you are not signed in to a personal Microsoft account in the same
+            browser.
+          </p>
+          <p>
+            If it still refuses you, the church office can look at the account.
+            <OfficeContacts office={office} />
+          </p>
+        </section>
+
+        <section className="signin-help__col">
+          <h3>If you have no church account</h3>
+          <p>
+            Church accounts are given to those serving. Ask the office for one and say which
+            service you serve in; the request reaches them with everything else sent from this
+            site.
+          </p>
+          <p>
+            {/*
+              An ordinary link, not a form of its own. The contact form already
+              carries the office's notification address, its confirmation email,
+              and a row in the submissions table — `?about=` only arrives there
+              with the subject already chosen, so these are one line in that
+              table rather than a pile of "A general question".
+            */}
+            <a
+              className="button"
+              href={`/contact?about=${ACCOUNT_SUBJECT_VALUE}#write-heading`}
+            >
+              Ask for a church account
+            </a>
+          </p>
+        </section>
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * The office's address and telephone number, as a sentence, skipping whichever
+ * of the two `config/parish` does not have. Neither is written out in this
+ * codebase; both are staff-editable, and a blank field prints nothing at all
+ * rather than "Write to ." or a `mailto:` that opens an empty message.
+ */
+function OfficeContacts({ office }: { office: CalendarOffice }) {
+  return (
+    <>
+      {office.email && (
+        <>
+          {' '}
+          Write to <a href={`mailto:${office.email}`}>{office.email}</a>.
+        </>
+      )}
+      {office.phone && (
+        <>
+          {' '}
+          {/* Punctuation stripped for the dialler, exactly as ContactDetails does it. */}
+          or call <a href={`tel:${office.phone.replace(/[^\d+]/g, '')}`}>{office.phone}</a>.
+        </>
+      )}
+    </>
   );
 }
 
@@ -482,7 +707,6 @@ function Body({
   byDay,
   today,
   result,
-  pending,
   recentre,
   onOpen,
 }: {
@@ -491,16 +715,41 @@ function Body({
   byDay: Map<string, CalendarOccurrence[]>;
   today: string | null;
   result: ScheduleResult | null;
-  pending: boolean;
   recentre: number;
   onOpen: (occurrence: CalendarOccurrence, day: string) => void;
 }) {
+  /*
+   * Both of the waiting states are the grid, drawn at its real size, with the
+   * schedule shimmering in it — see Skeleton.tsx. They differ only in how much
+   * of it we can fill in honestly: without a range there are no dates yet.
+   */
   if (!range) {
-    return <p className="schedule__loading">Working out what week it is…</p>;
+    return (
+      <ScheduleSkeleton view={view} range={null} today={null} label="Working out what week it is…" />
+    );
   }
 
-  if (result === null && pending) {
-    return <p className="schedule__loading">Loading the schedule…</p>;
+  /*
+   * `result === null` on its own, and the `&& pending` that used to be here was
+   * a real bug rather than a redundant guard.
+   *
+   * `pending` is incremented inside the fetch effect, and an effect runs after
+   * the render that scheduled it — so on the two renders between `anchor`
+   * landing and that effect firing, the range is set, no schedule has arrived,
+   * and `pending` is still 0. The old condition let those two fall through to
+   * the grid, which in the month view draws a complete, correct-looking month
+   * with almost nothing in it. The reader got the finished calendar first and
+   * the skeleton second, which reads as a flicker and not as loading — it is
+   * why the month view appeared to have no skeleton at all.
+   *
+   * No schedule is no schedule, whether or not a request has been counted yet.
+   * Stepping to another week is unaffected: `result` is non-null by then, and
+   * the grid keeps rendering while the next feed is in flight.
+   */
+  if (result === null) {
+    return (
+      <ScheduleSkeleton view={view} range={range} today={today} label="Loading the schedule…" />
+    );
   }
 
   if (result?.kind === 'unset') {

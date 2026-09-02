@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { aboutHref, aboutPage } from '@/features/content';
 import {
   FeastList,
@@ -9,6 +8,7 @@ import {
   SaintFigure,
   SaintTile,
 } from '@/features/saints';
+import { MoreOfAbout } from '@/components/MoreOfAbout';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionHeading } from '@/components/SectionHeading';
 
@@ -324,21 +324,24 @@ export default function PatronSaintsPage() {
       </section>
 
       {/*
-        The page closes on the link back, not on a band of licences. The credits
-        are still in the document — `PictureCredits` renders them
+        The credits are still in the document — `PictureCredits` renders them
         `visually-hidden`, which is the whole of what "hide the photo credits"
         can mean while four of the seven pictures are CC BY or CC BY-SA. See the
         note on that component before deleting anything here.
-      */}
-      <section className={band()} aria-label="Picture credits">
-        <div className="wrap saints-close">
-          <PictureCredits />
 
-          <p className="about-page__back">
-            <Link href="/about">All of About</Link>
-          </p>
-        </div>
-      </section>
+        They are no longer wrapped in a band of their own. That band existed to
+        stop the "All of About" link sitting hard against the iconography grid;
+        with the link gone into `MoreOfAbout` below, a band holding nothing but
+        hidden text would render as an empty strip of paper.
+      */}
+      <PictureCredits />
+
+      {/*
+        The foot: the other four parts of About, and the way back to the index.
+        It replaced a bare link — see `MoreOfAbout` for why a correct link still
+        looked wrong there.
+      */}
+      <MoreOfAbout current="patron-saints" />
     </>
   );
 }

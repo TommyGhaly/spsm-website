@@ -65,18 +65,40 @@ const nextConfig = {
 };
 
 /*
- * Dev only: a way for the checkout POST to reach the Cloud Function.
+ * Dev only: a way for `/api/*` to reach a backend at all.
  *
- * `/api/square/checkout` is not a route in this app and cannot be — the site is
- * a static export, so there are no route handlers at all. In production that
- * path is a Firebase Hosting rewrite onto the `squareCheckout` Function (see
- * firebase.json). The Next dev server knows nothing about that rewrite, so
- * paying on the dev server landed on Next's own 404 HTML page.
+ * None of `/api/*` is a route in this app and none can be — the site is a
+ * static export, so there are no route handlers. In production every one of
+ * these paths is a Firebase Hosting rewrite onto a Cloud Function (see
+ * firebase.json). The Next dev server knows nothing about those rewrites, so
+ * without something here a catalog edit or a checkout POST lands on Next's own
+ * 404 page.
  *
- * This proxies the same path to the Functions emulator, so the whole flow —
- * fill the card, press Pay, get an order id — can be exercised locally. It
- * needs `npm run dev:backend` in another terminal; without it the proxy has
- * nothing to talk to and CardPayment says checkout is unreachable.
+ * ---------------------------------------------------------------------------
+ * **The default is the deployed site, not an emulator.**
+ *
+ * `npm run dev` reads the *real* Firestore project, so `products` holds real
+ * Square catalog ids. A local emulator is therefore only ever right if its
+ * Square environment, its access token and its secrets all happen to match
+ * production — and on 2026-09-01 they did not, in three separate ways at once.
+ * The failure that produced was not legible: a dead or misconfigured emulator
+ * makes this proxy answer `500 Internal Server Error` as plain text, the client
+ * cannot parse it as JSON, and every edit reports the generic "That did not
+ * work." with nothing in any log to explain it.
+ *
+ * Proxying to the deployed site instead means the dev server exercises the same
+ * Functions, the same secrets and the same Square account the public site does.
+ * There is one backend, and it is the real one.
+ *
+ * A single `/api/:path*` pass-through rather than a list, because Hosting
+ * already holds the routing table. The old per-endpoint list had to be kept in
+ * step with firebase.json by hand and its own comment said so; a pass-through
+ * cannot drift.
+ *
+ * Set `FUNCTIONS_EMULATOR_ORIGIN` to go back to a local emulator — needed if
+ * you are working on a Function that is not deployed yet, `refreshFinanceStats`
+ * and `calendar` being the current examples. Everything else should leave it
+ * unset.
  *
  * **Attached here rather than set to `[]` in the config object, and that is not
  * a style choice.** `output: 'export'` writes files to disk with no server to
@@ -85,11 +107,14 @@ const nextConfig = {
  * standing warning on every production build is one people learn to scroll
  * past. Defining the key only in development means the export build never sees
  * it, and the warning is gone rather than tolerated.
+ * ---------------------------------------------------------------------------
  */
 if (process.env.NODE_ENV === 'development') {
-  const origin = process.env.FUNCTIONS_EMULATOR_ORIGIN ?? 'http://127.0.0.1:5001';
+  const origin = process.env.FUNCTIONS_EMULATOR_ORIGIN;
   const project = process.env.GCLOUD_PROJECT ?? 'spsm-database';
   const region = process.env.FUNCTIONS_REGION ?? 'us-central1';
+  const deployed = process.env.DEV_API_ORIGIN ?? 'https://spsm-database.web.app';
+
 
   /*
    * Listed one by one rather than as `/api/:fn`, because a path segment and its
@@ -98,37 +123,32 @@ if (process.env.NODE_ENV === 'development') {
    * pattern built `squarecheckout` and the emulator rejected it. These are a
    * mirror of the rewrites in firebase.json; add to both together.
    */
-  nextConfig.rewrites = async () => ({
-    /*
-     * `/forms/<slug>` → the `/form` shell, mirroring the Hosting rewrite in
-     * firebase.json. Without it every individual form is a 404 under `next dev`,
-     * because there is no `app/forms/[slug]` route — deliberately; see
-     * `app/form/page.tsx`.
-     *
-     * `beforeFiles`, not `afterFiles`, and it matters: `/forms` is a real route
-     * in this app, and an `afterFiles` rewrite runs only when nothing matched,
-     * which is fine — but `beforeFiles` keeps this next to the reasoning rather
-     * than depending on the order the app's own routes happen to resolve in.
-     * The pattern has one segment, so `/forms` itself never matches and the hub
-     * is untouched.
-     */
-    beforeFiles: [{ source: '/forms/:slug', destination: '/form' }],
-    afterFiles: [
-      /*
-       * The forms endpoints. `submit` is the one every form posts to; the two
-       * Breeze ones are staff-only and inert until BREEZE_API_KEY is set.
-       */
+  /*
+   * One pass-through to the deployed site, or the explicit per-function list
+   * when an emulator origin is set. `fallback` below is unaffected either way —
+   * those are the app's own routes, not a backend.
+   */
+  const apiRewrites = !origin
+    ? [{ source: '/api/:path*', destination: `${deployed}/api/:path*` }]
+    : [
+      /* The forms endpoint. Every native form posts to it. */
       {
         source: '/api/forms/submit',
         destination: `${origin}/${project}/${region}/formSubmit`,
       },
+      /* A servant's own camp sign-up. Unauthenticated, like the form endpoint. */
       {
-        source: '/api/forms/breeze-list',
-        destination: `${origin}/${project}/${region}/breezeListForms`,
+        source: '/api/camp/servant-request',
+        destination: `${origin}/${project}/${region}/campServantRequest`,
       },
+      /*
+       * A servant deleting their own account. Authenticated, unlike the two
+       * above — but it needs listing here for the same reason they do: the path
+       * segment and the Function name are different strings.
+       */
       {
-        source: '/api/forms/breeze-import',
-        destination: `${origin}/${project}/${region}/breezeImportForm`,
+        source: '/api/account/delete',
+        destination: `${origin}/${project}/${region}/deleteOwnAccount`,
       },
       {
         source: '/api/square/checkout',
@@ -180,6 +200,16 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/refreshBookstoreStats`,
       },
       /*
+       * Recomputing the camp and form money. Not under /api/square, because
+       * none of it goes near Square — the camp is paid in cash and checks at a
+       * desk, and a form's total is Square's only when the form charged for
+       * something.
+       */
+      {
+        source: '/api/finance/refresh',
+        destination: `${origin}/${project}/${region}/refreshFinanceStats`,
+      },
+      /*
        * The homepage schedule's live read. Same arrangement as the two above: a
        * Hosting rewrite in production, and nothing at all on the dev server
        * without this — which means the bulletin section silently never refreshes
@@ -208,7 +238,10 @@ if (process.env.NODE_ENV === 'development') {
         source: '/api/calendar',
         destination: `${origin}/${project}/${region}/calendar`,
       },
-    ],
+    ];
+
+  nextConfig.rewrites = async () => ({
+    afterFiles: apiRewrites,
     /*
      * Program galleries, in development only.
      *
@@ -234,6 +267,30 @@ if (process.env.NODE_ENV === 'development') {
       {
         source: '/events/:path*',
         destination: '/gallery',
+      },
+      /*
+       * `/forms/<slug>` → the `/form` shell, mirroring the Hosting rewrite in
+       * firebase.json. Without it every individual form is a 404 under
+       * `next dev`, because there is no `app/forms/[slug]` route —
+       * deliberately; see `app/form/page.tsx`.
+       *
+       * **This used to be a `beforeFiles` rewrite and had to move.** The note
+       * that lived here said `beforeFiles` was chosen to keep the rule beside
+       * its reasoning "rather than depending on the order the app's own routes
+       * happen to resolve in". That order turned out to be the whole point:
+       * `app/forms/summer-camp/page.tsx` is now a real route, and a
+       * `beforeFiles` rewrite runs ahead of the filesystem, so it swallowed
+       * that page under `next dev` while production served it perfectly —
+       * Hosting checks exact files *before* rewrites. A split where only the
+       * dev server is wrong is the worst kind there is.
+       *
+       * `fallback` is applied after static assets and dynamic routes and before
+       * the 404, which is as close as Next gets to Hosting's own order. Same
+       * reasoning as the `/events` entry above, and now the same mechanism.
+       */
+      {
+        source: '/forms/:slug',
+        destination: '/form',
       },
     ],
   });

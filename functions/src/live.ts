@@ -46,6 +46,7 @@
  * and running dry before lunch.
  */
 import { onRequest } from 'firebase-functions/v2/https';
+import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
@@ -75,8 +76,9 @@ const YOUTUBE_API_KEY = defineSecret('YOUTUBE_API_KEY');
  * It is set to this rather than left absent because `firebase deploy` resolves
  * every secret declared anywhere in functions/src during discovery, so one
  * missing secret blocks every deploy — including an unrelated
- * `--only functions:<other>`. Same convention, same reason, as `NO_KEY_YET` in
- * forms/breeze.ts; keep the two spellings identical.
+ * `--only functions:<other>`. This is now the only user of the convention —
+ * forms/breeze.ts held the other one and went with the Breeze importer on
+ * 2026-09-01 — so if a second appears, keep the two spellings identical.
  */
 const NO_KEY_YET = 'unset';
 
@@ -108,6 +110,7 @@ const TIMEOUT_MS = 8_000;
 export const live = onRequest(
   {
     secrets: [YOUTUBE_API_KEY],
+    maxInstances: CAPS.live,
     // Same origin through the Hosting rewrite. Nothing here is secret, but
     // there is no reason for another site to spend the parish's quota.
     cors: false,
@@ -117,6 +120,18 @@ export const live = onRequest(
       res.status(405).json({ error: 'This endpoint is read-only; use GET.' });
       return;
     }
+
+    /*
+     * The quota this protects is a real one and it is daily.
+     *
+     * A YouTube API key gets 10,000 units a day and `videos.list` spends one per
+     * call, so a loop pointed at this endpoint could exhaust the parish's whole
+     * allowance before anybody noticed — and the visible symptom would be the
+     * player saying it could not find out whether there was a liturgy, on a
+     * Sunday morning. Same generous budget as the bulletin, and for the same
+     * reason: one address is one congregation.
+     */
+    if (throttled(req, res, { bucket: 'live', max: BUDGETS.live })) return;
 
     const config = await livestream();
 

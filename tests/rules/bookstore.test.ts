@@ -16,11 +16,20 @@ import {
   deleteDoc,
   Timestamp,
 } from 'firebase/firestore';
-import { createTestEnv, asAnon, asMember, asStaff } from './helpers.js';
+import { createTestEnv, asAnon, asSignedIn } from './helpers.js';
 
-/** A bookstore volunteer: `member` plus the group, which is the real shape. */
+/**
+ * Whoever runs the shop: signed in, with the Bookstore area from /access.
+ *
+ * There were two of these — `asBookstore`, a `member` holding an
+ * `inGroup('bookstore')` claim, and `asStaff`, who reached the shop through the
+ * tier. They named the same people through two different doors, and every rule
+ * that read them said so with an `||`. One door now, and the grant is a flag on
+ * a member document rather than a claim, so the fixture is seeded below rather
+ * than passed here.
+ */
 const asBookstore = (env: RulesTestEnvironment, uid = 'bookstore-1') =>
-  env.authenticatedContext(uid, { role: 'member', groups: ['bookstore'] });
+  env.authenticatedContext(uid, {});
 
 /**
  * The bookstore's two new collections, against a real emulator.
@@ -39,11 +48,25 @@ const asBookstore = (env: RulesTestEnvironment, uid = 'bookstore-1') =>
 let env: RulesTestEnvironment;
 
 beforeAll(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv('bookstore');
   await env.clearFirestore();
 
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
+
+    /*
+     * The grant. `hasScreen('bookstore')` reads this document on every check,
+     * so without it `asBookstore` is an ordinary signed-in account and every
+     * `assertSucceeds` below fails — which is the shape of the whole model now:
+     * a claim proves who you are and a document says what you may do.
+     */
+    await setDoc(doc(db, 'members/bookstore-1'), {
+      displayName: 'bookstore-1',
+      email: 'shop@spsmwayland.org',
+      screenAdmin: { bookstore: true },
+      programAdmin: { programs: [], events: [] },
+    });
+
     await setDoc(doc(db, 'orders/order-1'), {
       squareOrderId: 'order-1',
       contactEmail: 'buyer@example.com',
@@ -115,7 +138,7 @@ describe('bookstoreEvents — the open write path', () => {
    * succeeds, an unauthenticated write path has become an unauthenticated read
    * path over whatever anyone chose to put in it.
    */
-  it('is readable by nobody — not anonymous, not a member, not staff', async () => {
+  it('is readable by nobody — not anonymous, not signed in, not the shop', async () => {
     let id = '';
     await env.withSecurityRulesDisabled(async (context) => {
       const written = await addDoc(collection(context.firestore(), 'bookstoreEvents'), {
@@ -125,7 +148,7 @@ describe('bookstoreEvents — the open write path', () => {
       id = written.id;
     });
 
-    for (const as of [asAnon, asMember, asStaff]) {
+    for (const as of [asAnon, asSignedIn, asBookstore]) {
       const db = as(env).firestore();
       await assertFails(getDoc(doc(db, 'bookstoreEvents', id)));
       await assertFails(getDocs(collection(db, 'bookstoreEvents')));
@@ -142,7 +165,7 @@ describe('bookstoreEvents — the open write path', () => {
       id = written.id;
     });
 
-    for (const as of [asAnon, asMember, asStaff]) {
+    for (const as of [asAnon, asSignedIn, asBookstore]) {
       const db = as(env).firestore();
       await assertFails(updateDoc(doc(db, 'bookstoreEvents', id), { quantity: 99 }));
       await assertFails(deleteDoc(doc(db, 'bookstoreEvents', id)));
@@ -214,32 +237,32 @@ describe('bookstoreEvents — what the shape check refuses', () => {
 });
 
 describe('bookstoreStats', () => {
-  it('is readable by staff', async () => {
-    const db = asStaff(env).firestore();
+  it('is readable by whoever runs the shop', async () => {
+    const db = asBookstore(env).firestore();
     await assertSucceeds(getDoc(doc(db, 'bookstoreStats/day-2026-08-23')));
   });
 
-  it('is not readable by a member or by the public', async () => {
+  it('is not readable by a signed-in member with no grant, or by the public', async () => {
     // These are the parish's sales figures.
-    for (const as of [asAnon, asMember]) {
+    for (const as of [asAnon, asSignedIn]) {
       await assertFails(getDoc(doc(as(env).firestore(), 'bookstoreStats/day-2026-08-23')));
     }
   });
 
-  it('cannot be written by anyone, including staff', async () => {
-    const db = asStaff(env).firestore();
+  it('cannot be written by anyone, including whoever runs the shop', async () => {
+    const db = asBookstore(env).firestore();
     await assertFails(updateDoc(doc(db, 'bookstoreStats/day-2026-08-23'), { totals: { views: 999 } }));
   });
 });
 
 describe('orders — the fulfilment exception', () => {
-  it('lets staff mark an order collected', async () => {
-    const db = asStaff(env).firestore();
+  it('lets the shop mark an order collected', async () => {
+    const db = asBookstore(env).firestore();
     await assertSucceeds(
       updateDoc(doc(db, 'orders/order-1'), {
         fulfillment: 'ready',
         updatedAt: serverTimestamp(),
-        updatedBy: 'staff-1',
+        updatedBy: 'bookstore-1',
       }),
     );
   });
@@ -248,8 +271,8 @@ describe('orders — the fulfilment exception', () => {
    * The reason `allow write: if false` was there in the first place. Packing a
    * parcel is not the same permission as saying the parcel was paid for.
    */
-  it('does not let staff touch the money', async () => {
-    const db = asStaff(env).firestore();
+  it('does not let the shop touch the money', async () => {
+    const db = asBookstore(env).firestore();
     await assertFails(updateDoc(doc(db, 'orders/order-1'), { status: 'refunded' }));
     await assertFails(updateDoc(doc(db, 'orders/order-1'), { total: { amount: 1, currency: 'USD' } }));
     await assertFails(
@@ -261,30 +284,30 @@ describe('orders — the fulfilment exception', () => {
 
   it('does not let a money field ride along with a legitimate fulfilment change', async () => {
     // This is exactly what `hasOnly` exists to stop.
-    const db = asStaff(env).firestore();
+    const db = asBookstore(env).firestore();
     await assertFails(
       updateDoc(doc(db, 'orders/order-1'), {
         fulfillment: 'collected',
         status: 'refunded',
         updatedAt: serverTimestamp(),
-        updatedBy: 'staff-1',
+        updatedBy: 'bookstore-1',
       }),
     );
   });
 
   it('refuses a fulfilment value that is not one of the three', async () => {
-    const db = asStaff(env).firestore();
+    const db = asBookstore(env).firestore();
     await assertFails(
       updateDoc(doc(db, 'orders/order-1'), {
         fulfillment: 'lost-in-the-post',
         updatedAt: serverTimestamp(),
-        updatedBy: 'staff-1',
+        updatedBy: 'bookstore-1',
       }),
     );
   });
 
-  it('does not let a member change fulfilment, or read an order that is not theirs', async () => {
-    const db = asMember(env).firestore();
+  it('does not let a signed-in member change fulfilment, or read an order that is not theirs', async () => {
+    const db = asSignedIn(env).firestore();
     await assertFails(
       updateDoc(doc(db, 'orders/order-1'), {
         fulfillment: 'collected',
@@ -296,7 +319,7 @@ describe('orders — the fulfilment exception', () => {
   });
 
   it('never lets anyone create or delete an order', async () => {
-    for (const as of [asAnon, asMember, asStaff]) {
+    for (const as of [asAnon, asSignedIn, asBookstore]) {
       const db = as(env).firestore();
       await assertFails(setDoc(doc(db, 'orders/forged'), { status: 'paid', total: { amount: 1 } }));
       await assertFails(deleteDoc(doc(db, 'orders/order-1')));
@@ -317,9 +340,9 @@ describe('orders — the fulfilment exception', () => {
       });
     });
 
-    await assertSucceeds(getDoc(doc(asMember(env).firestore(), 'orders/order-mine')));
+    await assertSucceeds(getDoc(doc(asSignedIn(env, 'member-1').firestore(), 'orders/order-mine')));
     // …and not one attributed to somebody else.
-    await assertFails(getDoc(doc(asMember(env, 'member-2').firestore(), 'orders/order-mine')));
+    await assertFails(getDoc(doc(asSignedIn(env, 'member-2').firestore(), 'orders/order-mine')));
   });
 });
 
@@ -368,23 +391,23 @@ describe('config/bookstore — the sections list', () => {
    * single `allow write` using `diff(resource.data)` refuses it, because
    * `resource` is null.
    */
-  it('lets the bookstore group create it when it does not exist yet', async () => {
+  it('lets the shop create it when it does not exist yet', async () => {
     await assertSucceeds(
       setDoc(doc(asBookstore(env).firestore(), 'config/bookstore'), sections('bookstore-1')),
     );
   });
 
-  it('lets staff update it afterwards', async () => {
+  it('lets the shop update it afterwards', async () => {
     await assertSucceeds(
-      setDoc(doc(asStaff(env).firestore(), 'config/bookstore'), sections('staff-1'), {
+      setDoc(doc(asBookstore(env).firestore(), 'config/bookstore'), sections('bookstore-1'), {
         merge: true,
       }),
     );
   });
 
-  it('does not let a member or the public touch it', async () => {
+  it('does not let a signed-in member with no grant, or the public, touch it', async () => {
     await assertFails(
-      setDoc(doc(asMember(env).firestore(), 'config/bookstore'), sections('member-1'), { merge: true }),
+      setDoc(doc(asSignedIn(env).firestore(), 'config/bookstore'), sections('member-1'), { merge: true }),
     );
     await assertFails(
       setDoc(doc(asAnon(env).firestore(), 'config/bookstore'), sections('nobody'), { merge: true }),
@@ -393,10 +416,10 @@ describe('config/bookstore — the sections list', () => {
 
   /*
    * The key set is the whole point of the second block. Widening this document
-   * for sections must not hand the bookstore group the delivery charge — that
-   * is a real amount charged to a real card, and it stays admin-only.
+   * for sections must not hand the shop the delivery charge — that is a real
+   * amount charged to a real card, and it stays the superadmin's.
    */
-  it('does not let the group change the delivery charge or the shop copy', async () => {
+  it('does not let the shop change the delivery charge or the shop copy', async () => {
     const db = asBookstore(env).firestore();
     for (const field of ['deliveryCents', 'orderEmail', 'returnsNotice', 'fulfilmentNote']) {
       await assertFails(
@@ -417,7 +440,7 @@ describe('config/bookstore — the sections list', () => {
   });
 
   it('refuses a sections value that is not a bounded list', async () => {
-    const db = asStaff(env).firestore();
+    const db = asBookstore(env).firestore();
     await assertFails(
       setDoc(doc(db, 'config/bookstore'), sections('staff-1', 'books'), { merge: true }),
     );
@@ -429,14 +452,14 @@ describe('config/bookstore — the sections list', () => {
 
   it('refuses an edit attributed to somebody else', async () => {
     await assertFails(
-      setDoc(doc(asStaff(env).firestore(), 'config/bookstore'), sections('someone-else'), {
+      setDoc(doc(asBookstore(env).firestore(), 'config/bookstore'), sections('someone-else'), {
         merge: true,
       }),
     );
   });
 
   it('cannot be deleted', async () => {
-    await assertFails(deleteDoc(doc(asStaff(env).firestore(), 'config/bookstore')));
+    await assertFails(deleteDoc(doc(asBookstore(env).firestore(), 'config/bookstore')));
   });
 });
 
@@ -447,7 +470,7 @@ describe('products — filing a book into a section', () => {
     updatedBy: uid,
   });
 
-  it('lets the bookstore group set a product’s section', async () => {
+  it('lets the shop set a product’s section', async () => {
     await assertSucceeds(
       updateDoc(doc(asBookstore(env).firestore(), 'products/holy-bible'), file('bookstore-1')),
     );
@@ -485,35 +508,48 @@ describe('products — filing a book into a section', () => {
   });
 
   /*
-   * Bounded for the *group*, and the distinction is the rule, not a nicety.
+   * Bounded for everybody, which it was not before.
    *
-   * `products` already carried `allow write: if hasRole('staff')`, and Firestore
-   * ORs matching rules — so a staff member goes through that broad rule and the
-   * validation below never runs for them. This is what the narrow block actually
-   * governs: the bookstore group, whose only way in is here.
+   * `products` used to carry a broad `allow write: if hasRole('staff')` beside
+   * the narrow block, and Firestore ORs matching rules — so a staff member went
+   * through the broad line and none of the validation ran for them. The suite
+   * caught that once: `section: 42` from a staff account succeeded, because of
+   * course it did.
    *
-   * Written as a staff assertion first, and the suite caught it: `section: 42`
-   * from a staff account succeeded, because of course it did.
+   * Collapsing the group into the Bookstore grant would have promoted every
+   * shop volunteer through that broad line, so it was removed rather than
+   * renamed. Nothing needed it — the Square mirror uses the Admin SDK — and its
+   * absence is what makes the assertion below true of every browser rather than
+   * of one claim shape.
    */
-  it('refuses a section from the group that is not a bounded string', async () => {
+  it('refuses a section that is not a bounded string', async () => {
     const db = asBookstore(env).firestore();
     await assertFails(updateDoc(doc(db, 'products/holy-bible'), file('bookstore-1', 42)));
     await assertFails(updateDoc(doc(db, 'products/holy-bible'), file('bookstore-1', 'x'.repeat(41))));
   });
 
-  it('leaves staff unconstrained, as they already were', async () => {
-    // Not a hole this change opened. `allow write: if hasRole('staff')` predates
-    // it and is what the sync script and staff tooling rely on; the narrow rule
-    // above only adds the group. Asserted so the difference is deliberate and
-    // visible rather than discovered.
-    await assertSucceeds(
-      updateDoc(doc(asStaff(env).firestore(), 'products/holy-bible'), { name: 'Holy Bible' }),
+  /**
+   * The regression test for the broad rule coming back.
+   *
+   * If somebody re-adds `allow write: if hasScreen('bookstore')` here — which
+   * looks like the obvious way to let the shop's admin save something new —
+   * this is what fails, and it fails before anybody's prices can be rewritten
+   * from a browser.
+   */
+  it('does not let the shop rewrite a name through some other rule', async () => {
+    // A *different* name, and the difference matters: an update that writes the
+    // value already stored changes no keys, so `diff().affectedKeys()` is empty,
+    // `hasOnly` is satisfied and the narrow rule allows it. The suite reported a
+    // hole that was not there the first time this was written as
+    // `{ name: 'Holy Bible' }` — which is what the document already said.
+    await assertFails(
+      updateDoc(doc(asBookstore(env).firestore(), 'products/holy-bible'), { name: 'Free Bible' }),
     );
   });
 
-  it('does not let a plain member file anything', async () => {
+  it('does not let a signed-in member with no grant file anything', async () => {
     await assertFails(
-      updateDoc(doc(asMember(env).firestore(), 'products/holy-bible'), file('member-1')),
+      updateDoc(doc(asSignedIn(env).firestore(), 'products/holy-bible'), file('member-1')),
     );
   });
 
@@ -522,7 +558,7 @@ describe('products — filing a book into a section', () => {
    * from Square's catalog, so a row invented here has no variation id and is a
    * book on the shop that nobody can buy.
    */
-  it('does not let the bookstore group invent a product', async () => {
+  it('does not let the shop invent a product', async () => {
     await assertFails(
       setDoc(doc(asBookstore(env).firestore(), 'products/forged'), {
         slug: 'forged',

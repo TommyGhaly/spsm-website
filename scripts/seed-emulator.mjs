@@ -7,9 +7,9 @@
  *
  * Why this exists: `npm run dev` reads the real Firestore, which is right for
  * the public pages and useless for anything behind sign-in — the admin and the
- * servants schedule both need a signed-in user with a role, and against the
- * real project the only way to get one is to be a member of the parish Entra
- * directory. Against the emulators you can be anyone, and Delete is not
+ * servants schedule both need a signed-in user with an allocation, and against
+ * the real project the only way to get one is to be a member of the parish
+ * Entra directory. Against the emulators you can be anyone, and Delete is not
  * something you did to the parish.
  *
  * Everything it writes is real: the same markdown `npm run content` pushes, the
@@ -38,10 +38,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ADMIN_SCREENS,
   DEFAULT_INTEGRATIONS_CONFIG,
   DEFAULT_PARISH_CONFIG,
   DEFAULT_THEME,
+  campFinanceDocId,
+  formFinanceDocId,
   isAllowedEmbedUrl,
+  rollupCampFinance,
+  rollupFormFinance,
 } from '../packages/shared/dist/index.js';
 import { toFieldMap } from './lib/firestore-rest.mjs';
 import { collectPages } from './lib/content-files.mjs';
@@ -184,7 +189,7 @@ const CAPTIONS = {
 };
 
 /**
- * A sign-in-able account with a role claim. Idempotent across re-runs.
+ * A sign-in-able account. Idempotent across re-runs.
  *
  * Created **twice over**, with a password and as a `microsoft.com` identity,
  * because the two sign-in paths look for different things and only one of them
@@ -200,7 +205,7 @@ const CAPTIONS = {
  * The password is kept because `signInWithEmulatorAccount` still uses it, and
  * because it is the only way in if the widget is ever unavailable.
  */
-async function user(email, role, groups = []) {
+async function user(email, superadmin, screens) {
   await authPost('accounts:signUp?key=fake', {
     email,
     password: 'emulator-only',
@@ -241,12 +246,25 @@ async function user(email, role, groups = []) {
    * work: the IdP widget lists the account, and the website signs into it
    * directly without a popup.
    */
+  /*
+   * Both claims. `screens` is the mirror `storage.rules` reads — see
+   * packages/shared/src/claims.ts — and it is written here rather than left to
+   * `mirrorGrantsToClaims`, because that trigger only runs when the Functions
+   * emulator is up and this script is routinely used without it. Seeding it by
+   * hand means picture uploads work locally either way; the trigger keeps it
+   * right afterwards.
+   */
   await authPost(`projects/${PROJECT}/accounts:update`, {
     localId: uid,
     password: 'emulator-only',
-    customAttributes: JSON.stringify({ role, groups }),
+    customAttributes: JSON.stringify({ superadmin, screens }),
   });
   return uid;
+}
+
+/** A complete screen map with the named areas granted. */
+function screenMap(granted) {
+  return Object.fromEntries(ADMIN_SCREENS.map((s) => [s, granted.includes(s)]));
 }
 
 const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), updatedBy: uid });
@@ -254,33 +272,71 @@ const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), u
 // --- accounts ---------------------------------------------------------------
 
 /*
- * The last two exist to make the program-gallery permission model testable at
- * all. It is the one axis on this site that cannot be exercised by changing a
- * role: a grant is a list of ids on a member document, and "the youth servant
- * can reach Summercamp but not St. Simon" is invisible until you sign in as
- * somebody holding exactly that.
+ * Six accounts, and between them they cover the whole model.
+ *
+ * There are no roles any more, so every one of these is "signed in, plus what
+ * they were allocated" — which means the fixtures have to *be* the allocations
+ * rather than four rungs of a ladder. What each account is for:
+ *
+ *   admin@      the one `superadmin` claim. The only account that can open
+ *               /access, and the only one that reaches anything it was not
+ *               explicitly given.
+ *   staff@      the everyday development identity: every delegable area at
+ *               once, plus the camp. Not a tier — it is nine ticked boxes, and
+ *               the point of it is that it looks exactly like a person who was
+ *               given nine boxes, because that is now all it is.
+ *   servant@    signed in and allocated nothing. The most important fixture on
+ *               this list: it is what almost every account in the parish will
+ *               be, and the only thing it can reach is the servants' rota.
+ *   father@     one area. Proves that a single flag opens its own screen and
+ *               nothing beside it, which was untestable while `staff` existed.
+ *   lead@       a whole program, and no screen at all.
+ *   volunteer@  one *event* inside a program. Must not inherit week 2 — see the
+ *               rules tests.
+ *
+ * The last two are the program-gallery axis, which cannot be exercised any
+ * other way: a grant is a list of ids on a member document, and "the youth
+ * servant can reach Summercamp but not St. Simon" is invisible until you sign
+ * in as somebody holding exactly that.
  */
-const accounts = [
-  ['admin@spsmwayland.org', 'admin', [], null],
-  ['staff@spsmwayland.org', 'staff', [], null],
-  ['servant@spsmwayland.org', 'servant', [], null],
-  ['father@spsmwayland.org', 'staff', ['clergy'], null],
-  // Holds a whole program: every camp, this year and every year.
-  ['lead@spsmwayland.org', 'servant', [], { programs: ['summercamp'], events: [] }],
-  // Helps with one week. Must not inherit week 2 — see the rules tests.
-  ['volunteer@spsmwayland.org', 'servant', [], { programs: [], events: ['week-1-2027'] }],
+
+// Everything /access can hand out. `members` and `config` are deliberately not
+// here — they are the superadmin's, and the allocation screen does not offer
+// them. See packages/shared/src/screens.ts.
+const EVERY_AREA = [
+  'events', 'bulletin', 'bookstore', 'forms', 'finance',
+  'parking', 'servants', 'content', 'theme',
 ];
-for (const [email, role, groups, programAdmin] of accounts) {
-  const uid = await user(email, role, groups);
+
+const accounts = [
+  ['admin@spsmwayland.org', true, [], null],
+  ['staff@spsmwayland.org', false, EVERY_AREA, { programs: ['summercamp'], events: [] }],
+  ['servant@spsmwayland.org', false, [], null],
+  ['father@spsmwayland.org', false, ['content'], null],
+  // Holds a whole program: every camp, this year and every year.
+  ['lead@spsmwayland.org', false, [], { programs: ['summercamp'], events: [] }],
+  // Helps with one week. Must not inherit week 2 — see the rules tests.
+  ['volunteer@spsmwayland.org', false, [], { programs: [], events: ['week-1-2027'] }],
+];
+for (const [email, superadmin, screens, programAdmin] of accounts) {
+  const uid = await user(email, superadmin, screens);
   await put(`members/${uid}`, {
     displayName: email.split('@')[0],
     email,
     phone: null,
     photoPath: null,
-    roleMirror: role,
-    groupsMirror: groups,
+    // A display copy of the claim, for the allocation list at /access. Decides
+    // nothing — rules read the token.
+    superadminMirror: superadmin,
     authProvider: 'microsoft',
     notificationPrefs: { announcements: true, orderUpdates: false },
+    /*
+     * The authoritative map, and the thing this whole seed exists to make
+     * clickable. `firestore.rules` reads it with a `get()` on every check, so
+     * an account whose document lacks it can do nothing at all — which used to
+     * be survivable, because the `staff` tier answered first.
+     */
+    screenAdmin: screenMap(screens),
     programAdmin: programAdmin ?? { programs: [], events: [] },
     ...audit(),
   });
@@ -292,8 +348,10 @@ await put('config/integrations', DEFAULT_INTEGRATIONS_CONFIG);
 await put('config/parish', {
   ...DEFAULT_PARISH_CONFIG,
   // The address and service times were confirmed by the parish on 2026-08-18
-  // and are now published in `config/parish`, so these match production rather
-  // than standing in for it.
+  // and are published in `config/parish`, so these match production rather than
+  // standing in for it. The three liturgies are all called "Divine Liturgy" and
+  // the midweek one is Tuesday — corrected here and in production on 2026-09-02,
+  // because this file said Wednesday and had a Vespers that is not a fixture.
   //
   // The phone still does not. It differs between two old Wix pages (…3750 on
   // /contact-us, …3570 on /team-3), the parish has not said which is right, and
@@ -304,9 +362,9 @@ await put('config/parish', {
   email: 'info@spsmwayland.org',
   officeHours: 'Tuesday to Friday, 9:00 AM – 3:00 PM',
   serviceTimes: [
-    { name: 'Matins & Divine Liturgy', day: 'Sunday', time: '8:00 – 11:30 AM' },
-    { name: 'Vespers', day: 'Saturday', time: '6:00 PM' },
-    { name: 'Midweek Liturgy', day: 'Wednesday', time: '8:00 – 10:00 AM' },
+    { name: 'Divine Liturgy', day: 'Sunday', time: '8:00 – 11:30 AM' },
+    { name: 'Divine Liturgy', day: 'Tuesday', time: '7:00 – 9:15 AM' },
+    { name: 'Divine Liturgy', day: 'Saturday', time: '8:00 – 10:00 AM' },
   ],
   // `social` is deliberately not overridden here: the accounts in
   // DEFAULT_PARISH_CONFIG came from the parish and are correct, so the emulator
@@ -319,6 +377,281 @@ await put('config/parish', {
 // editing a value here is the way to check a theme change end to end without
 // touching the real project.
 await put('config/theme', DEFAULT_THEME);
+
+/*
+ * Summer camp: a season, a fee, and a waiver to agree to.
+ *
+ * Seeded with *real* values rather than the committed defaults, which are
+ * deliberately empty — a fee of zero and no waiver text is the right production
+ * default (see `defaultCampConfig`) and the wrong local one, because both of
+ * those branches disable half the registration screen. `lead@spsmwayland.org`
+ * already holds the `summercamp` program grant, so signing in as them is what
+ * opens the drawer.
+ *
+ * The waiver text below is placeholder prose. The parish's own has not been
+ * written yet, and this must not be mistaken for it.
+ */
+await put('config/camp', {
+  programId: 'summercamp',
+  season: '2027',
+  baseCents: 17500,
+  weeks: 2,
+  // Real dates, because every camp screen now shows a day as a date and the
+  // fallback wording ("Week 1 · Mon") is what you get with these blank — which
+  // is a state worth being able to see, but not the default one to develop
+  // against. Two consecutive Mondays in June 2027.
+  weekStarts: ['2027-06-21', '2027-06-28'],
+  waiverVersion: 'local-placeholder',
+  waiverText:
+    'PLACEHOLDER — not the parish waiver. Local emulator text so the consent ' +
+    'control can be exercised.\n\n' +
+    'I give permission for my child to take part in the activities of the camp, ' +
+    'and I authorise the camp to obtain emergency medical treatment if I cannot ' +
+    'be reached.',
+  note: '',
+  // Open, matching the default. The public half of /forms/summer-camp — a
+  // servant signing themselves up — is only reachable when this is true, and
+  // seeding it false would make the local site look like the feature is broken.
+  servantSignUp: true,
+  // Open, likewise. Closed would make the New family button on
+  // /admin/camp/registrations read as broken on a fresh local site.
+  familyRegistration: true,
+});
+
+/*
+ * A season's worth of camp registrations.
+ *
+ * Without these both camp screens are unusable locally, and in different ways:
+ * the registration form at /forms/summer-camp opens on an empty list, and the
+ * allocation board at /admin/camp/groups has literally nothing to arrange —
+ * a drag-and-drop screen with no chips in it cannot be looked at, let alone
+ * worked on. Neither can be filled by hand in any reasonable time, and the real
+ * project's registrations are real children's medical notes.
+ *
+ * Deterministic on purpose. A linear congruential generator with a fixed seed
+ * rather than `Math.random`, so re-seeding twice gives the same forty families —
+ * which is what lets "that child was in group 2 a minute ago" be a real
+ * observation rather than a coincidence, and what makes a screenshot from
+ * yesterday comparable to one from today.
+ *
+ * The names are Coptic given names on ten surnames, which is what the parish's
+ * own roster looks like; the repetition is deliberate, because two children
+ * called Zaki in different groups is exactly the case a roster has to handle.
+ */
+{
+  const FIRST = ['Mariam','Peter','Anne','Youssef','Sara','Mina','Marina','George','Veronica','Kirollos','Monica','Abanoub','Christine','Philopater','Nardine','Bishoy','Verena','Mark','Sandra','Karas','Angela','Antonious','Marianne','David','Nourhan','Fady','Rita','Joseph','Demiana','Simon','Martha','Andrew','Salma','Michael','Hana','Daniel','Yostina','Samuel','Irene','Paul'];
+  const LAST = ['Guirguis','Awadalla','Hanna','Basilious','Ibrahim','Shenouda','Zaki','Malak','Rizk','Tadros'];
+  // K to 8th, which is the camp. Pre-K was dropped on 30 Aug 2026 and seeding
+  // it would keep producing children no panel is eligible to hold.
+  const GRADES = ['k','1','2','3','4','5','6','7','8'];
+  const CHILD_SIZES = ['YXS','YS','YM','YL','YXL','AS','AM'];
+  const ADULT_SIZES = ['AS','AM','AL','AXL'];
+  // Servants from 15 to 45, so the allocation board has real ages to show and
+  // the teenage half of the roster is visible at a glance.
+  const SERVANT_BIRTH_YEARS = [1982, 1990, 1996, 2001, 2005, 2008, 2010, 2011, 2012];
+  const ROLES = ['Sports','Crafts','Kitchen','Music','Group leader','Photography'];
+  const WEEK_ONE = ['w1-mon','w1-tue','w1-wed','w1-thu','w1-fri'];
+
+  let state = 7;
+  const rand = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const pick = (list) => list[Math.floor(rand() * list.length)];
+
+  /*
+   * Kept so the finance rollup below can be computed from the same
+   * registrations rather than from made-up figures. See `seedFinance`.
+   */
+  const registered = [];
+
+  /*
+   * What a family has been charged and what they have paid.
+   *
+   * Deliberately uneven. Every family paid in full would make the finance
+   * screen's "still owed" column permanently zero and its by-method breakdown a
+   * single bar — which is exactly the state in which nobody notices that the
+   * arithmetic is wrong. So: most have paid, some part-paid, a couple not at
+   * all, one refunded, and the methods are spread across the list the camp
+   * actually uses.
+   */
+  const METHODS = ['cash', 'check', 'zelle', 'square'];
+  const RATE = 17500;
+
+  /*
+   * Payment dates are relative to today, not fixed to the season's own summer.
+   *
+   * The finance screen opens on the current month, and a seed whose every
+   * payment landed in June 2027 would show a treasurer three zeroes on a laptop
+   * — which is indistinguishable from the rollup being broken, and is the one
+   * state this seed exists to avoid. Money arrives when it arrives; dating it
+   * near now is no less true than dating it in a summer that has not happened.
+   */
+  const monthsBack = (count, dayOfMonth) => {
+    const now = new Date();
+    const when = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - count, 1));
+    const day = String(1 + (dayOfMonth % 27)).padStart(2, '0');
+    return `${when.getUTCFullYear()}-${String(when.getUTCMonth() + 1).padStart(2, '0')}-${day}`;
+  };
+  function familyBilling(index, kids) {
+    const due = RATE * kids; // One week each, which is what the seed gives them.
+    const payments = [];
+    const how = index % 7;
+
+    if (how !== 3 && how !== 6) {
+      payments.push({
+        id: `pay-${index}-1`,
+        // Every seventh family has paid half; the rest paid in full.
+        amountCents: how === 5 ? Math.round(due / 2) : due,
+        method: METHODS[index % METHODS.length],
+        reference: `seed-${index}`,
+        receivedOn: monthsBack(index % 3, index),
+        note: '',
+        recordedByUid: 'seed',
+        recordedAt: new Date(),
+      });
+    }
+    // One family was refunded a week, recorded as a negative line rather than
+    // by deleting the payment — which is the shape the real ledger uses.
+    if (how === 1 && index > 7) {
+      payments.push({
+        id: `pay-${index}-2`,
+        amountCents: -RATE,
+        method: METHODS[index % METHODS.length],
+        reference: `seed-refund-${index}`,
+        receivedOn: monthsBack(0, index + 4),
+        note: 'Withdrew after week one.',
+        recordedByUid: 'seed',
+        recordedAt: new Date(),
+      });
+    }
+
+    return { baseCents: RATE, discounts: [], payments };
+  }
+
+  for (let f = 0; f < 24; f += 1) {
+    const surname = LAST[f % LAST.length];
+    const children = [];
+    for (let c = 0, kids = 1 + Math.floor(rand() * 2.6); c < kids; c += 1) {
+      children.push({
+        id: `child-${f}-${c}`,
+        firstName: pick(FIRST),
+        lastName: surname,
+        dateOfBirth: '',
+        grade: pick(GRADES),
+        shirtSize: pick(CHILD_SIZES),
+        days: WEEK_ONE,
+        // Roughly one child in six, which is about right for a parish camp and
+        // is what makes the allergy mark on the allocation board testable.
+        allergies: rand() < 0.18 ? 'Peanuts & tree nuts' : '',
+        medicalNotes: rand() < 0.1 ? 'Inhaler — morning and evening' : '',
+        groupName: '',
+        photoConsent: rand() < 0.8,
+        note: '',
+      });
+    }
+
+    await put(`campRegistrations/reg-seed-${f}`, {
+      programId: 'summercamp',
+      season: '2027',
+      kind: 'family',
+      status: 'registered',
+      contact: {
+        name: `${pick(FIRST)} ${surname}`,
+        email: `${surname.toLowerCase()}@example.org`,
+        phone: `508-555-01${String(f).padStart(2, '0')}`,
+        altName: '', altPhone: '',
+        address: '169 Rice Rd, Wayland MA 01778',
+      },
+      emergency: { name: `${pick(FIRST)} ${pick(LAST)}`, phone: `508-555-02${String(f).padStart(2, '0')}`, relationship: 'Aunt' },
+      children,
+      servant: null,
+      waiver: {
+        version: 'local-placeholder', agreed: true,
+        signedName: `${surname} parent`, signedRelationship: 'Parent',
+        signedAt: new Date(), signedByUid: 'seed',
+      },
+      billing: familyBilling(f, children.length),
+      note: '',
+      takenByUid: 'seed',
+      ...audit(),
+    });
+
+    registered.push({
+      kind: 'family',
+      status: 'registered',
+      children,
+      billing: familyBilling(f, children.length),
+    });
+  }
+
+  for (let n = 0; n < 14; n += 1) {
+    await put(`campRegistrations/reg-seed-s${n}`, {
+      programId: 'summercamp',
+      season: '2027',
+      kind: 'servant',
+      status: 'registered',
+      contact: {
+        name: `${pick(FIRST)} ${pick(LAST)}`,
+        email: `servant${n}@example.org`,
+        phone: `508-555-03${String(n).padStart(2, '0')}`,
+        altName: '', altPhone: '', address: '',
+      },
+      emergency: { name: 'Parent', phone: '508-555-0400', relationship: 'Parent' },
+      children: [],
+      servant: {
+        uid: null,
+        dateOfBirth: `${SERVANT_BIRTH_YEARS[n % SERVANT_BIRTH_YEARS.length]}-0${1 + (n % 9)}-1${n % 10}`,
+        sections: n % 3 === 0 ? ['elementary', 'middle-school'] : n % 2 ? ['elementary'] : ['middle-school'],
+        desiredRoles: [pick(ROLES)],
+        assignedRoles: [],
+        shirtSize: pick(ADULT_SIZES),
+        days: WEEK_ONE,
+        availability: n % 3 === 0 ? 'Mornings only' : n % 2 ? 'Can drive on the Friday' : '',
+        // Not everybody, so the "not cleared" mark on the board has something
+        // to mark.
+        cleared: rand() < 0.7,
+        clearedNote: '',
+      },
+      waiver: {
+        version: 'local-placeholder', agreed: true,
+        signedName: 'Self', signedRelationship: 'Self',
+        signedAt: new Date(), signedByUid: 'seed',
+      },
+      billing: { baseCents: 0, discounts: [], payments: [] },
+      note: '',
+      takenByUid: 'seed',
+      ...audit(),
+    });
+
+    registered.push({
+      kind: 'servant',
+      status: 'registered',
+      children: [],
+      billing: { baseCents: 0, discounts: [], payments: [] },
+    });
+  }
+
+  /*
+   * The finance rollup, computed here rather than hardcoded.
+   *
+   * In production these documents are written hourly by
+   * `functions/src/finance.ts`, because the collection they summarise holds
+   * children's medical notes and no browser may read it. Locally the Functions
+   * emulator is usually not running — and pointing it at the emulated Firestore
+   * takes care it does not always get — so /admin/finance would open on
+   * "nothing has been added up yet" for ever.
+   *
+   * Run through the *same* pure function the Function uses, so what is seeded
+   * here is what production would compute from these registrations. Hardcoding
+   * plausible-looking totals would make the screen developable and its
+   * arithmetic untestable at the same time.
+   */
+  await put(
+    `financeRollups/${campFinanceDocId('summercamp', '2027')}`,
+    {
+      ...rollupCampFinance({ programId: 'summercamp', season: '2027', registrations: registered }),
+      computedAt: new Date(),
+    },
+  );
+}
 
 /*
  * The two Breeze calendars. Read only by the `calendar` Function, never by a
@@ -357,6 +690,82 @@ if (keep(breezeServants) || keep(breezeParish)) {
 const forms = seedForms();
 for (const form of forms) {
   await put(`forms/${form.slug}`, { ...form, published: true, ...audit() });
+}
+
+/*
+ * One paid form, locally only.
+ *
+ * No form the parish has written charges for anything, so without this the
+ * payment half of the builder and the whole "Forms that charge" table on
+ * /admin/finance are unreachable on a laptop — and an untried screen is one
+ * that is discovered to be wrong by the treasurer. The same licence this script
+ * already takes with `published: true` above: locally the point is to be able
+ * to look at the thing.
+ *
+ * `van-request` is chosen because it is the least load-bearing of the five. It
+ * is *not* payment-enabled in `seed-forms.mjs`, so nothing about the real
+ * project changes.
+ */
+await put(`forms/van-request`, {
+  ...forms.find((form) => form.slug === 'van-request'),
+  published: true,
+  payment: { enabled: true, baseCents: 4000, label: 'Van hire — fuel and cleaning' },
+  ...audit(),
+});
+
+/*
+ * And what it has taken, through the same pure function the hourly rollup uses.
+ *
+ * Not a hardcoded total, for the reason the camp's rollup above gives: a
+ * plausible-looking number seeded by hand makes the screen developable and its
+ * arithmetic untestable in the same stroke. The submissions themselves are not
+ * seeded — they would be forty documents of invented answers, and the finance
+ * screen is deliberately unable to read one.
+ */
+/** `YYYY-MM`, this month or an earlier one. See the note on `monthsBack`. */
+function seedMonth(count) {
+  const now = new Date();
+  const when = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - count, 1));
+  return `${when.getUTCFullYear()}-${String(when.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+await put(`financeRollups/${formFinanceDocId('van-request')}`, {
+  ...rollupFormFinance({
+    form: { id: 'van-request', slug: 'van-request', title: 'Van request' },
+    submissions: [
+      { totalCents: 4000, paymentId: 'sq-seed-1', month: seedMonth(1) },
+      { totalCents: 4000, paymentId: 'sq-seed-2', month: seedMonth(1) },
+      { totalCents: 4000, paymentId: 'sq-seed-3', month: seedMonth(0) },
+      // One the charge never completed for — the case worth being able to see.
+      { totalCents: 4000, paymentId: null, month: seedMonth(0) },
+    ],
+  }),
+  computedAt: new Date(),
+});
+
+/*
+ * A month of the bookstore, so the top band on /admin/finance has all three of
+ * its lines rather than two and a zero.
+ *
+ * Written the way `functions/src/stats.ts` writes it — same doc id, same
+ * `totals` shape — because the finance screen reads that document directly and
+ * a differently-shaped local copy would hide a mismatch until production.
+ */
+{
+  const month = new Date().toISOString().slice(0, 7);
+  await put(`bookstoreStats/month-${month}`, {
+    period: 'month',
+    key: month,
+    products: {},
+    searches: {},
+    zeroResultSearches: {},
+    totals: {
+      views: 412, details: 96, cartAdds: 34, cartRemoves: 6, checkoutStarts: 19,
+      visitors: 180, orders: 14, unitsSold: 21, revenue: 38_400, refunded: 2_500,
+      refundedOrders: 1, shippedOrders: 5, pickupOrders: 9, repeatBuyers: 3,
+    },
+    computedAt: new Date(),
+  });
 }
 
 // --- content ----------------------------------------------------------------
@@ -888,17 +1297,19 @@ console.log(`Seeded the emulators at ${FIRESTORE}:
   }
   ${products.length} bookstore products (+1 unpublished draft)
   ${forms.length} forms at /forms (all published locally; three are drafts in production)
-  config/parish, config/integrations, and config/theme
+  config/parish, config/integrations, config/theme, and config/camp
   ${breezeParish || breezeServants ? 'servantsConfig/schedule (Breeze)' : 'servantsConfig/schedule SKIPPED — set SPSM_BREEZE_PARISH_EMBED_URL and/or SPSM_BREEZE_EMBED_URL to include it'}
 
 Sign in from the masthead: "Sign in with Microsoft" lists these in the
 emulator's IdP widget. (Password  emulator-only  also works where a form asks.)
 
-  admin@spsmwayland.org      admin    — everything, including role changes
-  staff@spsmwayland.org      staff    — the events admin
-  servant@spsmwayland.org    servant  — the schedule only
-  father@spsmwayland.org     staff + clergy
-  lead@spsmwayland.org       servant  — all of Summercamp, via a program grant
-  volunteer@spsmwayland.org  servant  — Summercamp Week 1 only
+  admin@spsmwayland.org      superadmin — everything, and the only one who can
+                                          allocate at /access
+  staff@spsmwayland.org      every area — plus the summer camp, by program grant
+  servant@spsmwayland.org    nothing    — the servants' rota, and that is all
+  father@spsmwayland.org     content    — one area, to see that one flag opens
+                                          one screen
+  lead@spsmwayland.org       all of Summercamp, via a program grant
+  volunteer@spsmwayland.org  Summercamp Week 1 only
 
 Now run:  NEXT_PUBLIC_USE_EMULATORS=1 npm run dev`);

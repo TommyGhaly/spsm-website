@@ -1,13 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { NO_PAYMENT, toFormSlug, type FormDefinition, type FormDraft } from '@spsm/shared';
+import {
+  NO_PAYMENT,
+  isBuiltInForm,
+  keepsNoSubmissions,
+  toFormSlug,
+  type FormDefinition,
+  type FormDraft,
+} from '@spsm/shared';
 import { Dialog } from '@/features/bookstore/Sheet';
 import { readAllForms, type WithId } from '../data';
-import { deleteForm, setFormFlags, writeForm } from './adminData';
+import { deleteForm, setFormFlags, setFormOrder, writeForm } from './adminData';
 import { FormBuilder } from './FormBuilder';
 import { SubmissionsPanel } from './SubmissionsPanel';
-import { BreezeImport } from './BreezeImport';
+import { EmbedImport } from './EmbedImport';
 
 /**
  * The forms back office: a drawer down the right of /forms.
@@ -152,7 +159,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
         )}
 
         {view.kind === 'import' && (
-          <BreezeImport
+          <EmbedImport
             onImported={async () => {
               await refresh();
               setView({ kind: 'list' });
@@ -167,20 +174,27 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
 /**
  * Forms that are parish infrastructure rather than parish paperwork.
  *
- * One of them: vehicle registration. It is permanent because there is a
- * physical NFC tag pointing at `/parking`, a card in the car park, and it
- * cannot be reprinted by editing a file.
+ * Two of them, and both for the same reason: **their addresses are printed on
+ * things this drawer cannot reach.** The vehicle registration is on an NFC tag
+ * and a card in the car park, which cannot be reprinted by editing a file. The
+ * contact form is behind every "ask the church office" link on the site — the
+ * one at the foot of this very hub included — and on the parish's stationery.
  *
- * That matters here because `/parking` does not check `published` — but
- * `formSubmit` does, and answers 404 to an unpublished form. So unticking
- * Published would leave the tag loading a form that silently refuses every
- * submission, with nothing on the page to say why. Deleting it is worse again.
+ * `published` is what makes that concrete rather than sentimental. `/parking`
+ * and `/contact` do not check it, but `formSubmit` does, and it answers 404 to
+ * an unpublished form. So unticking Published would leave the tag and the
+ * contact page loading a form that silently refuses every submission, with
+ * nothing on the page to say why. Deleting it is worse again.
  *
  * Neither is a decision anybody makes on purpose from a list of checkboxes, so
- * the two controls that cause it are not offered on this row.
+ * the two controls that cause it are not offered on these rows. Everything else
+ * about them is editable as normal — `isBuiltInForm` is a list of two document
+ * ids, not a wall around the form.
+ *
+ * `firestore.rules` refuses the delete regardless of what this draws.
  */
-function isPermanent(form: FormDefinition): boolean {
-  return form.kind === 'vehicle';
+function isPermanent(form: WithId<FormDefinition>): boolean {
+  return isBuiltInForm(form.id) || form.kind === 'vehicle';
 }
 
 function FormsList({
@@ -197,8 +211,48 @@ function FormsList({
   onChanged: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
+  /*
+   * The order on screen, held locally while it is being changed.
+   *
+   * Two presses of the same arrow is the normal way to move a form up a list,
+   * and waiting for a round trip between them would either drop the second or
+   * animate the row back up past the cursor. So the list moves immediately and
+   * the writes follow; `onChanged` refreshes from the server afterwards, which
+   * is what corrects the screen if one of them was refused.
+   *
+   * Null means "no local opinion" — show whatever the server last said. That
+   * matters after a refresh: keeping a stale local array would pin the list to
+   * an order that no longer exists once somebody else has edited it.
+   */
+  const [moved, setMoved] = useState<WithId<FormDefinition>[] | null>(null);
 
   if (forms === null) return <p className="note">Loading…</p>;
+
+  const rows = moved ?? forms;
+
+  /**
+   * Move one form up or down by a place.
+   *
+   * The whole list is renumbered on the server — see `setFormOrder` for why a
+   * swap does not work when most forms share `order: 100`.
+   */
+  function move(index: number, by: -1 | 1) {
+    const next = [...rows];
+    const target = index + by;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target]!, next[index]!];
+
+    setMoved(next);
+    void setFormOrder(
+      next.map((form) => form.id),
+      new Map(next.map((form) => [form.id, form.order])),
+    ).then(() => {
+      // Let the server's answer take over again. Without this the local array
+      // outlives the edit and hides anything a second administrator changed.
+      setMoved(null);
+      onChanged();
+    });
+  }
 
   return (
     <>
@@ -206,11 +260,48 @@ function FormsList({
         + New form
       </button>
 
-      {forms.length === 0 && <p className="note">No forms yet.</p>}
+      {rows.length === 0 && <p className="note">No forms yet.</p>}
+
+      {rows.length > 1 && (
+        <p className="note">
+          The order here is the order on /forms. Move a form with the arrows.
+        </p>
+      )}
 
       <ul className="fxa__list">
-        {forms.map((form) => (
+        {rows.map((form, index) => (
           <li key={form.id} className="fxa__row">
+            {/*
+              Arrows, not drag-and-drop.
+
+              A row here holds five other controls, and a drag container over
+              them is the bug the photo manager already paid for: pointer
+              capture swallows the click and the button inside silently never
+              fires. Two arrows are also the only version that works from a
+              keyboard and on a phone, which is where half of this drawer is
+              used.
+            */}
+            <div className="fxa__row-move">
+              <button
+                type="button"
+                className="fxa__move"
+                disabled={index === 0}
+                onClick={() => move(index, -1)}
+                aria-label={`Move ${form.title} up`}
+              >
+                <span aria-hidden="true">↑</span>
+              </button>
+              <button
+                type="button"
+                className="fxa__move"
+                disabled={index === rows.length - 1}
+                onClick={() => move(index, 1)}
+                aria-label={`Move ${form.title} down`}
+              >
+                <span aria-hidden="true">↓</span>
+              </button>
+            </div>
+
             <div className="fxa__row-main">
               <button type="button" className="fxa__row-title" onClick={() => onEdit(form)}>
                 {form.title}
@@ -239,7 +330,7 @@ function FormsList({
                 />
                 <span>
                   Published
-                  {isPermanent(form) && <small> — always on, the car park tags use it</small>}
+                  {isPermanent(form) && <small> — always on, the church’s own links use it</small>}
                 </span>
               </label>
               <label className="fxa__flag">
@@ -258,7 +349,7 @@ function FormsList({
               <button type="button" className="button button--quiet" onClick={() => onEdit(form)}>
                 Edit
               </button>
-              {form.kind !== 'external' && (
+              {!keepsNoSubmissions(form.kind) && (
                 <button
                   type="button"
                   className="button button--quiet"
@@ -314,6 +405,7 @@ function FormsList({
 
 const KIND_LABEL: Record<FormDefinition['kind'], string> = {
   native: 'built here',
+  embed: 'shown here, answers stay with the host',
   external: 'links out',
   vehicle: 'vehicle registration',
 };
@@ -345,6 +437,5 @@ function blankForm(id: string): FormDraft {
     notifyEmails: [],
     confirmationMessage: 'Thank you — the church office has your submission.',
     confirmationEmailBody: '',
-    breezeFormId: null,
   };
 }

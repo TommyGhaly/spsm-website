@@ -1,13 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  ABOUT_PAGES,
-  aboutHref,
-  getContentPages,
-  ContentPageBody,
-  PICTURE_CREDITS,
-  PICTURE_CREDIT_COUNT,
-} from '@/features/content';
+import { ABOUT_PAGES, aboutHref, PICTURE_CREDITS, PICTURE_CREDIT_COUNT } from '@/features/content';
 import { SECTION_META } from '@/features/content';
 import { PageHeader } from '@/components/PageHeader';
 
@@ -45,9 +38,20 @@ import { PageHeader } from '@/components/PageHeader';
  * gathered on this page and why each page nonetheless keeps its own hidden
  * copy.
  *
- * Any other prose filed under the `about` section still renders, below the
- * index. The five are excluded from that run because each one has its own page
- * — rendering them here as well would print the whole of About twice.
+ * ---------------------------------------------------------------------------
+ * **No loose prose.** There used to be a `band--sunken` under the index that
+ * rendered any `content` document filed under `about` that was not one of the
+ * five. Exactly one ever was — "The Coptic Church", a page of history inherited
+ * from the old site — and it printed a wall of text under the five links that
+ * lead to the same material told better: /about/who-we-are opens on St. Mark in
+ * Alexandria and /about/our-belief on the Creed and Nicaea. An index whose
+ * longest element is an essay is not an index.
+ *
+ * So the run is gone rather than the one document suppressed. Suppressing it
+ * would have left the mechanism in place for the next document to reappear
+ * through, and the five parts of About are code now — there is no longer a case
+ * for this page rendering prose nobody can see the source of.
+ * ---------------------------------------------------------------------------
  */
 
 export const metadata: Metadata = {
@@ -56,11 +60,7 @@ export const metadata: Metadata = {
   alternates: { canonical: '/about' },
 };
 
-export default async function AboutPage() {
-  const pages = await getContentPages('about');
-  const ownSlugs = new Set(ABOUT_PAGES.map((page) => page.slug));
-  const loose = pages.filter((page) => !ownSlugs.has(page.slug));
-
+export default function AboutPage() {
   return (
     <>
       <PageHeader title={SECTION_META.about.title} />
@@ -120,16 +120,6 @@ export default async function AboutPage() {
           </ol>
         </div>
       </section>
-
-      {loose.length > 0 && (
-        <section className="band band--sunken about-loose">
-          <div className="wrap prose">
-            {loose.map((page) => (
-              <ContentPageBody key={page.id} page={page} />
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="band about-credits-band" aria-labelledby="picture-credits">
         <div className="wrap">

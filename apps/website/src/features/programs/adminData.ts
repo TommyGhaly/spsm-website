@@ -27,7 +27,7 @@
  *
  * Firestore judges a list by what it *could* return, so the unfiltered version
  * is allowed only when the reader passes independently of any document — which
- * is `hasRole('admin')`. A program lead with a grant is refused the whole query.
+ * is `isSuper()`. A program lead with a grant is refused the whole query.
  * `listProgramsForAdmin` therefore falls back to the published-only read, the
  * same shape as `listProgramLinkTargets` in features/events/admin.ts.
  */
