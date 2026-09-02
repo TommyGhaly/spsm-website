@@ -1,116 +1,156 @@
 import { describe, it, expect } from 'vitest';
 import {
-  channelFeedUrl,
-  parseChannelFeed,
-  parseWatchPageStart,
-  watchPageUrl,
   isYouTubeChannelId,
   liveBroadcastIds,
+  parseUploadsPlaylist,
+  parseWatchPageStart,
+  uploadsPlaylistId,
+  uploadsPlaylistUrl,
   videosListUrl,
+  watchPageUrl,
 } from '@spsm/shared';
 
 /**
- * The archive under the livestream player is parsed out of YouTube's Atom feed
- * with a regex rather than an XML library — a deliberate narrow scope, which
- * only stays safe if the edges are pinned down. These are those edges.
+ * The archive under the livestream player, and the candidate list the live
+ * check picks from, both come out of one `playlistItems.list` response. It
+ * replaced the channel's Atom feed on 2026-09-02, when the feed began
+ * answering 404 for a channel that exists.
  *
- * `FEED` is trimmed from the real response for
- * `channel_id=UC6xlDBsD02-k7M5o-51CUQw` on 2026-08-17, including the detail
- * that matters most about it: every entry carries the identical title, which is
- * why `PastStream` has no title field and the page is led by the date.
+ * `PAGE` is trimmed from the real response for the parish's uploads playlist,
+ * including the detail that matters most about it: every item carries the
+ * identical title, which is why `PastStream` has no title field and the page is
+ * led by the date.
  */
-const FEED = `<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
- <id>yt:channel:6xlDBsD02-k7M5o-51CUQw</id>
- <yt:channelId>6xlDBsD02-k7M5o-51CUQw</yt:channelId>
- <title>St Philopater &amp; St Mina Coptic Orthodox Church</title>
- <published>2016-11-24T14:52:59+00:00</published>
- <entry>
-  <id>yt:video:2H7mU4a9bEQ</id>
-  <yt:videoId>2H7mU4a9bEQ</yt:videoId>
-  <title>St Philopater &amp; St Mina Coptic Orthodox Church Live Stream</title>
-  <published>2026-08-17T03:36:13+00:00</published>
-  <updated>2026-08-17T05:13:43+00:00</updated>
-  <media:group>
-   <media:thumbnail url="https://i3.ytimg.com/vi/2H7mU4a9bEQ/hqdefault.jpg" width="480" height="360"/>
-  </media:group>
- </entry>
- <entry>
-  <id>yt:video:oBDI-wjE0Io</id>
-  <yt:videoId>oBDI-wjE0Io</yt:videoId>
-  <title>St Philopater &amp; St Mina Coptic Orthodox Church Live Stream</title>
-  <published>2026-08-16T14:00:20+00:00</published>
-  <media:group>
-   <media:thumbnail url="https://i3.ytimg.com/vi/oBDI-wjE0Io/hqdefault.jpg" width="480" height="360"/>
-  </media:group>
- </entry>
-</feed>`;
+const PAGE = {
+  kind: 'youtube#playlistItemListResponse',
+  items: [
+    {
+      snippet: {
+        publishedAt: '2026-09-02T01:16:09Z',
+        title: 'St Philopater & St Mina Coptic Orthodox Church Live Stream',
+        thumbnails: {
+          default: { url: 'https://i.ytimg.com/vi/wrtfGSyFmtU/default.jpg' },
+          high: { url: 'https://i.ytimg.com/vi/wrtfGSyFmtU/hqdefault.jpg' },
+          maxres: { url: 'https://i.ytimg.com/vi/wrtfGSyFmtU/maxresdefault.jpg' },
+        },
+      },
+      contentDetails: { videoId: 'wrtfGSyFmtU', videoPublishedAt: '2026-09-02T01:16:09Z' },
+    },
+    {
+      snippet: {
+        publishedAt: '2026-09-01T12:46:24Z',
+        title: 'St Philopater & St Mina Coptic Orthodox Church Live Stream',
+        thumbnails: {
+          default: { url: 'https://i.ytimg.com/vi/st5prkbEQA4/default.jpg' },
+          high: { url: 'https://i.ytimg.com/vi/st5prkbEQA4/hqdefault.jpg' },
+        },
+      },
+      contentDetails: { videoId: 'st5prkbEQA4', videoPublishedAt: '2026-09-01T12:46:24Z' },
+    },
+  ],
+};
 
-describe('parseChannelFeed', () => {
-  it('reads id, date, and thumbnail out of a real feed', () => {
-    const streams = parseChannelFeed(FEED);
+/** `PAGE` with one field of one item changed, without mutating the original. */
+function withItem(index: number, change: (item: any) => void) {
+  const copy = JSON.parse(JSON.stringify(PAGE));
+  change(copy.items[index]);
+  return copy;
+}
 
-    expect(streams).toEqual([
+describe('parseUploadsPlaylist', () => {
+  it('reads id, date, and thumbnail out of a real response', () => {
+    expect(parseUploadsPlaylist(PAGE)).toEqual([
       {
-        id: '2H7mU4a9bEQ',
-        publishedAt: '2026-08-17T03:36:13+00:00',
-        thumbnailUrl: 'https://i3.ytimg.com/vi/2H7mU4a9bEQ/hqdefault.jpg',
+        id: 'wrtfGSyFmtU',
+        publishedAt: '2026-09-02T01:16:09Z',
+        thumbnailUrl: 'https://i.ytimg.com/vi/wrtfGSyFmtU/maxresdefault.jpg',
       },
       {
-        id: 'oBDI-wjE0Io',
-        publishedAt: '2026-08-16T14:00:20+00:00',
-        thumbnailUrl: 'https://i3.ytimg.com/vi/oBDI-wjE0Io/hqdefault.jpg',
+        id: 'st5prkbEQA4',
+        publishedAt: '2026-09-01T12:46:24Z',
+        thumbnailUrl: 'https://i.ytimg.com/vi/st5prkbEQA4/hqdefault.jpg',
       },
     ]);
   });
 
-  it("never picks up the channel's own published date", () => {
-    // The regression this guards: the feed element carries a <published> of
-    // 2016 (when the channel was created). A scan that was not scoped to each
-    // <entry> would staple that onto the first video.
-    const streams = parseChannelFeed(FEED);
-    expect(streams.some((stream) => stream.publishedAt.startsWith('2016'))).toBe(false);
+  it('takes the largest thumbnail on offer, and never a smaller one', () => {
+    // Two sizes on the second item, three on the first. Picking a fixed key
+    // would either miss `maxres` where it exists or come back empty where it
+    // does not.
+    const [first, second] = parseUploadsPlaylist(PAGE);
+    expect(first?.thumbnailUrl).toContain('maxresdefault');
+    expect(second?.thumbnailUrl).toContain('hqdefault');
   });
 
-  it('sorts newest first even when the feed does not', () => {
-    const outOfOrder = FEED.replace(
-      '<published>2026-08-16T14:00:20+00:00</published>',
-      '<published>2026-08-18T14:00:20+00:00</published>',
-    );
-    expect(parseChannelFeed(outOfOrder).map((stream) => stream.id)).toEqual([
-      'oBDI-wjE0Io',
-      '2H7mU4a9bEQ',
+  it("prefers the video's publish time over the playlist's", () => {
+    /*
+     * For an uploads playlist the two are normally the same instant, but they
+     * are not the same field: `snippet.publishedAt` is when the video was added
+     * to the playlist. The video's own time is the one the archive dates rows
+     * by, so it has to win when they disagree.
+     */
+    const disagreeing = withItem(0, (item) => {
+      item.snippet.publishedAt = '2026-01-01T00:00:00Z';
+    });
+    expect(parseUploadsPlaylist(disagreeing)[0]?.publishedAt).toBe('2026-09-02T01:16:09Z');
+  });
+
+  it("falls back to the playlist's date when the video has none", () => {
+    const noVideoDate = withItem(0, (item) => {
+      delete item.contentDetails.videoPublishedAt;
+    });
+    expect(parseUploadsPlaylist(noVideoDate)[0]?.publishedAt).toBe('2026-09-02T01:16:09Z');
+  });
+
+  it('sorts newest first even when the response does not', () => {
+    const outOfOrder = withItem(1, (item) => {
+      item.contentDetails.videoPublishedAt = '2026-09-03T00:00:00Z';
+    });
+    expect(parseUploadsPlaylist(outOfOrder).map((stream) => stream.id)).toEqual([
+      'st5prkbEQA4',
+      'wrtfGSyFmtU',
     ]);
   });
 
-  it('skips one unusable entry without discarding the rest', () => {
-    const missingId = FEED.replace('<yt:videoId>2H7mU4a9bEQ</yt:videoId>', '');
-    expect(parseChannelFeed(missingId).map((stream) => stream.id)).toEqual(['oBDI-wjE0Io']);
+  it('skips one unusable item without discarding the rest', () => {
+    const missingId = withItem(0, (item) => {
+      delete item.contentDetails.videoId;
+    });
+    expect(parseUploadsPlaylist(missingId).map((stream) => stream.id)).toEqual(['st5prkbEQA4']);
 
-    const badDate = FEED.replace(
-      '<published>2026-08-17T03:36:13+00:00</published>',
-      '<published>whenever</published>',
-    );
-    expect(parseChannelFeed(badDate).map((stream) => stream.id)).toEqual(['oBDI-wjE0Io']);
+    const badDate = withItem(0, (item) => {
+      item.contentDetails.videoPublishedAt = 'whenever';
+      item.snippet.publishedAt = 'whenever';
+    });
+    expect(parseUploadsPlaylist(badDate).map((stream) => stream.id)).toEqual(['st5prkbEQA4']);
   });
 
-  it('keeps an entry that has no thumbnail, with an empty url', () => {
-    const noThumb = FEED.replace(
-      '<media:thumbnail url="https://i3.ytimg.com/vi/2H7mU4a9bEQ/hqdefault.jpg" width="480" height="360"/>',
-      '',
-    );
-    expect(noThumb).not.toContain('2H7mU4a9bEQ/hqdefault.jpg');
-    expect(parseChannelFeed(noThumb)[0]).toMatchObject({
-      id: '2H7mU4a9bEQ',
+  it('keeps an item that has no thumbnail, with an empty url', () => {
+    const noThumb = withItem(0, (item) => {
+      delete item.snippet.thumbnails;
+    });
+    expect(parseUploadsPlaylist(noThumb)[0]).toMatchObject({
+      id: 'wrtfGSyFmtU',
       thumbnailUrl: '',
     });
   });
 
   it('returns nothing rather than throwing on junk', () => {
-    expect(parseChannelFeed('')).toEqual([]);
-    expect(parseChannelFeed('<html><body>404</body></html>')).toEqual([]);
-    // A truncated download: the opening tag is there, the closing one is not.
-    expect(parseChannelFeed('<feed><entry><yt:videoId>abc</yt:videoId>')).toEqual([]);
+    // A body of the wrong shape is what an error response looks like when the
+    // status was somehow 200. The caller reads an empty list as "could not find
+    // out" and leaves the committed snapshot alone.
+    for (const junk of [
+      null,
+      undefined,
+      {},
+      'text',
+      { items: 'nope' },
+      { items: [null, 7] },
+      { error: { code: 403, message: 'quota' } },
+    ]) {
+      expect(() => parseUploadsPlaylist(junk)).not.toThrow();
+      expect(parseUploadsPlaylist(junk)).toEqual([]);
+    }
   });
 });
 
@@ -120,8 +160,9 @@ describe('isYouTubeChannelId', () => {
   });
 
   it('rejects the forms someone would realistically paste instead', () => {
-    // The whole reason the check exists: each of these produces a feed request
-    // that 404s, which would look like "no past streams" rather than a typo.
+    // The whole reason the check exists: each of these produces a playlist id
+    // that resolves to nothing, which would look like "no past streams" rather
+    // than a typo.
     expect(isYouTubeChannelId('@WaylandCopticChurch')).toBe(false);
     expect(isYouTubeChannelId('https://www.youtube.com/@WaylandCopticChurch')).toBe(false);
     expect(
@@ -133,11 +174,41 @@ describe('isYouTubeChannelId', () => {
   });
 });
 
-describe('channelFeedUrl', () => {
-  it('builds the feed address for a channel', () => {
-    expect(channelFeedUrl('UC6xlDBsD02-k7M5o-51CUQw')).toBe(
-      'https://www.youtube.com/feeds/videos.xml?channel_id=UC6xlDBsD02-k7M5o-51CUQw',
+describe('uploadsPlaylistId', () => {
+  it('swaps UC for UU', () => {
+    // Verified against the API on 2026-09-02: `channels.list` reports exactly
+    // this playlist for this channel. Deriving it saves a call and a unit.
+    expect(uploadsPlaylistId('UC6xlDBsD02-k7M5o-51CUQw')).toBe('UU6xlDBsD02-k7M5o-51CUQw');
+  });
+
+  it('returns anything that is not a channel id unchanged', () => {
+    // So the API rejects a bad value loudly, rather than this function
+    // inventing a playlist that does not exist.
+    for (const value of ['@WaylandCopticChurch', '', 'UUalreadyaplaylist', 'UC-too-short']) {
+      expect(uploadsPlaylistId(value)).toBe(value);
+    }
+  });
+});
+
+describe('uploadsPlaylistUrl', () => {
+  it('asks for the channel uploads, with both date fields', () => {
+    expect(uploadsPlaylistUrl('UC6xlDBsD02-k7M5o-51CUQw', 8)).toBe(
+      'https://www.googleapis.com/youtube/v3/playlistItems?' +
+        'part=snippet%2CcontentDetails&playlistId=UU6xlDBsD02-k7M5o-51CUQw&maxResults=8',
     );
+  });
+
+  it("clamps maxResults to the API's own range", () => {
+    // `maxResults=0` and `maxResults=100` are both error responses rather than
+    // a clipped list, and either would look like a dead channel.
+    expect(uploadsPlaylistUrl('UC6xlDBsD02-k7M5o-51CUQw', 0)).toContain('maxResults=1');
+    expect(uploadsPlaylistUrl('UC6xlDBsD02-k7M5o-51CUQw', 500)).toContain('maxResults=50');
+  });
+
+  it('carries no key', () => {
+    // Same reason as `videosListUrl`: the Function appends it, and this URL is
+    // what an error message names.
+    expect(uploadsPlaylistUrl('UC6xlDBsD02-k7M5o-51CUQw', 8)).not.toContain('key=');
   });
 });
 
@@ -150,7 +221,7 @@ describe('watchPageUrl', () => {
 /**
  * The fix for the bug that made every row on the page wrong.
  *
- * The feed's `<published>` is when the *recording* was published, not when the
+ * A listing's publish time is when the *recording* was published, not when the
  * liturgy aired. The values below are the real ones YouTube reported for video
  * `2H7mU4a9bEQ` on 2026-08-17: it went out at 07:52 Eastern on the Sunday
  * morning, and the feed dated it 23:36 that night.
@@ -165,8 +236,8 @@ describe('parseWatchPageStart', () => {
   });
 
   it('takes the start time and never the publish date', () => {
-    // The entire point. `publishDate` is the same late value the feed carries,
-    // so picking it up here would reintroduce the bug this function fixes.
+    // The entire point. `publishDate` is the same late value the listing
+    // carries, so picking it up here would reintroduce the bug this fixes.
     const start = parseWatchPageStart(WATCH);
     expect(start).not.toContain('20:36');
     expect(Date.parse(start as string)).toBeLessThan(Date.parse('2026-08-16T20:36:13-07:00'));
@@ -231,7 +302,7 @@ describe('liveBroadcastIds', () => {
   it('answers in candidate order, not response order', () => {
     /*
      * The API does not promise to echo ids back in the order they were asked
-     * for. Candidate order is the channel feed's, so the caller taking the first
+     * for. Candidate order is the uploads playlist's, so taking the first
      * result gets the most recently published broadcast — which is only true if
      * the ordering is imposed here.
      */
