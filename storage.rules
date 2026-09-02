@@ -1,7 +1,8 @@
 rules_version = '2';
 
 // Storage holds event hero images, clergy portraits, and product photos.
-// Most of it is public-read (it's on a public church website) and staff-write.
+// Most of it is public-read (it's on a public church website), and written by
+// whoever holds the matching grant at /access.
 //
 // That was once all of it. Program galleries added the upload surface this
 // comment used to say did not exist — anonymous, unauthenticated, by design —
@@ -18,22 +19,70 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function hasRole(role) {
-      let r = request.auth != null ? request.auth.token.get('role', 'member') : 'member';
-      let rank = r == 'admin' ? 3 : r == 'staff' ? 2 : r == 'servant' ? 1 : 0;
-      let need = role == 'admin' ? 3 : role == 'staff' ? 2 : role == 'servant' ? 1 : 0;
-      return request.auth != null && rank >= need;
+    // ---- who is asking ------------------------------------------------------
+    //
+    // The one place on this site where authorization reads a claim rather than
+    // the member document, and it is not a preference. **Storage rules cannot
+    // read Firestore.** There is no `get()` here and no equivalent, so the
+    // allocation that decides everything in firestore.rules is simply invisible
+    // from this file. The token is all there is.
+    //
+    // So `screens` exists: a flat list of granted screen keys, mirrored into the
+    // custom claims by `mirrorGrantsToClaims` in functions/src/auth.ts every
+    // time a member document changes, and read here and nowhere else. See the
+    // long note in packages/shared/src/claims.ts.
+    //
+    // What that costs is a lag. A claim only reaches a browser when the ID token
+    // refreshes, which is up to an hour — so somebody granted Events a moment
+    // ago could edit the event and be refused its photograph. The site closes
+    // that gap rather than living with it: `useScreenGrants` compares the token
+    // against the document it just read and forces a refresh when they disagree.
+    // If uploads start failing for a newly granted person, that comparison is
+    // the thing to check, not this file.
+
+    function isSuper() {
+      return request.auth != null && request.auth.token.get('superadmin', false) == true;
     }
 
+    // "The superadmin, or the person given this area" — the same sentence
+    // `hasScreen()` means in firestore.rules, proved from a lagging copy.
+    function hasScreen(screen) {
+      return isSuper()
+        || (request.auth != null && screen in request.auth.token.get('screens', []));
+    }
+
+    /*
+     * An image, of any size.
+     *
+     * -----------------------------------------------------------------------
+     * The 8MB ceiling was removed on 2026-09-01, at Tommy's request, and it is
+     * worth recording what it was costing rather than only that it is gone.
+     *
+     * It was written as "generous", and it stopped being so the moment a
+     * volunteer pointed a modern phone at anything: a 12-megapixel HEIC or a
+     * PNG straight out of a screenshot clears 8MB routinely, and the person
+     * hitting it is a member of staff who has already been trusted with the
+     * area they are uploading to. Refusing their photograph protected nothing
+     * — the same person can upload eight files of 7.9MB — while making the
+     * feature look broken.
+     *
+     * What is *not* removed is the bound on the one path a stranger can write
+     * to; see `formUploads/` at the foot of this file. A cap is load-bearing
+     * exactly where the writer is unauthenticated, and nowhere else.
+     *
+     * The content type check stays. It is not about size: a bucket that will
+     * accept `text/html` from a browser is a bucket that will serve it back,
+     * on our own domain, to somebody who followed a link.
+     * -----------------------------------------------------------------------
+     */
     function isImage() {
-      return request.resource.contentType.matches('image/.*')
-        && request.resource.size < 8 * 1024 * 1024;
+      return request.resource.contentType.matches('image/.*');
     }
 
     // Event hero images, uploaded from the events admin.
     //
     // `create, update` and `delete` are split, and that split is the fix for a
-    // real bug rather than tidiness. It was one `allow write: if hasRole('staff')
+    // real bug rather than tidiness. It was one `allow write: if <role check>
     // && isImage()`, and `write` covers delete — but on a delete there is no
     // incoming object, so `request.resource` is null and `isImage()` is false.
     // The effect was that staff could upload an event photograph and then
@@ -46,49 +95,80 @@ service firebase.storage {
     // tests/rules/storage.test.ts is what tells the two apart.
     match /events/{allPaths=**} {
       allow read: if true;
-      allow create, update: if hasRole('staff') && isImage();
-      allow delete: if hasRole('staff');
+      allow create, update: if hasScreen('events') && isImage();
+      allow delete: if hasScreen('events');
     }
 
-    // A form's own picture, uploaded by staff from the builder on /forms.
+    // A form's own picture, uploaded from the builder on /forms.
     //
     // Same create/update/delete split as `events/` above, and for the same
     // reason: `write` covers delete, and on a delete `request.resource` is null
     // so `isImage()` is false. Collapsing these three back into one `write`
-    // would let staff upload a picture they could then never replace or remove.
+    // would let somebody upload a picture they could then never replace.
     match /forms/{allPaths=**} {
       allow read: if true;
-      allow create, update: if hasRole('staff') && isImage();
-      allow delete: if hasRole('staff');
+      allow create, update: if hasScreen('forms') && isImage();
+      allow delete: if hasScreen('forms');
     }
 
+    // The last four prefixes to get the create/update/delete split, on
+    // 2026-09-01. They were the ones the `events/` note above was written about
+    // and did not reach: each was a single `allow write: ... && isImage()`, so
+    // every delete under them was refused, because a delete carries no incoming
+    // object and `isImage()` is therefore false.
+    //
+    // The consequence was not "an operation errors". It is that a photograph
+    // taken off the site stayed in a world-readable bucket and stayed served at
+    // its URL — a clergy portrait of somebody who has left the parish, a book
+    // cover for a title that was withdrawn, a member's own avatar they asked to
+    // remove. All four are `allow read: if true`, so nothing about that URL
+    // going stale makes it unreachable.
+    //
+    // `npm run rules:check` passes on either version. Only exercising a delete
+    // against the emulator tells them apart; see tests/rules/storage.test.ts.
+
+    // Clergy portraits. `content`, not the superadmin alone: these sit on the
+    // About pages beside the prose, and the person who writes one is the person
+    // who should be able to replace the photograph above it. It was
+    // `hasRole('admin')` because there was no narrower thing to say.
     match /clergy/{allPaths=**} {
       allow read: if true;
-      allow write: if hasRole('admin') && isImage();
+      allow create, update: if hasScreen('content') && isImage();
+      allow delete: if hasScreen('content');
     }
 
     match /products/{allPaths=**} {
       allow read: if true;
-      allow write: if hasRole('staff') && isImage();
+      allow create, update: if hasScreen('bookstore') && isImage();
+      allow delete: if hasScreen('bookstore');
     }
 
     match /content/{allPaths=**} {
       allow read: if true;
-      allow write: if hasRole('staff') && isImage();
+      allow create, update: if hasScreen('content') && isImage();
+      allow delete: if hasScreen('content');
     }
 
     // Member avatars: own folder only.
+    //
+    // The delete rule drops `isImage()` like the others, but keeps the whole
+    // ownership test — a delete that only checked `request.auth != null` would
+    // let any signed-in account remove anybody's avatar. `{uid}` is matched
+    // from the path, so it is available on a delete even though
+    // `request.resource` is not.
     match /members/{uid}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == uid && isImage();
+      allow create, update: if request.auth != null && request.auth.uid == uid && isImage();
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
     // ---- program galleries -------------------------------------------------
 
     // A photograph straight off somebody's phone. HEIC is the common case and
-    // no browser can display it, so `isImage()` is not enough — and the size
-    // cap has to be far higher than 8MB, because a modern phone photograph is
-    // routinely 12MB and a 4K clip is very much larger.
+    // no browser can display it, so `isImage()` is not enough. The size cap is
+    // one of the two left on this site — both on paths an unauthenticated
+    // caller can write to — and it is 250MB because a modern phone photograph
+    // is routinely 12MB and a 4K clip is very much larger.
     function isSubmittable() {
       return request.resource.size < 250 * 1024 * 1024
         && (request.resource.contentType.matches('image/.*')
@@ -98,19 +178,33 @@ service firebase.storage {
     // Quarantine. Write-only to the *world*, in the strictest sense the word
     // allows: create but not overwrite, and no anonymous read or list at all.
     //
-    // The read rule is the load-bearing line, and it says `hasRole('staff')`
-    // rather than `false` for a reason discovered by building the screen it
-    // serves. A submitter still cannot fetch back even the file they just sent
-    // — without that, this is an anonymous public file host wearing a parish's
-    // domain name, and the approval queue downstream is decorative because
-    // anyone can upload anything and share the URL. That property is intact.
+    // The read rule is the load-bearing line, and it says `signedIn()` rather
+    // than `false` for a reason discovered by building the screen it serves. A
+    // submitter still cannot fetch back even the file they just sent — a
+    // submitter is anonymous, which is the entire point of this prefix — so
+    // this is not an anonymous public file host wearing a parish's domain name
+    // and the approval queue downstream is not decorative. That property, which
+    // is the one that matters, is intact.
     //
     // What `false` also blocked was the administrator. Approving a photograph
     // means *looking* at it, and every path to the bytes runs through this
     // rule: the queue cannot show a thumbnail, cannot show the original, and
     // is reduced to a list of filenames and a guess. The transcode Function
     // writes its web-ready preview into this same prefix precisely so it stays
-    // unreadable by the public, which only works if staff can read it.
+    // unreadable by the public, which only works if the reviewer can read it.
+    //
+    // `signedIn()` and not a screen flag, and this is the one place in either
+    // rules file where the honest answer is that broad. Who may review a
+    // submission is a *program* grant — `programAdmin.programs`, checked by
+    // `adminsProgramEvent` in firestore.rules — and a program grant is a list
+    // of ids on a document this file cannot read. Nor could a path tell us:
+    // the prefix is keyed by `programEventId`, and mapping that to a program
+    // is a Firestore lookup. It was `hasRole('staff')`, which was no narrower
+    // in kind — it admitted the bookstore volunteer and the bulletin editor
+    // too — and it excluded the program leads who actually do this work, which
+    // was a documented gap in features/programs/review.ts. So the trade here is
+    // deliberate: reviewing is still gated properly at the *document* in
+    // firestore.rules, and the bytes are gated on holding a parish account.
     //
     // Note that this is the one prefix on the bucket whose reads are gated, so
     // the unauthenticated `?alt=media` URLs the public gallery uses do NOT work
@@ -139,9 +233,9 @@ service firebase.storage {
     // receive, and the upload form would simply never work. tests/rules/
     // storage.test.ts is what tells the two rows apart.
     match /submissions/{programEventId}/{fileName} {
-      allow read: if hasRole('staff');
+      allow read: if request.auth != null;
       allow create: if isSubmittable() && resource == null;
-      allow update, delete: if hasRole('staff');
+      allow update, delete: if request.auth != null;
     }
 
     // Photographs attached to a form submission, by whoever is filling it in.
@@ -158,9 +252,12 @@ service firebase.storage {
     //     cannot get it back, or discover anybody else's. These are photographs
     //     the public sends the parish; a world-readable quarantine would make
     //     every one of them findable by anyone who guessed a path.
-    //   - **images only, and small.** 8MB via `isImage()`, not the 250MB the
-    //     gallery allows: that path takes video from a parish festival, this one
-    //     takes a photograph of a dented wing.
+    //   - **images only, and bounded.** `isImage()` no longer carries a size —
+    //     see the note on it — so the bound is written here instead, and here
+    //     is the one place it is doing real work: this is the only path on the
+    //     site where an *unauthenticated* caller can write to a billed bucket.
+    //     250MB matches what `submissions/` already allows a stranger, so no
+    //     anonymous door on this site is tighter or looser than the other.
     //
     // Nothing sweeps abandoned files. Someone can attach a photograph and never
     // press submit, and that upload stays. Worth a lifecycle rule on the bucket
@@ -168,10 +265,16 @@ service firebase.storage {
     // submit, and uploading before submit is what lets the page show a
     // thumbnail and a failed upload be fixed before anything is sent.
     // ---------------------------------------------------------------------
+    // Unlike `submissions/` above, this one *can* be pinned to a grant and is:
+    // reading a form's attachments is the `forms` flag, the same one that opens
+    // the replies those attachments belong to. There is no program axis here to
+    // be defeated by a path.
     match /formUploads/{formSlug}/{fileName} {
-      allow read: if hasRole('staff');
-      allow create: if isImage() && resource == null;
-      allow update, delete: if hasRole('staff');
+      allow read: if hasScreen('forms');
+      allow create: if isImage()
+        && request.resource.size < 250 * 1024 * 1024
+        && resource == null;
+      allow update, delete: if hasScreen('forms');
     }
 
     // Web-ready renditions, written only by the transcode Function — which uses

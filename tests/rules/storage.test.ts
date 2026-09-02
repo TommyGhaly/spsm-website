@@ -1,7 +1,22 @@
 import { beforeAll, afterAll, describe, it } from 'vitest';
 import { assertSucceeds, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { ref, uploadBytes, getBytes, deleteObject } from 'firebase/storage';
-import { createTestEnv, asAnon, asServant, asStaff } from './helpers.js';
+import { createTestEnv, asAnon, asScreens, asServant } from './helpers.js';
+
+/**
+ * Storage reads the grants from a **claim**, not from a member document.
+ *
+ * The one asymmetry in the whole permission model, and it is forced: Storage
+ * rules cannot read Firestore. `mirrorGrantsToClaims` copies the `screenAdmin`
+ * map into a `screens` claim for exactly this file to read — see the long note
+ * in packages/shared/src/claims.ts — so a fixture here passes the claim
+ * directly rather than seeding a document, and a Firestore test that did the
+ * same would be testing nothing.
+ */
+const asEvents = (env: RulesTestEnvironment) => asScreens(env, ['events'], 'events-1');
+const asForms = (env: RulesTestEnvironment) => asScreens(env, ['forms'], 'forms-1');
+const asContent = (env: RulesTestEnvironment) => asScreens(env, ['content'], 'content-1');
+const asBookstore = (env: RulesTestEnvironment) => asScreens(env, ['bookstore'], 'bookstore-1');
 
 /**
  * The anonymous upload path.
@@ -48,7 +63,7 @@ const RUN = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 const meta = { contentType: 'image/png' };
 
 beforeAll(async () => {
-  env = await createTestEnv(true);
+  env = await createTestEnv('storage', true);
   await env.clearStorage();
 });
 
@@ -76,25 +91,34 @@ describe('submissions/ — the quarantine prefix', () => {
    * This read was `if false` until the approval queue was built, at which point
    * it turned out to lock out the one person who has to see the file. An
    * administrator approving a photograph without looking at it is not
-   * moderation. So the rule is staff-and-above, and these two assertions are
-   * what keep that from drifting into "anyone signed in": a servant has an
-   * account and is still on the public side of this line.
+   * moderation.
+   *
+   * It said `hasRole('staff')` and now says `signedIn()`, which is wider — and
+   * the property that matters is unchanged, which is what this asserts. A
+   * submitter is **anonymous**: they have no account, they never will, and that
+   * is the entire premise of the prefix. So the line this rule draws is between
+   * the public and the parish, and it always was; `staff` merely drew it in a
+   * place that also excluded the program leads who do the reviewing.
+   *
+   * Who may review *which* submission is a program grant, checked on the
+   * `galleryMedia` document in firestore.rules. It cannot be checked here: this
+   * file cannot read Firestore, and the path is keyed by `programEventId`,
+   * which would need a lookup to map to a program.
    */
-  it('refuses to let the public or a servant read back a submission', async () => {
+  it('refuses to let the public read back a submission', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/secret.png'), png, meta);
     });
 
     await assertFails(getBytes(ref(asAnon(env).storage(), 'submissions/week-1-2027/secret.png')));
-    await assertFails(getBytes(ref(asServant(env).storage(), 'submissions/week-1-2027/secret.png')));
   });
 
   /** The other half of the same line: review has to be possible. */
-  it('lets staff read a submission, so the approval queue can show it', async () => {
+  it('lets a signed-in reviewer read a submission, so the queue can show it', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/review-me.png'), png, meta);
     });
-    await assertSucceeds(getBytes(ref(asStaff(env).storage(), 'submissions/week-1-2027/review-me.png')));
+    await assertSucceeds(getBytes(ref(asServant(env).storage(), 'submissions/week-1-2027/review-me.png')));
   });
 
   it('refuses to let a submitter read back the file they just uploaded', async () => {
@@ -130,7 +154,7 @@ describe('submissions/ — the quarantine prefix', () => {
       await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/pending.png'), png, meta);
     });
     await assertFails(deleteObject(ref(asAnon(env).storage(), 'submissions/week-1-2027/pending.png')));
-    await assertSucceeds(deleteObject(ref(asStaff(env).storage(), 'submissions/week-1-2027/pending.png')));
+    await assertSucceeds(deleteObject(ref(asServant(env).storage(), 'submissions/week-1-2027/pending.png')));
   });
 });
 
@@ -149,7 +173,7 @@ describe('galleries/ — the public prefix', () => {
    */
   it('is writable by no client at all, including staff', async () => {
     await assertFails(uploadBytes(ref(asAnon(env).storage(), 'galleries/x/a.png'), png, meta));
-    await assertFails(uploadBytes(ref(asStaff(env).storage(), 'galleries/x/a.png'), png, meta));
+    await assertFails(uploadBytes(ref(asServant(env).storage(), 'galleries/x/a.png'), png, meta));
   });
 });
 
@@ -177,9 +201,9 @@ describe('events/ — hero images for the parish calendar', () => {
     await assertSucceeds(getBytes(ref(asAnon(env).storage(), 'events/festival/hero-1.png')));
   });
 
-  it('accepts an upload from staff and refuses one from everybody below', async () => {
+  it('accepts an upload from the events grant and refuses one from everybody else', async () => {
     await assertSucceeds(
-      uploadBytes(ref(asStaff(env).storage(), 'events/festival/hero-2.png'), png, meta),
+      uploadBytes(ref(asEvents(env).storage(), 'events/festival/hero-2.png'), png, meta),
     );
     await assertFails(
       uploadBytes(ref(asAnon(env).storage(), 'events/festival/anon.png'), png, meta),
@@ -191,24 +215,65 @@ describe('events/ — hero images for the parish calendar', () => {
 
   it('refuses a non-image, so the prefix cannot become general file hosting', async () => {
     await assertFails(
-      uploadBytes(ref(asStaff(env).storage(), 'events/festival/notes.pdf'), png, {
+      uploadBytes(ref(asEvents(env).storage(), 'events/festival/notes.pdf'), png, {
         contentType: 'application/pdf',
       }),
     );
+  });
+
+  it('takes a photograph straight off a phone, with no size ceiling', async () => {
+    /*
+     * The 8MB cap in `isImage()` was removed on 2026-09-01, and this is the
+     * guard on that decision for the prefix it matters most on. It was written
+     * as "generous", but a 12-megapixel photograph clears it routinely and a PNG
+     * out of a screenshot always does — so it refused the very people who had
+     * already been trusted with the area, while protecting nothing, since the
+     * same person can upload eight files of 7.9MB.
+     *
+     * 9MB rather than something enormous: the point is that the old boundary has
+     * gone, and a 250MB buffer in a test costs more than it proves.
+     */
+    const big = new Uint8Array(9 * 1024 * 1024);
+    big.set(png);
+    await assertSucceeds(
+      uploadBytes(ref(asEvents(env).storage(), `events/${RUN}-big/phone.png`), big, meta),
+    );
+  });
+
+  it('takes a whole batch of them, with no ceiling on the batch either', async () => {
+    /*
+     * The other half, and the one a throttle is most likely to break by
+     * accident. Adding rate limiting to this site in September 2026 raised the
+     * obvious question of whether uploads should be bounded too; the answer for
+     * the events pages is that they are bounded by *count* and never by size,
+     * neither per file nor totalled across a batch.
+     *
+     * Four files of 6MB is 24MB in one sitting — comfortably past any aggregate
+     * cap somebody might be tempted to add, and well short of what a parish
+     * volunteer with an afternoon of festival photographs actually sends.
+     */
+    const one = new Uint8Array(6 * 1024 * 1024);
+    one.set(png);
+
+    for (let i = 0; i < 4; i += 1) {
+      await assertSucceeds(
+        uploadBytes(ref(asEvents(env).storage(), `events/${RUN}-batch/photo-${i}.png`), one, meta),
+      );
+    }
   });
 
   /**
    * The regression test. This is the one that failed before the rule was split
    * into `create, update` and `delete`.
    */
-  it('lets staff delete a hero image, so "Remove photograph" actually removes it', async () => {
+  it('lets the events grant delete a hero image, so "Remove photograph" removes it', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), 'events/festival/hero-old.png'), png, meta);
     });
-    await assertSucceeds(deleteObject(ref(asStaff(env).storage(), 'events/festival/hero-old.png')));
+    await assertSucceeds(deleteObject(ref(asEvents(env).storage(), 'events/festival/hero-old.png')));
   });
 
-  it('still refuses a delete from anybody below staff', async () => {
+  it('still refuses a delete from anybody without the grant', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), 'events/festival/hero-keep.png'), png, meta);
     });
@@ -223,7 +288,7 @@ describe('events/ — hero images for the parish calendar', () => {
  * World-readable, because it is the photograph on a public card. The reason it
  * gets a test rather than a line of prose is the create/update/delete split: the
  * `events/` rule above carries a long comment about a real bug where one
- * `allow write ... && isImage()` made staff-uploaded photographs impossible to
+ * `allow write ... && isImage()` made uploaded photographs impossible to
  * *remove*, because a delete carries no `request.resource` and so fails
  * `isImage()`. `rules:check` passed throughout. The last test here is the one
  * that tells those two policies apart.
@@ -236,9 +301,9 @@ describe('forms/ — a form’s picture', () => {
     await assertSucceeds(getBytes(ref(asAnon(env).storage(), `forms/${RUN}-read/pic.png`)));
   });
 
-  it('is writable by staff and by nobody below them', async () => {
+  it('is writable by the forms grant and by nobody else', async () => {
     await assertSucceeds(
-      uploadBytes(ref(asStaff(env).storage(), `forms/${RUN}-a/pic.png`), png, meta),
+      uploadBytes(ref(asForms(env).storage(), `forms/${RUN}-a/pic.png`), png, meta),
     );
     await assertFails(
       uploadBytes(ref(asServant(env).storage(), `forms/${RUN}-b/pic.png`), png, meta),
@@ -248,14 +313,126 @@ describe('forms/ — a form’s picture', () => {
     );
   });
 
-  it('lets staff DELETE a picture they uploaded', async () => {
-    // The regression guard. Under a single `allow write: if hasRole('staff') &&
-    // isImage()` this fails, because a delete has no incoming object — and the
-    // symptom in the product is a picture that can be replaced in the document
-    // but never removed from a world-readable bucket.
+  it('accepts a photograph straight off a phone, with no size ceiling', async () => {
+    /*
+     * The 8MB cap in `isImage()` was removed on 2026-09-01. It was written as
+     * "generous" and a 12-megapixel HEIC clears it routinely, so the people it
+     * refused were the staff who had already been trusted with the area — while
+     * protecting nothing, since the same person can upload eight files of
+     * 7.9MB.
+     *
+     * 9MB here rather than something enormous: the point is that the old
+     * boundary has gone, and a 250MB buffer in a unit test costs more than it
+     * proves.
+     */
+    const big = new Uint8Array(9 * 1024 * 1024);
+    big.set(png);
+    await assertSucceeds(
+      uploadBytes(ref(asForms(env).storage(), `forms/${RUN}-big/phone.png`), big, meta),
+    );
+  });
+
+  it('still refuses a non-image, whatever its size', async () => {
+    // What `isImage()` is actually for. A bucket that accepts `text/html` from
+    // a browser will serve it back on our own domain to whoever follows a link.
+    await assertFails(
+      uploadBytes(ref(asForms(env).storage(), `forms/${RUN}-html/payload.html`), png, {
+        contentType: 'text/html',
+      }),
+    );
+  });
+
+  it('lets the forms grant DELETE a picture it uploaded', async () => {
+    // The regression guard. Under a single `allow write: if hasScreen('forms')
+    // && isImage()` this fails, because a delete has no incoming object — and
+    // the symptom in the product is a picture that can be replaced in the
+    // document but never removed from a world-readable bucket.
     const path = `forms/${RUN}-del/pic.png`;
-    await assertSucceeds(uploadBytes(ref(asStaff(env).storage(), path), png, meta));
-    await assertSucceeds(deleteObject(ref(asStaff(env).storage(), path)));
+    await assertSucceeds(uploadBytes(ref(asForms(env).storage(), path), png, meta));
+    await assertSucceeds(deleteObject(ref(asForms(env).storage(), path)));
+  });
+});
+
+/**
+ * The four prefixes that got the create/update/delete split last, on
+ * 2026-09-01.
+ *
+ * Grouped rather than given a describe each, because there is one question to
+ * ask of all four and it is the question the `events/` and `forms/` blocks
+ * above already ask: can the person who put a photograph here take it away
+ * again? Under a single `allow write: ... && isImage()` the answer was no, on
+ * all four, silently — a delete carries no `request.resource`, so `isImage()`
+ * evaluated against null and refused.
+ *
+ * That earns a test rather than a comment because of what the failure looked
+ * like from outside. Nothing errored anywhere anybody was watching: the upload
+ * worked, the admin screen said the picture was gone, the document stopped
+ * pointing at it — and the file stayed in a bucket that is `allow read: if
+ * true`, still served at its URL, to anyone who had ever seen it. A clergy
+ * portrait of somebody who has left the parish, or a member's own avatar they
+ * asked to have removed.
+ */
+describe('clergy/, products/, content/ and members/ — taking a photograph down', () => {
+  const cases = [
+    { name: 'clergy', prefix: 'clergy', granted: asContent, refused: asBookstore },
+    { name: 'products', prefix: 'products', granted: asBookstore, refused: asContent },
+    { name: 'content', prefix: 'content', granted: asContent, refused: asBookstore },
+  ] as const;
+
+  for (const { name, prefix, granted, refused } of cases) {
+    it(`lets the ${name} grant delete a picture it uploaded`, async () => {
+      const path = `${prefix}/${RUN}-del/photo.png`;
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await uploadBytes(ref(ctx.storage(), path), png, meta);
+      });
+      // The regression guard. This is the assertion that failed before the split.
+      await assertSucceeds(deleteObject(ref(granted(env).storage(), path)));
+    });
+
+    it(`refuses a ${name} delete from another grant, and from a stranger`, async () => {
+      const path = `${prefix}/${RUN}-keep/photo.png`;
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await uploadBytes(ref(ctx.storage(), path), png, meta);
+      });
+      // Dropping `isImage()` from the delete rule must not have taken the grant
+      // check with it.
+      await assertFails(deleteObject(ref(refused(env).storage(), path)));
+      await assertFails(deleteObject(ref(asAnon(env).storage(), path)));
+      await assertFails(deleteObject(ref(asServant(env).storage(), path)));
+    });
+
+    it(`still refuses a non-image upload to ${name}`, async () => {
+      await assertFails(
+        uploadBytes(ref(granted(env).storage(), `${prefix}/${RUN}-html/payload.html`), png, {
+          contentType: 'text/html',
+        }),
+      );
+    });
+  }
+
+  it('lets a member delete their own avatar', async () => {
+    const path = `members/servant-1/${RUN}-avatar.png`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
+    await assertSucceeds(deleteObject(ref(asServant(env).storage(), path)));
+  });
+
+  it('does not let one member delete another member\u2019s avatar', async () => {
+    /*
+     * The half of the split that is easy to get wrong in the other direction.
+     * The delete rule drops `isImage()` because a delete has no incoming object
+     * — but it has to keep the whole ownership test, or removing one null check
+     * turns "you may take down your own photograph" into "any signed-in account
+     * may take down anybody's". `{uid}` comes from the path, so it is available
+     * on a delete even though `request.resource` is not.
+     */
+    const path = `members/somebody-else/${RUN}-avatar.png`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
+    await assertFails(deleteObject(ref(asServant(env).storage(), path)));
+    await assertFails(deleteObject(ref(asAnon(env).storage(), path)));
   });
 });
 
@@ -295,9 +472,20 @@ describe('formUploads/ — photographs attached to a submission', () => {
     );
   });
 
-  it('lets staff read one, which is what the review panel does', async () => {
+  /*
+   * Unlike `submissions/` above, this one *is* pinned to a grant. There is no
+   * program axis here for a path to defeat: an attachment belongs to a form,
+   * and the `forms` flag is what opens the replies it is attached to.
+   */
+  it('lets the forms grant read one, which is what the review panel does', async () => {
     const path = `formUploads/van-request/${RUN}-e.png`;
     await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
-    await assertSucceeds(getBytes(ref(asStaff(env).storage(), path)));
+    await assertSucceeds(getBytes(ref(asForms(env).storage(), path)));
+  });
+
+  it('refuses a signed-in member with no forms grant', async () => {
+    const path = `formUploads/van-request/${RUN}-f.png`;
+    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await assertFails(getBytes(ref(asServant(env).storage(), path)));
   });
 });
