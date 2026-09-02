@@ -3,13 +3,26 @@ rules_version = '2';
 // Authorization lives here, not in the UI. Anything the client hides is a
 // convenience; anything this file allows is the actual policy.
 //
-// Two axes, matching packages/shared/src/roles.ts:
-//   role   — linear tier: member < servant < staff < admin
-//   groups — cross-cutting: clergy, bookstore, parking
+// Three answers, matching packages/shared/src/claims.ts:
 //
-// Both come from Auth custom claims (the ID token), never from a Firestore
-// document. Reading them from /members would let a member promote themselves by
-// editing their own profile.
+//   signed in    the servants' rota, and nothing else. Sign-in is Microsoft-only
+//                and restricted to the parish's Entra tenant, so authenticating
+//                at all already means being a servant of this church.
+//   allocated    `screenAdmin` and `programAdmin` on the member document, handed
+//                out at /access. This is where every other privilege comes from.
+//   superadmin   one boolean claim. Opens everything, including the allocating.
+//
+// The role ladder (`member < servant < staff < admin`) and the `groups` claims
+// (`clergy`, `bookstore`, `parking`) are gone. Every `hasRole('staff')` in this
+// file became the specific `hasScreen(...)` for the thing it was guarding, and
+// every `inGroup('bookstore')`/`inGroup('parking')` collapsed into the screen
+// flag that sat beside it — the two already named the same people.
+//
+// `superadmin` comes from the ID token and can, because it is set once from a
+// terminal. The allocation comes from the member document and must, because a
+// grant that waited an hour for a token refresh would be reported as broken
+// every time it was used. That the document is safe to read is a property of
+// `match /members/{uid}` below, which pins both maps against self-writes.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,21 +33,16 @@ service cloud.firestore {
       return request.auth != null ? request.auth.token : {};
     }
 
-    function roleRank() {
-      let r = claims().get('role', 'member');
-      return r == 'admin' ? 3 : r == 'staff' ? 2 : r == 'servant' ? 1 : 0;
-    }
-
-    function rankOf(role) {
-      return role == 'admin' ? 3 : role == 'staff' ? 2 : role == 'servant' ? 1 : 0;
-    }
-
-    function hasRole(role) {
-      return request.auth != null && roleRank() >= rankOf(role);
-    }
-
-    function inGroup(group) {
-      return request.auth != null && group in claims().get('groups', []);
+    /*
+     * The parish's site administrator, and the only claim that decides anything.
+     *
+     * `get('superadmin', false)` rather than a bare read: a token minted before
+     * this claim existed simply does not have the key, and a missing key in a
+     * rules map is an error rather than a falsy value. Every account signed in
+     * on the old model is in exactly that state until its token next refreshes.
+     */
+    function isSuper() {
+      return request.auth != null && claims().get('superadmin', false) == true;
     }
 
     function signedIn() {
@@ -43,6 +51,105 @@ service cloud.firestore {
 
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
+    }
+
+    // ---- per-screen grants -------------------------------------------------
+
+    /*
+     * The `screenAdmin` map on the caller's member document.
+     *
+     * **This is now the whole of the site's authorization**, alongside
+     * `programAdmin` below and the one `superadmin` claim above. It used to be a
+     * third axis widening a `staff` tier that admitted everybody who held it;
+     * with the tier gone, a flag is not a widening of anything — it is the door.
+     *
+     * On the member document rather than in the token because a grant that
+     * changes must not wait up to an hour for a token to refresh. An
+     * administrator hands somebody the bookstore and they have it on their next
+     * page load, not after they sign out and back in. That is worth one billed
+     * `get()` per check, which is the same bargain `adminsProgram()` makes.
+     *
+     * `exists()` first, for the same reason `memberGrants()` does it: the first
+     * administrator is bootstrapped by `grant-admin.mjs` and may have no member
+     * document at all. A `get()` on a missing document is an evaluation error,
+     * and an error denies — which would have locked out the one account that
+     * can fix it.
+     */
+    function memberScreens() {
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.get('screenAdmin', {})
+        : {};
+    }
+
+    /*
+     * Whether the caller has been entrusted with one area of the site.
+     *
+     * `signedIn()` first so an unauthenticated request short-circuits before
+     * touching `request.auth.uid`, which would otherwise be an evaluation error
+     * on every anonymous read of a collection that calls this.
+     */
+    function screenFlag(screen) {
+      return signedIn() && memberScreens().get(screen, false) == true;
+    }
+
+    /*
+     * Read every use of this as "the superadmin, or the person given this area".
+     *
+     * `isSuper()` is checked first so the administrator never pays for the
+     * member lookup — and so the first account, bootstrapped by
+     * `grant-admin.mjs` before it has a member document, is not refused by a
+     * `get()` on a document that does not exist.
+     *
+     * There was a second helper here, `hasStrictScreen()`, for rules that were
+     * `admin` rather than `staff` — the design tokens, in practice. It existed
+     * only to stop a flag from admitting the whole `staff` tier as a side
+     * effect. With no tier left the two are the same function, so there is one.
+     */
+    function hasScreen(screen) {
+      return isSuper() || screenFlag(screen);
+    }
+
+    /*
+     * The `financeScopes` map — which parts of the church's money one grant reaches.
+     *
+     * `finance` is one flag onto three sources: the shop's takings, the camp's
+     * fees and the paid forms. A parish that wants the bookkeeper to see the
+     * shop and not the camp had no way to say so, because a flag is a boolean.
+     * This map is that sentence, and it only ever *narrows* — `hasFinance()`
+     * below asks `hasScreen('finance')` first, so a source ticked for somebody
+     * without the finance grant opens nothing at all.
+     *
+     * Same `exists()` guard as `memberScreens()`, for the same reason: a `get()`
+     * on a missing document is an evaluation error, and an error denies.
+     */
+    function memberFinanceScopes() {
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.get('financeScopes', {})
+        : {};
+    }
+
+    /*
+     * Whether the caller may see one source of money.
+     *
+     * **An absent map means all three**, which is the opposite of how
+     * `screenFlag()` treats a missing key and is deliberate. Every member
+     * document written before this map existed belongs to somebody granted
+     * `finance` when `finance` meant all three; reading their absent map as
+     * "nothing" would silently revoke every treasurer in the parish on the day
+     * this deployed. The safe direction for a *narrowing* is "not yet narrowed".
+     *
+     * `keys().hasAny([...])` and not `keys().size() == 0` is what keeps that
+     * from swallowing a real choice: /access always writes all three keys, so an
+     * administrator who unticks everything stores three explicit `false`s, which
+     * names a source and is therefore honoured exactly.
+     * `parseFinanceScopes` in packages/shared/src/screens.ts is this function in
+     * TypeScript, and the two must stay in step.
+     */
+    function hasFinance(source) {
+      return isSuper()
+        || (screenFlag('finance')
+            && (!memberFinanceScopes().keys().hasAny(['bookstore', 'camp', 'forms'])
+                || memberFinanceScopes().get(source, false) == true));
     }
 
     // Cloud Functions use the Admin SDK, which bypasses these rules entirely.
@@ -86,13 +193,22 @@ service cloud.firestore {
     // the PWA caches them offline). Writable only by staff.
 
     match /content/{pageId} {
-      allow read: if isPublished(resource.data) || hasRole('staff');
-      allow write: if hasRole('staff');
+      // The About pages and the other prose documents. `hasScreen` widens this
+      // from staff-only to "staff, or whoever was given Content at /access" —
+      // which is the whole point of that screen: somebody who writes the parish's
+      // copy should not need the role that also opens the bookstore's takings.
+      allow read: if isPublished(resource.data) || hasScreen('content');
+      allow write: if hasScreen('content');
     }
 
     match /announcements/{announcementId} {
-      allow read: if isPublished(resource.data) || hasRole('staff');
-      allow write: if hasRole('staff');
+      // The `bulletin` grant. Note there is no editor for these today — the
+      // week's bulletin is read through from the parish's own source and never
+      // mirrored here — so this currently widens a door nothing walks through.
+      // Wired anyway: a flag the rules ignore is the exact bug this whole axis
+      // was just fixed for, and leaving one behind reintroduces it.
+      allow read: if isPublished(resource.data) || hasScreen('bulletin');
+      allow write: if hasScreen('bulletin');
     }
 
     // ---- runtime configuration --------------------------------------------
@@ -109,7 +225,10 @@ service cloud.firestore {
     // no webhook signing secrets. Those belong in Secret Manager.
     match /config/{docId} {
       allow read: if true;
-      allow write: if hasRole('admin');
+      // Superadmin only, and not delegable — `config` is in ADMIN_SCREENS and
+      // /access deliberately does not offer the row. This is where the site is
+      // pointed at its backends; see packages/shared/src/screens.ts.
+      allow write: if isSuper();
     }
 
     /*
@@ -135,6 +254,60 @@ service cloud.firestore {
      * characters of label. `parseSections` drops anything that gets through.
      * -----------------------------------------------------------------------
      */
+    /*
+     * The design tokens, carved out of the `config` block above so the `theme`
+     * grant can reach them.
+     *
+     * This was `hasStrictScreen()` while a `staff` tier existed, so that
+     * honouring the flag did not hand the whole staff a door that had always
+     * needed a superadmin. There is no tier now and the two helpers collapsed
+     * into one — but the caution is still the reason this document is carved
+     * out at all: `theme` restyles every page on the site, so it is a grant
+     * given to one person on purpose rather than to whoever edits the About
+     * pages.
+     *
+     * Read stays public because `config` above is public and a narrower rule
+     * cannot claw that back — Firestore grants when any matching rule allows.
+     * That is fine here and load-bearing elsewhere: the tokens are painted by
+     * every visitor's browser, so they have to be world-readable anyway.
+     */
+    /*
+     * One key on the camp's settings, writable by the people who run the camp.
+     *
+     * -----------------------------------------------------------------------
+     * A second match on a path `config/{docId}` already covers, exactly like
+     * the shop's `sections` block above. Firestore grants if **any** matching
+     * rule allows, so this can only widen — and what it widens is one boolean.
+     *
+     * `servantSignUp` is the switch that decides whether `/forms/summer-camp`
+     * shows a public sign-up form to anybody who opens it. That is a decision
+     * about the camp, made by whoever is running the camp, several times a
+     * season — the list opens in the spring and closes when the groups are
+     * built. `config` is otherwise superadmin-only and deliberately not
+     * delegable through /access, because it is where the site is pointed at its
+     * backends; making the camp's open/closed sign a support request to the one
+     * person holding that claim is how it ends up permanently open.
+     *
+     * Everything else in this document stays shut: the season, the fee, the
+     * waiver text and its version are all still superadmin-only, because each
+     * of them changes what a family is charged or what they agreed to.
+     *
+     * `resource.data.programId` and not the incoming one, so this cannot be
+     * used to move the camp to a ministry the writer happens to administer.
+     * -----------------------------------------------------------------------
+     */
+    match /config/camp {
+      allow read: if true;
+      allow update: if adminsProgram(resource.data.programId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['servantSignUp'])
+        && request.resource.data.servantSignUp is bool;
+    }
+
+    match /config/theme {
+      allow read: if true;
+      allow write: if hasScreen('theme');
+    }
+
     match /config/bookstore {
       allow read: if true;
 
@@ -149,12 +322,12 @@ service cloud.firestore {
        * refused with nothing to explain it. The create branch checks the whole
        * key set instead, which is the same guarantee without the dereference.
        */
-      allow create: if (inGroup('bookstore') || hasRole('staff'))
+      allow create: if hasScreen('bookstore')
         && request.resource.data.keys().hasOnly(['sections', 'updatedAt', 'updatedBy'])
         && isSectionList(request.resource.data.sections)
         && request.resource.data.updatedBy == request.auth.uid;
 
-      allow update: if (inGroup('bookstore') || hasRole('staff'))
+      allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['sections', 'updatedAt', 'updatedBy'])
         && isSectionList(request.resource.data.sections)
@@ -198,12 +371,34 @@ service cloud.firestore {
       // which is a different path with a different rule, and always were.
       // ---------------------------------------------------------------------
       allow read: if true;
-      allow write: if hasRole('staff');
+      // The parish calendar, and only that. Somebody given Events at /access
+      // can add and edit the services and one-off event pages; the ministries
+      // and their photographs are a different axis entirely — `programAdmin`,
+      // enforced by `adminsProgram()` further down. The two are deliberately
+      // not one flag: handing the youth servant every Summercamp gathering must
+      // not also hand them the liturgy schedule.
+      allow write: if hasScreen('events');
     }
 
     match /servantEvents/{eventId} {
-      allow read: if hasRole('servant');
-      allow write: if hasRole('staff');
+      /*
+       * The one thing signing in is worth on its own.
+       *
+       * This is the schedule every servant is on, and needing an allocation to
+       * see when you are serving would be the wrong way round — so the check is
+       * `signedIn()` and nothing more. It reads as generous and is not: sign-in
+       * is Microsoft-only and `enforceTenantOnCreate` refuses any account
+       * outside the parish's Entra directory, so the set of people this admits
+       * is the set of people on the rota.
+       *
+       * That property is the whole security model of this line. **If the Entra
+       * app registration is ever switched from single-tenant to multi-tenant,
+       * this collection becomes world-readable.**
+       *
+       * Writing it is still the `servants` grant.
+       */
+      allow read: if signedIn();
+      allow write: if hasScreen('servants');
     }
 
     // ---- the calendar's two staff-writable layers -------------------------
@@ -224,14 +419,18 @@ service cloud.firestore {
     // be created, edited and deleted.
     match /scheduleEntries/{entryId} {
       allow read: if true;
-      allow write: if hasRole('staff');
+      // `events`, not `servants`, and the distinction is the one ADMIN_SCREENS
+      // draws: these two layers are the *public* schedule on /calendar, which is
+      // the same thing the `events` grant covers. The servants' own rota is
+      // /servantEvents above and is a different grant.
+      allow write: if hasScreen('events');
     }
 
     // An annotation on an occurrence that already exists. Creating or deleting
     // one never creates or deletes the event it is about.
     match /calendarDetails/{occurrenceId} {
       allow read: if true;
-      allow write: if hasRole('staff');
+      allow write: if hasScreen('events');
     }
 
     // The two Breeze calendar embed URLs, and nothing else.
@@ -247,7 +446,8 @@ service cloud.firestore {
     // no referrer check.
     //
     // -----------------------------------------------------------------------
-    // `read: if false` — nobody, not even a servant. This was `hasRole('servant')`.
+    // `read: if false` — nobody, not even a servant. This was `hasRole('servant')`,
+    // back when there were roles at all.
     //
     // It was that because the browser used to fetch the URL after sign-in and
     // frame it in an iframe, which meant every servant's tab held a credential
@@ -267,29 +467,49 @@ service cloud.firestore {
     // -----------------------------------------------------------------------
     match /servantsConfig/{docId} {
       allow read: if false;
-      allow write: if hasRole('admin');
+      allow write: if isSuper();
     }
 
     // ---- members ----------------------------------------------------------
 
     match /members/{uid} {
-      allow read: if isSelf(uid) || hasRole('staff');
+      /*
+       * Your own profile, or the superadmin's.
+       *
+       * This was `isSelf(uid) || hasRole('staff')`, which let the whole
+       * administrative tier read everybody's phone number and email. The only
+       * caller that ever wanted somebody *else's* document is the allocation
+       * list at /access, which is superadmin-only — every other read in the
+       * codebase is a person reading their own grants. So the rule is now the
+       * two callers that exist.
+       *
+       * Note the `members` flag in ADMIN_SCREENS is deliberately not honoured
+       * here. It is the power to grant every other flag, and delegating the
+       * delegation is how a superadmin-only screen quietly stops being one.
+       */
+      allow read: if isSelf(uid) || isSuper();
 
-      // A member may edit their own profile but may NOT touch the claim
-      // mirrors — those are set by a Function after claims change — nor
-      // `screenAdmin`, which is a permission and not a preference.
+      // A member may edit their own profile but may NOT touch `superadminMirror`
+      // — a display copy of the claim, written by `grant-admin.mjs` — nor
+      // `screenAdmin` and `programAdmin`, which are permissions and not
+      // preferences.
       //
-      // `screenAdmin` matters more than the mirrors it sits beside. The mirrors
-      // are cosmetic: rules read the token, so a forged `roleMirror` grants
-      // nothing. `screenAdmin` has no claim behind it — it is the only record
-      // of which areas a non-admin may manage — so a member who could write it
-      // could open every admin screen on the site to themselves. Hence it is
-      // pinned on create as well as update.
+      // The two maps matter far more than the mirror they sit beside. The
+      // mirror is cosmetic: rules read the token, so a forged
+      // `superadminMirror` grants nothing. `screenAdmin` has no claim behind it
+      // — it is the *only* record of which areas somebody may manage — so a
+      // member who could write it could open every admin screen on the site to
+      // themselves. Hence it is pinned on create as well as update.
       allow create: if isSelf(uid)
-        && request.resource.data.roleMirror == 'member'
-        && request.resource.data.groupsMirror.size() == 0
+        && request.resource.data.get('superadminMirror', false) == false
         && (!('screenAdmin' in request.resource.data)
             || !request.resource.data.screenAdmin.values().hasAny([true]))
+        // `financeScopes` narrows the `finance` grant, and an absent map means
+        // all three sources — so a member seeding one here could not widen
+        // anything they had not already been given, but they could not narrow
+        // it either, and a permission map a member writes at all is one this
+        // file then reads. Pinned to absent on create, like the two below.
+        && !('financeScopes' in request.resource.data)
         // `programAdmin` is the same kind of thing as `screenAdmin` and is
         // pinned for the same reason — but it is read by the gallery rules
         // below via `get()`, which makes it the one permission on this site
@@ -300,42 +520,59 @@ service cloud.firestore {
                 && request.resource.data.programAdmin.get('events', []).size() == 0));
 
       allow update: if isSelf(uid)
-        && request.resource.data.roleMirror == resource.data.roleMirror
-        && request.resource.data.groupsMirror == resource.data.groupsMirror
+        && request.resource.data.get('superadminMirror', false)
+             == resource.data.get('superadminMirror', false)
         // Byte-for-byte identical, rather than "no true values". A member must
         // not be able to revoke their own grants either — a support call about
         // access that silently disappeared is worse than one about access that
         // was never given.
         && request.resource.data.get('screenAdmin', {}) == resource.data.get('screenAdmin', {})
-        && request.resource.data.get('programAdmin', {}) == resource.data.get('programAdmin', {});
+        && request.resource.data.get('programAdmin', {}) == resource.data.get('programAdmin', {})
+        // The third permission map, pinned the same way. A treasurer narrowed
+        // to the camp could otherwise hand themselves the shop's orders by
+        // editing their own profile — `financeScopes` is read by `hasFinance()`
+        // exactly as `screenAdmin` is read by `screenFlag()`.
+        && request.resource.data.get('financeScopes', {}) == resource.data.get('financeScopes', {});
 
-      allow update: if hasRole('admin');
-      allow delete: if hasRole('admin');
+      allow update: if isSuper();
+      allow delete: if isSuper();
     }
 
     match /products/{productId} {
       allow read: if isPublished(resource.data);
-      allow read: if hasRole('staff');
-      // Catalog writes go through the Square sync Function or staff tooling.
-      allow write: if hasRole('staff');
+      allow read: if hasScreen('bookstore');
 
       /*
-       * The one field the bookstore group may change: which part of the shop a
-       * product appears in.
+       * The one field a browser may change: which part of the shop a product
+       * appears in. There is no broad `allow write` here, and its removal is
+       * the one place in this file where collapsing the role ladder made a rule
+       * *narrower* rather than merely renaming it.
        *
-       * A widening of the rule above, which is `staff` only. A bookstore
-       * volunteer is `member` plus the group — the same people who work the
-       * orders queue — and filing a book under "Icons" is the least consequential
-       * thing on that screen. Everything Square owns stays untouchable from a
-       * browser: `hasOnly` admits three keys and `section` is the only one that
-       * carries meaning.
+       * It used to read `allow write: if hasRole('staff')` beside this block.
+       * Firestore ORs matching rules, so that broad line meant every check
+       * below was skipped for anybody staff — the bounded key set governed the
+       * `inGroup('bookstore')` volunteer and nobody else, and the suite once
+       * caught `section: 42` succeeding from a staff account for exactly that
+       * reason. Collapsing the group into the flag would have promoted every
+       * shop volunteer through the broad line and left this block dead: a
+       * browser holding the Bookstore grant could rewrite every price in the
+       * catalogue.
+       *
+       * So the broad line went instead. Nothing needs it. The only browser
+       * write to this collection is `setProductSection` in
+       * features/bookstore/adminData.ts, and everything else — the Square
+       * mirror, the 15-minute refresh — runs through the Admin SDK, which
+       * bypasses this file entirely. Square owns the price, the name, the stock
+       * and whether a book is listed at all; `hasOnly` admits three keys and
+       * `section` is the only one that carries meaning.
        *
        * Creating a product is *not* here and must not be. It has to happen in
        * Square first, because the checkout prices orders from Square's catalog —
        * a row invented in Firestore has no variation id and cannot be bought.
-       * That path is `squareCreateProduct`, which re-checks the claim server-side.
+       * That path is `squareCreateProduct`, which re-checks the grant
+       * server-side.
        */
-      allow update: if (inGroup('bookstore') || hasRole('staff'))
+      allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['section', 'updatedAt', 'updatedBy'])
         && (request.resource.data.section == null
@@ -345,16 +582,22 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      // A member sees their own orders; bookstore volunteers see all.
+      // A member sees their own orders; whoever runs the shop sees all.
       //
       // A buyer is neither. Sign-in here is Microsoft-only and restricted to
       // the parish tenant, so a parishioner has no uid for `isSelf` to match —
       // they reach their orders through the `orderLookup` Function, which
       // authenticates them with a receipt instead. Nothing below grants them
       // anything, and that is correct: the Admin SDK bypasses these rules.
+      // The bookstore half of `finance` is admitted here and it is a real
+      // widening: an order carries
+      // the buyer's name and what they bought. It is allowed because a refund
+      // is a transaction the treasurer has to be able to see against the sale
+      // it reverses — a takings figure with no orders behind it cannot be
+      // reconciled, and reconciling is the job the flag exists for.
       allow read: if isSelf(resource.data.memberUid)
-        || inGroup('bookstore')
-        || hasRole('staff');
+        || hasScreen('bookstore')
+        || hasFinance('bookstore');
 
       // Orders are created and advanced ONLY by Cloud Functions reconciling
       // Square webhooks. If the client could write here, a member could mark
@@ -375,7 +618,10 @@ service cloud.firestore {
        * `hasOnly` is what makes the sentence above true. Without it a write
        * that sets `fulfillment` may set anything else in the same breath.
        */
-      allow update: if (inGroup('bookstore') || hasRole('staff'))
+      // `bookstore` and not `finance`: marking a parcel collected is running
+      // the shop, not reading its books. The treasurer sees this order — the
+      // read rule above admits them — and cannot advance it.
+      allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['fulfillment', 'updatedAt', 'updatedBy'])
         && request.resource.data.fulfillment in ['unfulfilled', 'ready', 'collected']
@@ -452,13 +698,81 @@ service cloud.firestore {
     /*
      * The rolled-up numbers.
      *
-     * Staff-only read: these are the parish's sales figures. Written solely by
+     * Read by the shop and the treasurer only: these are the parish's sales
+     * figures. Written solely by
      * the scheduled rollup through the Admin SDK, so `write: false` here costs
      * nothing and closes the obvious hole — a dashboard that could be edited by
      * the person it reports on is not a report.
      */
     match /bookstoreStats/{periodId} {
-      allow read: if inGroup('bookstore') || hasRole('staff');
+      /*
+       * Two ways in, and the second is the one that carries its weight.
+       *
+       * `finance` is the only grant on this site that reaches a document
+       * containing nothing but figures — no name, no address, no order behind
+       * it, just what the shop took in a day. Which makes this the one place
+       * the treasurer's flag can be honoured exactly: they get the takings and
+       * they get nothing else. Everywhere else money is a field on a record
+       * about a person, and rules grant documents rather than fields; see the
+       * long note on `'finance'` in packages/shared/src/screens.ts.
+       */
+      allow read: if hasScreen('bookstore') || hasFinance('bookstore');
+      allow write: if false;
+    }
+
+    /*
+     * The rest of the parish's money, with the people taken out.
+     *
+     * ---------------------------------------------------------------------
+     * This collection exists to close a hole in the rule directly above.
+     *
+     * `bookstoreStats` could be handed to the treasurer exactly, because it is
+     * nothing but figures. The other two places the parish takes money could
+     * not: a camp fee is `billing.payments[]` *inside* a `campRegistrations`
+     * document, next to a child's allergies and medical notes, and a paid
+     * form's total sits on the `formSubmissions` document beside every answer
+     * given. Rules grant documents and not fields, so there was no way to write
+     * a rule that gave `finance` the money without also giving it those. The
+     * shortfall was documented in three places and left open on purpose.
+     *
+     * `functions/src/finance.ts` reads both collections with the Admin SDK,
+     * which bypasses this file, and writes one document per camp season and per
+     * paid form containing counts and sums and no name, no address, no email
+     * and no check number. Those documents are these. The trust boundary moved
+     * from a rule that could not be written to a Function that can be read.
+     *
+     * One door, unlike the takings above: this is not the shop's data and the
+     * volunteer packing parcels has no use for it. `hasScreen('finance')` is
+     * the superadmin or the person /access says this row is for.
+     *
+     * Unwritable by every client, like the takings. A report the reported-on
+     * can edit is not a report.
+     * ---------------------------------------------------------------------
+     */
+    match /financeRollups/{rollupId} {
+      /*
+       * One collection, two sources, and the `kind` field is what tells them
+       * apart — `camp` for a season, `form` for a paid form.
+       *
+       * Read on the *document* rather than on the id, even though the id
+       * carries the same prefix, and that is a Firestore constraint rather than
+       * a preference. A `list` is evaluated against the query's potential
+       * result set, so the only thing that can narrow one is a condition the
+       * query itself can prove: `where('kind', '==', 'camp')` proves
+       * `resource.data.kind == 'camp'` and nothing proves anything about the
+       * document id. `features/finance/data.ts` therefore asks for the kinds it
+       * holds, one query each, and never reads the bare collection.
+       *
+       * `resource != null` in front, for the reason recorded on the camp rules:
+       * a `get()` of a document that is not there evaluates `resource.data` on
+       * null, which is an error, and an error denies with a message that names
+       * nothing. This denies too — but on purpose and for a reachable reason,
+       * and a rollup that has not been computed yet is not something this
+       * screen fetches by id.
+       */
+      allow read: if resource != null
+        && ((resource.data.kind == 'camp' && hasFinance('camp'))
+            || (resource.data.kind == 'form' && hasFinance('forms')));
       allow write: if false;
     }
 
@@ -466,8 +780,8 @@ service cloud.firestore {
 
     match /vehicles/{vehicleId} {
       // No public read: a plate-to-name mapping is exactly the kind of thing
-      // that should not be enumerable. Staff/parking only.
-      allow read: if inGroup('parking') || hasRole('staff');
+      // that should not be enumerable. The `parking` grant only.
+      allow read: if hasScreen('parking');
       allow read: if isSelf(resource.data.ownerUid);
 
       // Guests register without an account (§3.5), so this is open to
@@ -484,8 +798,8 @@ service cloud.firestore {
           || request.resource.data.ownerUid == null
         );
 
-      allow update: if isSelf(resource.data.ownerUid) || hasRole('staff');
-      allow delete: if hasRole('staff');
+      allow update: if isSelf(resource.data.ownerUid) || hasScreen('parking');
+      allow delete: if hasScreen('parking');
     }
 
     // ---- forms ------------------------------------------------------------
@@ -507,14 +821,48 @@ service cloud.firestore {
        * from a client at all. See below.
        */
       allow read: if isPublished(resource.data);
-      allow read: if hasRole('staff');
-      allow write: if hasRole('staff');
+      allow read: if hasScreen('forms');
+
+      /*
+       * Two forms cannot be deleted, by anybody, ever.
+       *
+       * `contact` and `vehicle-registration` are addressed from outside this
+       * codebase: an NFC tag and a printed card in the car park point at one,
+       * and every "ask the church office" link on the site — plus the parish's
+       * own stationery — points at the other. Neither can be corrected by
+       * editing a file, so a delete here is not an edit, it is a 404 discovered
+       * by somebody standing in a car park on a Sunday.
+       *
+       * The drawer withholds the button and `deleteForm` throws before it gets
+       * here. This is the one that holds: the other two are a page, and a page
+       * is whatever the browser running it says it is.
+       *
+       * Deliberately NOT extended to unpublishing. A rule cannot usefully
+       * distinguish "unticked Published by accident" from the several legitimate
+       * writes that also carry that field, and the site now falls back to a
+       * built-in copy of both forms when the document is missing or unreadable
+       * — so the failure this closes is the irreversible one. See
+       * `packages/shared/src/schema/builtInForms.ts`.
+       *
+       * The ids are transcribed from BUILT_IN_FORM_IDS in that file. A form
+       * added there must be added here, and the reverse.
+       */
+      allow create, update: if hasScreen('forms');
+      allow delete: if hasScreen('forms')
+        && !(formId in ['contact', 'vehicle-registration']);
     }
 
     match /formSubmissions/{submissionId} {
       // Submitters can't re-read submissions; staff review them. Keeps one
       // person's registration from being readable by the next.
-      allow read: if hasRole('staff');
+      //
+      // The `forms` grant is deliberately one flag covering both collections
+      // rather than two. Splitting "may build a form" from "may read its
+      // replies" sounds tidier than it is: the builder needs to see a real
+      // submission to know the form works, and a reviewer looking at an answer
+      // they cannot explain needs the question. Neither job is doable with half
+      // of this, so a grant that gave half would just be reported as broken.
+      allow read: if hasScreen('forms');
 
       /*
        * STILL CLOSED — and now for a better reason than "no schema exists".
@@ -552,13 +900,13 @@ service cloud.firestore {
        */
       allow create: if false;
 
-      allow update, delete: if hasRole('staff');
+      allow update, delete: if hasScreen('forms');
     }
 
     // ---- audit log --------------------------------------------------------
 
     match /auditLog/{entryId} {
-      allow read: if hasRole('admin');
+      allow read: if isSuper();
       // Append-only, and only from the backend.
       allow write: if false;
     }
@@ -592,13 +940,12 @@ service cloud.firestore {
     // collection with a `parentId`. There is no separate collection or field for
     // "subgroup" any more, and no fixed depth.
     //
-    // The third permission axis lives here. `role` and `groups` come from the
+    // The second half of an allocation lives here. `superadmin` comes from the
     // token; program grants cannot, because they change often enough that
     // waiting an hour for a token to refresh would be a support call every
-    // time. They are read from the member document instead — which is safe in
-    // a way `role` would not be, because the member rule above pins
-    // `programAdmin` exactly as it pins `screenAdmin`: a member cannot write
-    // their own grants.
+    // time. They are read from the member document instead — which is safe
+    // because the member rule above pins `programAdmin` exactly as it pins
+    // `screenAdmin`: a member cannot write their own grants.
 
     function memberGrants() {
       return exists(/databases/$(database)/documents/members/$(request.auth.uid))
@@ -606,10 +953,10 @@ service cloud.firestore {
         : {};
     }
 
-    // Ordered so an admin never pays for the member lookup, and so an
+    // Ordered so the superadmin never pays for the member lookup, and so an
     // unauthenticated request short-circuits before touching `request.auth.uid`.
     function adminsProgram(programId) {
-      return hasRole('admin')
+      return isSuper()
         || (signedIn() && programId in memberGrants().get('programs', []));
     }
 
@@ -642,7 +989,7 @@ service cloud.firestore {
       allow read: if isPublished(resource.data) || adminsProgram(programId);
       // Creating and retiring a program is the superadmin's alone. A program
       // administrator runs what they were given; they do not mint new ones.
-      allow create, delete: if hasRole('admin');
+      allow create, delete: if isSuper();
       // Name, description, cover, order — theirs to edit.
       allow update: if adminsProgram(programId);
     }
@@ -789,6 +1136,378 @@ service cloud.firestore {
       // photographs into it. Program-scoped grants, which is what these
       // volunteers are normally given, are unaffected.
       allow update, delete: if adminsProgramEvent(resource.data.programId, resource.data.programEventId);
+    }
+
+    /* ======================================================================
+       Summer camp registrations
+       ====================================================================== */
+
+    /*
+     * The most sensitive collection in this file, and the one with the fewest
+     * doors.
+     *
+     * A registration holds a child's date of birth, their allergies, their
+     * medical notes and where they live. There is no public read, no anonymous
+     * create, and no self-service path of any kind — every operation takes a
+     * program grant on the camp's ministry, which is the third permission axis
+     * declared above `programs` and already means "runs Summercamp".
+     *
+     * Deliberately *not* a screen flag, and specifically **not `finance`**,
+     * even though a registration carries a fee ledger. Rules grant documents
+     * and not fields, so a flag that reached the money here would also hand
+     * over a ten-year-old's allergies; `financeRollups` exists so the treasurer
+     * can have the figures without the children. See the long note on
+     * `'finance'` in packages/shared/src/screens.ts, and the assertions in
+     * tests/rules/access.test.ts that hold this line.
+     *
+     * Note what that costs, so nobody reports it as a bug: a `superadmin` gets
+     * in via `adminsProgram`, and everyone else needs `programAdmin.programs` to
+     * contain the camp's id — set by a superadmin on the member document, which
+     * members cannot write to themselves (see `match /members/{uid}` above,
+     * which pins `programAdmin` exactly as it pins `screenAdmin`).
+     *
+     * ## Why a list query needs `programId`
+     *
+     * Firestore judges a list by what it *could* return, so an unfiltered query
+     * here can only be proven by `isSuper()` and a camp administrator
+     * with a program grant would be refused the whole screen — decision #10's
+     * failure mode, which the galleries hit and tests/rules caught. Every read
+     * from the registration screen therefore carries
+     * `where('programId','==',…)`, which is what `adminsProgram` can prove for
+     * the superadmin and the volunteer alike.
+     */
+    /*
+     * Servants who have signed themselves up, waiting to be accepted.
+     *
+     * -----------------------------------------------------------------------
+     * The only door into the camp that a stranger can knock on — and it does
+     * not open onto the register.
+     *
+     * `campRegistrations` below is administrator-only in both directions, and
+     * it has to stay that way: it holds children's allergies and medical notes.
+     * A servant signing up is not that. It is one person saying which days they
+     * can serve, and requiring a program grant to type it in is how a camp ends
+     * up with a spreadsheet nobody reconciles.
+     *
+     * So sign-ups land here instead, and this collection is written by exactly
+     * one thing: `campServantRequest`, a Cloud Function, using the Admin SDK,
+     * which these rules do not govern. The reasons a client create is refused
+     * rather than validated are in that file — the ministry and the season are
+     * read from `config/camp` rather than taken from the sender, and rules
+     * cannot rate-limit an endpoint anybody on the internet can post to.
+     *
+     * Accepting one is the administrator's own browser writing a real
+     * registration under their own uid and then deleting the request. Nothing
+     * a stranger sends is ever read by the roster, the shirt count, or the
+     * allocation board until somebody with the grant has said so.
+     * -----------------------------------------------------------------------
+     */
+    match /campServantRequests/{requestId} {
+      /*
+       * `get` and `list` are split for the same reason as the registrations
+       * below: a query is judged by what it could return, so a list has to
+       * constrain `programId` to be provable at all. Unlike there, `get` needs
+       * no null-resource branch — nothing reads one of these back before
+       * writing it, because nothing writes one of these from a browser.
+       */
+      allow get: if adminsProgram(resource.data.programId);
+      allow list: if adminsProgram(resource.data.programId);
+
+      // The Function only. See above.
+      allow create, update: if false;
+
+      // Dismissing a sign-up, and the second half of accepting one. Both are
+      // the administrator's own delete of a document they can already read.
+      allow delete: if adminsProgram(resource.data.programId);
+    }
+
+    match /campRegistrations/{registrationId} {
+      /*
+       * `get` and `list` are split, and the `resource == null` branch is the
+       * reason.
+       *
+       * The save path reads a registration back before writing it, so a
+       * replacing `setDoc` can carry `createdAt` across instead of destroying
+       * it. On the *first* save there is nothing there: `resource` is null,
+       * `resource.data.programId` is an evaluation error, and the error denies
+       * the read — which takes the whole save down with it, reported as a rules
+       * failure on a document nobody could have been refused.
+       *
+       * Allowing it costs nothing. A document that does not exist has no data
+       * to protect, and what comes back is an empty snapshot. What it does
+       * expose is whether an id is in use, which for ids of the form
+       * `reg-<time>-<random>` is not a question anybody can usefully ask.
+       *
+       * `list` keeps the strict form. A query never evaluates against a null
+       * resource, and loosening it there would break the property the whole
+       * collection rests on — that a list has to constrain `programId` to be
+       * provable at all.
+       *
+       * Found by saving a registration in a browser. The rules tests wrote
+       * without reading first, so they passed; there is now one that does both.
+       */
+      allow get: if resource == null || adminsProgram(resource.data.programId);
+      allow list: if adminsProgram(resource.data.programId);
+
+      // The bounds below are transcribed from packages/shared/src/schema/camp.ts.
+      // A bound only present in TypeScript is not a bound — this file is what
+      // somebody with a console has to get past. If one changes, both change.
+      allow create: if adminsProgram(request.resource.data.programId)
+        && isCampRegistration(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // The programId is pinned across an update for the same reason
+      // `programEvents` pins it: re-filing a registration under a ministry you
+      // administer would otherwise be a way to pull one out of a ministry you do
+      // not. There is no legitimate reason to move a camp registration between
+      // ministries, so this is a flat refusal rather than a both-grants check.
+      allow update: if adminsProgram(resource.data.programId)
+        && request.resource.data.programId == resource.data.programId
+        && isCampRegistration(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // Deleting is real deletion of a family's record. Withdrawing is a status
+      // — `CAMP_STATUSES` has `withdrawn` precisely so that a family who pulled
+      // out is still answerable for six months — so this is for a duplicate row
+      // typed twice at a desk, and nothing else.
+      allow delete: if adminsProgram(resource.data.programId);
+    }
+
+    // The shape check, kept out of the rules above so they read as policy.
+    //
+    // Sizes rather than contents: rules cannot walk an array's members, so what
+    // is enforced here is that nobody can grow a registration past the point
+    // where the document stops being saveable, or write a fee big enough to make
+    // a balance meaningless. Field-level validity — a real grade, a real shirt
+    // size — is `parseCampRegistration`'s job on the way out, because a rule
+    // that tried would be unmaintainable and would still not stop a determined
+    // writer from putting nonsense in a string.
+    function isCampRegistration(doc) {
+      return doc.season is string
+        && doc.season.size() > 0
+        && doc.season.size() <= 120
+        && doc.kind in ['family', 'servant']
+        && doc.status in ['draft', 'registered', 'waitlisted', 'withdrawn']
+        && doc.children is list
+        && doc.children.size() <= 20
+        && doc.billing.baseCents is int
+        && doc.billing.baseCents >= 0
+        && doc.billing.baseCents <= 500000
+        && doc.billing.discounts is list
+        && doc.billing.discounts.size() <= 12
+        && doc.billing.payments is list
+        && doc.billing.payments.size() <= 24;
+    }
+
+    /* ======================================================================
+       Summer camp allocation
+       ====================================================================== */
+
+    /*
+     * How a season is divided up: grade bands, their groups, the stations, and
+     * which child or servant is in each.
+     *
+     * The same door as the registrations above — a program grant on the camp's
+     * ministry — and for the same reason rather than by copying. This document
+     * holds no names, no dates of birth and no medical notes: a group is a list
+     * of keys of the form `registrationId/childId`, and every name on the screen
+     * is looked up from `campRegistrations`. So the *contents* here are close to
+     * meaningless on their own. What makes the grant the right door anyway is
+     * that the document is only useful to somebody who can already read the
+     * registrations, and a second, wider door onto the same work is a door
+     * somebody has to remember exists.
+     *
+     * ## No list rule, deliberately
+     *
+     * There is exactly one allocation per season and its id is derived —
+     * `<programId>__<season>`, see `allocationDocId` — so the screen reads it
+     * with a `get` and never queries the collection. Adding `allow list` would
+     * mean thinking about the decision #10 trap again for a query nothing
+     * makes. If a "past seasons" screen ever needs one, it takes a
+     * `where('programId','==',…)` constraint exactly as the registrations do,
+     * and this comment is the warning that it is not free.
+     */
+    match /campAllocations/{allocationId} {
+      /*
+       * `resource == null` on `get`, the same as the registrations above and
+       * found the same way.
+       *
+       * The screen opens on a season nobody has allocated yet, and the save
+       * path reads the document back before writing so a replacing `setDoc`
+       * carries `createdAt` across. Both are reads of a document that does not
+       * exist: `resource.data.programId` is an evaluation error, the error
+       * denies the read, and the whole screen reports permission denied on its
+       * very first paint. Allowing it exposes nothing — an absent document has
+       * no data — beyond whether `summercamp__2027` is in use, which is not a
+       * question anybody has to guess at.
+       */
+      allow get: if resource == null || adminsProgram(resource.data.programId);
+
+      /*
+       * Listing the seasons, for the year list on the camp's front door.
+       *
+       * `resource` is each candidate document here, never null, so this needs
+       * none of the care the `get` above does. What it does need is the client
+       * constraining the query by `programId` — a `list` rule that reads
+       * `resource.data.programId` denies any query that could return a document
+       * from a ministry the caller does not administer, which means an
+       * unconstrained `getDocs` fails outright rather than filtering. Same
+       * shape as the galleryMedia list, and the same trap: the failure looks
+       * like a permission bug and is a missing `where`.
+       */
+      allow list: if adminsProgram(resource.data.programId);
+
+      allow create: if adminsProgram(request.resource.data.programId)
+        && isCampAllocation(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // The programId is pinned across an update, exactly as it is on a
+      // registration: re-filing an allocation under a ministry you administer
+      // would be a way to pull one out of a ministry you do not.
+      allow update: if adminsProgram(resource.data.programId)
+        && request.resource.data.programId == resource.data.programId
+        && isCampAllocation(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // Deleting an allocation destroys an evening's work and nothing else —
+      // no registration is touched, and re-creating it is starting over. It is
+      // allowed because a season allocated by mistake has to be removable, and
+      // the screen asks first.
+      allow delete: if adminsProgram(resource.data.programId);
+    }
+
+    /*
+     * The shape check for an allocation.
+     *
+     * Note what this can and cannot see. Rules cannot walk into an array's
+     * members, so the number of *groups inside* a band and the number of people
+     * inside a group are invisible here — `MAX_GROUPS_PER_BAND`,
+     * `MAX_PLACEMENTS_PER_GROUP` and `MAX_PLACEMENTS` are enforced only by
+     * `parseCampAllocation` and the placement functions in
+     * packages/shared/src/schema/campAllocation.ts. That is a real gap and this
+     * comment exists so nobody reads the bounds in TypeScript and assumes they
+     * hold against a console.
+     *
+     * What is left is the flat shape: a season, and lists of a sane length at
+     * the top level. It is what stops a write that would make the screen
+     * unopenable, not a proof that the contents are sensible. Firestore's own
+     * 1MiB document limit is the backstop for the case rules cannot reach.
+     */
+    function isCampAllocation(doc) {
+      return doc.season is string
+        && doc.season.size() > 0
+        && doc.season.size() <= 120
+        /*
+         * The camp is arranged per week, so the top level is `weeks` and the
+         * bands and stations are inside each one — out of reach here, like the
+         * groups always were. Six is `MAX_CAMP_WEEKS`.
+         *
+         * A document written before the weeks existed has `bands` at the top
+         * and no `weeks`; it is still readable, because `parseCampAllocation`
+         * lifts it into week one, but it cannot be written back in that shape.
+         * That is the right way round: every write comes from the screen, and
+         * the screen has already converted it.
+         */
+        && doc.weeks is list
+        && doc.weeks.size() <= 6;
+    }
+
+    /* ======================================================================
+       Summer camp attendance
+       ====================================================================== */
+
+    /*
+     * The register: one document per day of camp, one entry per child.
+     *
+     * The same door again — a program grant on the camp's ministry — and this
+     * time the contents genuinely warrant it rather than merely matching. An
+     * allocation is a list of opaque keys; a register is a statement about
+     * which named children were on a site this morning and which of them are
+     * still there at four o'clock. It is read from a phone at a gate, and the
+     * grant is the only thing between that phone and the answer.
+     *
+     * ## Merge writes, and what rules see of them
+     *
+     * Every tick is `setDoc(…, { merge: true })` touching one field path inside
+     * `entries`. `request.resource.data` is the document *after* the merge, so
+     * the shape check below runs against the whole register even though the
+     * client sent one child. That is the right way round: a tap cannot leave
+     * the day in a shape the screen cannot open, whatever else is already in
+     * it.
+     *
+     * What rules cannot see is inside the map. `entries` is
+     * `{ "<registrationId>/<childId>": { arrived: {...}, collected: {...} } }`
+     * and a rule cannot walk into a map's values any more than it can walk into
+     * a list's members — so the marks themselves, their timestamps and their
+     * `by` uids are checked by `parseCampAttendanceDay` and nothing else. The
+     * bound that *is* enforceable is the count, and it is.
+     */
+    match /campAttendance/{dayId} {
+      /*
+       * `resource == null` on `get`, for the third time and the same reason:
+       * a day nobody has ticked yet is the normal first state of this screen,
+       * the id is derived rather than searched for, and reading
+       * `resource.data.programId` off a document that does not exist is an
+       * evaluation error that denies the read and blanks the page.
+       */
+      allow get: if resource == null || adminsProgram(resource.data.programId);
+
+      /*
+       * Listing a season's registers — for a summary across the fortnight.
+       *
+       * Nothing queries this yet. It is here rather than added later because
+       * the trap is worth stating once: a `list` rule that reads
+       * `resource.data.programId` **refuses** an unconstrained query rather
+       * than filtering it, so any caller must send
+       * `where('programId','==',…)`. Same shape as the allocations above, and
+       * the galleryMedia list before them.
+       */
+      allow list: if adminsProgram(resource.data.programId);
+
+      allow create: if adminsProgram(request.resource.data.programId)
+        && isCampAttendance(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      /*
+       * `programId` and `day` are both pinned across an update.
+       *
+       * The programId for the reason it is pinned everywhere else — re-filing a
+       * document under a ministry you administer is how you pull one out of a
+       * ministry you do not. The `day` because the id encodes it: a write that
+       * changed it would leave `campAttendance/…__w1-tue` claiming to be
+       * Wednesday, and every reader here derives the id from the day it wants.
+       */
+      allow update: if adminsProgram(resource.data.programId)
+        && request.resource.data.programId == resource.data.programId
+        && request.resource.data.day == resource.data.day
+        && isCampAttendance(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      /*
+       * No delete, and this is the one camp collection that has none.
+       *
+       * An allocation deleted by mistake costs an evening. A register is the
+       * record of which children were in somebody's care on a given day, and
+       * the moment it is worth anything is the moment somebody wishes it were
+       * gone. A day ticked in error is fixed by untucking the ticks — the
+       * screen writes nulls — which leaves the correction visible in
+       * `updatedBy` and `updatedAt` instead of leaving nothing at all.
+       */
+    }
+
+    function isCampAttendance(doc) {
+      return doc.season is string
+        && doc.season.size() > 0
+        && doc.season.size() <= 120
+        // `w1-mon`. Short because it is generated, never typed.
+        && doc.day is string
+        && doc.day.size() > 0
+        && doc.day.size() <= 16
+        // 800 is MAX_ATTENDANCE_ENTRIES in
+        // packages/shared/src/schema/campAttendance.ts. The only bound rules
+        // can reach: the marks inside each entry are invisible from here.
+        && doc.entries is map
+        && doc.entries.size() <= 800;
     }
 
     // Anything not matched above is denied. Adding a collection means adding a
