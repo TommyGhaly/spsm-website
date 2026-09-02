@@ -38,12 +38,19 @@
  * refuses a `/live` channel URL outright, and the Atom feed carries no live flag.
  * ---------------------------------------------------------------------------
  *
- * So: the feed for *which videos exist* — free, unmetered, and it does list a
- * broadcast while it is still running — and one `videos.list` call for *which of
- * them is on*. That call costs a single unit of quota for up to fifty ids, where
- * the obvious `search.list?eventType=live` costs a hundred. On the default
- * 10,000 units a day that is the difference between a check every nine seconds
- * and running dry before lunch.
+ * So: two Data API calls. `playlistItems.list` on the channel's uploads
+ * playlist for *which videos exist*, then one `videos.list` for *which of them
+ * is on*. One unit of quota each, where the obvious
+ * `search.list?eventType=live` costs a hundred. On the default 10,000 units a
+ * day that is the difference between a check every seventeen seconds and
+ * running dry before lunch.
+ *
+ * The first of those two used to be the channel's Atom feed, which needed no
+ * key at all. It now returns 404 and 500 for a channel that exists, from every
+ * network and under every header worth trying — the measurements are in
+ * `packages/shared/src/youtube.ts`, above `uploadsPlaylistId`. This endpoint
+ * therefore spends two units where it spent one, and the key it already needed
+ * for the live check is now load-bearing for the listing as well.
  */
 import { onRequest } from 'firebase-functions/v2/https';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
@@ -53,10 +60,10 @@ import {
   COLLECTIONS,
   CONFIG_DOC_INTEGRATIONS,
   DEFAULT_INTEGRATIONS_CONFIG,
-  channelFeedUrl,
   isYouTubeChannelId,
   liveBroadcastIds,
-  parseChannelFeed,
+  parseUploadsPlaylist,
+  uploadsPlaylistUrl,
   parseIntegrationsConfig,
   videosListUrl,
 } from '@spsm/shared';
@@ -205,33 +212,32 @@ export const live = onRequest(
  * That is not a rate limit or a consent wall — it is simply a thinner page for
  * datacenter IPs, and no header made it thicker.
  *
- * So the id comes from somewhere that treats us the same as anyone: the Atom
- * feed, which needs no key, no browser-shaped request, and returns the live
- * video like any other entry. Then each candidate's own watch page is asked
- * whether it is *currently* on, using the schema.org markup that does survive.
+ * So the ids come from the Data API's view of the channel's uploads, which
+ * treats us the same as anyone, and then one `videos.list` call asks which of
+ * them YouTube says is streaming right now. Until 2026-09-02 the first half was
+ * the channel's Atom feed, which was free; it is now dead for this channel and
+ * for the `?playlist_id=` spelling of itself.
  * ---------------------------------------------------------------------------
  */
 async function findLiveBroadcast(
   channelId: string,
   apiKey: string,
 ): Promise<{ videoId: string } | null> {
-  const feed = await get(channelFeedUrl(channelId));
-  if (!feed) throw new Error('the channel feed could not be read');
-
   /*
    * The newest few, not the newest one.
    *
-   * The feed is ordered by publish time, which is when a *recording* was
+   * The playlist is ordered by publish time, which is when a *recording* was
    * processed rather than when a stream aired — so a VOD published this
    * afternoon sorts above a broadcast that started this evening and is still
    * running. Observed exactly that on 2026-08-21: the live liturgy was the
-   * feed's second entry, behind the finished morning one. Checking only the head
-   * would have missed it.
+   * second entry, behind the finished morning one. Checking only the head would
+   * have missed it.
    */
-  const candidates = parseChannelFeed(feed).slice(0, CANDIDATES).map((video) => video.id);
+  const uploads = await getJson(`${uploadsPlaylistUrl(channelId, CANDIDATES)}&key=${key(apiKey)}`);
+  const candidates = parseUploadsPlaylist(uploads).map((video) => video.id);
   if (candidates.length === 0) return null;
 
-  const response = await fetch(`${videosListUrl(candidates)}&key=${encodeURIComponent(apiKey)}`, {
+  const response = await fetch(`${videosListUrl(candidates)}&key=${key(apiKey)}`, {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
@@ -251,27 +257,51 @@ async function findLiveBroadcast(
 /**
  * How many recent videos to ask about.
  *
- * `videos.list` takes up to 50 ids for the same single unit of quota, so this
- * number is not a cost — it is how far back "recent" reaches. Eight covers a
- * feast day with several services published around a broadcast that is still
- * running, and the feed only returns fifteen entries in total.
+ * Free, at any value up to 50. `playlistItems.list` costs one unit whatever
+ * `maxResults` says, and `videos.list` takes up to 50 ids for one unit — so
+ * this number is not a cost, it is only how far back "recent" reaches.
+ *
+ * Fifteen, which is what the Atom feed used to return in full; the old code
+ * took the first eight of them. The four days of margin that buys matters for
+ * one case measured on 2026-09-02: a broadcast **keeps its creation date, not
+ * its start time**. St. Thomas Orthodox Cathedral's liturgy that morning was
+ * published on 2026-08-26 and started on 09-01, six days apart — so a stream
+ * scheduled a week ahead sits that much further down a channel's uploads by the
+ * time it goes on air, and a window of eight could have scrolled past it while
+ * it was live.
+ *
+ * A ceiling of 50 rather than paging past it, and that is a real limit: a
+ * permanently-running stream published months ago is out of reach here, and
+ * nothing in this endpoint will find it. That is the right trade for this
+ * parish, which starts a new broadcast for each service, and would be the wrong
+ * one for a channel with a 24/7 feed.
  */
-const CANDIDATES = 8;
+const CANDIDATES = 15;
 
-/** A page's text, or null if it could not be read. Never throws. */
-async function get(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+/**
+ * One Data API response, parsed. Throws on anything that is not a 200 with a
+ * JSON body.
+ *
+ * Throwing rather than returning null, which is what the page-reading helper
+ * this replaced did: every failure here means we could not find out, and the
+ * caller turns that into a 502 the player distinguishes from "no service". A
+ * null would have to be checked at the one call site anyway.
+ *
+ * The URL is not logged. It carries the API key in a query parameter, and a
+ * secret in a log line is a secret in a log.
+ */
+async function getJson(url: string): Promise<unknown> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
 
-    if (!response.ok) {
-      console.error(`[live] HTTP ${response.status} from ${url}`);
-      return null;
-    }
-    return await response.text();
-  } catch (error) {
-    console.error(`[live] could not read ${url}: ${error instanceof Error ? error.message : error}`);
-    return null;
+  if (!response.ok) {
+    throw new Error(`${new URL(url).pathname} returned HTTP ${response.status}`);
   }
+  return await response.json();
+}
+
+/** The key, encoded for a query string. Kept short because it appears twice. */
+function key(apiKey: string): string {
+  return encodeURIComponent(apiKey);
 }
 
 /**

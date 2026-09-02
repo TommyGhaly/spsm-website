@@ -1,30 +1,90 @@
 /**
- * Reading a YouTube channel's public Atom feed.
+ * Reading a YouTube channel's recent videos, and which of them is on air.
  *
- * In `shared` rather than in the website because the phone app has the same
- * question to ask — "what were the last few liturgies?" — and the answer is a
- * pure function of the feed body. Only the fetch differs between the two, so
- * only the fetch lives in each app.
+ * In `shared` rather than in the website because the phone app has the same two
+ * questions to ask — "what were the last few liturgies?" and "is one happening
+ * now?" — and both answers are pure functions of a response body. Only the
+ * fetch differs between the two, so only the fetch lives in each app.
  *
- * Why the feed and not the YouTube Data API: the feed needs no key. An API key
- * would have to be provisioned, rotated, and kept out of the world-readable
- * `config` document, and it buys one thing this does not need — filtering to
- * `eventType=completed`. The parish's channel is a livestream channel;
- * essentially everything on it is a liturgy. Paying for a credential to exclude
- * the occasional upload is the wrong trade.
+ * ---------------------------------------------------------------------------
+ * ## The channel's Atom feed used to be the source here. It is gone.
  *
- * What the feed costs instead, stated plainly so nobody is surprised by it:
+ * `youtube.com/feeds/videos.xml?channel_id=…` needed no key, which is why it
+ * was chosen: an API key has to be provisioned by hand, rotated by hand, and
+ * kept out of the world-readable `config` document, and the feed bought us the
+ * list for nothing.
  *
- *   - It returns the 15 most recent videos and no more. There is no paging, so
- *     "recent streams" cannot become "all streams" without moving to the API.
- *   - It does not say whether a video was a livestream, so a non-stream upload
- *     would appear in the list.
+ * It now answers **404, and sometimes 500, for a channel that demonstrably
+ * exists** — measured on 2026-09-02 against `UC6xlDBsD02-k7M5o-51CUQw`, which
+ * `channels.list` resolves in the same minute to "St Philopater & St Mina
+ * Coptic Orthodox Church". Six consecutive requests: 404 404 500 404 404 500.
+ * Not a datacenter problem and not throttling of the kind that clears — the
+ * same 404 comes back from a residential connection, with an
+ * `accept: application/atom+xml` header, with a browser User-Agent, and from
+ * the `?playlist_id=UU…` spelling of the same feed. There is nothing left to
+ * ask it.
+ *
+ * The replacement is the uploads playlist through the Data API, which is the
+ * set the feed was generated from and returns the same ids in the same order.
+ * It costs one unit of quota per call and a key we already provision for the
+ * live check — see `functions/src/live.ts`, which now spends two units where it
+ * used to spend one.
+ *
+ * What this costs compared with the feed, stated plainly:
+ *
+ *   - A credential is now required to list the channel at all. `npm run
+ *     archive` and the workflow that runs it need `YOUTUBE_API_KEY` in the
+ *     environment; without it there is no fallback that works.
+ *   - `playlistItems.list` caps `maxResults` at 50 where the feed returned 15,
+ *     so this is more generous rather than less — but it still does not say
+ *     whether a video *was* a livestream, so an ordinary upload appears in the
+ *     list exactly as it did before.
+ * ---------------------------------------------------------------------------
  */
 import type { FeedVideo } from './schema/config.js';
 
-/** The feed for one channel. Takes a channel id only — never an `@handle`. */
-export function channelFeedUrl(channelId: string): string {
-  return `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`;
+/**
+ * A channel's uploads playlist id.
+ *
+ * Derived rather than looked up. Every channel's uploads playlist is its own id
+ * with `UC` swapped for `UU`, which is a documented property of the id scheme —
+ * so asking `channels.list` for `contentDetails.relatedPlaylists.uploads` would
+ * spend a unit of quota and a round trip to be told what the string already
+ * says. Verified against this parish's channel on 2026-09-02: the API returns
+ * `UU6xlDBsD02-k7M5o-51CUQw` for `UC6xlDBsD02-k7M5o-51CUQw`.
+ *
+ * Takes a channel id only — never an `@handle`, which has no such property.
+ * Callers should gate on `isYouTubeChannelId` first; a value that is not a
+ * channel id is returned unchanged rather than repaired, so the API rejects it
+ * loudly instead of this function inventing a playlist.
+ */
+export function uploadsPlaylistId(channelId: string): string {
+  return /^UC[A-Za-z0-9_-]{22}$/.test(channelId) ? `UU${channelId.slice(2)}` : channelId;
+}
+
+/**
+ * The `playlistItems.list` request that answers `parseUploadsPlaylist` for one
+ * channel's most recent `max` videos.
+ *
+ * No `key` parameter — the caller appends it, the same arrangement as
+ * `videosListUrl`. That keeps the key out of anything that gets logged by
+ * accident: this URL is what error messages name.
+ *
+ * `snippet,contentDetails` because the two carry different dates and the
+ * difference matters. `contentDetails.videoPublishedAt` is when the *video* was
+ * published; `snippet.publishedAt` is when it was added to this playlist, which
+ * for an uploads playlist is normally the same instant but is not the same
+ * field. `parseUploadsPlaylist` prefers the first.
+ */
+export function uploadsPlaylistUrl(channelId: string, max: number): string {
+  const params = new URLSearchParams({
+    part: 'snippet,contentDetails',
+    playlistId: uploadsPlaylistId(channelId),
+    // 50 is the API's own ceiling, and 1 its floor. Clamped rather than passed
+    // through: `maxResults=0` is an error response, not an empty list.
+    maxResults: String(Math.min(50, Math.max(1, Math.trunc(max)))),
+  });
+  return `https://www.googleapis.com/youtube/v3/playlistItems?${params.toString()}`;
 }
 
 /** The watch page for one video, which is where the true start time lives. */
@@ -72,34 +132,26 @@ export function parseWatchPageStart(html: string): string | null {
 }
 
 /**
- * Pull the video entries out of a YouTube channel feed.
+ * Pull the video entries out of a `playlistItems.list` response.
  *
- * Hand-parsed with a regex rather than an XML library, and that is a deliberate
- * limit rather than a shortcut. This reads three leaf values out of one
- * machine-generated document whose shape YouTube has not changed in a decade;
- * adding a parser dependency to a phone app and a website for that is not a
- * trade worth making. It is only safe *because* the scope is this narrow — if
- * this ever needs nested structure, or attributes beyond `url`, replace it
- * rather than extending it.
- *
- * Never throws. A malformed document yields an empty list, and one malformed
- * entry is skipped rather than discarding the rest of the feed with it.
+ * Never throws. A body of the wrong shape yields an empty list, and one
+ * malformed item is skipped rather than discarding the rest of the page with
+ * it — the caller reports an empty list as "could not find out", which is the
+ * honest answer and one the page acts on.
  */
-export function parseChannelFeed(xml: string): FeedVideo[] {
+export function parseUploadsPlaylist(body: unknown): FeedVideo[] {
+  const items = (body as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return [];
+
   const videos: FeedVideo[] = [];
+  for (const item of items) {
+    const snippet = (item as { snippet?: Record<string, unknown> })?.snippet;
+    const details = (item as { contentDetails?: Record<string, unknown> })?.contentDetails;
 
-  // Entry-by-entry rather than field-by-field across the whole document: the
-  // channel itself carries a `<published>` too, and a global scan would pair
-  // the channel's creation date with the first video.
-  for (const match of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
-    // Indexed rather than destructured: the project runs
-    // `noUncheckedIndexedAccess`, so a capture group is `string | undefined`
-    // even when the pattern guarantees it.
-    const entry = match[1];
-    if (!entry) continue;
-
-    const id = tagOf(entry, 'yt:videoId');
-    const publishedAt = tagOf(entry, 'published');
+    const id = text(details?.['videoId']);
+    // The video's own publish time first; the playlist's only as a fallback.
+    // See `uploadsPlaylistUrl` for why both are requested.
+    const publishedAt = text(details?.['videoPublishedAt']) ?? text(snippet?.['publishedAt']);
 
     // Both are required. An entry with no video id is not something we can link
     // to, and one with no date cannot be placed in a list whose whole organising
@@ -107,11 +159,7 @@ export function parseChannelFeed(xml: string): FeedVideo[] {
     if (!id || !publishedAt) continue;
     if (Number.isNaN(Date.parse(publishedAt))) continue;
 
-    videos.push({
-      id,
-      publishedAt,
-      thumbnailUrl: attributeOf(entry, 'media:thumbnail', 'url') ?? '',
-    });
+    videos.push({ id, publishedAt, thumbnailUrl: bestThumbnail(snippet?.['thumbnails']) });
   }
 
   /*
@@ -120,23 +168,36 @@ export function parseChannelFeed(xml: string): FeedVideo[] {
    * a morning liturgy and the evening service before it are sometimes published
    * in the opposite order to how they aired. The final sort happens once the
    * real start times are known; see `getPastStreams`.
+   *
+   * Sorted here rather than trusted from the response for the same reason the
+   * feed's order was re-sorted: the API returns an uploads playlist in reverse
+   * publish order today, and nothing in it promises to keep doing so.
    */
   return videos.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
 }
 
-/** Text content of the first `<tag>…</tag>`, trimmed, or null. */
-function tagOf(xml: string, tag: string): string | null {
-  const match = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml);
-  return match?.[1]?.trim() || null;
+/** A trimmed string, or null for anything that is not one. */
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-/** Value of one attribute on the first `<tag …>`, or null. */
-function attributeOf(xml: string, tag: string, attribute: string): string | null {
-  const element = new RegExp(`<${tag}\\b[^>]*>`).exec(xml)?.[0];
-  if (!element) return null;
+/**
+ * The largest thumbnail the response offers, or `''`.
+ *
+ * Largest-first rather than a fixed key: `maxres` and `standard` exist only for
+ * some videos, and `high` is the one every video has. The empty string is what
+ * `FeedVideo` uses for "no picture" — the page renders its own placeholder for
+ * it, so a missing thumbnail must not drop the stream.
+ */
+function bestThumbnail(value: unknown): string {
+  const thumbnails = value as Record<string, { url?: unknown }> | undefined;
+  if (!thumbnails) return '';
 
-  const match = new RegExp(`\\b${attribute}="([^"]*)"`).exec(element);
-  return match?.[1]?.trim() || null;
+  for (const size of ['maxres', 'standard', 'high', 'medium', 'default']) {
+    const url = text(thumbnails[size]?.url);
+    if (url) return url;
+  }
+  return '';
 }
 
 /**

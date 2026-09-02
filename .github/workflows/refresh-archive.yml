@@ -13,13 +13,24 @@
 # would spend most of every week displaying a list that had already rotated out
 # from under it, and would arrive at the edge of the window each time it ran.
 # Daily costs thirteen requests to YouTube a day — nothing beside the run of
-# builds that got the old per-build fetch throttled on 2026-08-18.
+# builds that got the old per-build fetch throttled on 2026-08-18 — and one unit
+# of the API key's 10,000-a-day quota.
 #
-# The two jobs are separate on purpose. `refresh` needs no credentials and is
-# the part that always works; `deploy` needs most of `.env` mirrored into
-# Actions secrets and stays switched off until it is. Until then the snapshot
-# lands in git and ships with whatever deploy you run next by hand, and the run
-# summary says so rather than letting you assume the site updated itself.
+# The two jobs are separate on purpose. `refresh` needs one credential;
+# `deploy` needs most of `.env` mirrored into Actions secrets and stays switched
+# off until it is. Until then the snapshot lands in git and ships with whatever
+# deploy you run next by hand, and the run summary says so rather than letting
+# you assume the site updated itself.
+#
+# **`refresh` needs `YOUTUBE_API_KEY` as an Actions secret.** It did not until
+# 2026-09-02: it read the channel's Atom feed, which needed no credential and
+# now returns 404 for a channel that exists (see packages/shared/src/youtube.ts
+# for the measurements). Without the secret this job fails every morning with a
+# message saying exactly that, and the snapshot goes stale rather than empty.
+# The value is the same key `/api/live` uses, and it is already in Secret
+# Manager:
+#
+#   firebase functions:secrets:access YOUTUBE_API_KEY --project spsm-database
 # =============================================================================
 name: Refresh livestream archive
 
@@ -60,12 +71,15 @@ jobs:
 
       - run: npm ci
 
-      # Fetches the feed, then one watch page per video for the real start time,
-      # and writes archive.json only if both succeed. A throttled run exits
-      # non-zero with the snapshot untouched, which fails this job loudly — the
-      # right outcome, and the opposite of the silent empty archive that made
-      # the build-time fetch worth removing.
+      # Lists the channel's uploads through the Data API, then reads one watch
+      # page per video for the real start time, and writes archive.json only if
+      # both succeed. A rejected key, an exhausted quota or a throttled watch
+      # page exits non-zero with the snapshot untouched, which fails this job
+      # loudly — the right outcome, and the opposite of the silent empty archive
+      # that made the build-time fetch worth removing.
       - name: Refresh the snapshot
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: npm run archive
 
       - name: Commit it, if it moved

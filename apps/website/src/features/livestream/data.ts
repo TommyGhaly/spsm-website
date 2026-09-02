@@ -19,6 +19,13 @@
  * `npm run archive` is the only thing that fetches. Builds are now
  * deterministic, offline, and identical every time — and the same trade the
  * catalog and the covers already make: refreshed by a command, not by a deploy.
+ *
+ * That trade paid off harder than expected. On 2026-09-02 the same feed began
+ * 404ing again and did not lift: it is gone for this channel, from every
+ * network and under every header worth trying. `npm run archive` now reads the
+ * channel through the YouTube Data API and needs a key for it — see
+ * packages/shared/src/youtube.ts — and because the build had already stopped
+ * fetching, none of that reached a single page.
  * ---------------------------------------------------------------------------
  */
 import snapshot from './archive.json';
