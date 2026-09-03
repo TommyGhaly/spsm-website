@@ -113,8 +113,13 @@ export function CampShell({ session, tab, title, actions, children }: CampShellP
       <PageBody>
         <div className="camp-bar band">
           <div className="camp-bar__title">
-            <span className="camp-bar__eyebrow">Summer camp</span>
-            <strong className="camp-bar__season">{session.config.season}</strong>
+            {/* The name in the page's own display face, and the season beside it
+                as a tag rather than as a second heading. It was the other way
+                round — a tiny grey "SUMMER CAMP" over a large red year — which
+                gave the loudest thing on the screen to the one word nobody
+                comes here to read. */}
+            <h2 className="camp-bar__name">Summer camp</h2>
+            <span className="camp-bar__season">{session.config.season}</span>
           </div>
           <nav className="camp-tabs" aria-label="Summer camp">
             {TABS.map((entry) => (

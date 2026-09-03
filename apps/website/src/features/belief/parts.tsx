@@ -1,3 +1,4 @@
+import { EditableCaption } from '@/features/about/EditableCaption';
 import {
   BELIEF_CREDITS,
   BELIEF_PICTURES,
@@ -25,9 +26,12 @@ import {
 export function Plate({
   name,
   className = '',
+  captionSlot,
 }: {
   name: BeliefPictureName;
   className?: string;
+  /** Makes the caption rewritable. See `EditableCaption`. */
+  captionSlot?: string | undefined;
 }) {
   const picture = BELIEF_PICTURES[name];
 
@@ -44,7 +48,9 @@ export function Plate({
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="belief-plate__caption">{picture.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="belief-plate__caption">
+        {picture.caption}
+      </EditableCaption>
     </figure>
   );
 }
@@ -54,7 +60,13 @@ export function Plate({
  * prose — used for the two landscape paintings, which lose their subject
  * entirely at column width.
  */
-export function WidePlate({ name }: { name: BeliefPictureName }) {
+export function WidePlate({
+  name,
+  captionSlot,
+}: {
+  name: BeliefPictureName;
+  captionSlot?: string | undefined;
+}) {
   const picture = BELIEF_PICTURES[name];
 
   return (
@@ -70,7 +82,9 @@ export function WidePlate({ name }: { name: BeliefPictureName }) {
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="belief-plate__caption">{picture.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="belief-plate__caption">
+        {picture.caption}
+      </EditableCaption>
     </figure>
   );
 }

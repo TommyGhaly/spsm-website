@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Editable, EditablePicture } from '@/features/about';
 import { EGYPT, NEW_ENGLAND } from './chronologies';
 import { Chronology, Clergy, Credits, Plate, Sanctuary, WidePlate } from './parts';
 
@@ -46,25 +47,32 @@ export function WhoScreen() {
     <div className="who">
       <section className="band band--deep who-hero">
         <div className="wrap who-hero__inner">
-          <p className="who-hero__eyebrow">About</p>
+          <Editable slot="who-hero.eyebrow" as="p" className="who-hero__eyebrow">
+            About
+          </Editable>
           {/*
             A `p`, not a heading. `PageHeader` has already rendered the page's
             hidden `h1`; a second one would give the document two, and the
             sections below need `h2` to be the level under it.
           */}
-          <p className="who-hero__title">Who We Are</p>
-          <p className="who-hero__lede">
+          <Editable slot="who-hero.title" as="p" className="who-hero__title">
+            Who We Are
+          </Editable>
+          <Editable slot="who-hero.lede" as="p" prose className="who-hero__lede">
             A Coptic Orthodox church in Wayland, Massachusetts. The Church it belongs to was
             founded in Alexandria in the first century and has been in Egypt ever since; this
             building has been ours since 2016. What follows is how the one reached the other.
-          </p>
+          </Editable>
         </div>
       </section>
 
       <section className="band who-origin" aria-labelledby="what-copt-means">
         <div className="wrap who-split">
           <div className="who-split__body prose">
-            <h2 id="what-copt-means">A word that means Egyptian</h2>
+            <Editable slot="what-copt-means.h2" as="h2" id="what-copt-means">
+              A word that means Egyptian
+            </Editable>
+            <Editable slot="what-copt-means.body" as="div" prose>
             <p>
               The Coptic Orthodox Church began in Alexandria. St. Mark the Evangelist brought the
               Gospel there around the middle of the first century and was martyred in the city, and
@@ -85,32 +93,52 @@ export function WhoScreen() {
               It is still the language of the Liturgy, and a child learning to serve in the altar in
               Massachusetts learns to read it.
             </p>
+            </Editable>
           </div>
-          <Plate name="coptic-family" className="who-split__plate" />
+          <EditablePicture slot="what-copt-means.picture" className="who-split__plate">
+            <Plate
+              name="coptic-family"
+              className="who-split__plate"
+              captionSlot="what-copt-means.cap-coptic-family"
+            />
+          </EditablePicture>
         </div>
       </section>
 
       <section className="band band--tinted who-spine" aria-labelledby="in-egypt">
         <div className="wrap">
           <header className="who-spine__head">
-            <p className="who-spine__eyebrow">Nineteen centuries, one country</p>
-            <h2 id="in-egypt">The Church in Egypt</h2>
-            <p className="lede">
+            <Editable slot="in-egypt.eyebrow" as="p" className="who-spine__eyebrow">
+              Nineteen centuries, one country
+            </Editable>
+            <Editable slot="in-egypt.h2" as="h2" id="in-egypt">
+              The Church in Egypt
+            </Editable>
+            {/*
+              `as="p"`, because the element it replaces is a `p`. Wrapping a `p`
+              in a `div` here changed `.lede` from styling the paragraph to
+              styling a box around it, which is a formatting change disguised as
+              a refactor.
+            */}
+            <Editable slot="in-egypt.lede" as="p" prose className="lede">
               The councils get a line each here and no more. What they decided, and why it is said
               aloud every Sunday, is on <Link href="/about/our-belief">Our Belief</Link>.
-            </p>
+            </Editable>
           </header>
 
-          <Chronology moments={EGYPT} />
+          <Chronology moments={EGYPT} slotPrefix="in-egypt.moment" />
 
-          <WidePlate name="desert-monastery" />
+          <WidePlate name="desert-monastery" captionSlot="in-egypt.cap-desert-monastery" />
         </div>
       </section>
 
       <section className="band who-minority" aria-labelledby="a-minority-at-home">
         <div className="wrap who-split">
           <div className="who-split__body prose">
-            <h2 id="a-minority-at-home">A minority at home</h2>
+            <Editable slot="a-minority-at-home.h2" as="h2" id="a-minority-at-home">
+              A minority at home
+            </Editable>
+            <Editable slot="a-minority-at-home.body" as="div" prose>
             <p>
               After 641 the Christians of Egypt did not go anywhere. They became, slowly and over
               centuries, a minority in the country they had always lived in — taxed as one,
@@ -134,19 +162,29 @@ export function WhoScreen() {
               and in twelve years he rebuilt the monasteries and restored the shrine of St. Mina at
               Mariout — the saint the second half of this church is named for.
             </p>
+            </Editable>
           </div>
-          <Plate name="coptic-houses-cairo" className="who-split__plate" />
+          <EditablePicture slot="a-minority-at-home.picture" className="who-split__plate">
+            <Plate
+              name="coptic-houses-cairo"
+              className="who-split__plate"
+              captionSlot="a-minority-at-home.cap-coptic-houses-cairo"
+            />
+          </EditablePicture>
         </div>
 
         <div className="wrap">
-          <WidePlate name="coptic-monks" />
+          <WidePlate name="coptic-monks" captionSlot="a-minority-at-home.cap-coptic-monks" />
         </div>
       </section>
 
       <section className="band band--sunken who-crossing" aria-labelledby="the-crossing">
         <div className="wrap who-split">
           <div className="who-split__body prose">
-            <h2 id="the-crossing">The crossing</h2>
+            <Editable slot="the-crossing.h2" as="h2" id="the-crossing">
+              The crossing
+            </Editable>
+            <Editable slot="the-crossing.body" as="div" prose>
             <p>
               Copts began arriving in America in small numbers early in the twentieth century, and
               in larger ones after 1952, when the revolution and the nationalisations that followed
@@ -165,12 +203,19 @@ export function WhoScreen() {
               Nakhla, who prayed the first Liturgy in the first Coptic church building in the United
               States — a church bought and renovated in Jersey City — on 22 March 1970.
             </p>
+            </Editable>
           </div>
-          <Plate name="pope-kyrillos" className="who-split__plate" />
+          <EditablePicture slot="the-crossing.picture" className="who-split__plate">
+            <Plate
+              name="pope-kyrillos"
+              className="who-split__plate"
+              captionSlot="the-crossing.cap-pope-kyrillos"
+            />
+          </EditablePicture>
         </div>
 
         <div className="wrap who-split who-split--flipped">
-          <div className="who-split__body prose">
+          <Editable slot="the-crossing.more" as="div" prose className="who-split__body prose">
             <p>
               By 1976 there were ten. Pope Shenouda III, who succeeded Kyrillos in 1971 and led the
               Church for forty years, came to the United States in 1977 and stayed two months, which
@@ -185,38 +230,50 @@ export function WhoScreen() {
               arrangement anybody is embarrassed by. It is what the Coptic Orthodox Church in
               America mostly looks like, and it is what this church is.
             </p>
-          </div>
-          <Plate name="pope-shenouda" className="who-split__plate" />
+          </Editable>
+          <EditablePicture slot="the-crossing.picture2" className="who-split__plate">
+            <Plate
+              name="pope-shenouda"
+              className="who-split__plate"
+              captionSlot="the-crossing.cap-pope-shenouda"
+            />
+          </EditablePicture>
         </div>
       </section>
 
       <section className="band who-here" aria-labelledby="in-new-england">
         <div className="wrap">
           <header className="who-spine__head">
-            <p className="who-spine__eyebrow">Borrowed rooms, then bought ones</p>
-            <h2 id="in-new-england">New England</h2>
-            <p className="lede">
+            <Editable slot="in-new-england.eyebrow" as="p" className="who-spine__eyebrow">
+              Borrowed rooms, then bought ones
+            </Editable>
+            <Editable slot="in-new-england.h2" as="h2" id="in-new-england">
+              New England
+            </Editable>
+            <Editable slot="in-new-england.lede" as="p" prose className="lede">
               The same thing happened here, later and smaller. Boston had Egyptian students before
               it had a Coptic church, and everything Coptic in this part of the country grew out of
               one building in Natick — including us.
-            </p>
+            </Editable>
           </header>
 
-          <WidePlate name="queens-church" />
+          <WidePlate name="queens-church" captionSlot="in-new-england.cap-queens-church" />
 
-          <Chronology moments={NEW_ENGLAND} />
+          <Chronology moments={NEW_ENGLAND} slotPrefix="in-new-england.moment" />
         </div>
       </section>
 
       <section className="band band--sunken who-wayland" aria-labelledby="this-church">
         <div className="wrap who-wayland__inner">
           <header className="who-wayland__head">
-            <h2 id="this-church">This church</h2>
+            <Editable slot="this-church.h2" as="h2" id="this-church">
+              This church
+            </Editable>
           </header>
 
-          <Sanctuary />
+          <Sanctuary captionSlot="this-church.cap-sanctuary" />
 
-          <div className="who-wayland__body prose">
+          <Editable slot="this-church.body" as="div" prose className="who-wayland__body prose">
             <p>
               The Church of the Holy Spirit, at 169 Rice Road in Wayland, was an Episcopal church.
               Its congregation had grown small, and in June 2015 it held its last service. St. Mark
@@ -242,7 +299,7 @@ export function WhoScreen() {
               building Holy Spirit. That is not wrong about it, and nobody here is in a hurry to
               have it corrected.
             </p>
-          </div>
+          </Editable>
         </div>
       </section>
 
@@ -256,14 +313,18 @@ export function WhoScreen() {
       <section id="clergy" className="band who-clergy" aria-labelledby="the-clergy-here">
         <div className="wrap">
           <header className="who-spine__head">
-            <p className="who-spine__eyebrow">Serving here</p>
-            <h2 id="the-clergy-here">The clergy</h2>
-            <p className="lede">
+            <Editable slot="the-clergy-here.eyebrow" as="p" className="who-spine__eyebrow">
+              Serving here
+            </Editable>
+            <Editable slot="the-clergy-here.h2" as="h2" id="the-clergy-here">
+              The clergy
+            </Editable>
+            <Editable slot="the-clergy-here.lede" as="p" prose className="lede">
               A Coptic Orthodox church is a bishop&rsquo;s church, served by his priests. A deacon
               is not an apprentice priest — the order is its own, and permanent. Deacons chant the
               responses, read the Epistle and keep the altar&rsquo;s service moving, which means
               most of what a visitor hears at a Liturgy here is sung by them.
-            </p>
+            </Editable>
           </header>
 
           <Clergy />

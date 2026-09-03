@@ -72,15 +72,46 @@ afterAll(async () => {
 });
 
 describe('submissions/ — the quarantine prefix', () => {
-  it('accepts a photograph from somebody with no account', async () => {
+  /*
+   * -------------------------------------------------------------------------
+   * No client writes here. This prefix is now read-only to browsers, and the
+   * upload path reaches it another way entirely.
+   *
+   * POST /api/gallery/upload-url hands back a v4 signed URL, which addresses
+   * the GCS API directly and is never evaluated against storage.rules. That is
+   * what makes shutting the door here possible without shutting the feature:
+   * the signed URL is pinned to one object name, one content type and one exact
+   * byte length, so the checks this prefix used to make are made before the URL
+   * exists rather than after the bytes arrive.
+   *
+   * The tests that used to live here — accepts a photograph from nobody at all,
+   * accepts a video, refuses `text/html`, refuses an overwrite — were all
+   * assertions about `isSubmittable()` and `resource == null`, and both are
+   * gone with the write rule. What replaced them is
+   * `tests/unit/galleryUploadUrl.test.ts`.
+   *
+   * Note what did *not* change: the read rule. It is still `signedIn()`, still
+   * deliberately wider than the ministry's own administrators, and still the
+   * line the whole moderation model rests on.
+   * -------------------------------------------------------------------------
+   */
+  it('refuses an upload from somebody with no account', async () => {
     const storage = asAnon(env).storage();
-    await assertSucceeds(uploadBytes(ref(storage, `submissions/week-1-2027/a-${RUN}.png`), png, meta));
+    await assertFails(uploadBytes(ref(storage, `submissions/week-1-2027/a-${RUN}.png`), png, meta));
   });
 
-  it('accepts a video, which the parish asked for', async () => {
-    const storage = asAnon(env).storage();
-    await assertSucceeds(
-      uploadBytes(ref(storage, `submissions/week-1-2027/clip-${RUN}.mp4`), png, { contentType: 'video/mp4' }),
+  /*
+   * The one that would otherwise be missed, and the reason this test is not
+   * simply the old one with `assertSucceeds` swapped out.
+   *
+   * Every submitter now has a uid — the upload path signs them in anonymously —
+   * so a rule that asked for `signedIn()` here would be no defence whatsoever.
+   * A servant is refused, and so is the ministry's own lead: nobody writes
+   * these bytes from a browser, whoever they are.
+   */
+  it('refuses an upload from a signed-in account too', async () => {
+    await assertFails(
+      uploadBytes(ref(asServant(env).storage(), `submissions/week-1-2027/b-${RUN}.png`), png, meta),
     );
   });
 
@@ -88,17 +119,10 @@ describe('submissions/ — the quarantine prefix', () => {
    * The line the whole moderation model rests on — and the exact boundary it
    * draws, which is *not* "nobody".
    *
-   * This read was `if false` until the approval queue was built, at which point
-   * it turned out to lock out the one person who has to see the file. An
-   * administrator approving a photograph without looking at it is not
-   * moderation.
-   *
-   * It said `hasRole('staff')` and now says `signedIn()`, which is wider — and
-   * the property that matters is unchanged, which is what this asserts. A
-   * submitter is **anonymous**: they have no account, they never will, and that
-   * is the entire premise of the prefix. So the line this rule draws is between
-   * the public and the parish, and it always was; `staff` merely drew it in a
-   * place that also excluded the program leads who do the reviewing.
+   * A submitter is anonymous in the sense that matters: they hold no grant and
+   * no account anybody granted anything to. So the line is between the public
+   * and the parish, and review has to be possible on the parish side or an
+   * administrator is approving photographs without looking at them.
    *
    * Who may review *which* submission is a program grant, checked on the
    * `galleryMedia` document in firestore.rules. It cannot be checked here: this
@@ -121,34 +145,12 @@ describe('submissions/ — the quarantine prefix', () => {
     await assertSucceeds(getBytes(ref(asServant(env).storage(), 'submissions/week-1-2027/review-me.png')));
   });
 
-  it('refuses to let a submitter read back the file they just uploaded', async () => {
-    const storage = asAnon(env).storage();
-    await assertSucceeds(uploadBytes(ref(storage, `submissions/week-1-2027/mine-${RUN}.png`), png, meta));
-    await assertFails(getBytes(ref(storage, `submissions/week-1-2027/mine-${RUN}.png`)));
-  });
-
-  /**
-   * The consequence of the `exists()` bug. An uploader who can overwrite can
-   * swap an approved file for something else after an administrator has looked
-   * at it — the review would have been of a file that is no longer there.
+  /*
+   * An anonymous session can no longer read *or* write here, so the old test
+   * asserting that a submitter could not read back their own upload has nothing
+   * left to upload. The property it protected is covered by the public-read
+   * test above; this one keeps the delete half.
    */
-  it('refuses to overwrite a file that is already there', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/taken.png'), png, meta);
-    });
-    await assertFails(uploadBytes(ref(asAnon(env).storage(), 'submissions/week-1-2027/taken.png'), png, meta));
-  });
-
-  it('refuses a file that is neither image nor video', async () => {
-    const storage = asAnon(env).storage();
-    await assertFails(
-      uploadBytes(ref(storage, 'submissions/week-1-2027/payload.html'), png, { contentType: 'text/html' }),
-    );
-    await assertFails(
-      uploadBytes(ref(storage, 'submissions/week-1-2027/run.sh'), png, { contentType: 'application/x-sh' }),
-    );
-  });
-
   it('refuses an anonymous delete, so submissions cannot be withdrawn from under a reviewer', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/pending.png'), png, meta);
@@ -372,6 +374,71 @@ describe('forms/ — a form’s picture', () => {
  * portrait of somebody who has left the parish, or a member's own avatar they
  * asked to have removed.
  */
+/**
+ * `content/about/{slug}/` — a photograph on one of the five About pages.
+ *
+ * Not a new prefix and not a new rule: it lands under the existing
+ * `match /content/{allPaths=**}`, which is the whole reason the About editor
+ * needed no `storage.rules` change. Asserted anyway, because "no change needed"
+ * is a claim about the deployed policy and this is the only thing that can
+ * check it — and because the Firestore document and the photograph beside it
+ * must take the *same* grant. Somebody who can write the words and not the
+ * picture has an editor that half works.
+ */
+describe('content/about/ — a photograph on an About page', () => {
+  it('is readable by the world, being a picture on a public page', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `content/about/who-we-are/${RUN}/pic.png`), png, meta);
+    });
+    await assertSucceeds(
+      getBytes(ref(asAnon(env).storage(), `content/about/who-we-are/${RUN}/pic.png`)),
+    );
+  });
+
+  it('is writable by the content grant and by nobody else', async () => {
+    await assertSucceeds(
+      uploadBytes(
+        ref(asContent(env).storage(), `content/about/who-we-are/${RUN}-a/pic.png`),
+        png,
+        meta,
+      ),
+    );
+    await assertFails(
+      uploadBytes(
+        ref(asBookstore(env).storage(), `content/about/who-we-are/${RUN}-b/pic.png`),
+        png,
+        meta,
+      ),
+    );
+    await assertFails(
+      uploadBytes(
+        ref(asServant(env).storage(), `content/about/who-we-are/${RUN}-c/pic.png`),
+        png,
+        meta,
+      ),
+    );
+    await assertFails(
+      uploadBytes(
+        ref(asAnon(env).storage(), `content/about/who-we-are/${RUN}-d/pic.png`),
+        png,
+        meta,
+      ),
+    );
+  });
+
+  it('refuses a file that is not an image, whoever sends it', async () => {
+    // A bucket that accepts `text/html` from a browser is one that will serve
+    // it back on our own domain to whoever follows a link.
+    await assertFails(
+      uploadBytes(
+        ref(asContent(env).storage(), `content/about/who-we-are/${RUN}-e/page.html`),
+        png,
+        { contentType: 'text/html' },
+      ),
+    );
+  });
+});
+
 describe('clergy/, products/, content/ and members/ — taking a photograph down', () => {
   const cases = [
     { name: 'clergy', prefix: 'clergy', granted: asContent, refused: asBookstore },

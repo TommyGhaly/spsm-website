@@ -36,6 +36,8 @@
     "forms": "npm run build --workspace @spsm/shared && node scripts/seed-forms.mjs",
     "//forms:subjects": "Appends any \"What is this about?\" option the built-in contact form has and the stored one lacks \u2014 the second of the two writes a new option needs. Dry run by default; --write applies. Never renames, reorders, or removes.",
     "forms:subjects": "npm run build --workspace @spsm/shared && node scripts/sync-contact-subjects.mjs",
+    "//forms:pictures": "Gives a built-in form the picture its code default names, but only where the stored form has none \u2014 the second of the two writes a new default picture needs. Never replaces a picture staff chose; change those in the drawer on /forms. Dry run by default; --write applies.",
+    "forms:pictures": "npm run build --workspace @spsm/shared && node scripts/sync-form-pictures.mjs",
     "//parish:geo": "Writes config/parish.geo, the point the map on /contact is centred on. Geocodes the stored address against OpenStreetMap unless you pass --lat/--lng. Dry run by default; -- --write applies. Look at /contact afterwards \u2014 a swapped pair is a legal point somewhere else and nothing can catch it for you.",
     "parish:geo": "npm run build --workspace @spsm/shared && node scripts/set-parish-geo.mjs",
     "//catalog": "Mirror the Square bookstore catalog into Firestore products.",

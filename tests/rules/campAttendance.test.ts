@@ -63,6 +63,19 @@ const asOtherLead = (e: RulesTestEnvironment) => e.authenticatedContext('other-1
 const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol-1', {});
 
 /**
+ * Runs Summercamp **as a ministry** — its page, its gatherings, its gallery —
+ * and has not been given the camp's back office.
+ *
+ * This context is the whole point of the change made on 2 Sep 2026. It is the
+ * seeding `asCampLead` used to have: `programAdmin.programs` containing the
+ * camp's id. That one tick used to open the registrations, the allocation and
+ * the register as well as the photographs, so the person posting the week's
+ * pictures was necessarily the person holding children's medical notes. It is
+ * refused everywhere in this file now.
+ */
+const asCampMinistry = (e: RulesTestEnvironment) => e.authenticatedContext('min-1', {});
+
+/**
  * Every area on the site, and no program grant.
  *
  * The control this whole file is measured against, and it is deliberately the
@@ -74,8 +87,18 @@ const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol
  */
 const asEveryArea = (e: RulesTestEnvironment) => e.authenticatedContext('every-area-1', {});
 
-/** A complete screen map with everything ticked. */
-const everyScreen = Object.fromEntries(ADMIN_SCREENS.map((s) => [s, true]));
+/**
+ * A complete screen map with everything ticked **except the camp**.
+ *
+ * `camp` joined `ADMIN_SCREENS` when the camp's back office was separated from
+ * the camp's program grant, and `Object.fromEntries(ADMIN_SCREENS…)` therefore
+ * started handing this control the very permission it exists to be refused.
+ * Derived from the constant rather than listed, so a screen added tomorrow is
+ * still in it, and the one exclusion is named.
+ */
+const everyScreenButCamp = Object.fromEntries(
+  ADMIN_SCREENS.filter((s) => s !== 'camp').map((s) => [s, true]),
+);
 
 
 function mark(by = 'lead-1') {
@@ -129,7 +152,14 @@ beforeEach(async () => {
       register({ programId: OTHER, updatedBy: 'other-1' }),
     );
 
+    // The camp lead holds the `camp` screen flag and **no program grant** —
+    // that separation is what this seeding is asserting. Whoever posts the
+    // camp's photographs is `min-1` below and gets nothing here.
     await setDoc(doc(db, 'members', 'lead-1'), {
+      screenAdmin: { camp: true },
+      programAdmin: { programs: [], events: [] },
+    });
+    await setDoc(doc(db, 'members', 'min-1'), {
       programAdmin: { programs: [CAMP], events: [] },
     });
     await setDoc(doc(db, 'members', 'other-1'), {
@@ -139,7 +169,7 @@ beforeEach(async () => {
       programAdmin: { programs: [], events: ['week-1-2027'] },
     });
     await setDoc(doc(db, 'members', 'every-area-1'), {
-      screenAdmin: everyScreen,
+      screenAdmin: everyScreenButCamp,
       programAdmin: { programs: [], events: [] },
     });
   });
@@ -155,7 +185,7 @@ describe('reading a register', () => {
   });
 
   /** Claim 1. A register names children; `staff` is the bulletin editor. */
-  it('denies a staff member with no camp grant', async () => {
+  it('denies somebody holding every area but not the camp', async () => {
     await assertFails(getDoc(doc(asEveryArea(env).firestore(), 'campAttendance', DOC)));
   });
 
@@ -171,8 +201,21 @@ describe('reading a register', () => {
     await assertFails(getDoc(doc(asAnon(env).firestore(), 'campAttendance', DOC)));
   });
 
-  it('denies a camp lead reading another ministry’s register', async () => {
-    await assertFails(
+  /**
+   * The camp's ministry is the photographs, not the register — the separation
+   * made on 2 Sep 2026, and this is the grant that used to open this document.
+   */
+  it('denies the camp’s own ministry', async () => {
+    await assertFails(getDoc(doc(asCampMinistry(env).firestore(), 'campAttendance', DOC)));
+  });
+
+  /**
+   * The flag is not scoped by ministry. One camp, one `config/camp.programId`,
+   * and only a superadmin may move it — `camp.test.ts` has the long version of
+   * what that buys and what it costs.
+   */
+  it('lets the camp grant read a register filed under another ministry', async () => {
+    await assertSucceeds(
       getDoc(doc(asCampLead(env).firestore(), 'campAttendance', `${OTHER}__${SEASON}__${DAY}`)),
     );
   });
@@ -204,17 +247,26 @@ describe('reading a register', () => {
   });
 
   /**
-   * A list is refused rather than filtered when the rule reads
-   * `resource.data.programId`. Nothing queries this collection yet; the pair
-   * of tests is here so the first screen that does finds the answer instead of
-   * a permission error that looks like a grant problem.
+   * Both shapes of query are allowed now, and the pair is kept for the history.
+   *
+   * A rule reading `resource.data.programId` refuses an unconstrained list
+   * rather than filtering it, so the first screen to query this collection
+   * would have met a permission error that looks like a grant problem. The flag
+   * is proven against the caller, so neither form is a trap.
    */
-  it('allows a listing constrained to the ministry, and refuses an open one', async () => {
+  it('allows a listing, constrained to the ministry or not', async () => {
     const db = asCampLead(env).firestore();
     await assertSucceeds(
       getDocs(query(collection(db, 'campAttendance'), where('programId', '==', CAMP))),
     );
-    await assertFails(getDocs(collection(db, 'campAttendance')));
+    await assertSucceeds(getDocs(collection(db, 'campAttendance')));
+  });
+
+  it('denies a listing to the camp’s own ministry', async () => {
+    const db = asCampMinistry(env).firestore();
+    await assertFails(
+      getDocs(query(collection(db, 'campAttendance'), where('programId', '==', CAMP))),
+    );
   });
 });
 
@@ -298,7 +350,7 @@ describe('ticking a child', () => {
     );
   });
 
-  it('denies a staff member with no camp grant', async () => {
+  it('denies somebody holding every area but not the camp', async () => {
     const db = asEveryArea(env).firestore();
     await assertFails(
       setDoc(doc(db, 'campAttendance', DOC), tick('reg-2/child-7', 'arrived', 'staff-1'), {

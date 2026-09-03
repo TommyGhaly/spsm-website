@@ -25,7 +25,15 @@
  * values stay in the environment; everything else moves here.
  */
 
-import { DEFAULT_CAMP_WEEKS, MAX_CAMP_WEEKS } from './camp.js';
+import {
+  CAMP_ROLE_SUGGESTIONS,
+  campWeekRoleKey,
+  type CampSection,
+  DEFAULT_CAMP_WEEKS,
+  MAX_CAMP_WEEKS,
+  MAX_LINE as MAX_CAMP_LINE,
+  parseCampWeekRoleKey,
+} from './camp.js';
 
 /** Document id of the single integrations config document. */
 export const CONFIG_DOC_INTEGRATIONS = 'integrations';
@@ -930,6 +938,52 @@ export interface CampConfig {
   weekStarts: string[];
 
   /**
+   * What a servant may ask to do, **one list per week per section**, keyed
+   * `w1_elementary`, `w1_middle`.
+   *
+   * ---------------------------------------------------------------------------
+   * Added 2 Sep 2026 with the per-week question on the sign-up form: *"for the
+   * service form there should be a section per week what they would like to do
+   * and they can check off as many as they want"*. These are the boxes that
+   * section offers, and the camp writes them — every camp invents jobs, and the
+   * second week is rarely the first week's list (see `campWeekRoleKey`).
+   *
+   * It lives on `config/camp` and not on the allocation, which is where the
+   * stations are, for one hard reason: **this document is world-readable and
+   * the allocation is shut.** The sign-up form is public and has to draw its
+   * own checkboxes; a list held with the groups could not be read by the person
+   * filling the form in. Nothing here is sensitive — they are the names of
+   * jobs at a summer camp.
+   *
+   * An empty week is not an empty section on the form. `campWeekRoleOptions`
+   * falls back to `CAMP_ROLE_SUGGESTIONS`, because a week offering no boxes is a
+   * form that cannot be completed, and a camp that has not got round to this
+   * setting should still be able to take sign-ups.
+   *
+   * A **map** keyed by `campWeekRoleKey` and not an array of arrays, which is
+   * not a shape Firestore has: an array may not contain another array, so
+   * `string[][]` is a document that cannot be written. The keys are the same
+   * `w1_elementary` the servants' own answers use, which is also what makes the
+   * two readable side by side in a console.
+   *
+   * **The section is in the key** because the camp's two halves do not run the
+   * same stations — Tommy, 2 Sep 2026: *"each week has stations for middle
+   * school and elementary school so those should be distinct"*. A single list
+   * per week offered a middle-school servant the elementary craft table, and
+   * the roster then had to guess which one somebody meant.
+   *
+   * A bare `w1`, written before that, is read as the list for **both** halves
+   * — see `campWeekRoleOptions`. It is left in the document rather than
+   * rewritten: a migration of a camp's own words is a migration that can lose
+   * them, and the key is simply shadowed as soon as either section is edited.
+   *
+   * A week and section with no list of its own is not stored at all, and reads
+   * as "the camp has not chosen" rather than "the camp chose nothing".
+   * ---------------------------------------------------------------------------
+   */
+  weekRoles: Record<string, string[]>;
+
+  /**
    * Identifies the waiver wording currently in force.
    *
    * Bump this whenever `waiverText` changes in a way that matters. Registrations
@@ -1026,6 +1080,11 @@ export function defaultCampConfig(now: Date = new Date()): CampConfig {
     // a camp that shows the wrong dates on a register until somebody notices;
     // blank shows as "dates not set" and nobody mistakes that for a decision.
     weekStarts: Array.from({ length: DEFAULT_CAMP_WEEKS }, () => ''),
+    // Empty, not seeded with the suggestions. A stored copy of the defaults is
+    // a list somebody has to maintain to change nothing, and it would hide the
+    // fact that the camp has never chosen — `campWeekRoleOptions` shows the
+    // suggestions on the form either way.
+    weekRoles: {},
     waiverVersion: '',
     waiverText: '',
     note: '',
@@ -1064,6 +1123,7 @@ export function parseCampConfig(raw: unknown, now: Date = new Date()): CampConfi
     baseCents: usableBase ? (base as number) : fallback.baseCents,
     weeks: weekCount,
     weekStarts: weekStartList(doc?.['weekStarts'], weekCount),
+    weekRoles: weekRoleMap(doc?.['weekRoles']),
     waiverVersion: str(doc?.['waiverVersion']) ?? fallback.waiverVersion,
     waiverText: str(doc?.['waiverText']) ?? fallback.waiverText,
     note: str(doc?.['note']) ?? fallback.note,
@@ -1098,4 +1158,59 @@ function weekStartList(value: unknown, count: number): string[] {
       ? entry.trim()
       : '';
   });
+}
+
+/** The most boxes one week's section of the sign-up form will offer. */
+export const MAX_WEEK_ROLES = 30;
+
+/**
+ * The camp's role lists, week by week, trimmed and deduped.
+ *
+ * Weeks past `weeks` are **kept** rather than dropped, unlike `weekStarts`: a
+ * camp shortened for a year has not stopped meaning what it typed for week
+ * three, and `campWeekRoleOptions` only ever asks for the weeks the camp
+ * currently runs. Blank names are dropped rather than carried, because a
+ * checkbox with no label is a box nobody can tick meaningfully.
+ */
+function weekRoleMap(value: unknown): Record<string, string[]> {
+  const doc = asRecord(value);
+  const map: Record<string, string[]> = {};
+
+  for (const [key, roles] of Object.entries(doc ?? {})) {
+    const parts = parseCampWeekRoleKey(key);
+    if (parts === null || !Array.isArray(roles)) continue;
+    const list = [
+      ...new Set(
+        roles
+          .filter((role): role is string => typeof role === 'string')
+          .map((role) => role.trim().slice(0, MAX_CAMP_LINE))
+          .filter(Boolean),
+      ),
+    ].slice(0, MAX_WEEK_ROLES);
+    if (list.length > 0) map[campWeekRoleKey(parts.week, parts.section)] = list;
+  }
+  return map;
+}
+
+/**
+ * The boxes one week of the sign-up form offers, for one half of the camp.
+ *
+ * Three sources, in order, and the order is the whole point:
+ *
+ * 1. **The camp's list for that week and that section** — what elementary runs
+ *    in week two, which is not what middle school runs in week two.
+ * 2. **A bare week list**, written before the two halves were told apart. It
+ *    meant "week two, everybody", so it is offered to both.
+ * 3. **`CAMP_ROLE_SUGGESTIONS`** — see `CampConfig.weekRoles` for why a
+ *    fallback exists rather than an empty section.
+ */
+export function campWeekRoleOptions(
+  config: CampConfig,
+  week: number,
+  section: CampSection,
+): string[] {
+  const own = config.weekRoles[campWeekRoleKey(week, section)] ?? [];
+  if (own.length > 0) return own;
+  const shared = config.weekRoles[campWeekRoleKey(week)] ?? [];
+  return shared.length > 0 ? shared : [...CAMP_ROLE_SUGGESTIONS];
 }

@@ -319,16 +319,28 @@ Which account is a URL question. `?as=` on any page picks one:
 | `?as=` | What they hold |
 |---|---|
 | *omitted* | `superadmin` — everything, and the only one who can allocate at /access |
-| `staff` | every area /access can hand out, plus Summercamp by program grant |
+| `staff` | every area /access can hand out, plus Summercamp's ministry |
 | `servant` | nothing at all — the servants' rota, and that is the whole of it |
 | `father` | one area, About pages. To see that one flag opens one screen |
+| `camp` | the camp's back office: registrations, groups, register. No money |
+| `treasurer` | `finance` narrowed to the camp: its totals, and no registration |
 | `lead` | a program grant over all of Summercamp, and no area |
 | `volunteer` | a grant over Summercamp Week 1 only |
 
-`staff` is not a tier and does not mean one — it is nine ticked boxes on a member
+`staff` is not a tier and does not mean one — it is ten ticked boxes on a member
 document, which is now all any administrator is. `servant` is the most useful
 fixture on the list: it is what nearly every account in the parish will be, and
 what almost every page should show it is the signed-out view plus a rota.
+
+**`camp`, `treasurer` and `lead` are three accounts about one summer, and they
+are the only way to see the split made on 2 Sep 2026.** The camp's back office,
+its money and its photographs are three separate grants now (decision #15), and
+each of them looks correct from the inside — what has to be checked is what the
+*other two* cannot reach. Open /admin/camp as each: `camp` gets the screen with
+the balances taken out and one box for recording a payment, `treasurer` gets
+refused and finds the same figures on /admin/finance, and `lead` — which is the
+grant that used to open all of it — is refused outright and keeps the camp's
+gallery.
 
 The last pair is the other point of it: the program-grant model is only testable
 by comparing what `lead` and `volunteer` see, and that comparison should be an

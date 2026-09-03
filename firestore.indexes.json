@@ -363,6 +363,25 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "//": "The hourly orphan sweep in functions/src/galleries/orphans.ts. Three equality/range fields, so it needs a composite index like any other \u2014 and unlike a page query, a missing one here fails in a scheduled job where nobody is watching, leaving broken rows accumulating in the review queue.",
+      "collectionGroup": "galleryMedia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sourceUploaded",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

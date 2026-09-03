@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { aboutHref, aboutPage } from '@/features/content';
 import { TourScreen } from '@/features/tour';
+import { AboutOverlay, AboutSections, getAboutOverride } from '@/features/about';
 import { PageHeader } from '@/components/PageHeader';
 import { MoreOfAbout } from '@/components/MoreOfAbout';
 
@@ -30,6 +31,16 @@ import { MoreOfAbout } from '@/components/MoreOfAbout';
  * and the sitemap all still know about it and none of them needed touching.
  * ---------------------------------------------------------------------------
  */
+/*
+ * ## Staff can edit this page again, and that is not a return to `content`
+ *
+ * `AboutOverlay` reads `aboutOverrides/{slug}` at build time and hands it to
+ * the `<Editable>` slots inside the screen below; the same document is re-read
+ * in the browser a moment after load, so an edit is live without a deploy. The
+ * page itself is still hand-written React and still server-rendered — only the
+ * declared slots and the appended sections can be changed. See
+ * `features/about/slots.ts` for what is declared and why the rest is not.
+ */
 
 const META = aboutPage('welcome-newcomers');
 
@@ -40,9 +51,11 @@ export const metadata: Metadata = {
   alternates: { canonical: aboutHref('welcome-newcomers') },
 };
 
-export default function WelcomeNewcomersPage() {
+export default async function WelcomeNewcomersPage() {
+  const baked = await getAboutOverride('welcome-newcomers');
+
   return (
-    <>
+    <AboutOverlay page="welcome-newcomers" baked={baked}>
       {/*
         Hidden, like every other page's. The visible opening is the tour's own
         hero band — see PageHeader for why the banner was cut sitewide.
@@ -57,12 +70,15 @@ export default function WelcomeNewcomersPage() {
       */}
       <TourScreen />
 
+      {/* Sections staff have added, between the page and the links off it. */}
+      <AboutSections baked={baked.sections} />
+
       {/*
         The foot: the other four parts of About, and the way back to the index.
         It replaced a bare `.wrap` holding one "All of About" link — see
         `MoreOfAbout` for why a correct link still looked wrong there.
       */}
       <MoreOfAbout current="welcome-newcomers" />
-    </>
+    </AboutOverlay>
   );
 }

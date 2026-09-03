@@ -10,6 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { EditColumn } from '@/components/EditColumn';
+import { downscaleToDataUrl } from '@/lib/downscale';
 import {
   MAX_SECTIONS,
   MAX_SECTION_LABEL,
@@ -1818,33 +1819,18 @@ function NewProduct({
  * ---------------------------------------------------------------------------
  */
 async function downscale(file: File, max = 1600): Promise<string> {
-  const original = () =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('Could not read that file.'));
-      reader.readAsDataURL(file);
-    });
-
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1) return original();
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const context = canvas.getContext('2d');
-    if (!context) return original();
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-
-    // JPEG rather than WebP: Square re-encodes anyway, and JPEG is the format
-    // its image endpoint is least likely to have an opinion about.
-    return canvas.toDataURL('image/jpeg', 0.86);
-  } catch {
-    return original();
-  }
+  /*
+   * The canvas work moved to `@/lib/downscale`, which the gallery upload path
+   * also uses. One implementation rather than two, and the shared one fixed a
+   * fault this copy had: `createImageBitmap(file)` without
+   * `{ imageOrientation: 'from-image' }` ignores the EXIF rotation tag in some
+   * engines, so a photograph taken sideways was baked in sideways while the
+   * original still looked upright when you went to check.
+   *
+   * Still a data URL and still JPEG, because Square's image endpoint takes a
+   * base64 body and re-encodes whatever it is given.
+   */
+  return downscaleToDataUrl(file, max);
 }
 
 /* -------------------------------------------------------------------------- */

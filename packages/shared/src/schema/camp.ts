@@ -428,9 +428,42 @@ export function describeCampDays(days: CampDayKey[], weeks = DEFAULT_CAMP_WEEKS)
  * offers the list first and normalises case on entry, which makes the drift
  * unlikely rather than impossible.
  */
+/**
+ * The one wish that is not a station: being with a crew of children.
+ *
+ * ---------------------------------------------------------------------------
+ * Tommy, 2 Sep 2026, cutting through a longer proposal: *"that's not a role to
+ * do group vs head servant, it's just stations and crew leaders."* So the
+ * vocabulary a servant picks from is **the camp's stations, plus this**. There
+ * is no separate wish for leading a crew as against being in one — leading is a
+ * mark on a placement (`CampGroup.leaderKey`), not a different job to ask for.
+ *
+ * `'Group servant'` and `'Head servant'` were the two entries this replaces.
+ * They are still *read* as this wish — see `isCampCrewWish` — because they are
+ * sitting in stored registrations, and a servant whose answer stopped counting
+ * because we renamed a string is a servant the satisfaction meter says we
+ * failed.
+ * ---------------------------------------------------------------------------
+ */
+export const CAMP_CREW_ROLE = 'Crew leader';
+
+/** The stored spellings that all mean `CAMP_CREW_ROLE`. Lower-cased. */
+const CREW_WISHES = new Set([
+  CAMP_CREW_ROLE.toLowerCase(),
+  'group servant',
+  'head servant',
+  'group leader',
+  'crew',
+  'crew servant',
+]);
+
+/** Whether a wish means "put me with a crew of children" rather than a station. */
+export function isCampCrewWish(role: string): boolean {
+  return CREW_WISHES.has(role.trim().toLowerCase());
+}
+
 export const CAMP_ROLE_SUGGESTIONS = [
-  'Group servant',
-  'Head servant',
+  CAMP_CREW_ROLE,
   'Sports',
   'Arts and crafts',
   'Music',
@@ -441,6 +474,267 @@ export const CAMP_ROLE_SUGGESTIONS = [
   'Photography',
   'Setup and cleanup',
 ] as const;
+
+/* ---------------------------------------------------------------------------
+ * Roles, week by week
+ * ------------------------------------------------------------------------ */
+
+/**
+ * How a per-week answer is keyed inside a document: `w1`.
+ *
+ * ---------------------------------------------------------------------------
+ * Added 2 Sep 2026, because what a servant wants to do is **not one answer for
+ * the summer**. Tommy: the service form should have *"a section per week what
+ * they would like to do"*. The camp itself is different in week two — a
+ * different set of stations, a different set of jobs, half a different set of
+ * servants — and a single list of wishes spanning both weeks is a list the
+ * person building week two cannot use.
+ *
+ * The same shape as `CampDayKey`, minus the weekday, and for the same reason
+ * that type gives at length: a week *number* survives the calendar changing and
+ * a date does not. `w1` rather than `1` so a stored key is recognisable as ours
+ * on sight in a console, and so `parseCampWeekRoleKey` can refuse anything that
+ * is not.
+ *
+ * Note the deliberate limit of this: it is what somebody **asked for**, per
+ * week. What they were **given** — `assignedRoles` — stays one list, because
+ * the allocation it belongs to is one board for the whole camp (see
+ * `campAllocation.ts`), and inventing a per-week answer on the camp's side of
+ * the record would re-introduce exactly the per-week boards that were scrapped.
+ * ---------------------------------------------------------------------------
+ */
+export function campWeekRoleKey(week: number, section?: CampSection | null): string {
+  const w = `w${clamp(Math.round(week) || 1, 1, MAX_CAMP_WEEKS)}`;
+  return section ? `${w}_${WEEK_ROLE_SECTION[section]}` : w;
+}
+
+/**
+ * How a section is spelled inside a key: `w1_elementary`, `w1_middle`.
+ *
+ * Not the section's own slug, because `middle-school` has a hyphen in it and
+ * these keys are written as Firestore **field paths** — `weekRoles.w1_middle`
+ * is one update that cannot blank the other section's list, and
+ * `weekRoles.w1_middle-school` is a path the SDK refuses to parse. An
+ * underscore is the only separator both a field path and a console reader are
+ * happy with.
+ */
+const WEEK_ROLE_SECTION: Record<CampSection, string> = {
+  elementary: 'elementary',
+  'middle-school': 'middle',
+};
+
+/** A parsed week-role key: which week, and which half of the camp. */
+export interface CampWeekRoleKeyParts {
+  week: number;
+  /**
+   * Null for a key written before the two halves had their own lists.
+   *
+   * Read as "both", never as "neither" — a `w1` stored in September 2026 is a
+   * list the camp meant for everybody, and dropping it would empty the form.
+   */
+  section: CampSection | null;
+}
+
+/** What a `w2` or `w2_middle` key names, or null for anything we did not write. */
+export function parseCampWeekRoleKey(key: unknown): CampWeekRoleKeyParts | null {
+  if (typeof key !== 'string') return null;
+  const match = /^w([1-9])(?:_(elementary|middle))?$/.exec(key.trim());
+  if (!match) return null;
+  const week = Number(match[1]);
+  if (week < 1 || week > MAX_CAMP_WEEKS) return null;
+  const suffix = match[2];
+  return {
+    week,
+    section:
+      suffix === 'elementary' ? 'elementary' : suffix === 'middle' ? 'middle-school' : null,
+  };
+}
+
+/** Which weeks somebody has any day in, in order. */
+export function campWeeksOf(days: readonly CampDayKey[]): number[] {
+  const weeks = new Set<number>();
+  for (const key of days) {
+    const parsed = parseCampDayKey(key);
+    if (parsed) weeks.add(parsed.week);
+  }
+  return [...weeks].sort((a, b) => a - b);
+}
+
+/**
+ * What they asked to do in one week, in one half of the camp.
+ *
+ * The stations are not the same in the two halves — elementary has a craft
+ * table where middle school has a trip — so the answer is per section as well
+ * as per week, and reading it without saying which section is what produced a
+ * roster offering somebody a job their half of the camp does not run.
+ */
+export function campDesiredRolesFor(
+  servant: Pick<CampServantDetails, 'desiredRolesByWeek'> | null | undefined,
+  week: number,
+  section: CampSection,
+): string[] {
+  return servant?.desiredRolesByWeek[campWeekRoleKey(week, section)] ?? [];
+}
+
+/**
+ * What they asked to do in one week, across both halves, deduped.
+ *
+ * For the screens that want one line about a week — a queue card, a chip. A
+ * servant who serves both sections has two answers for the week and they are
+ * merged here in section order; the two are only told apart where the
+ * difference matters, which is the form and the drawer.
+ */
+export function campDesiredRolesForWeek(
+  servant: Pick<CampServantDetails, 'desiredRolesByWeek'> | null | undefined,
+  week: number,
+): string[] {
+  const roles = new Set<string>();
+  for (const section of CAMP_SECTIONS) {
+    for (const role of campDesiredRolesFor(servant, week, section)) roles.add(role);
+  }
+  return [...roles];
+}
+
+/**
+ * Everything they asked to do, across every week, deduped and in week order.
+ *
+ * For the screens that want one line about a person — the allocation board's
+ * chips, the roster — and *derived on read* rather than stored beside the map,
+ * because a stored union is a second copy of the same fact and the failure mode
+ * of the two disagreeing is a servant whose chip and whose form say different
+ * things.
+ */
+export function campDesiredRoles(
+  servant: Pick<CampServantDetails, 'desiredRolesByWeek'> | null | undefined,
+): string[] {
+  if (!servant) return [];
+  const weeks = [
+    ...new Set(
+      Object.keys(servant.desiredRolesByWeek)
+        .map(parseCampWeekRoleKey)
+        .filter((parts): parts is CampWeekRoleKeyParts => parts !== null)
+        .map((parts) => parts.week),
+    ),
+  ].sort((a, b) => a - b);
+  const roles = new Set<string>();
+  for (const week of weeks) {
+    for (const role of campDesiredRolesForWeek(servant, week)) roles.add(role);
+  }
+  return [...roles];
+}
+
+/**
+ * Tick or untick one week's role, in the map's own shape.
+ *
+ * Here rather than in each editor because there are two of them — the public
+ * sign-up and the administrator's copy of the same question — and a checkbox
+ * that adds a role in one and replaces the list in the other is the kind of
+ * drift nobody notices until a servant's answers vanish. A week left with
+ * nothing ticked has its key removed rather than kept as an empty list, so a
+ * document does not accumulate `w3: []` for weeks the camp stopped running.
+ */
+export function toggleDesiredRole(
+  byWeek: Readonly<Record<string, string[]>>,
+  week: number,
+  section: CampSection,
+  role: string,
+  on: boolean,
+): Record<string, string[]> {
+  const key = campWeekRoleKey(week, section);
+  const trimmed = role.trim().slice(0, MAX_LINE);
+  if (!trimmed) return { ...byWeek };
+
+  const current = byWeek[key] ?? [];
+  const next = on
+    ? current.includes(trimmed)
+      ? current
+      : [...current, trimmed].slice(0, MAX_ROLES)
+    : current.filter((entry) => entry !== trimmed);
+
+  const map = { ...byWeek };
+  if (next.length === 0) delete map[key];
+  else map[key] = next;
+  return map;
+}
+
+/**
+ * Drop everything asked for in one half of the camp.
+ *
+ * Called when somebody unticks a section, on both screens. A servant who ticked
+ * elementary, chose the craft table, then changed their mind to middle school
+ * would otherwise leave a wish behind under a half of the camp they are not
+ * serving — invisible on their own form, and read by the person building the
+ * elementary boards as somebody who wants to be there.
+ *
+ * Untick-and-retick therefore loses what was ticked, which is the right trade:
+ * a record that says what somebody currently means beats one that quietly
+ * remembers what they withdrew.
+ */
+export function clearDesiredRolesForSection(
+  byWeek: Readonly<Record<string, string[]>>,
+  section: CampSection,
+): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  for (const [key, roles] of Object.entries(byWeek)) {
+    const parts = parseCampWeekRoleKey(key);
+    if (parts && parts.section === section) continue;
+    map[key] = roles;
+  }
+  return map;
+}
+
+/**
+ * "Week 1: Sports, Kitchen · Week 2: Sports", for a queue card or a roster.
+ *
+ * Names the weeks rather than merging them, because the merge is what made
+ * this per-week in the first place: an administrator reading a sign-up needs to
+ * know that the person who wants sports in week one wants the kitchen in week
+ * two.
+ */
+export function describeCampDesiredRoles(
+  servant: Pick<CampServantDetails, 'desiredRolesByWeek'> | null | undefined,
+  weeks = DEFAULT_CAMP_WEEKS,
+): string {
+  if (!servant) return '';
+  const count = clamp(Math.round(weeks) || DEFAULT_CAMP_WEEKS, 1, MAX_CAMP_WEEKS);
+
+  // Every week the map has an answer for, including one past `weeks` — a camp
+  // shortened after somebody signed up must not hide what they said.
+  const stored = Object.keys(servant.desiredRolesByWeek)
+    .map(parseCampWeekRoleKey)
+    .filter((parts): parts is CampWeekRoleKeyParts => parts !== null)
+    .map((parts) => parts.week);
+  const all = [...new Set([...Array.from({ length: count }, (_u, i) => i + 1), ...stored])].sort(
+    (a, b) => a - b,
+  );
+
+  const parts: string[] = [];
+  for (const week of all) {
+    const bySection = CAMP_SECTIONS.map((section) => ({
+      section,
+      roles: campDesiredRolesFor(servant, week, section),
+    })).filter((entry) => entry.roles.length > 0);
+    if (bySection.length === 0) continue;
+
+    // The halves are named only when there are two of them **and** they say
+    // different things. Somebody serving one half, or serving both and wanting
+    // the same thing in each, is the common case, and labelling those is a
+    // line that repeats what the record's own sections already say.
+    const plain =
+      bySection.length < CAMP_SECTIONS.length ||
+      bySection[0]!.roles.join('\u0000') === bySection[1]!.roles.join('\u0000');
+    if (plain) {
+      parts.push(`Week ${week}: ${bySection[0]!.roles.join(', ')}`);
+      continue;
+    }
+    for (const entry of bySection) {
+      parts.push(
+        `Week ${week} ${campSectionLabel(entry.section).toLowerCase()}: ${entry.roles.join(', ')}`,
+      );
+    }
+  }
+  return parts.join(' \u00b7 ');
+}
 
 /**
  * How money actually arrived.
@@ -514,6 +808,26 @@ export type CampRegistrantKind = 'family' | 'servant';
  *
  * `withdrawn` rather than deletion, because a family that pulled out after
  * paying is a record the camp still needs when the refund is questioned.
+ */
+/**
+ * The four a document may hold; the two anything writes.
+ *
+ * ---------------------------------------------------------------------------
+ * `draft` and `waitlisted` are **history**. The camp registers a family at a
+ * desk — there is no approval step and there never was one — so the states on
+ * the way to being registered were ceremony that cost a status picker, a badge
+ * on every row, and a save that refused unless the form was complete. All three
+ * are gone; `parseCampRegistration` reads either of the two old values as
+ * `registered`, and nothing writes them.
+ *
+ * They stay in the list because `firestore.rules` transcribes it, documents
+ * written before this change still hold them, and narrowing the union would
+ * make a stored document fail to parse rather than fail to matter.
+ *
+ * `withdrawn` is the one that means something and it is unchanged: a family who
+ * pulled out is still answerable for six months, which is why they are
+ * withdrawn rather than deleted.
+ * ---------------------------------------------------------------------------
  */
 export const CAMP_STATUSES = ['draft', 'registered', 'waitlisted', 'withdrawn'] as const;
 export type CampStatus = (typeof CAMP_STATUSES)[number];
@@ -607,21 +921,31 @@ export interface CampChild {
    */
   groupName: string;
 
-  /** Permission to photograph this child for the parish's own galleries. */
-  photoConsent: boolean;
-
   /** Anything the camp needs about this child that has no field. */
   note: string;
 }
 
 /**
- * The servant half of a registration.
+ * The servant half of a registration: **what the servant said, and nothing
+ * else.**
  *
- * Two role lists, because they answer different questions and collapsing them
- * loses the one that matters. `desiredRoles` is what the servant asked for and
- * is *never* rewritten — when somebody who wanted Sports spends the week in the
- * kitchen, the camp should be able to see that next year. `assignedRoles` is
- * what the administrators actually gave them, and is the list the roster reads.
+ * ---------------------------------------------------------------------------
+ * It used to carry three fields that were the camp's opinion rather than the
+ * servant's answer — `assignedRoles` ("what they have been given"), `cleared`
+ * (safeguarding paperwork) and `clearedNote`. All three are gone: *"the camp
+ * records shouldn't be a thing, that's doing too much."*
+ *
+ * They were each plausible on their own and wrong together. What somebody is
+ * *given* is the allocation board — a servant is in a group or on a station in
+ * a given week, and a second free-text list beside it could only ever disagree
+ * with it. Safeguarding lives with the diocese; a tickbox on a parish website
+ * saying somebody is cleared is a claim this site cannot stand behind, and it
+ * put an "uncleared" badge next to the name of every volunteer at a camp that
+ * had not got round to ticking it.
+ *
+ * What is left is a record of a form somebody filled in about themselves, which
+ * is why the administrators' screen shows it and does not edit it.
+ * ---------------------------------------------------------------------------
  */
 export interface CampServantDetails {
   /** Set when the servant has a parish account, so a later screen can show
@@ -654,11 +978,20 @@ export interface CampServantDetails {
    */
   sections: CampSection[];
 
-  /** What they asked for, in their own order of preference. Never edited by
-      administrators — see above. */
-  desiredRoles: string[];
-  /** What they were given. Appended to by administrators. */
-  assignedRoles: string[];
+  /**
+   * What they asked for, **week by week**, in their own order of preference.
+   *
+   * Keyed `w1_elementary`, `w1_middle` — see `campWeekRoleKey`, which also says
+   * why this is a map and `assignedRoles` below is not, and why the section is
+   * in the key at all: the two halves of the camp run different stations, so
+   * "sports in week one" is a different answer in each. A week and section with
+   * nothing ticked has no key at all rather than an empty list.
+   *
+   * Read it with `campDesiredRolesFor` when the section matters — the form, the
+   * drawer — `campDesiredRolesForWeek` for one week across both, or
+   * `campDesiredRoles` for the flat union the allocation board's chips want.
+   */
+  desiredRolesByWeek: Record<string, string[]>;
 
   shirtSize: ShirtSize;
 
@@ -669,17 +1002,6 @@ export interface CampServantDetails {
   /** "Mornings only", "can drive on the Friday". Free text for everything the
       day grid cannot say. */
   availability: string;
-
-  /**
-   * Safeguarding paperwork done.
-   *
-   * A flag rather than a document store, deliberately. The parish's background
-   * checks live with the diocese and are not this site's to hold; what this
-   * records is that somebody checked, which is the thing a head servant needs
-   * to see when building a group list.
-   */
-  cleared: boolean;
-  clearedNote: string;
 }
 
 /**
@@ -880,10 +1202,6 @@ export function blankChild(): CampChild {
     allergies: '',
     medicalNotes: '',
     groupName: '',
-    // Defaults to false. A consent that defaults to given is not a consent —
-    // it is a checkbox nobody read, and this one governs photographs of
-    // children on a public website.
-    photoConsent: false,
     note: '',
   };
 }
@@ -893,13 +1211,10 @@ export function blankServant(): CampServantDetails {
     uid: null,
     dateOfBirth: '',
     sections: [],
-    desiredRoles: [],
-    assignedRoles: [],
+    desiredRolesByWeek: {},
     shirtSize: 'AM',
     days: [],
     availability: '',
-    cleared: false,
-    clearedNote: '',
   };
 }
 
@@ -921,7 +1236,18 @@ export function blankRegistration(input: {
     programId: input.programId,
     season: input.season,
     kind: input.kind,
-    status: 'draft',
+    /*
+     * A new registration is a registration.
+     *
+     * It used to open as a `draft`, and everything downstream of that was
+     * ceremony: a status picker on the editor, a chip on the row, and a save
+     * that refused unless the form was complete or the status was put back to
+     * `draft`. *"Get rid of the overcomplicated registered vs draft."* A camp
+     * registers a family at a desk; there is no approval step and there never
+     * was one, so there is no state to be in on the way to it. `withdrawn` is
+     * the one status that means something and it is still here.
+     */
+    status: 'registered',
     contact: { name: '', email: '', phone: '', altName: '', altPhone: '', address: '' },
     emergency: { name: '', phone: '', relationship: '' },
     children: input.kind === 'family' ? [blankChild()] : [],
@@ -1199,11 +1525,27 @@ export function validateCampRegistration(
       if (servant.sections.length === 0) {
         errors.push('Choose which group the servant will serve — elementary, middle school, or both.');
       }
-      if (servant.desiredRoles.length === 0) {
-        errors.push('Choose at least one role the servant would like.');
-      }
       if (servant.days.length === 0) {
         errors.push('Choose the days the servant is coming.');
+      }
+      /*
+       * A week they are coming to, with nothing they want to do in it.
+       *
+       * Asked per week **and per section** rather than once, because that is
+       * the shape of the answer — see `campWeekRoleKey`. Only the weeks they
+       * are actually coming to and the halves they actually chose are demanded:
+       * requiring week two of somebody who is only there for week one, or the
+       * middle-school stations of somebody serving elementary, would be a form
+       * that cannot be completed truthfully.
+       */
+      for (const week of campWeeksOf(servant.days)) {
+        for (const section of servant.sections) {
+          if (campDesiredRolesFor(servant, week, section).length === 0) {
+            errors.push(
+              `Choose at least one thing the servant would like to do in ${campSectionLabel(section).toLowerCase()}, week ${week}.`,
+            );
+          }
+        }
       }
     }
   }
@@ -1244,7 +1586,21 @@ export function parseCampRegistration(raw: unknown): CampRegistration {
     programId: str(doc['programId']) || 'summercamp',
     season: str(doc['season']),
     kind,
-    status: isCampStatus(doc['status']) ? doc['status'] : 'draft',
+    /*
+     * An unreadable or absent status reads as `registered`, not `draft`.
+     *
+     * `draft` and `waitlisted` are no longer written by anything — see
+     * `CAMP_STATUSES` — and a document that still holds one is a real
+     * registration filed under a state the screens no longer draw. Reading them
+     * through unchanged would leave those rows looking different for no reason
+     * anybody could act on.
+     */
+    status:
+      doc['status'] === 'withdrawn'
+        ? 'withdrawn'
+        : isCampStatus(doc['status']) && doc['status'] !== 'draft' && doc['status'] !== 'waitlisted'
+          ? doc['status']
+          : 'registered',
     contact: parseContact(doc['contact']),
     emergency: parseEmergency(doc['emergency']),
     children: kind === 'family' ? children : [],
@@ -1293,24 +1649,27 @@ function parseChild(raw: unknown): CampChild {
     allergies: text(doc['allergies']),
     medicalNotes: text(doc['medicalNotes']),
     groupName: str(doc['groupName']),
-    photoConsent: doc['photoConsent'] === true,
     note: text(doc['note']),
   };
 }
 
 function parseServant(raw: unknown): CampServantDetails {
   const doc = asRecord(raw);
+  const days = dayList(doc['days']);
+  const sections = sectionList(doc['sections']);
   return {
     uid: nullableStr(doc['uid']),
     dateOfBirth: str(doc['dateOfBirth']),
-    sections: sectionList(doc['sections']),
-    desiredRoles: roleList(doc['desiredRoles']),
-    assignedRoles: roleList(doc['assignedRoles']),
+    sections,
+    desiredRolesByWeek: weekRoleMap(
+      doc['desiredRolesByWeek'],
+      doc['desiredRoles'],
+      days,
+      sections,
+    ),
     shirtSize: isShirtSize(doc['shirtSize']) ? doc['shirtSize'] : 'AM',
-    days: dayList(doc['days']),
+    days,
     availability: text(doc['availability']),
-    cleared: doc['cleared'] === true,
-    clearedNote: text(doc['clearedNote']),
   };
 }
 
@@ -1440,6 +1799,77 @@ function roleList(value: unknown): string[] {
         .filter(Boolean),
     ),
   ].slice(0, MAX_ROLES);
+}
+
+/**
+ * A per-week, per-section map of roles, and the two migrations this schema
+ * carries.
+ *
+ * ---------------------------------------------------------------------------
+ * **`desiredRoles` was a single flat list until 2 Sep 2026.** A registration
+ * written before then holds that list and no map, and the honest reading of it
+ * is *"this is what they wanted to do while they were here"* — so it is applied
+ * to **every week they have days in**, which is precisely the span it used to
+ * cover. A servant with no days at all falls back to week one, because a wish
+ * filed under no week is a wish no screen will ever show.
+ *
+ * **The map was keyed by week alone for the rest of that same day**, before the
+ * two halves of the camp were given their own stations. A `w1` key is read as
+ * a list the servant meant for **every section they signed up to serve**, which
+ * is what it meant when it was written: the form that produced it offered one
+ * set of boxes to somebody who had already ticked their sections. A key with a
+ * section of its own always wins over it, so a record half-migrated by an
+ * administrator's save is read the way the administrator left it.
+ *
+ * Neither legacy shape is written back. Nothing writes `desiredRoles` or a
+ * bare `w1` any more, and a document that still has one is read correctly for
+ * as long as it exists; the key is dropped the next time anybody saves that
+ * registration.
+ * ---------------------------------------------------------------------------
+ */
+function weekRoleMap(
+  value: unknown,
+  legacy: unknown,
+  days: readonly CampDayKey[],
+  sections: readonly CampSection[],
+): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  const doc = asRecord(value);
+
+  // Where a bare `w1` is spread to. Their own sections, or both when they have
+  // named none — an unsectioned servant with wishes is a record to show whole,
+  // not one to file under a section they never chose.
+  const spread = sections.length > 0 ? sections : CAMP_SECTIONS;
+
+  const bare: Array<{ week: number; roles: string[] }> = [];
+  for (const [key, roles] of Object.entries(doc)) {
+    const parts = parseCampWeekRoleKey(key);
+    if (!parts) continue;
+    const parsed = roleList(roles);
+    if (parsed.length === 0) continue;
+    if (parts.section === null) bare.push({ week: parts.week, roles: parsed });
+    else map[campWeekRoleKey(parts.week, parts.section)] = parsed;
+  }
+
+  // After the sectioned keys, so a section that has been answered properly is
+  // never overwritten by the old week-wide answer sitting beside it.
+  for (const { week, roles } of bare) {
+    for (const section of spread) {
+      const key = campWeekRoleKey(week, section);
+      if (!(key in map)) map[key] = [...roles];
+    }
+  }
+
+  if (Object.keys(map).length > 0) return map;
+
+  const before = roleList(legacy);
+  if (before.length === 0) return map;
+
+  const weeks = campWeeksOf(days);
+  for (const week of weeks.length > 0 ? weeks : [1]) {
+    for (const section of spread) map[campWeekRoleKey(week, section)] = [...before];
+  }
+  return map;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1637,10 +2067,18 @@ export function validateServantSignUp(
     if (servant.sections.length === 0) {
       errors.push('Choose which group you would like to serve — elementary, middle school, or both.');
     }
-    if (servant.desiredRoles.length === 0) {
-      errors.push('Choose at least one role you would like.');
-    }
     if (servant.days.length === 0) errors.push('Choose the days you can come.');
+    // The first person of the check in `validateCampRegistration`, per week and
+    // per half of the camp.
+    for (const week of campWeeksOf(servant.days)) {
+      for (const section of servant.sections) {
+        if (campDesiredRolesFor(servant, week, section).length === 0) {
+          errors.push(
+            `Choose at least one thing you would like to do in ${campSectionLabel(section).toLowerCase()}, week ${week}.`,
+          );
+        }
+      }
+    }
     if (!isShirtSize(servant.shirtSize)) errors.push('Choose a shirt size.');
   }
 
@@ -1715,6 +2153,15 @@ export function acceptedServantRegistration(
       : request.registration.note,
   };
 
-  const problems = validateCampRegistration(draft, { waiverInForce: input.waiverInForce });
-  return { ...draft, status: problems.length === 0 ? 'registered' : 'draft' };
+  /*
+   * Accepting a sign-up registers them, whatever is missing.
+   *
+   * This used to file an incomplete one as a `draft`, which sounds careful and
+   * was not: the administrator had already read the sign-up and pressed
+   * **Accept**, and the only thing the status changed was that the editor then
+   * refused to save any correction they made to it. What is missing is worth
+   * saying, so `validateCampRegistration` still says it — on the editor, as a
+   * list of things still to fill in, blocking nothing.
+   */
+  return { ...draft, status: 'registered' };
 }

@@ -42,6 +42,12 @@ out/
 .next-emulated-3200/
 .next-emulated-3900/
 .next-emulated-3250/
+# The -3350 entry's output dir. On Sep 2 peer sessions held every other
+# emulated port at once.
+.next-emulated-3350/
+# The -3450 entry's. Six emulated ports are now spoken for; a seventh will need
+# a line here too, which is the cost of a `NEXT_DIST_DIR` per server.
+.next-emulated-3450/
 .next-real-3300/
 .next-real-3400/
 .next-real-3500/
@@ -110,3 +116,9 @@ apps/website/certificates/
 # which timestamp each one came from, so the derivation is checkable without the
 # masters. Keep the masters — the parish paid for them — just not here.
 assets/Future Plans/
+
+# Scratch a Claude session writes into while working. Not output, not
+# configuration — working notes, and there is no version of them worth keeping
+# in the history. `.claude/launch.json` and the skills beside it ARE tracked, so
+# this is scoped to the one directory rather than to `.claude/`.
+.claude/scratch/

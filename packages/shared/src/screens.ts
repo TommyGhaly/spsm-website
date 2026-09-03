@@ -49,6 +49,45 @@ export const ADMIN_SCREENS = [
    */
   'forms',
   /**
+   * The summer camp's own back office: registrations, the allocation into
+   * bands and groups, the daily register, and the camp's settings.
+   *
+   * ---------------------------------------------------------------------------
+   * **This used to be the camp's program grant, and separating them is the
+   * point of this flag.**
+   *
+   * `programAdmin.programs` containing the camp's id meant one thing to the
+   * rules and three things to a parish. It opened the registrations — children's
+   * grades, allergies and medical notes — and, because a program grant is a
+   * program grant, it also opened `programs/{camp}`, every `programEvent`
+   * underneath it and every photograph sent in to them. So the person given the
+   * camp's paperwork was thereby given the camp's *events*, and there was no way
+   * to say otherwise. /access said so out loud, in a caveat, which is a
+   * permission model apologising for itself.
+   *
+   * They are now two grants that happen to be about the same summer:
+   *
+   *   `camp` (this flag)            the registrations, the groups, the register
+   *   `programAdmin.programs`       the camp's page, its gatherings, its gallery
+   *
+   * Either can be held without the other, in both directions. The registrar who
+   * takes families at a desk needs no power to publish an event page; the
+   * servant who posts the week's photographs has no business with a ten-year
+   * old's medical notes.
+   *
+   * **What this flag does not open is the money.** The fees ledger is inside a
+   * `campRegistrations` document, so anybody who can read a registration can
+   * read the ledger on it — that is a fact about the document and rules cannot
+   * change it. What is separated is the *screen*: /admin/camp shows totals,
+   * balances, discounts and the payment history only to `finance` narrowed to
+   * `camp`, and gives this flag one write-only control for taking a payment at
+   * the desk. Correcting, deleting or discounting one is the treasurer's. See
+   * `canSeeFinanceSource` at the bottom of this file, and be clear about which
+   * half of that is a rule and which is a preference.
+   * ---------------------------------------------------------------------------
+   */
+  'camp',
+  /**
    * The money: the bookstore's takings, the camp's fees, and what the paid
    * forms have brought in.
    *

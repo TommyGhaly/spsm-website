@@ -32,6 +32,20 @@ const nextConfig = {
   output: 'export',
 
   /*
+   * No floating dev badge in the bottom-left corner.
+   *
+   * It is drawn in a `<nextjs-portal>` over everything the page has, and the
+   * bottom-left corner is not empty here: the editing panel becomes a sheet
+   * along the foot of the window under 60rem, which puts the shelf's "Add a…"
+   * field exactly underneath it. The field looked cut off, and the badge ate the
+   * click that would have focused it.
+   *
+   * Only the indicator goes; the error overlay a build failure raises is a
+   * separate thing and still appears.
+   */
+  devIndicators: false,
+
+  /*
    * Dev tooling: somewhere else to put the build output.
    *
    * `next dev` refuses to start a second server for the same output directory,
@@ -149,6 +163,17 @@ if (process.env.NODE_ENV === 'development') {
       {
         source: '/api/account/delete',
         destination: `${origin}/${project}/${region}/deleteOwnAccount`,
+      },
+      /*
+       * The gallery upload chokepoint. Needed here for the same reason as the
+       * rest — and worth knowing that it will refuse you anyway without
+       * `NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN` set: the endpoint verifies
+       * an App Check token, and lib/firebase.ts deliberately does not start App
+       * Check on localhost without one.
+       */
+      {
+        source: '/api/gallery/upload-url',
+        destination: `${origin}/${project}/${region}/galleryUploadUrl`,
       },
       {
         source: '/api/square/checkout',

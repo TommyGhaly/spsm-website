@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   NO_PAYMENT,
   isBuiltInForm,
@@ -103,7 +110,11 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
             type="button"
             role="tab"
             aria-selected={view.kind === 'list' || view.kind === 'build'}
-            className={view.kind === 'submissions' || view.kind === 'import' ? 'bktabs__tab' : 'bktabs__tab is-on'}
+            className={
+              view.kind === 'submissions' || view.kind === 'import'
+                ? 'bktabs__tab'
+                : 'bktabs__tab is-on'
+            }
             onClick={() => setView({ kind: 'list' })}
           >
             Forms
@@ -214,34 +225,40 @@ function FormsList({
   /*
    * The order on screen, held locally while it is being changed.
    *
-   * Two presses of the same arrow is the normal way to move a form up a list,
-   * and waiting for a round trip between them would either drop the second or
-   * animate the row back up past the cursor. So the list moves immediately and
-   * the writes follow; `onChanged` refreshes from the server afterwards, which
-   * is what corrects the screen if one of them was refused.
+   * A drag moves the row under the finger and the write follows on release, so
+   * the list has to be able to say something the server has not been told yet.
+   * `onChanged` refreshes from the server afterwards, which is what corrects
+   * the screen if a write was refused.
    *
    * Null means "no local opinion" — show whatever the server last said. That
    * matters after a refresh: keeping a stale local array would pin the list to
    * an order that no longer exists once somebody else has edited it.
    */
   const [moved, setMoved] = useState<WithId<FormDefinition>[] | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  /*
+   * What a drag is doing, said out loud.
+   *
+   * The handle's own label carries the position, but it is written at render
+   * time and a drag deliberately does not re-render — so during the one gesture
+   * where the position is changing, the label is the only thing on screen that
+   * is stale. This region is updated as the row crosses each slot, which is
+   * also what the arrow keys announce, so both routes report the same thing.
+   */
+  const liveRef = useRef<HTMLParagraphElement | null>(null);
 
   if (forms === null) return <p className="note">Loading…</p>;
 
   const rows = moved ?? forms;
 
   /**
-   * Move one form up or down by a place.
+   * Renumber the whole list on the server.
    *
-   * The whole list is renumbered on the server — see `setFormOrder` for why a
-   * swap does not work when most forms share `order: 100`.
+   * Every row is rewritten rather than the two that swapped — see
+   * `setFormOrder` for why a swap does not work when most forms share
+   * `order: 100`.
    */
-  function move(index: number, by: -1 | 1) {
-    const next = [...rows];
-    const target = index + by;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target]!, next[index]!];
-
+  function commit(next: WithId<FormDefinition>[]) {
     setMoved(next);
     void setFormOrder(
       next.map((form) => form.id),
@@ -254,6 +271,290 @@ function FormsList({
     });
   }
 
+  /** Announce a position to a screen reader, without repainting the list. */
+  function say(message: string) {
+    if (liveRef.current) liveRef.current.textContent = message;
+  }
+
+  /** Move one form to a new index, without writing. Used while a drag runs. */
+  function reorder(from: number, to: number): WithId<FormDefinition>[] | null {
+    if (to < 0 || to >= rows.length || to === from) return null;
+    const next = [...rows];
+    const [row] = next.splice(from, 1);
+    next.splice(to, 0, row!);
+    return next;
+  }
+
+  /**
+   * The drag itself.
+   *
+   * ---------------------------------------------------------------------------
+   * ### Pointer events on the handle alone, not on the row
+   *
+   * The arrows this replaces were chosen partly to avoid the bug the photo
+   * manager already paid for: a drag container wrapped around a row swallows
+   * the click of every button inside it, because whatever captured the pointer
+   * keeps it. That failure needs the capture to be *over* the other controls.
+   * Here it is over one 1.75rem handle with nothing inside it, so the five
+   * controls beside it never see a captured pointer at all.
+   *
+   * `setPointerCapture` is what makes a touch drag work: without it the browser
+   * hands each move to whatever element is under the finger, which is a
+   * different row the moment the list moves. `touch-action: none` on the handle
+   * (see globals.css) stops the drawer scrolling underneath the drag.
+   *
+   * ### Nothing is reordered until the finger comes up
+   *
+   * The obvious version swaps the rows in React state as the pointer crosses
+   * each midpoint. It was written first, and it moves a row exactly one place
+   * and then goes dead however far you drag — which is worth recording,
+   * because the cause is not obvious and it is not this list's alone.
+   *
+   * Reordering a keyed list is `insertBefore`, and `insertBefore` on a captured
+   * element's ancestor takes that element out of the document for an instant.
+   * A pointer capture does not survive that: the browser releases it and fires
+   * `pointercancel`, so the first swap ends the drag it was supposed to be the
+   * beginning of.
+   *
+   * So the drag never touches the DOM's order. It moves the rows with inline
+   * `translateY` — the dragged one under the finger, the ones it has passed by
+   * a row's pitch the other way — which is a paint and not a mutation, and
+   * `setMoved` is called once, on release. Writing those transforms directly
+   * rather than through state is deliberate for the same reason: a React
+   * re-render mid-drag is exactly what must not happen.
+   */
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>, index: number) {
+    // Left button and touch only; a right-click on the handle is not a drag.
+    if (event.button !== 0) return;
+    // Stops the drawer's text being selected as the pointer sweeps over it.
+    event.preventDefault();
+
+    const list = listRef.current;
+    if (!list) return;
+
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+
+    const items = [...list.querySelectorAll<HTMLLIElement>('.fxa__row')];
+    const boxes = items.map((item) => item.getBoundingClientRect());
+    /*
+     * Each row's own pitch — its height plus the gap to the next one — taken
+     * from the distance between successive tops.
+     *
+     * This was one number for the whole list, measured off the first two rows,
+     * and that is the cause of most of what looked like jitter. These rows are
+     * not the same height: one wraps its slug onto a second line, one carries a
+     * `.fxa__row-warn`, one is taller while its `⋯` menu is open. With a single
+     * pitch, dragging past a tall row moved every other row by the *short* row's
+     * distance, so rows overlapped, gaps opened where nothing was, and the row
+     * under the finger landed somewhere other than the slot it appeared to be
+     * in. Per-row pitches make the displacement exact whatever the heights are.
+     */
+    const gap = boxes.length > 1 ? boxes[1]!.top - boxes[0]!.bottom : 0;
+    const pitch = boxes.map((box, i) =>
+      // The last row has no row after it to measure against, so it is given the
+      // list's gap explicitly. Leaving it as a bare height is a real error and
+      // not a rounding one: dragging the *last* form upward would then displace
+      // every row it passed by one gap too little, and they would sit visibly
+      // overlapping until the finger came up.
+      i + 1 < boxes.length ? boxes[i + 1]!.top - box.top : box.height + gap,
+    );
+    const middles = boxes.map((box) => box.top + box.height / 2);
+    const startY = event.clientY;
+    /*
+     * The scroller the list sits in, so a drag can reach a row that is off the
+     * bottom of the drawer.
+     *
+     * Found by walking up and asking each ancestor whether it actually scrolls,
+     * rather than by naming a class. The drawer is the bookstore's `Sheet` and
+     * which of its elements carries the overflow has already moved once; a
+     * selector would go quietly wrong the next time it does, and the symptom
+     * would be a drag that simply cannot reach the last form.
+     */
+    let scroller: HTMLElement | null = list.parentElement;
+    while (scroller) {
+      const flow = getComputedStyle(scroller).overflowY;
+      if (
+        (flow === 'auto' || flow === 'scroll') &&
+        scroller.scrollHeight > scroller.clientHeight
+      )
+        break;
+      scroller = scroller.parentElement;
+    }
+
+    /*
+     * A press is not a drag until it has travelled.
+     *
+     * Without this every press on the handle — including one that only means to
+     * focus it before using the arrow keys — ran the whole drag, wrote the
+     * order back and refetched the list. A few pixels of hand tremor was enough
+     * to make the drawer flash and reload.
+     */
+    const THRESHOLD = 4;
+    let live = false;
+    let at = index;
+    /** How far the dragged row has been carried, in pixels. */
+    let travel = 0;
+
+    /** Where the dragged row must be drawn to sit in slot `to`. */
+    function offsetFor(to: number) {
+      let d = 0;
+      if (to > index) for (let i = index + 1; i <= to; i += 1) d += pitch[i]!;
+      if (to < index) for (let i = to; i < index; i += 1) d -= pitch[i]!;
+      return d;
+    }
+
+    function paint() {
+      /*
+       * The dragged row follows the finger, but never further than the list —
+       * clamped to the travel that would put it in the first or the last slot,
+       * plus half a row of overshoot so it still feels attached at the ends
+       * rather than nailed down.
+       */
+      const slack = (pitch[index] ?? 0) / 2;
+      const low = offsetFor(0) - slack;
+      const high = offsetFor(items.length - 1) + slack;
+      items[index]!.style.transform =
+        `translateY(${Math.max(low, Math.min(high, travel))}px)`;
+    }
+
+    function settle(target: number) {
+      if (target === at) return;
+      at = target;
+      for (let i = 0; i < items.length; i += 1) {
+        if (i === index) continue;
+        /*
+         * A row the dragged one has passed moves by the *dragged* row's pitch,
+         * which is the space that opened where it used to be — not by its own.
+         * The two are only the same when every row is the same height.
+         */
+        const shift =
+          (target > index && i > index && i <= target && -pitch[index]!) ||
+          (target < index && i < index && i >= target && pitch[index]!) ||
+          0;
+        items[i]!.style.transform = shift ? `translateY(${shift}px)` : '';
+      }
+      say(`${rows[index]?.title ?? 'Form'}, position ${target + 1} of ${items.length}`);
+    }
+
+    const move = (moveEvent: PointerEvent) => {
+      travel = moveEvent.clientY - startY;
+
+      if (!live) {
+        if (Math.abs(travel) < THRESHOLD) return;
+        live = true;
+        items[index]!.classList.add('is-dragging');
+        list.classList.add('is-reordering');
+        document.body.classList.add('is-reordering');
+      }
+
+      paint();
+
+      /*
+       * Nudge the drawer when the finger is near its edge, so a list longer
+       * than the visible drawer can be reordered end to end. `middles` is in
+       * viewport coordinates and so is `clientY`, so scrolling shifts both
+       * together and the geometry below stays true without re-measuring.
+       */
+      if (scroller) {
+        const edge = scroller.getBoundingClientRect();
+        const margin = 48;
+        const up = moveEvent.clientY - edge.top;
+        const down = edge.bottom - moveEvent.clientY;
+        if (up < margin) scroller.scrollTop -= Math.min(18, margin - up) / 2;
+        else if (down < margin) scroller.scrollTop += Math.min(18, margin - down) / 2;
+      }
+
+      /*
+       * The slot the pointer is over, counted against the midpoints the rows
+       * had when the drag began — which is the whole geometry, since nothing
+       * has actually moved. Clamped rather than ignored, so dragging past
+       * either end parks the row at that end.
+       */
+      let target = middles.filter((middle) => moveEvent.clientY > middle).length;
+      if (target > index) target -= 1;
+      settle(Math.max(0, Math.min(items.length - 1, target)));
+    };
+
+    /** Put the list back the way it was drawn, and let go of the gesture. */
+    const clear = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', drop);
+      handle.removeEventListener('pointercancel', abandon);
+      list.classList.remove('is-reordering');
+      document.body.classList.remove('is-reordering');
+
+      // The transforms come off in the same frame the new order goes in, so the
+      // row never appears twice in one place or jumps back before it lands.
+      for (const item of items) item.style.transform = '';
+      items[index]!.classList.remove('is-dragging');
+    };
+
+    const drop = () => {
+      clear();
+
+      // A press that never travelled is a press, not a drag: leave the order
+      // alone so the handle can be focused for the arrow keys.
+      if (!live) return;
+
+      const next = reorder(index, at);
+      if (next) commit(next);
+    };
+
+    /*
+     * A cancelled drag writes nothing.
+     *
+     * `pointercancel` and `pointerup` were the same handler, which is a real
+     * bug and not a tidiness point: anything that takes the pointer away
+     * mid-drag — the browser deciding the gesture was a scroll after all, a
+     * touch becoming a system gesture, the window losing the pointer — then
+     * *committed* the half-finished move and refetched the list. A drag the
+     * reader never finished has to leave the order exactly as it was.
+     */
+    const abandon = () => {
+      clear();
+      if (live) say('Move cancelled');
+    };
+
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', drop);
+    handle.addEventListener('pointercancel', abandon);
+  }
+
+  /**
+   * The same reorder from a keyboard, on the same handle.
+   *
+   * A drag is unusable without a pointer, and this drawer is a staff tool that
+   * has to stay operable from a keyboard — so the handle is a real button that
+   * moves its row with the arrow keys. This is what the two visible arrows were
+   * also good at, and it is the part of them worth keeping.
+   */
+  function onHandleKey(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    const by = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+    if (by === 0) return;
+
+    const next = reorder(index, index + by);
+    if (!next) return;
+    event.preventDefault();
+
+    /*
+     * Keep the keyboard on the row that moved, not on the row that took its
+     * place — otherwise a second press moves a different form, which is what
+     * this did at first.
+     *
+     * It is the *same button* either way: the list is keyed by form id, so
+     * React moves this `<li>` rather than rewriting the one above it, and this
+     * node travels with its form. Re-focusing it after the render is only
+     * needed because moving a node can drop focus; picking a handle out of the
+     * list by its new index cannot work, because the indices belong to the
+     * order that has not been painted yet.
+     */
+    const handle = event.currentTarget;
+    commit(next);
+    say(`${rows[index]?.title ?? 'Form'}, position ${index + by + 1} of ${rows.length}`);
+    setTimeout(() => handle.focus(), 0);
+  }
+
   return (
     <>
       <button type="button" className="button" onClick={onCreate}>
@@ -264,46 +565,32 @@ function FormsList({
 
       {rows.length > 1 && (
         <p className="note">
-          The order here is the order on /forms. Move a form with the arrows.
+          The order here is the order on /forms. Drag a form by its handle to move it, or
+          focus a handle and press the up and down arrow keys.
         </p>
       )}
 
-      <ul className="fxa__list">
+      <p ref={liveRef} className="visually-hidden" role="status" aria-live="polite" />
+
+      <ul className="fxa__list" ref={listRef}>
         {rows.map((form, index) => (
           <li key={form.id} className="fxa__row">
-            {/*
-              Arrows, not drag-and-drop.
-
-              A row here holds five other controls, and a drag container over
-              them is the bug the photo manager already paid for: pointer
-              capture swallows the click and the button inside silently never
-              fires. Two arrows are also the only version that works from a
-              keyboard and on a phone, which is where half of this drawer is
-              used.
-            */}
-            <div className="fxa__row-move">
-              <button
-                type="button"
-                className="fxa__move"
-                disabled={index === 0}
-                onClick={() => move(index, -1)}
-                aria-label={`Move ${form.title} up`}
-              >
-                <span aria-hidden="true">↑</span>
-              </button>
-              <button
-                type="button"
-                className="fxa__move"
-                disabled={index === rows.length - 1}
-                onClick={() => move(index, 1)}
-                aria-label={`Move ${form.title} down`}
-              >
-                <span aria-hidden="true">↓</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              className="fxa__grip"
+              onPointerDown={(event) => startDrag(event, index)}
+              onKeyDown={(event) => onHandleKey(event, index)}
+              aria-label={`Reorder ${form.title}. Position ${index + 1} of ${rows.length}. Drag, or press the up and down arrow keys.`}
+            >
+              <span aria-hidden="true">⠿</span>
+            </button>
 
             <div className="fxa__row-main">
-              <button type="button" className="fxa__row-title" onClick={() => onEdit(form)}>
+              <button
+                type="button"
+                className="fxa__row-title"
+                onClick={() => onEdit(form)}
+              >
                 {form.title}
               </button>
               <span className="fxa__row-meta">
@@ -325,12 +612,16 @@ function FormsList({
                   checked={form.published}
                   disabled={isPermanent(form)}
                   onChange={(event) => {
-                    void setFormFlags(form.id, { published: event.target.checked }).then(onChanged);
+                    void setFormFlags(form.id, {
+                      published: event.target.checked,
+                    }).then(onChanged);
                   }}
                 />
                 <span>
                   Published
-                  {isPermanent(form) && <small> — always on, the church’s own links use it</small>}
+                  {isPermanent(form) && (
+                    <small> — always on, the church’s own links use it</small>
+                  )}
                 </span>
               </label>
               <label className="fxa__flag">
@@ -338,68 +629,236 @@ function FormsList({
                   type="checkbox"
                   checked={form.open}
                   onChange={(event) => {
-                    void setFormFlags(form.id, { open: event.target.checked }).then(onChanged);
+                    void setFormFlags(form.id, {
+                      open: event.target.checked,
+                    }).then(onChanged);
                   }}
                 />
                 <span>Open</span>
               </label>
             </div>
 
-            <div className="fxa__row-actions">
-              <button type="button" className="button button--quiet" onClick={() => onEdit(form)}>
-                Edit
-              </button>
-              {!keepsNoSubmissions(form.kind) && (
-                <button
-                  type="button"
-                  className="button button--quiet"
-                  onClick={() => onSubmissions(form.id)}
+            {/*
+              One `⋯` where there were three buttons.
+              -----------------------------------------------------------------
+              A row used to end in Edit, Submissions and Delete, which over six
+              forms was eighteen buttons in a 600px column — and one of the
+              three was pure duplication: the title above is already the button
+              that opens the editor, so "Edit" was a second control for the
+              thing a volunteer's first instinct clicks anyway.
+
+              The other two are kept but demoted. Neither is the reason anybody
+              opens this list — that is the two checkboxes, which stay on the
+              row because closing a registration the night it fills up is the
+              one urgent edit here.
+
+              Not a `<dialog>`: this list is already inside one, opened with
+              `showModal()`, and a nested modal in the top layer is a fight
+              over focus and over Escape. A plain absolutely-positioned panel
+              that closes on an outside press is the smaller thing.
+            */}
+            <RowMenu
+              label={form.title}
+              items={[
+                ...(keepsNoSubmissions(form.kind)
+                  ? []
+                  : [
+                      {
+                        label: 'Submissions',
+                        onSelect: () => onSubmissions(form.id),
+                      },
+                    ]),
+                ...(isPermanent(form)
+                  ? []
+                  : [
+                      {
+                        label: 'Delete this form…',
+                        danger: true,
+                        onSelect: () => setConfirming(form.id),
+                      },
+                    ]),
+              ]}
+            />
+
+            {/*
+              The confirm opens on the row rather than in the menu.
+
+              A second menu hanging off the first is where this would have gone
+              if Delete carried its own "Really?" — and a destructive question
+              asked inside a popover that an outside click dismisses is the
+              wrong shape for it. Same warning block the submissions queue
+              uses, for the same reason: the sentence is the safeguard, not the
+              second click.
+            */}
+            {confirming === form.id && (
+              <div className="fxa__row-warn">
+                <div
+                  className="fxa__warn"
+                  role="alertdialog"
+                  aria-label={`Delete ${form.title}?`}
                 >
-                  Submissions
-                </button>
-              )}
-              {isPermanent(form) ? null : confirming === form.id ? (
-                <>
-                  <button
-                    type="button"
-                    className="button button--danger"
-                    onClick={() => {
-                      void deleteForm(form.id).then(() => {
-                        setConfirming(null);
-                        onChanged();
-                      });
-                    }}
-                  >
-                    Really delete
-                  </button>
-                  <button
-                    type="button"
-                    className="button button--quiet"
-                    onClick={() => setConfirming(null)}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="button button--quiet"
-                  onClick={() => setConfirming(form.id)}
-                >
-                  Delete
-                </button>
-              )}
-            </div>
+                  <p className="fxa__warn-lede">Delete the {form.title} form?</p>
+                  <p>
+                    The form and its questions go for good. Anything already sent in
+                    through it stays — a submission is a record of something that happened
+                    — and will still be listed under this title.
+                  </p>
+                  <p>
+                    To take it off /forms and keep it, untick <strong>Published</strong>{' '}
+                    instead.
+                  </p>
+                  <div className="fxa__warn-actions">
+                    <button
+                      type="button"
+                      className="button button--danger"
+                      onClick={() => {
+                        void deleteForm(form.id).then(() => {
+                          setConfirming(null);
+                          onChanged();
+                        });
+                      }}
+                    >
+                      Delete for good
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--quiet"
+                      onClick={() => setConfirming(null)}
+                    >
+                      Keep it
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </li>
         ))}
       </ul>
 
       <p className="meta">
-        Deleting a form leaves its submissions in place — they are a record of
-        something that happened. Unpublish instead to take a form off the site
-        while keeping it.
+        Deleting a form leaves its submissions in place — they are a record of something
+        that happened. Unpublish instead to take a form off the site while keeping it.
       </p>
     </>
+  );
+}
+
+interface MenuItem {
+  label: string;
+  danger?: boolean;
+  onSelect: () => void;
+}
+
+/**
+ * The `⋯` at the end of a form's row.
+ *
+ * ---------------------------------------------------------------------------
+ * Hand-rolled rather than a `<dialog>` or a `<details>`, and both alternatives
+ * were tried first.
+ *
+ * `<dialog>` is what `Sheet.tsx` uses and it is the right thing for the drawer
+ * this list sits in — but a modal inside a modal means two elements in the top
+ * layer arguing about focus, and Escape closing the outer one instead of the
+ * inner. `<details>`/`<summary>` gets the toggle for free and gives away the
+ * two behaviours a menu actually needs: it does not close when you press
+ * somewhere else, and it does not close when you choose something.
+ *
+ * So: a button, a panel, and three listeners.
+ *
+ *   - `pointerdown` on the document, not `click`. A `click` listener fires
+ *     after the press has already moved focus and, on a touch screen, after a
+ *     300ms delay in which the panel is still over what was tapped.
+ *   - `keydown` in the **capture** phase, calling `preventDefault()`. Without
+ *     both of those, Escape reaches the `<dialog>` above and shuts the whole
+ *     drawer — losing the builder's place to dismiss a menu.
+ *   - `focusout`, so tabbing off the last item closes it too.
+ *
+ * Focus goes back to the trigger on Escape. It deliberately does *not* on
+ * choosing an item: both items replace what the drawer is showing, and moving
+ * focus back to a button that is about to unmount fights the new screen for it.
+ * ---------------------------------------------------------------------------
+ */
+function RowMenu({ label, items }: { label: string; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const first = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function away(event: PointerEvent) {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    }
+
+    function key(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      // Stops the modal `<dialog>` this list lives in from closing with it.
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    }
+
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', key, true);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', key, true);
+    };
+  }, [open]);
+
+  // Focus the first item, so the menu is usable from a keyboard the moment it
+  // opens. In an effect rather than in the click handler: the panel does not
+  // exist until this render has committed.
+  useEffect(() => {
+    if (open) first.current?.focus();
+  }, [open]);
+
+  if (items.length === 0) return <span className="fxa__row-menu" />;
+
+  return (
+    <div
+      className="fxa__row-menu"
+      ref={box}
+      /* React's `onBlur` is `focusout` underneath, so it bubbles from the
+         items — which is what makes tabbing off the last one close the menu. */
+      onBlur={(event) => {
+        if (!box.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        className="fxa__more"
+        ref={trigger}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`More for ${label}`}
+        onClick={() => setOpen(!open)}
+      >
+        <span aria-hidden="true">⋯</span>
+      </button>
+
+      {open && (
+        <div className="fxa__menu" role="menu">
+          {items.map((item, index) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              ref={index === 0 ? first : undefined}
+              className={item.danger ? 'fxa__menu-item is-danger' : 'fxa__menu-item'}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

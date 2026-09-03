@@ -164,16 +164,14 @@ service firebase.storage {
 
     // ---- program galleries -------------------------------------------------
 
-    // A photograph straight off somebody's phone. HEIC is the common case and
-    // no browser can display it, so `isImage()` is not enough. The size cap is
-    // one of the two left on this site — both on paths an unauthenticated
-    // caller can write to — and it is 250MB because a modern phone photograph
-    // is routinely 12MB and a 4K clip is very much larger.
-    function isSubmittable() {
-      return request.resource.size < 250 * 1024 * 1024
-        && (request.resource.contentType.matches('image/.*')
-            || request.resource.contentType.matches('video/.*'));
-    }
+    // `isSubmittable()` used to live here, guarding `submissions/`. It is gone
+    // with the client write it guarded — the size and content type of a gallery
+    // upload are now checked in POST /api/gallery/upload-url, before a signed
+    // URL exists, and the URL itself is pinned to that exact length and type so
+    // it cannot be reused for anything larger.
+    //
+    // `formUploads/` below still carries its own inline cap. It is the one
+    // remaining prefix a browser may write to without a Function in the way.
 
     // Quarantine. Write-only to the *world*, in the strictest sense the word
     // allows: create but not overwrite, and no anonymous read or list at all.
@@ -232,10 +230,43 @@ service firebase.storage {
     // overwrites specifically; it denies every submission the parish would ever
     // receive, and the upload form would simply never work. tests/rules/
     // storage.test.ts is what tells the two rows apart.
+    // ---------------------------------------------------------------------
+    // No client writes here at all any more, and the long note above about
+    // `resource == null` is kept only because it is still true of the two other
+    // anonymous prefixes that are modelled on this one.
+    //
+    // Uploads go through POST /api/gallery/upload-url, which verifies an App
+    // Check token, counts the upload against a daily quota, writes the
+    // galleryMedia document itself, and hands back a v4 signed URL. A signed
+    // URL addresses the GCS API directly and is not evaluated against this
+    // file, which is exactly why closing the door here does not close the
+    // feature.
+    //
+    // The reason for the change was not this rule, which did its job. It was
+    // that the bytes were written *before* the Firestore document and every
+    // check the project had lived in firestore.rules — so a script that
+    // uploaded and never wrote a document skipped all of them, and left objects
+    // in a billed bucket that never appeared in the review queue for anyone to
+    // notice. No rule here could have caught that; the two writes are to two
+    // services and only one of them was ever guarded.
+    // ---------------------------------------------------------------------
     match /submissions/{programEventId}/{fileName} {
+      // Still any signed-in user, not just the ministry's own administrators.
+      // The reviewer needs the bytes and the queue reads them with
+      // getDownloadURL; narrowing this would need Firestore, which this file
+      // cannot reach.
       allow read: if request.auth != null;
-      allow create: if isSubmittable() && resource == null;
-      allow update, delete: if request.auth != null;
+
+      // Create and update only. NOT `write`, and that distinction is the whole
+      // reason these are two lines.
+      //
+      // `write` covers delete, and a blanket `allow write: if false` here
+      // passed `rules:check` and every compile, then took the reject button
+      // away from the review queue — `refuseAndDelete` runs in the reviewer's
+      // browser and removes the files before the document. The upload half is
+      // what had to close; deleting was never the problem.
+      allow create, update: if false;
+      allow delete: if request.auth != null;
     }
 
     // Photographs attached to a form submission, by whoever is filling it in.

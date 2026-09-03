@@ -9,8 +9,9 @@ import { ADMIN_SCREENS, type AdminScreen, type FinanceSource } from '@spsm/share
  * `ADMIN_SCREENS` is the permission model: eleven flags, named for what they
  * unlock, correct and unreadable. This is the *screen*, and a screen has to say
  * what a flag actually means to the person ticking it — that "content" is the
- * About pages, that "finance" does not reach the camp ledger, that Summer camp
- * is not a flag at all but a grant on a program.
+ * About pages, that "finance" is totals and not a list of who owes them, that
+ * "Summer camp" is the registrations and deliberately not the camp's event
+ * pages.
  *
  * Keeping them apart means the model can grow a screen without this page
  * inventing copy for it, and this page can group and word things without the
@@ -25,11 +26,17 @@ import { ADMIN_SCREENS, type AdminScreen, type FinanceSource } from '@spsm/share
  * announcements, the servants' rota, the vehicle register and the design
  * tokens.
  *
+ * **The About pages are the first of the five to come back**, in exactly the way
+ * the instruction further down asks for: with their editor, in the same change.
+ * Four are still out. See `AREA_CONTENT`.
+ *
  * **At Tommy's direction they are gone, and the audit behind that is worth
  * recording.** Every one of those five gates nothing whatsoever in the browser:
- * `canAdmin('…')` is called for exactly four screens on this site — `events`,
- * `forms`, `bookstore` and `finance` — and for nothing else. There is no editor
- * for the prose pages; the bulletin is read through from the parish's own source
+ * `canAdmin('…')` was called for exactly four screens on this site — `events`,
+ * `forms`, `bookstore` and `finance` — and for nothing else. There are six
+ * now: `camp` was the camp's program grant until the registrations were
+ * separated from the camp's events and gallery, and `content` has an editor at
+ * last — see `AREA_CONTENT`. Of the other four, the bulletin is read through from the parish's own source
  * each week and is not stored here at all; the rota is written by a script over
  * the REST API; the vehicle register has a public form and no back office; the
  * design tokens are seeded and deployed. So the five rows offered an
@@ -106,29 +113,40 @@ export const AREA_PROGRAMS: AccessArea = {
   blurb:
     'Which ministries this person runs — their gatherings, and the photographs sent in to them.',
   caveat:
-    'Not the parish calendar. Liturgies and one-off event pages are the Parish calendar row below.',
+    'Not the parish calendar. Liturgies and one-off event pages are the Parish calendar row below. Ticking the summer camp here gives its gatherings and photographs — its registrations are the Summer camp row, and the two are separate on purpose.',
 };
 
 /**
- * Summer camp, which is a program grant wearing a different hat.
+ * Summer camp — the back office, and now a screen flag of its own.
  *
- * It gets a row of its own rather than being left as one checkbox among the
- * ministries because it is the one program whose grant opens something other
- * than photographs: registrations, with children's names, grades, allergies and
- * a payment ledger on them. Somebody ticking it should be told that, and a row
- * in a list of ministries cannot say it.
+ * ---------------------------------------------------------------------------
+ * **This row used to set the camp's program grant, and that is the thing that
+ * changed.** One tick opened the registrations *and* the camp's page, its
+ * gatherings and its gallery, because that is what a program grant is. The
+ * caveat here said so — "there is no way to give one without the other" — which
+ * is a permission model apologising for itself on the screen whose whole job is
+ * making permissions legible.
  *
- * The program id is not hardcoded here — it is read from `config/camp` at
- * render time, because that document is what `useCampAdmin` checks against and
- * two copies of the same id is how they come to disagree.
+ * `camp` is now a flag in `ADMIN_SCREENS`, so this is an ordinary row among the
+ * areas of the site, and the camp's photographs are a tick in the Ministries
+ * list above like every other ministry's. Either can be given without the
+ * other, in both directions.
+ *
+ * It stays worded more heavily than its neighbours for the reason it always
+ * was: what it opens is children's names, grades, allergies and medical notes.
+ *
+ * The fees are no longer named here, and that is the second half of the change:
+ * the ledger is read under Finance, narrowed to the camp. What this grant gets
+ * of the money is one box for writing down a check as it is handed over.
+ * ---------------------------------------------------------------------------
  */
 export const AREA_CAMP: AccessArea = {
-  key: 'programs',
+  key: 'camp',
   label: 'Summer camp',
   blurb:
-    'Registrations, allocation into bands and groups, and the fees ledger for the current season.',
+    'Registrations, the allocation into bands and groups, the daily register, and the camp’s own settings.',
   caveat:
-    'This is personal data about children — names, grades, allergies and medical notes. It is the same program grant as the camp’s gallery; there is no way to give one without the other.',
+    'This is personal data about children — names, grades, allergies and medical notes. Not the camp’s money: balances and payment history are Finance, narrowed to the camp, and this grant can only write down a payment as it is taken. Not the camp’s event pages or its gallery either — those are the ministry, in the list above.',
 };
 
 /**
@@ -222,6 +240,48 @@ export const AREA_BOOKSTORE: AccessArea = {
     'Prices, stock and whether a book is listed at all live in Square, not here. This does not open Square.',
 };
 
+/**
+ * The five About pages.
+ *
+ * ---------------------------------------------------------------------------
+ * **This row is back, and the file's own instruction is why it is back now
+ * rather than earlier.** `content` was one of the five deleted for gating
+ * nothing whatsoever — "the person given `content` and the person not given it
+ * can both do exactly nothing with the prose pages" — and the standing rule
+ * left behind was to write the row *with* its editor, in the same change. That
+ * change is this one: `features/about` is an overlay on the five hand-written
+ * About routes, `useAboutAdmin` gates it on this flag, and `firestore.rules`
+ * asks for the same flag on `aboutOverrides`.
+ *
+ * The caveat carries three limits, and every one of them is a thing somebody
+ * would otherwise discover by trying:
+ *
+ *  - **Live as typed.** No draft, like the calendar. What is written is on the
+ *    public page within a second, on a page a stranger arrives at from a search
+ *    result.
+ *  - **Not the layouts, and not everything on them.** A developer declares what
+ *    is editable, band by band — see `features/about/slots.ts`. The Creed, the
+ *    dated spines, the feast tables and the tour's station bodies are
+ *    deliberately beyond reach.
+ *  - **Not new pages.** The five parts of About are fixed; a sixth needs a
+ *    route file the static export can enumerate, so the database itself refuses
+ *    any other slug.
+ *
+ * It also still opens the older `content` documents — the welcome page, the
+ * beliefs prose, the clergy bios, the contact copy — which have no editor of
+ * their own and are changed in the Firebase console. Worth knowing, not worth
+ * putting in the caveat: nobody is granted this row *for* that.
+ * ---------------------------------------------------------------------------
+ */
+export const AREA_CONTENT: AccessArea = {
+  key: 'content',
+  label: 'About pages',
+  blurb:
+    'Rewriting the headings, words and photographs on the five About pages, and adding sections to the foot of them.',
+  caveat:
+    'Live the moment it is typed — there is no draft, on pages strangers arrive at from a search result. Not the page layouts, and not everything on them: what can be changed is chosen band by band, and the Creed, the dated histories and the feast days are deliberately not. Not new pages either — the five parts of About are fixed.',
+};
+
 export const AREA_EVENTS: AccessArea = {
   key: 'events',
   label: 'Parish calendar',
@@ -238,6 +298,7 @@ export const ACCESS_AREAS: readonly AccessArea[] = [
   AREA_PROGRAMS,
   AREA_CAMP,
   AREA_EVENTS,
+  AREA_CONTENT,
   AREA_FORMS,
   AREA_FINANCE,
   AREA_BOOKSTORE,
@@ -246,17 +307,28 @@ export const ACCESS_AREAS: readonly AccessArea[] = [
 /**
  * The rows that are a plain screen flag, in page order.
  *
- * These four, and only these four, are the screens something in this codebase
- * actually gates on — `useEventsAdmin`, `useFormsAdmin`, `useBookstoreAdmin`
- * and `useFinanceAdmin`, plus the calendar's own `canAdmin('events')`. Ticking
- * any of them changes what somebody sees on their next page load, which is the
- * property the long note at the top of this file is about.
+ * These six, and only these six, are the screens something in this codebase
+ * actually gates on — `useCampAdmin`, `useEventsAdmin`, `useAboutAdmin`,
+ * `useFormsAdmin`, `useBookstoreAdmin` and `useFinanceAdmin`, plus the
+ * calendar's own `canAdmin('events')`. Ticking any of them changes what
+ * somebody sees on their next page load, which is the property the long note at
+ * the top of this file is about.
+ *
+ * About pages sits beside Parish calendar rather than at the end, because the
+ * two are the same kind of trust: both publish to a public page with no draft
+ * step between the typing and the world.
+ *
+ * Summer camp leads because it is the most sensitive and the most often given —
+ * and because it is the newest, having been a program grant until the two jobs
+ * were separated.
  *
  * Not alphabetical and not the order of `ADMIN_SCREENS`: an administrator
  * scanning this page is looking for the area somebody actually works in.
  */
 export const SCREEN_AREAS: readonly (AccessArea & { key: AdminScreen })[] = [
+  AREA_CAMP,
   AREA_EVENTS,
+  AREA_CONTENT,
   AREA_FORMS,
   AREA_FINANCE,
   AREA_BOOKSTORE,
@@ -284,14 +356,16 @@ export const UNOFFERED_SCREENS: readonly AdminScreen[] = ADMIN_SCREENS.filter(
 /**
  * What to call a flag this page does not offer, when somebody turns out to hold one.
  *
- * A name and nothing else — no blurb, no caveat. These five have no editor, so
+ * A name and nothing else — no blurb, no caveat. These four have no editor, so
  * there is nothing to describe: the only sentence the panel needs is "this
  * person holds a thing you cannot change here", and the label is the half of it
  * that varies. It is what survives of the five full rows this file used to
  * carry, and it is deliberately the cheap half.
+ *
+ * `content` has gone from this map, which is the whole point of the exercise: it
+ * has a row and an editor now, so `UNOFFERED_SCREENS` drops it on its own.
  */
 export const UNOFFERED_LABELS: Readonly<Partial<Record<AdminScreen, string>>> = {
-  content: 'About pages',
   bulletin: 'Bulletin and announcements',
   servants: 'Servants’ rota',
   parking: 'Car park register',

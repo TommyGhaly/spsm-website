@@ -19,6 +19,7 @@ import { PageBody } from '@/components/PageBody';
 import { PageHeader } from '@/components/PageHeader';
 import { getServerSnapshot, getSnapshot, signIn, subscribe } from '@/lib/authStore';
 import { money } from '@/features/bookstore/money';
+import type { CampRoster as CampRosterReading } from './data';
 import { useFinanceAdmin } from './useFinanceAdmin';
 
 /**
@@ -152,7 +153,7 @@ export function FinanceScreen() {
 
   return (
     <Shell>
-      <FinanceBody sources={session.sources} />
+      <FinanceBody sources={session.sources} runsCamp={session.runsCamp} />
     </Shell>
   );
 }
@@ -208,7 +209,7 @@ type Load =
  * in a screen whose whole design is that it does not have one.
  * ---------------------------------------------------------------------------
  */
-function FinanceBody({ sources }: { sources: FinanceSource[] }) {
+function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp: boolean }) {
   /*
    * Which sources this reader holds, asked once and used everywhere.
    *
@@ -522,13 +523,33 @@ function FinanceBody({ sources }: { sources: FinanceSource[] }) {
       {seesCamp && (
       <section className="fin__section">
         <h2 className="fin__h2">Summer camp</h2>
+        {/*
+          Said once, at the top, rather than on every season: the two halves of
+          each season below are worked out at different times, and a treasurer
+          who has just watched a check be recorded needs to know which half to
+          believe. The totals are the hourly rollup; the roster is read now.
+        */}
+        {runsCamp && camp.length > 0 && (
+          <p className="fin__lede">
+            Each season&rsquo;s totals are from the hourly rollup. The families beneath them are
+            read from the camp&rsquo;s records as you open this, so a payment taken this
+            morning is in the roster before it is in the totals.
+          </p>
+        )}
+        {/*
+          The seasons stop being cards side by side once each one carries a
+          roster. Six columns of figures inside a 22rem grid track is a table
+          that wraps every row onto three lines — the card layout is right for
+          a ledger and wrong for a list of families, so the grid is dropped
+          rather than the table squeezed.
+        */}
         {camp.length === 0 ? (
           <p className="fin__empty">No season has been rolled up yet.</p>
         ) : (
-          <ul className="fin__seasons">
+          <ul className={runsCamp ? 'fin__seasons fin__seasons--full' : 'fin__seasons'}>
             {camp.map((season) => (
               <li key={season.key}>
-                <Season season={season} />
+                <Season season={season} runsCamp={runsCamp} />
               </li>
             ))}
           </ul>
@@ -621,7 +642,7 @@ function FinanceBody({ sources }: { sources: FinanceSource[] }) {
 
 /* ---- one camp season ---------------------------------------------------- */
 
-function Season({ season }: { season: CampFinanceRollup }) {
+function Season({ season, runsCamp }: { season: CampFinanceRollup; runsCamp: boolean }) {
   const methods = CAMP_PAYMENT_METHODS.filter((method) => season.byMethod[method].count > 0);
 
   return (
@@ -690,8 +711,213 @@ function Season({ season }: { season: CampFinanceRollup }) {
       <p className="fin__statuses">
         {CAMP_STATUSES.map((status) => `${season.registrations[status]} ${status}`).join(' · ')}
       </p>
+
+      {runsCamp && <Roster programId={season.programId} season={season.season} />}
     </article>
   );
+}
+
+/* ---- one season, family by family --------------------------------------- */
+
+/**
+ * Who owes what, for somebody who runs the camp as well as its books.
+ *
+ * ---------------------------------------------------------------------------
+ * ## What this is for
+ *
+ * The season above answers "how much is outstanding". It cannot answer "who",
+ * and "who" is the only version of the question anybody acts on — the figure
+ * exists so that somebody makes three phone calls in June.
+ *
+ * Until now the answer was on /admin/camp: open Registrations, read down the
+ * balance column, cross-reference the season total on a different screen. The
+ * two screens were split because `finance` cannot be given the registrations
+ * collection, and they stay split for everybody that is true of. For a reader
+ * holding both grants it was never a boundary, only two trips.
+ *
+ * ## Loaded per season, and only when drawn
+ *
+ * A season is a few hundred documents. Every season on the page loading its own
+ * roster is the honest cost of showing them all, and it is paid once on open
+ * rather than kept live: nothing here is edited, two people are not arranging
+ * it at a table, and a listener would be a subscription per season for a report
+ * somebody reads for a minute.
+ *
+ * A failure is reported in place and does not touch the rest of the screen. The
+ * likeliest cause by far is the grant having been taken away between the page
+ * loading and this reading, and "could not read the families" beside intact
+ * totals says that far better than a screen that falls over.
+ * ---------------------------------------------------------------------------
+ */
+function Roster({ programId, season }: { programId: string; season: string }) {
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'ready'; roster: CampRosterReading }
+    | { kind: 'failed'; message: string }
+  >({ kind: 'loading' });
+  const [owingOnly, setOwingOnly] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setState({ kind: 'loading' });
+    void (async () => {
+      try {
+        const { readCampRoster } = await import('./data');
+        const roster = await readCampRoster(programId, season);
+        if (live) setState({ kind: 'ready', roster });
+      } catch (cause) {
+        if (live) {
+          setState({
+            kind: 'failed',
+            message: cause instanceof Error ? cause.message : 'Could not read the families.',
+          });
+        }
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [programId, season]);
+
+  if (state.kind === 'loading') {
+    return <p className="fin__empty">Reading the families…</p>;
+  }
+
+  if (state.kind === 'failed') {
+    return <p className="fin__empty">Could not read the families: {state.message}</p>;
+  }
+
+  const { rows, owing, owedCents, servantsOmitted } = state.roster;
+  if (rows.length === 0) {
+    return (
+      <p className="fin__empty">
+        {servantsOmitted > 0
+          ? `Only servants have registered for this season, and a servant is billed nothing.`
+          : 'Nobody has registered for this season.'}
+      </p>
+    );
+  }
+
+  const shown = owingOnly
+    ? rows.filter((row) => row.status === 'registered' && row.balanceCents > 0)
+    : rows;
+
+  return (
+    <div className="fin__roster">
+      <div className="fin__rosterBar">
+        <h4>Family by family</h4>
+        {/*
+          A filter rather than a sort, because "still owing" is a list somebody
+          works through and a sort leaves them counting where it stops. It is
+          disabled rather than hidden on a settled season: a control that
+          vanishes when it would return nothing makes the reader wonder whether
+          they misremembered it.
+        */}
+        <label className="fin__rosterFilter">
+          <input
+            type="checkbox"
+            checked={owingOnly}
+            disabled={owing === 0}
+            onChange={(event) => setOwingOnly(event.target.checked)}
+          />
+          <span>
+            Only those still owing
+            {owing > 0 ? ` (${owing}, ${money(owedCents)})` : ' — everyone is settled'}
+          </span>
+        </label>
+      </div>
+
+      <table className="fin__table fin__rosterTable">
+        <thead>
+          <tr>
+            <th scope="col">Who</th>
+            <th scope="col">Weeks</th>
+            <th scope="col">Billed</th>
+            <th scope="col">Off</th>
+            <th scope="col">Paid</th>
+            <th scope="col">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((row) => (
+            <tr
+              key={row.id}
+              className={
+                row.status === 'registered' && row.balanceCents > 0 ? 'is-owing' : undefined
+              }
+            >
+              <th scope="row">
+                {row.name}
+                {/*
+                  The status is on every row, not only the odd ones. A withdrawn
+                  family who paid is the single most confusing line in a camp's
+                  books — money in, nothing owed, no child at camp — and it has
+                  to be legible as that rather than as a family who settled up.
+                */}
+                <span className="fin__rosterStatus">{row.status}</span>
+                {row.kind === 'servant' ? (
+                  <span className="fin__sub">Servant — billed nothing</span>
+                ) : (
+                  row.who && <span className="fin__sub">{row.who}</span>
+                )}
+                {row.payments.length > 0 && (
+                  <span className="fin__rosterPayments">
+                    {row.payments.map((payment, index) => (
+                      <span key={index}>
+                        {dayLabel(payment.on)} {campPaymentMethodLabel(payment.method).toLowerCase()}{' '}
+                        {money(payment.cents)}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </th>
+              <td className="fin__num">{row.kind === 'servant' ? '—' : row.weeks}</td>
+              <td className="fin__num">{row.dueCents === 0 ? '—' : money(row.subtotalCents)}</td>
+              <td className="fin__num">
+                {row.discountCents > 0 ? money(row.discountCents) : '—'}
+              </td>
+              <td className="fin__num">{row.paidCents === 0 ? '—' : money(row.paidCents)}</td>
+              <td className="fin__num">
+                {row.dueCents === 0 && row.paidCents === 0
+                  ? '—'
+                  : row.balanceCents > 0
+                    ? money(row.balanceCents)
+                    : row.balanceCents < 0
+                      ? `${money(-row.balanceCents)} over`
+                      : 'Paid'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="fin__foot">
+        Read from the camp&rsquo;s own records just now — see{' '}
+        <a href="/admin/camp/registrations">Registrations</a> to change any of it.
+        &ldquo;Off&rdquo; is what discounts took off the bill.
+        {servantsOmitted > 0 && (
+          <>
+            {' '}
+            {servantsOmitted} servant{servantsOmitted === 1 ? ' is' : 's are'} registered and not
+            listed here: a servant is billed nothing, so every column of this table would be a
+            dash. One with a payment recorded against them is listed.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** `2027-06-14` → "Jun 14". Anything else is left as it came. */
+function dayLabel(day: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day || 'undated';
+  const parsed = new Date(`${day}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return day;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+  }).format(parsed);
 }
 
 /* ---- bits --------------------------------------------------------------- */

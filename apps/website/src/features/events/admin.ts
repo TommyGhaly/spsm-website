@@ -53,6 +53,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { deleteObject, ref, uploadBytes } from 'firebase/storage';
+import { explainUploadFailure } from '@/lib/storageErrors';
 import {
   COLLECTIONS,
   type DocOf,
@@ -341,7 +342,15 @@ export async function uploadEventHero(file: File, slug: string): Promise<string>
   }
 
   const path = heroPath(slug, file);
-  await uploadBytes(ref(storage(), path), file, { contentType: file.type });
+  try {
+    await uploadBytes(ref(storage(), path), file, { contentType: file.type });
+  } catch (error) {
+    // Never surface the SDK's own 401 message. It says "please authenticate"
+    // for an App Check failure as readily as for a lapsed session, and that
+    // sent the whole parish office looking at sign-in while the actual fault
+    // was an unregistered attestation key. See lib/storageErrors.ts.
+    throw await explainUploadFailure(error);
+  }
   return path;
 }
 

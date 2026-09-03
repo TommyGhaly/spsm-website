@@ -349,6 +349,9 @@ function ProgramRail() {
       busy={saving}
       addLabel="Add a ministry…"
       empty="No ministries yet."
+      /* `move` is already "take the one at `from` and put it at `to`", which is
+         exactly what a dropped row means. */
+      onReorder={(from, to) => void move(from, to)}
       items={(programs ?? []).map(
         (program, index): ShelfItem => ({
           id: program.id,

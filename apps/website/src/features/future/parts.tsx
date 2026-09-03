@@ -1,3 +1,5 @@
+import { Editable } from '@/features/about/Editable';
+import { EditableCaption } from '@/features/about/EditableCaption';
 import { FUTURE_PICTURES, futureLarge, futureSmall, type FuturePictureName } from './images';
 import { haveAnyLogos, teamLogo, type TeamLogo } from './logos';
 import { BY_USE, PROGRESS, TEAM } from './plan';
@@ -12,7 +14,16 @@ import { BY_USE, PROGRESS, TEAM } from './plan';
  * differs, and it has to: there is one `globals.css` for the whole site and
  * `.who-plate` is already spoken for.
  */
-export function Plate({ name, className = '' }: { name: FuturePictureName; className?: string }) {
+export function Plate({
+  name,
+  className = '',
+  captionSlot,
+}: {
+  name: FuturePictureName;
+  className?: string;
+  /** Makes the caption rewritable. See `EditableCaption`. */
+  captionSlot?: string | undefined;
+}) {
   const picture = FUTURE_PICTURES[name];
 
   return (
@@ -28,7 +39,9 @@ export function Plate({ name, className = '' }: { name: FuturePictureName; class
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="future-plate__caption">{picture.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="future-plate__caption">
+        {picture.caption}
+      </EditableCaption>
     </figure>
   );
 }
@@ -64,9 +77,11 @@ export function Plate({ name, className = '' }: { name: FuturePictureName; class
 export function WidePlate({
   name,
   openable = false,
+  captionSlot,
 }: {
   name: FuturePictureName;
   openable?: boolean;
+  captionSlot?: string | undefined;
 }) {
   const picture = FUTURE_PICTURES[name];
 
@@ -84,7 +99,17 @@ export function WidePlate({
         decoding="async"
       />
       <figcaption className="future-plate__caption">
-        {picture.caption}
+        {/*
+          The caption only, never the "Open the full sheet" link beside it —
+          that is a control, and its words have to keep describing what it does.
+        */}
+        {captionSlot === undefined ? (
+          picture.caption
+        ) : (
+          <Editable slot={captionSlot} as="span" prose>
+            {picture.caption}
+          </Editable>
+        )}
         {openable ? (
           <>
             {' '}
@@ -118,16 +143,39 @@ export function WidePlate({
 export function ByUse() {
   return (
     <dl className="future-uses">
-      {BY_USE.map((row) => (
+      {BY_USE.map((row, index) => (
         <div key={row.use} className="future-uses__row">
           <dt className="future-uses__term">
-            <span className="future-uses__name">{row.use}</span>
+            <Editable
+              slot={`all-of-it.use-${index}-name`}
+              as="span"
+              className="future-uses__name"
+            >
+              {row.use}
+            </Editable>
+            {/*
+              The **area is not editable**, and this is the one place on these
+              five pages where that is a considered refusal rather than an
+              oversight. It is `row.area` off the schedule that repeats on every
+              floor plan in the set filed with the town, formatted here rather
+              than stored as a string precisely so `plan.ts` holds arithmetic
+              that can be checked. The seven lines add to the total exactly; a
+              hand-typed figure would silently stop doing that, on a page whose
+              whole claim is that it agrees with the drawings.
+            */}
             <span className="future-uses__area">
               {row.area.toLocaleString('en-US')}
               <span className="future-uses__unit"> sq ft</span>
             </span>
           </dt>
-          <dd className="future-uses__what">{row.of}</dd>
+          <Editable
+            slot={`all-of-it.use-${index}-of`}
+            as="dd"
+            prose
+            className="future-uses__what"
+          >
+            {row.of}
+          </Editable>
         </div>
       ))}
     </dl>
@@ -148,10 +196,23 @@ export function ByUse() {
 export function Progress() {
   return (
     <dl className="future-chron">
-      {PROGRESS.map((moment) => (
+      {PROGRESS.map((moment, index) => (
         <div key={moment.when} className="future-chron__row">
-          <dt className="future-chron__when">{moment.when}</dt>
-          <dd className="future-chron__what">{moment.what}</dd>
+          <Editable
+            slot={`where-it-stands.step-${index}-when`}
+            as="dt"
+            className="future-chron__when"
+          >
+            {moment.when}
+          </Editable>
+          <Editable
+            slot={`where-it-stands.step-${index}-what`}
+            as="dd"
+            prose
+            className="future-chron__what"
+          >
+            {moment.what}
+          </Editable>
         </div>
       ))}
     </dl>
@@ -269,12 +330,28 @@ export function Team() {
     <dl className="future-team">
       {TEAM.map((member) => (
         <div key={member.slug} className="future-team__row">
-          <dt className="future-team__role">{member.role}</dt>
+          <Editable
+            slot={`who-is-drawing-it.firm-${member.slug}-role`}
+            as="dt"
+            className="future-team__role"
+          >
+            {member.role}
+          </Editable>
           <dd className="future-team__firm">
-            {member.firm}
+            <Editable slot={`who-is-drawing-it.firm-${member.slug}-name`} as="span">
+              {member.firm}
+            </Editable>
             {/* Empty for the two firms whose address is not printed anywhere in
                 the set. An empty span would still take the line's leading. */}
-            {member.town ? <span className="future-team__town">{member.town}</span> : null}
+            {member.town ? (
+              <Editable
+                slot={`who-is-drawing-it.firm-${member.slug}-town`}
+                as="span"
+                className="future-team__town"
+              >
+                {member.town}
+              </Editable>
+            ) : null}
           </dd>
         </div>
       ))}

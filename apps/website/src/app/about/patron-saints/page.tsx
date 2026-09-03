@@ -9,6 +9,13 @@ import {
   SaintTile,
 } from '@/features/saints';
 import { MoreOfAbout } from '@/components/MoreOfAbout';
+import {
+  AboutOverlay,
+  AboutSections,
+  Editable,
+  EditableHeading,
+  getAboutOverride,
+} from '@/features/about';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionHeading } from '@/components/SectionHeading';
 
@@ -44,6 +51,16 @@ import { SectionHeading } from '@/components/SectionHeading';
  * cheapest way to lose that is to round a tradition up into a fact.
  * ---------------------------------------------------------------------------
  */
+/*
+ * ## Staff can edit this page again, and that is not a return to `content`
+ *
+ * `AboutOverlay` reads `aboutOverrides/{slug}` at build time and hands it to
+ * the `<Editable>` slots inside the screen below; the same document is re-read
+ * in the browser a moment after load, so an edit is live without a deploy. The
+ * page itself is still hand-written React and still server-rendered — only the
+ * declared slots and the appended sections can be changed. See
+ * `features/about/slots.ts` for what is declared and why the rest is not.
+ */
 
 const META = aboutPage('patron-saints');
 const TITLE = META?.title ?? 'Our Patron Saints';
@@ -55,7 +72,9 @@ export const metadata: Metadata = {
   alternates: { canonical: aboutHref('patron-saints') },
 };
 
-export default function PatronSaintsPage() {
+export default async function PatronSaintsPage() {
+  const baked = await getAboutOverride('patron-saints');
+
   /*
    * Grounds alternate and the count is computed, not written down — the same
    * device as `/contact`. Nothing on this page is conditional today, but a
@@ -65,19 +84,20 @@ export default function PatronSaintsPage() {
   const band = () => (ground++ % 2 === 0 ? 'band' : 'band band--sunken');
 
   return (
-    <>
+    <AboutOverlay page="patron-saints" baked={baked}>
       <PageHeader title={TITLE} />
 
       <section className={band()} aria-labelledby="both-heading">
         <div className="wrap">
-          <SectionHeading
+          <EditableHeading
+            band="both-heading"
             id="both-heading"
             eyebrow="The names on this church"
             title="Two soldiers"
           />
 
           <div className="saints-open">
-            <div className="saints-open__words">
+            <Editable slot="both-heading.body" as="div" prose className="saints-open__words">
               <p className="lede">
                 Sixty years apart, two officers of the Roman army were ordered
                 to sacrifice to the gods of the empire. Both refused, said why,
@@ -98,7 +118,7 @@ export default function PatronSaintsPage() {
                 every Coptic calendar. To name a church for two of them is to
                 ask for their prayers, and to keep their days.
               </p>
-            </div>
+            </Editable>
 
             {/*
               A diptych, not a hero. Two icons the same height, side by side,
@@ -112,12 +132,14 @@ export default function PatronSaintsPage() {
                 name="St. Philopater Mercurius"
                 also="Abu Sefein"
                 priority
+                captionSlot="both-heading.cap-mercurius-icon"
               />
               <SaintFigure
                 slug="mina-mosaic"
                 name="St. Mina the Wonder-worker"
                 also="Abu Mina"
                 priority
+                captionSlot="both-heading.cap-mina-mosaic"
               />
             </div>
           </div>
@@ -126,7 +148,8 @@ export default function PatronSaintsPage() {
 
       <section className={band()} aria-labelledby="mercurius-heading">
         <div className="wrap saint">
-          <SectionHeading
+          <EditableHeading
+            band="mercurius-heading"
             id="mercurius-heading"
             eyebrow="About 225 to 250"
             title="St. Philopater Mercurius"
@@ -134,7 +157,7 @@ export default function PatronSaintsPage() {
           />
 
           <div className="saint__grid">
-            <div className="saint__words">
+            <Editable slot="mercurius-heading.body" as="div" prose className="saint__words">
               <p>
                 Philopater is Greek for <em>lover of the Father</em>, and it is
                 the name his Christian parents gave him. The accounts differ on
@@ -195,11 +218,18 @@ export default function PatronSaintsPage() {
                 still in use in the city.
               </p>
 
-              <FeastList feasts={MERCURIUS_FEASTS} label="The Church keeps" />
-            </div>
+              <FeastList
+                feasts={MERCURIUS_FEASTS}
+                label="The Church keeps"
+                slotPrefix="mercurius-heading.feast"
+              />
+            </Editable>
 
             <div className="saint__aside">
-              <SaintFigure slug="mercurius-church-cairo" />
+              <SaintFigure
+                slug="mercurius-church-cairo"
+                captionSlot="mercurius-heading.cap-mercurius-church-cairo"
+              />
             </div>
           </div>
         </div>
@@ -207,7 +237,8 @@ export default function PatronSaintsPage() {
 
       <section className={band()} aria-labelledby="mina-heading">
         <div className="wrap saint">
-          <SectionHeading
+          <EditableHeading
+            band="mina-heading"
             id="mina-heading"
             eyebrow="About 285 to 309"
             title="St. Mina the Wonder-worker"
@@ -215,7 +246,7 @@ export default function PatronSaintsPage() {
           />
 
           <div className="saint__grid">
-            <div className="saint__words">
+            <Editable slot="mina-heading.body" as="div" prose className="saint__words">
               <p>
                 He was born at Niceous in the Delta, the son of Eudoxius, who
                 governed the town, and of Euphemia, who had no children for
@@ -273,11 +304,15 @@ export default function PatronSaintsPage() {
                 Pope Cyril VI is buried there himself.
               </p>
 
-              <FeastList feasts={MINA_FEASTS} label="The Church keeps" />
-            </div>
+              <FeastList
+                feasts={MINA_FEASTS}
+                label="The Church keeps"
+                slotPrefix="mina-heading.feast"
+              />
+            </Editable>
 
             <div className="saint__aside">
-              <SaintFigure slug="mina-basilica" />
+              <SaintFigure slug="mina-basilica" captionSlot="mina-heading.cap-mina-basilica" />
             </div>
           </div>
         </div>
@@ -285,7 +320,8 @@ export default function PatronSaintsPage() {
 
       <section className={band()} aria-labelledby="icons-heading">
         <div className="wrap">
-          <SectionHeading
+          <EditableHeading
+            band="icons-heading"
             id="icons-heading"
             eyebrow="In the icons"
             title="How to tell them apart"
@@ -293,7 +329,7 @@ export default function PatronSaintsPage() {
           />
 
           <div className="saints-look">
-            <div className="saints-look__note">
+            <Editable slot="icons-heading.body" as="div" prose className="saints-look__note">
               <p>
                 <strong>St. Mercurius is moving.</strong> He is on a black
                 horse with a sword raised in each hand, an angel over his
@@ -307,7 +343,7 @@ export default function PatronSaintsPage() {
                 praying, before folded hands — and a camel kneels on either side
                 of him. He is almost never shown without them.
               </p>
-            </div>
+            </Editable>
 
             {/*
               Tiles rather than figures: these three are evidence for the two
@@ -315,9 +351,9 @@ export default function PatronSaintsPage() {
               would be the biggest thing on the page for the smallest reason.
             */}
             <div className="saints-look__grid">
-              <SaintTile slug="mercurius-triptych" />
-              <SaintTile slug="mina-plaque" />
-              <SaintTile slug="mina-ampulla" />
+              <SaintTile slug="mercurius-triptych" captionSlot="icons-heading.cap-mercurius-triptych" />
+              <SaintTile slug="mina-plaque" captionSlot="icons-heading.cap-mina-plaque" />
+              <SaintTile slug="mina-ampulla" captionSlot="icons-heading.cap-mina-ampulla" />
             </div>
           </div>
         </div>
@@ -336,12 +372,15 @@ export default function PatronSaintsPage() {
       */}
       <PictureCredits />
 
+      {/* Sections staff have added, between the page and the links off it. */}
+      <AboutSections baked={baked.sections} />
+
       {/*
         The foot: the other four parts of About, and the way back to the index.
         It replaced a bare link — see `MoreOfAbout` for why a correct link still
         looked wrong there.
       */}
       <MoreOfAbout current="patron-saints" />
-    </>
+    </AboutOverlay>
   );
 }

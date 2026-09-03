@@ -433,9 +433,13 @@ a screen, because it is the power to grant everything else.
 
 **What did not change:** the program-grant axis (`programAdmin`), which was
 already a document rather than a claim and was already the model this decision
-generalises; `campRegistrations`, which is still gated on a program grant and
-must never admit the `finance` flag; and the two undelegable screens, `members`
-and `config`.
+generalises; and the two undelegable screens, `members` and `config`.
+
+*Amended by #15.* `campRegistrations` was gated on a program grant when this was
+written, and is now gated on a `camp` screen flag. It still must never admit the
+`finance` flag, for the reason given there and here.
+
+
 
 **Revisit if:** the parish wants more than one or two superadmins, or wants the
 role of granting to itself be delegable. Both are one flag away and both give up
@@ -511,6 +515,67 @@ are fixed and both now have rules tests. Separately, `useCampAdmin` returned the
 *committed defaults* to anyone signed out, which on a newly public page meant
 the wrong season and a waiver that never appeared; it reads `config/camp` for
 everybody now, which costs one world-readable document.
+
+### 15. The summer camp is two permissions, and its money is a third
+
+Decided 2026-09-02, in one sentence from Tommy: *being in charge of the summer
+camp admin side does not imply they are in charge of the summer camp events;
+also the financials of the summer camp should not be located in the summer camp
+section — those are two different admin privileges.*
+
+Both halves were one grant each, and both were wrong in the same way: a
+permission that bundles two jobs because the data happened to sit together.
+
+**The camp's back office is a screen flag now, not the camp's program grant.**
+`camp` joins `ADMIN_SCREENS` and gates `campRegistrations`,
+`campServantRequests`, `campAllocations`, `campAttendance` and the delegated
+keys on `config/camp`. `programAdmin.programs` containing the camp's id means
+what it means for every other ministry: the program page, its gatherings, and
+the photographs sent in to them. Either can be held without the other, in both
+directions — the registrar publishes nothing, and the servant posting the week's
+pictures never sees a medical note. /access lost its bespoke camp block and the
+caveat that admitted the problem ("there is no way to give one without the
+other"); Summer camp is the first of the ordinary rows.
+
+*What it costs, and it is a real cost:* **the flag is not scoped by ministry.** A
+program grant could only ever be proven against a document, which scoped every
+read to the camp's own `programId` for free — and charged for it, because a
+`list` had to constrain `programId` to be provable at all (#10). A flag is
+proven against the caller: an unconstrained query is allowed now, and so is a
+document filed under another ministry. There is one camp, one `config/camp`, and
+`programId` on it is still the one key `match /config/camp` refuses to
+everybody but a superadmin — which is what stops a second one existing. If the
+parish ever runs two camps under two ministries, the tests named
+`lets the camp grant read a … filed under another ministry` are what have to
+fail first.
+
+**The money divides by verb, because it cannot divide by document.** The fees
+ledger is `billing` *inside* a `campRegistrations` document, next to the child's
+allergies, and rules grant documents rather than fields — the same wall that
+produced `financeRollups` in #13. So the `camp` flag can read the ledger and
+there is no rule that would stop it. What is separated is the screen:
+
+- **finance, narrowed to `camp`** — the charges, the balance, the discounts, the
+  payment history. On /admin/finance, and on /admin/camp for whoever holds both.
+- **`camp` alone** — one write-only box for recording a payment as it is handed
+  over at the desk, showing back only what this session has just added, and
+  removable until the registration is saved. After that it belongs to whoever
+  keeps the books.
+
+The "Still owed" tile, the owed column on the registrations list and the ledger
+in the editor are all behind `canSeeMoney`, and the figure is *dropped* rather
+than dashed: a dash in that column already means "nothing to charge", so a
+withheld balance shown as one would read as a family who owes nothing.
+
+**Be exact about which half is enforced.** `finance` is refused
+`campRegistrations` by the rules, asserted in `tests/rules/access.test.ts`, and
+that line must not move. `camp` is refused every `financeRollups` document,
+asserted beside it. The camp screen hiding the ledger from a registrar is a
+preference in a browser, and every place it is implemented says so.
+
+**Revisit if:** the parish runs two camps under different ministries (the
+scoping above), or wants the desk to see a balance without seeing the history —
+which is a rollup per registration, not a widened grant.
 
 ---
 

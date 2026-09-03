@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { VehicleForm } from '@/features/forms';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
+import { BackLink } from '@/components/BackLink';
 
 export const metadata: Metadata = {
   title: 'Register a Vehicle',
@@ -43,6 +44,14 @@ export default function ParkingPage() {
     <>
       <PageHeader title="Register a Vehicle" />
       <PageBody>
+        {/*
+          A way onward rather than a way back: most people here arrived by
+          holding a phone to the tag by the car park door, and nothing is
+          "behind" that. /forms is still the right destination — it is the page
+          this form is browsable from, and the only other place the church's
+          paperwork lives.
+        */}
+        <BackLink href="/forms" label="Forms" />
         <p className="note">
           So the parking team can reach you if your car needs moving. No account needed —
           visitors and guests are welcome to register too.

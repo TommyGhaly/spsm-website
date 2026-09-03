@@ -3,7 +3,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { builtInForms, type FormDefinition } from '@spsm/shared';
 import { Icon, isIconName } from '@/components/Icon';
-import { useCampAdmin } from '@/features/camp';
 import { watchPublishedForms } from './data';
 import { useFormsAdmin } from './useFormsAdmin';
 
@@ -47,21 +46,24 @@ const FormsAdmin = lazy(() =>
  * the route.
  *
  * ---------------------------------------------------------------------------
- * Two cards for one address, and which one you get depends on who you are.
+ * One card, and it is the public one.
  *
- * This used to appear only for somebody holding a program grant on the camp's
- * ministry, because the page behind it was administrator-only in its entirety.
- * Half of it no longer is: servants sign themselves up on an open form, and
- * families are still registered by the camp at a desk. The page decides which
- * of those you see from the same grant — this only decides what the card
- * promises, so that a teenager and a camp director are not both told the form
- * is "for the people who run the camp".
+ * There was a second card beside it — "Run summer camp", pointing at
+ * /admin/camp — shown to anybody holding the camp grant. It is gone as of
+ * 2 Sep 2026, at Tommy's request, and the reason it should never come back is
+ * that this page is the parish's list of **forms**. Running the camp is not a
+ * form; it is a back office, it is reached from the account menu with the rest
+ * of them (`features/admin/sections.ts`), and advertising it here made the hub
+ * a place where two audiences are told two different things about one address.
+ *
+ * Its removal also takes a Firestore read off this page: the card needed the
+ * camp grant to decide whether to draw itself, and nothing else here does.
  *
  * The public card is not hidden when sign-ups are closed. `config/camp` is a
- * second read this page has no other reason to make, and a card that leads to
- * "the camp is not taking sign-ups at the moment" is a better answer than one
- * that silently is not there — somebody sent a link by a friend needs to be
- * told the list is shut, not left wondering.
+ * read this page has no other reason to make, and a card that leads to "the
+ * camp is not taking sign-ups at the moment" is a better answer than one that
+ * silently is not there — somebody sent a link by a friend needs to be told the
+ * list is shut, not left wondering.
  * ---------------------------------------------------------------------------
  */
 const CAMP_CARD: HubCard = {
@@ -72,27 +74,22 @@ const CAMP_CARD: HubCard = {
     'Sign up to serve — the days you can come, which half of the camp, and what ' +
     'you would like to do. No account needed. Children are registered by the camp.',
   icon: 'present',
-  image: null,
-  external: false,
-};
-
-/**
- * A second card, for somebody who runs the camp, pointing somewhere else.
- *
- * It used to be the *same* address with different wording, because the one
- * screen held both the public sign-up and the whole of the camp's admin. Since
- * the rebuild those are two places: this hub is public and shows the sign-up,
- * and everything a camp administrator does is at /admin/camp.
- */
-const CAMP_ADMIN_CARD: HubCard = {
-  slug: 'summer-camp-admin',
-  href: '/admin/camp',
-  title: 'Run summer camp',
-  blurb:
-    'Registrations, groups and the daily register, with the camp\u2019s settings. ' +
-    'For the people who run the camp.',
-  icon: 'present',
-  image: null,
+  /*
+   * The same photograph the sign-up page itself wears — `stock-camp`, the
+   * licensed Unsplash frame recorded in `assets/README.md`. A card with the
+   * crest on it and a page with children at a camp on it are two different
+   * invitations to the same thing; the card is where nearly everybody meets
+   * this form first, so it is the one that has to look like a camp.
+   *
+   * It was `stock-gathering` until 2 Sep 2026 — an evening social under string
+   * lights, which was also the events request form's picture. One photograph
+   * doing two jobs, and neither of them "summer camp".
+   *
+   * The 500px cut, not the 1000px one a staff-chosen picture is stored at: a
+   * card is 300px wide at most, and this hub is the page a car-park NFC tag
+   * lands on.
+   */
+  image: '/img/stock-camp-500.webp',
   external: false,
 };
 
@@ -185,7 +182,6 @@ interface HubCard {
 export function FormsHub() {
   const [cards, setCards] = useState<readonly HubCard[]>(builtInCards);
   const admin = useFormsAdmin();
-  const camp = useCampAdmin();
 
   useEffect(() => {
     const stop = watchPublishedForms(
@@ -205,19 +201,10 @@ export function FormsHub() {
   /*
    * The camp card is appended rather than folded into `cards`, so a failed
    * Firestore read cannot take it away: `cards` falls back to the built-in list
-   * when the subscription errors, and both a servant signing up and somebody
-   * who runs the camp should still find the form on a page that could not reach
-   * the database.
-   *
-   * Shown before `camp.ready`, deliberately — the public card is the honest
-   * default for a visitor, and waiting for a grant read that only a signed-in
-   * person triggers would make the card appear a beat late for everybody else.
-   * What `ready` decides is only whether it is swapped for the administrator's
-   * wording.
+   * when the subscription errors, and somebody signing up to serve should still
+   * find the form on a page that could not reach the database.
    */
-  const visible = SHOW_CAMP
-    ? [...cards, CAMP_CARD, ...(camp.ready && camp.canEdit ? [CAMP_ADMIN_CARD] : [])]
-    : cards;
+  const visible = SHOW_CAMP ? [...cards, CAMP_CARD] : cards;
 
   return (
     <>

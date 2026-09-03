@@ -128,6 +128,25 @@ const ICONS = {
       <path d="M19.5 12h-15M11 5.5L4.5 12l6.5 6.5" />
     </>
   ),
+  /**
+   * Take back the last move on the camp's groups board. A leftward arrow with
+   * the curve still in it — the flat `back` is navigation, and one press of
+   * this is not going anywhere.
+   */
+  undo: (
+    <>
+      <path d="M4.5 9.5h10a5 5 0 0 1 0 10h-6" />
+      <path d="M8.5 5L4 9.5 8.5 14" />
+    </>
+  ),
+  /** The same move put back. `undo` mirrored, and the one place in the set
+      where a mirror is right: the pair has to read as one control. */
+  redo: (
+    <>
+      <path d="M19.5 9.5h-10a5 5 0 0 0 0 10h6" />
+      <path d="M15.5 5L20 9.5 15.5 14" />
+    </>
+  ),
   /** Leave the lightbox, leave the presentation. */
   close: (
     <>
@@ -138,6 +157,21 @@ const ICONS = {
   expand: (
     <>
       <path d="M9 4.5H4.5V9M15 4.5h4.5V9M15 19.5h4.5V15M9 19.5H4.5V15" />
+    </>
+  ),
+  /**
+   * Rename this. A pencil, and it has to be one.
+   *
+   * `expand` — four corners pointing outward — stood in for it for months, on
+   * the reasoning that the set had nothing closer. It does not read as "edit" to
+   * anybody: Tommy called it *"the box thing"*, which is exactly what four
+   * corners at 12px look like. The nib is drawn short and thick so it survives
+   * being scaled to the size of a full stop.
+   */
+  pencil: (
+    <>
+      <path d="M4.5 19.5h3.2l9.4-9.4-3.2-3.2-9.4 9.4z" />
+      <path d="M14.6 5.6l1.6-1.6a1.6 1.6 0 0 1 2.3 0l1.5 1.5a1.6 1.6 0 0 1 0 2.3l-1.6 1.6z" />
     </>
   ),
   /** A count of photographs, on a gathering card. */

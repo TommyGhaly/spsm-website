@@ -32,10 +32,11 @@
  * Sheets and LibreOffice all accept:
  *
  *   [Content_Types].xml        what each part in the zip is
- *   _rels/.rels                the package points at the workbook
+ *   _rels/.rels                the package points at the workbook and the props
+ *   docProps/core.xml          who exported it, and when
  *   xl/workbook.xml            the sheet names, in tab order
  *   xl/_rels/workbook.xml.rels the workbook points at each sheet's XML
- *   xl/styles.xml              the two formats used: normal, and bold header
+ *   xl/styles.xml              the formats used: normal, header band, colours
  *   xl/worksheets/sheetN.xml   the cells
  *
  * Strings are written **inline** (`t="inlineStr"`) rather than through
@@ -100,6 +101,41 @@ export interface Sheet {
    */
   boldRows?: number[];
   /**
+   * Rows to write as a section title: bold, in the parish's oxblood, with a
+   * rule above them.
+   *
+   * A sheet that is several tables stacked needs its titles to outrank the
+   * column labels under them. Bold alone does not do that — a bold title above
+   * a bold header row reads as two header rows.
+   */
+  titleRows?: number[];
+  /**
+   * Rows to write in the header band, by index into `rows`.
+   *
+   * For the column labels of a table that is *inside* a sheet rather than at
+   * the top of one. The same band as row 1 elsewhere in the book, so a reader
+   * learns the colour once and it means the same thing on every tab.
+   */
+  headRows?: number[];
+  /**
+   * Rows to draw a rule above, by index into `rows`.
+   *
+   * This is how a week ends. The rosters run several weeks into one filterable
+   * table, and the only thing separating them was the value in column A —
+   * which a reader has to notice changing, halfway down a screen of colour.
+   * A rule is a seam that does not need reading, and unlike a spacer row it
+   * cannot be sorted into the middle of the data or counted by the autofilter.
+   */
+  separatorRows?: number[];
+  /**
+   * Whether Excel's own gridlines are drawn. Defaults to true.
+   *
+   * Off on a sheet that bands its own rows: the grey grid and the coloured
+   * bands are two competing descriptions of where the rows are, and the one
+   * carrying meaning should win.
+   */
+  gridLines?: boolean;
+  /**
    * Whether to write `columns` as a bold header row. Defaults to true.
    *
    * `false` keeps the widths and drops the row, which is what a sheet holding
@@ -117,45 +153,50 @@ export interface Sheet {
  * and Node's own wrappers, and returning either would make this module refuse
  * to run in the other. Each caller wraps it in whatever it needs.
  */
-export function buildXlsx(sheets: readonly Sheet[]): Uint8Array {
+/**
+ * Who made the file, and when.
+ *
+ * Written into `docProps/core.xml`, which is where Excel's own File → Info
+ * panel reads an author and a date from. It is here because the camp workbook
+ * used to spend three rows of its first sheet saying the same thing, and those
+ * rows cost that sheet its header row, its frozen pane and its autofilter. The
+ * provenance is worth keeping and is not worth a row.
+ */
+export interface WorkbookMeta {
+  title?: string;
+  creator?: string;
+  created?: Date;
+}
+
+export function buildXlsx(sheets: readonly Sheet[], meta: WorkbookMeta = {}): Uint8Array {
   if (sheets.length === 0) throw new Error('A workbook needs at least one sheet.');
 
-  /*
-   * Every distinct fill used anywhere in the book, collected first.
-   *
-   * `xl/styles.xml` is a set of numbered format records that cells refer to by
-   * index, so the styles have to be known before any cell can be written. Two
-   * fills are reserved by the format itself — index 0 is "none" and index 1 is
-   * the grey Excel uses for gridline patterns — and a file that reuses either
-   * for its own colour renders wrong in Excel and correctly everywhere else,
-   * which is the worst way to find out.
-   */
-  const fills: string[] = [];
-  const fillIndex = new Map<string, number>();
-  for (const sheet of sheets) {
-    for (const colour of sheet.rowFills ?? []) {
-      const hex = normaliseHex(colour);
-      if (!hex || fillIndex.has(hex)) continue;
-      fillIndex.set(hex, fills.length);
-      fills.push(hex);
-    }
-  }
-
   const names = uniqueSheetNames(sheets.map((sheet) => sheet.name));
+
+  /*
+   * The sheets are rendered before `xl/styles.xml` is written, not after.
+   *
+   * `styles.xml` is a set of numbered format records that cells refer to by
+   * index, and which combinations of colour, weight and rule a sheet actually
+   * uses is not knowable until its rows have been walked. So one registry is
+   * handed to every sheet, hands back an index for each combination it is
+   * asked for, and is serialised last — which also means the file carries no
+   * format nothing uses.
+   */
+  const styles = new Styles();
+  const rendered = sheets.map((sheet) => encode(sheetXml(sheet, styles)));
 
   const files: ZipEntry[] = [
     { path: '[Content_Types].xml', data: encode(contentTypes(sheets.length)) },
     { path: '_rels/.rels', data: encode(packageRels()) },
-    { path: 'xl/workbook.xml', data: encode(workbookXml(names)) },
+    { path: 'docProps/core.xml', data: encode(coreXml(meta)) },
+    { path: 'xl/workbook.xml', data: encode(workbookXml(names, sheets)) },
     { path: 'xl/_rels/workbook.xml.rels', data: encode(workbookRels(sheets.length)) },
-    { path: 'xl/styles.xml', data: encode(stylesXml(fills)) },
+    { path: 'xl/styles.xml', data: encode(styles.toXml()) },
   ];
 
-  sheets.forEach((sheet, index) => {
-    files.push({
-      path: `xl/worksheets/sheet${index + 1}.xml`,
-      data: encode(sheetXml(sheet, fillIndex)),
-    });
+  rendered.forEach((data, index) => {
+    files.push({ path: `xl/worksheets/sheet${index + 1}.xml`, data });
   });
 
   return zip(files);
@@ -183,6 +224,8 @@ function contentTypes(sheetCount: number): string {
     `ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
     `<Override PartName="/xl/styles.xml" ` +
     `ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+    `<Override PartName="/docProps/core.xml" ` +
+    `ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>` +
     `${overrides}</Types>`
   );
 }
@@ -192,23 +235,76 @@ function packageRels(): string {
     `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
     `<Relationship Id="rId1" ` +
     `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" ` +
-    `Target="xl/workbook.xml"/></Relationships>`
+    `Target="xl/workbook.xml"/>` +
+    `<Relationship Id="rId2" ` +
+    `Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" ` +
+    `Target="docProps/core.xml"/></Relationships>`
   );
 }
 
-function workbookXml(names: readonly string[]): string {
-  const sheets = names
+/**
+ * `docProps/core.xml` — the Dublin Core part.
+ *
+ * The namespaces are not decoration: `dc:title`, `dc:creator` and
+ * `dcterms:created` each live in a different one, and `xsi:type` on the dates
+ * is required rather than conventional. Excel ignores a part it cannot parse
+ * and reports nothing, so a mistake here is silent.
+ */
+function coreXml(meta: WorkbookMeta): string {
+  const stamp = (meta.created ?? new Date()).toISOString().replace(/\.\d+Z$/, 'Z');
+  return (
+    `${XML_HEAD}<cp:coreProperties ` +
+    `xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
+    `xmlns:dc="http://purl.org/dc/elements/1.1/" ` +
+    `xmlns:dcterms="http://purl.org/dc/terms/" ` +
+    `xmlns:dcmitype="http://purl.org/dc/dcmitype/" ` +
+    `xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
+    (meta.title ? `<dc:title>${escapeXml(meta.title)}</dc:title>` : '') +
+    (meta.creator ? `<dc:creator>${escapeXml(meta.creator)}</dc:creator>` : '') +
+    `<dcterms:created xsi:type="dcterms:W3CDTF">${stamp}</dcterms:created>` +
+    `<dcterms:modified xsi:type="dcterms:W3CDTF">${stamp}</dcterms:modified>` +
+    `</cp:coreProperties>`
+  );
+}
+
+function workbookXml(names: readonly string[], sheets: readonly Sheet[]): string {
+  const tabs = names
     .map(
       (name, index) =>
         `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`,
     )
     .join('');
 
+  /*
+   * Repeat row 1 at the top of every printed page.
+   *
+   * A two-hundred-row roster prints as six pages, five of which used to have no
+   * column headings on them at all — so the fourth page was sixteen unlabelled
+   * columns of names, dates and paragraphs. This is Excel's own mechanism for
+   * it: a defined name scoped to one sheet, which is what `localSheetId` means.
+   */
+  const printTitles = names
+    .map((name, index) =>
+      sheets[index]!.headerRow === false || sheets[index]!.columns.length === 0
+        ? ''
+        : `<definedName name="_xlnm.Print_Titles" localSheetId="${index}">` +
+          `${escapeXml(quoteSheetName(name))}!$1:$1</definedName>`,
+    )
+    .join('');
+
   return (
     `${XML_HEAD}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
     `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-    `<sheets>${sheets}</sheets></workbook>`
+    `<sheets>${tabs}</sheets>` +
+    (printTitles ? `<definedNames>${printTitles}</definedNames>` : '') +
+    `</workbook>`
   );
+}
+
+/** `Groups 2027` → `'Groups 2027'`. A formula reference to a sheet whose name
+    has a space in it is quoted, and an apostrophe inside is doubled. */
+function quoteSheetName(name: string): string {
+  return `'${name.replace(/'/g, "''")}'`;
 }
 
 function workbookRels(sheetCount: number): string {
@@ -235,17 +331,6 @@ function workbookRels(sheetCount: number): string {
 }
 
 /**
- * Styles: one normal format, one bold header, and one per row colour.
- *
- * The `cellXfs` order is what the rest of this file indexes into and must not
- * be rearranged:
- *
- *   0  normal
- *   1  the header band — bold white on oxblood, with a rule under it
- *   2  plain bold, for a sheet that is several small tables stacked
- *   3… one per fill, in the order they were collected, wrapped
- */
-/**
  * The header band, oxblood — the parish's own accent.
  *
  * A constant rather than a per-sheet option because a workbook whose five tabs
@@ -255,48 +340,133 @@ function workbookRels(sheetCount: number): string {
  */
 const HEADER_FILL = '992A21';
 
-function stylesXml(fills: readonly string[]): string {
-  const fillParts = fills
-    .map((hex) => `<fill><patternFill patternType="solid"><fgColor rgb="FF${hex}"/><bgColor indexed="64"/></patternFill></fill>`)
-    .join('');
+/** The gold hairline under the header band, so the band still reads as a band
+    when somebody prints the sheet in black and white. */
+const RULE_COLOUR = '7A5C1E';
 
-  const colourXfs = fills
-    .map((_, index) => `<xf numFmtId="0" fontId="0" fillId="${index + 3}" borderId="0" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>`)
-    .join('');
+/** The rule that ends a week. Warm and mid-weight: dark enough to find while
+    scrolling, light enough not to compete with the header. */
+const SEAM_COLOUR = 'B08D57';
 
+/**
+ * Body text, a soft near-black rather than `#000`.
+ *
+ * Two hundred rows of pure black on a pale colour fill is the contrast that
+ * makes a spreadsheet tiring to read down. This is the one change in this file
+ * nobody will name and everybody will feel.
+ */
+const TEXT_COLOUR = '2B2B2B';
+
+/** Which font a cell is written in. Indices into `<fonts>` below. */
+type FontId = 0 | 1 | 2 | 3;
+/** Which border. 0 none, 1 the hairline under the header, 2 a week's seam. */
+type BorderId = 0 | 1 | 2;
+
+/**
+ * The formats the workbook ends up needing, collected while it is written.
+ *
+ * Every combination of fill, weight and rule is one numbered record, allocated
+ * on first use and reused after — so a roster with twelve group colours and a
+ * seam at each week boundary costs a dozen-odd records rather than one per row.
+ *
+ * Three indices are fixed because the writing code names them directly:
+ *
+ *   0  normal
+ *   1  the header band — bold white on oxblood, with a rule under it
+ *   2  plain bold, for a sheet that is several small tables stacked
+ */
+class Styles {
+  private readonly fills = new Map<string, number>();
+  private readonly keys = new Map<string, number>();
+  private readonly xfs: string[] = [];
+
+  constructor() {
+    this.xfs.push(xf(0, 0, 0, 'top'));
+    this.xfs.push(xf(2, 2, 1, 'center'));
+    this.xfs.push(xf(1, 0, 0, 'top'));
+  }
+
+  /**
+   * The index for one combination, allocating it if it is new.
+   *
+   * Fill indices 0 and 1 are reserved by the format itself — 0 is "none" and 1
+   * is the grey Excel uses for gridline patterns — and index 2 is the header
+   * band, so the data's own colours start at 3. A file that reuses either
+   * reserved slot for its own colour renders wrong in Excel and correctly
+   * everywhere else, which is the worst way to find out.
+   */
+  get(options: { fill?: string | null; font?: FontId; border?: BorderId }): number {
+    const fill = options.fill ?? null;
+    const font = options.font ?? 0;
+    const border = options.border ?? 0;
+    if (!fill && font === 0 && border === 0) return 0;
+
+    const key = `${fill ?? ''}|${font}|${border}`;
+    const existing = this.keys.get(key);
+    if (existing !== undefined) return existing;
+
+    let fillId = 0;
+    if (fill) {
+      fillId = this.fills.get(fill) ?? this.fills.size + 3;
+      this.fills.set(fill, fillId);
+    }
+
+    const index = this.xfs.length;
+    this.xfs.push(xf(font, fillId, border, 'top'));
+    this.keys.set(key, index);
+    return index;
+  }
+
+  toXml(): string {
+    const colours = [...this.fills.keys()];
+    const fillParts = colours
+      .map(
+        (hex) =>
+          `<fill><patternFill patternType="solid"><fgColor rgb="FF${hex}"/>` +
+          `<bgColor indexed="64"/></patternFill></fill>`,
+      )
+      .join('');
+
+    return (
+      `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+      `<fonts count="4">` +
+      `<font><sz val="11"/><color rgb="FF${TEXT_COLOUR}"/><name val="Calibri"/></font>` +
+      `<font><b/><sz val="11"/><color rgb="FF${TEXT_COLOUR}"/><name val="Calibri"/></font>` +
+      // Bold white, for the header band.
+      `<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>` +
+      // Bold oxblood, a size up, for a section title.
+      `<font><b/><sz val="13"/><color rgb="FF${HEADER_FILL}"/><name val="Calibri"/></font>` +
+      `</fonts>` +
+      `<fills count="${colours.length + 3}">` +
+      `<fill><patternFill patternType="none"/></fill>` +
+      `<fill><patternFill patternType="gray125"/></fill>` +
+      `<fill><patternFill patternType="solid"><fgColor rgb="FF${HEADER_FILL}"/>` +
+      `<bgColor indexed="64"/></patternFill></fill>` +
+      `${fillParts}</fills>` +
+      `<borders count="3">` +
+      `<border><left/><right/><top/><bottom/><diagonal/></border>` +
+      `<border><left/><right/><top/><bottom style="thin">` +
+      `<color rgb="FF${RULE_COLOUR}"/></bottom><diagonal/></border>` +
+      `<border><left/><right/><top style="medium">` +
+      `<color rgb="FF${SEAM_COLOUR}"/></top><bottom/><diagonal/></border>` +
+      `</borders>` +
+      `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+      `<cellXfs count="${this.xfs.length}">${this.xfs.join('')}</cellXfs>` +
+      `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
+      `</styleSheet>`
+    );
+  }
+}
+
+function xf(font: FontId, fill: number, border: BorderId, vertical: 'top' | 'center'): string {
   return (
-    `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<fonts count="3">` +
-    `<font><sz val="11"/><name val="Calibri"/></font>` +
-    `<font><b/><sz val="11"/><name val="Calibri"/></font>` +
-    // Bold white, for the header band.
-    `<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>` +
-    `</fonts>` +
-    // Indices 0 and 1 are reserved by the format; index 2 is the header band
-    // and ours start at 3.
-    `<fills count="${fills.length + 3}">` +
-    `<fill><patternFill patternType="none"/></fill>` +
-    `<fill><patternFill patternType="gray125"/></fill>` +
-    `<fill><patternFill patternType="solid"><fgColor rgb="FF${HEADER_FILL}"/><bgColor indexed="64"/></patternFill></fill>` +
-    `${fillParts}</fills>` +
-    `<borders count="2">` +
-    `<border><left/><right/><top/><bottom/><diagonal/></border>` +
-    // A hairline under the header, so the band still reads as a band when
-    // somebody prints the sheet in black and white.
-    `<border><left/><right/><top/><bottom style="thin"><color rgb="FF7A5C1E"/></bottom><diagonal/></border>` +
-    `</borders>` +
-    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-    `<cellXfs count="${fills.length + 3}">` +
-    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
-    `<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>` +
-    `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
-    `${colourXfs}</cellXfs>` +
-    `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
-    `</styleSheet>`
+    `<xf numFmtId="0" fontId="${font}" fillId="${fill}" borderId="${border}" xfId="0" ` +
+    `applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">` +
+    `<alignment vertical="${vertical}" wrapText="1"/></xf>`
   );
 }
 
-function sheetXml(sheet: Sheet, fillIndex: Map<string, number>): string {
+function sheetXml(sheet: Sheet, styles: Styles): string {
   const columnCount = Math.max(
     sheet.columns.length,
     ...sheet.rows.map((row) => row.length),
@@ -324,14 +494,41 @@ function sheetXml(sheet: Sheet, fillIndex: Map<string, number>): string {
   const firstBodyRow = wantsHeader ? 2 : 1;
 
   const bold = new Set(sheet.boldRows ?? []);
+  const titles = new Set(sheet.titleRows ?? []);
+  const heads = new Set(sheet.headRows ?? []);
+  const seams = new Set(sheet.separatorRows ?? []);
+
   const body = sheet.rows
     .map((values, index) => {
+      const seam: BorderId = seams.has(index) ? 2 : 0;
       const hex = normaliseHex(sheet.rowFills?.[index]);
-      // A fill wins over bold: they cannot both be expressed by one style
-      // index, and a coloured row carries more than a heavy one does.
-      const filled = hex ? (fillIndex.get(hex) ?? -1) + 3 : 0;
-      const style = filled >= 3 ? filled : bold.has(index) ? 2 : 0;
-      return row(index + firstBodyRow, values, style);
+
+      /*
+       * One style per row, in the order of what carries the most.
+       *
+       * A row cannot be two of these at once — there is a single style index
+       * per cell — so the ranking is the design: a title outranks a column
+       * label, a column label outranks a colour, and a colour outranks bold,
+       * because the colour says which group this is and bold says only that
+       * somebody thought it mattered.
+       */
+      let style: number;
+      let height: number | undefined;
+      if (titles.has(index)) {
+        style = styles.get({ font: 3, border: 2 });
+        height = 22;
+      } else if (heads.has(index)) {
+        style = 1;
+        height = 20;
+      } else if (hex) {
+        style = styles.get({ fill: hex, border: seam });
+      } else if (bold.has(index)) {
+        style = styles.get({ font: 1, border: seam });
+      } else {
+        style = styles.get({ border: seam });
+      }
+
+      return row(index + firstBodyRow, values, style, height);
     })
     .join('');
 
@@ -346,20 +543,45 @@ function sheetXml(sheet: Sheet, fillIndex: Map<string, number>): string {
   const lastRow = Math.max(1, sheet.rows.length + firstBodyRow - 1);
   const dimension = `<dimension ref="A1:${columnLetter(columnCount)}${lastRow}"/>`;
   const frozenCols = Math.max(0, Math.min(sheet.freezeColumns ?? 0, sheet.columns.length));
+  const grid = sheet.gridLines === false ? ' showGridLines="0"' : '';
   const view = wantsHeader
-    ? `<sheetViews><sheetView workbookViewId="0">` +
+    ? `<sheetViews><sheetView${grid} workbookViewId="0">` +
       `<pane${frozenCols > 0 ? ` xSplit="${frozenCols}"` : ''} ySplit="1" ` +
       `topLeftCell="${columnLetter(frozenCols + 1)}2" ` +
       `activePane="${frozenCols > 0 ? 'bottomRight' : 'bottomLeft'}" state="frozen"/>` +
       `</sheetView></sheetViews>`
-    : `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
+    : `<sheetViews><sheetView${grid} workbookViewId="0"/></sheetViews>`;
   const filter = wantsHeader
     ? `<autoFilter ref="A1:${columnLetter(sheet.columns.length)}${lastRow}"/>`
     : '';
 
+  /*
+   * A little more air between the rows than Excel's default 15.
+   *
+   * `defaultRowHeight` rather than a height on each row, because the allergy
+   * and medical-note columns wrap: a fixed height on those rows would crop the
+   * paragraph this whole sheet exists to carry, and a floor lets Excel grow the
+   * row past it when it has to.
+   */
+  const format = '<sheetFormatPr defaultRowHeight="16.5"/>';
+
+  /*
+   * Printed: landscape when it is wide, scaled to the width of the page, and
+   * with the margins pulled in. Left alone, a sixteen-column roster prints
+   * portrait, three columns to a page, in eleven sheets of paper — and the
+   * roster is a thing people hold.
+   */
+  const landscape = columnCount > 6;
+  const print =
+    `<pageMargins left="0.3" right="0.3" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>` +
+    `<pageSetup orientation="${landscape ? 'landscape' : 'portrait'}" ` +
+    `fitToWidth="1" fitToHeight="0"/>`;
+
   return (
     `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `${dimension}${view}${cols}<sheetData>${header}${body}</sheetData>${filter}</worksheet>`
+    `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>` +
+    `${dimension}${view}${format}${cols}<sheetData>${header}${body}</sheetData>` +
+    `${filter}${print}</worksheet>`
   );
 }
 

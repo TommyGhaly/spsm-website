@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 
 /**
- * One route for Our Faith / Ministries / Welcome.
+ * One route for Our Faith / Welcome.
  *
  * This is a dynamic segment at the root, so it would in principle also match
  * `/events`, `/forms`, and the rest. Next resolves static routes before
@@ -41,8 +41,15 @@ type Params = { section: string };
  * this template has no way to. Same collision as `contact`: two pages writing
  * `/about` under `output: 'export'`. The `about` section itself is untouched —
  * that page reads it, and prose filed there still appears.
+ *
+ * `ministries` is last, and it is the only one here that lost a page somebody
+ * could reach. `/events` is the standing work of the church — each ministry with
+ * its photographs and its gatherings — and this section was a second page of
+ * prose answering the same question less well; its footer link is gone with it.
+ * Like `clergy` and `misc`, the section itself stays, so anything already filed
+ * there survives without a URL of its own.
  */
-const NOT_A_PAGE: readonly string[] = ['contact', 'clergy', 'misc', 'about'];
+const NOT_A_PAGE: readonly string[] = ['contact', 'clergy', 'misc', 'about', 'ministries'];
 
 export async function generateStaticParams(): Promise<Params[]> {
   return CONTENT_SECTIONS.filter((section) => !NOT_A_PAGE.includes(section)).map(

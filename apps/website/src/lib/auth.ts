@@ -33,7 +33,12 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
-import { DEFAULT_CLAIMS, parseClaims, type SpsmClaims } from '@spsm/shared';
+import {
+  CONFIRM_LOCKOUT_FIELD,
+  DEFAULT_CLAIMS,
+  parseClaims,
+  type SpsmClaims,
+} from '@spsm/shared';
 import { firebaseApp, usingEmulators } from './firebase';
 import { setSessionHint } from './authHint';
 
@@ -190,7 +195,19 @@ export function signOut(): Promise<void> {
  * session alone and let the error reach the screen.
  * ---------------------------------------------------------------------------
  */
-export async function deleteOwnAccount(): Promise<void> {
+export async function deleteOwnAccount(
+  /**
+   * Set by the confirmation panel when the person holds `superadmin` and has
+   * ticked the acknowledgement.
+   *
+   * Not read from the token here, deliberately. This function could look up its
+   * own claims and always send the flag — and that would defeat the guard
+   * entirely, because the flag would then mean "a superadmin asked" rather than
+   * "a superadmin was told what this does and agreed". It has to come from the
+   * checkbox, which is the only thing that knows a human read the sentence.
+   */
+  options: { confirmLockout?: boolean } = {},
+): Promise<void> {
   const user = auth().currentUser;
   if (!user) throw new Error('You are not signed in.');
 
@@ -205,7 +222,23 @@ export async function deleteOwnAccount(): Promise<void> {
   try {
     response = await fetch('/api/account/delete', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      /*
+       * The content type is what makes the body readable at the other end —
+       * `onRequest`'s JSON parser is keyed on it, and without it the Function
+       * sees a raw string. `lockoutAcknowledged` copes with either, but sending
+       * the header is the half of that we control.
+       *
+       * Still no uid in the body, and there must never be one: the endpoint acts
+       * on whoever the verified token says is calling. `confirmLockout` is a
+       * statement about the caller's own intent, not about a target.
+       */
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(
+        options.confirmLockout ? { [CONFIRM_LOCKOUT_FIELD]: true } : {},
+      ),
     });
   } catch {
     // A network failure, not a refusal. Worth saying differently: nothing has

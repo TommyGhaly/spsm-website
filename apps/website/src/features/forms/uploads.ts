@@ -4,6 +4,8 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { FORM_UPLOAD_PREFIX, toFormSlug } from '@spsm/shared';
 import { firebaseApp } from '@/lib/firebase';
 import { getStorage } from 'firebase/storage';
+import { explainUploadFailure } from '@/lib/storageErrors';
+import { checkImageFile, safeName, type UploadResult } from '@/lib/uploadNaming';
 
 /**
  * Putting pictures into Storage — two paths, with opposite permissions.
@@ -38,43 +40,18 @@ import { getStorage } from 'firebase/storage';
  */
 const PUBLIC_MAX_BYTES = 250 * 1024 * 1024;
 
-export type UploadResult =
-  | { ok: true; path: string; url: string }
-  | { ok: false; reason: string };
-
-/**
- * A filename that cannot collide and cannot escape its folder.
- *
- * The original name is kept as a suffix because it is genuinely useful to staff
- * reviewing a queue — "dented-wing.jpg" beats an opaque id — but it is stripped
- * to a safe character set first. A name arrives from a file picker, which means
- * it arrives from the person's disk, which means it can contain anything.
+/*
+ * `UploadResult`, `safeName` and the image-type check live in
+ * `lib/uploadNaming` now — the About-pages editor uploads staff photographs
+ * too, and a filename rule that differs between two upload paths is a filename
+ * rule that is wrong in one of them. Re-exported because callers here import
+ * the type from this module.
  */
-function safeName(original: string): string {
-  const stamp = Date.now().toString(36);
-  const random = Math.random().toString(36).slice(2, 8);
-  const cleaned = original
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(-40);
-  return `${stamp}${random}-${cleaned || 'photo'}`;
-}
-
-/**
- * Staff uploads: the file has to be an image, and nothing else is asked of it.
- *
- * The type check is not about size. A bucket that accepts `text/html` from a
- * browser is one that will serve it back on our own domain to whoever follows
- * a link, so `isImage()` still refuses it in the rules and this says so first.
- */
-function checkFile(file: File): string | null {
-  return file.type.startsWith('image/') ? null : 'That is not an image file.';
-}
+export type { UploadResult };
 
 /** The public attachment path, which keeps a bound. See `PUBLIC_MAX_BYTES`. */
 function checkPublicFile(file: File): string | null {
-  const problem = checkFile(file);
+  const problem = checkImageFile(file);
   if (problem) return problem;
   if (file.size > PUBLIC_MAX_BYTES) {
     return `That image is ${(file.size / 1024 / 1024).toFixed(0)}MB, which is too large to send.`;
@@ -90,7 +67,7 @@ function checkPublicFile(file: File): string | null {
  * currency. Contrast `uploadFormPhoto` below, which returns a *path*.
  */
 export async function uploadFormPicture(formId: string, file: File): Promise<UploadResult> {
-  const problem = checkFile(file);
+  const problem = checkImageFile(file);
   if (problem) return { ok: false, reason: problem };
 
   const path = `forms/${toFormSlug(formId) || 'form'}/${safeName(file.name)}`;
@@ -101,12 +78,9 @@ export async function uploadFormPicture(formId: string, file: File): Promise<Upl
     return { ok: true, path, url: await getDownloadURL(target) };
   } catch (error) {
     console.error('[forms] picture upload failed', error);
-    return {
-      ok: false,
-      reason:
-        'The upload was refused. If you are signed in as staff and this keeps ' +
-        'happening, the Storage rules may not be deployed.',
-    };
+    // "the Storage rules may not be deployed" was a guess, and it was the wrong
+    // one the first time it mattered — see lib/storageErrors.ts.
+    return { ok: false, reason: (await explainUploadFailure(error)).message };
   }
 }
 
@@ -142,7 +116,14 @@ export async function uploadFormPhoto(
     return { ok: true, path };
   } catch (error) {
     console.error('[forms] photo upload failed', error);
-    return { ok: false, reason: 'The photograph could not be uploaded. Please try again.' };
+    /*
+     * This is the *anonymous* path, and it is subject to App Check enforcement
+     * exactly like the staff one — a parishioner attaching a photograph to a
+     * form is refused by the same 401 when attestation is down. "Please try
+     * again" is useless advice for a fault no amount of trying fixes, so the
+     * real reason goes through here too.
+     */
+    return { ok: false, reason: (await explainUploadFailure(error)).message };
   }
 }
 

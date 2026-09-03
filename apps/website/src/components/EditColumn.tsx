@@ -56,6 +56,19 @@ export function EditColumn({
   /** Leaves edit mode entirely. The only way out, so it is never conditional. */
   onDone,
   /**
+   * Controls that belong with Done rather than with the properties below it.
+   *
+   * Undo and redo, for the one caller that keeps a history. In the header
+   * because that is where "Saved" and Done already are: those three answer the
+   * same question — what has happened to my work — and somebody who has just
+   * made a mistake looks in the corner they look at to check it saved.
+   *
+   * Not in the scrolling body, which is the alternative and is worse: a long
+   * section's properties scroll, and an undo button that scrolls out of reach is
+   * one people use the keyboard for or not at all.
+   */
+  actions,
+  /**
    * Whatever is inside this level — the albums, the weeks, the days.
    *
    * Folded into the column rather than floating in a corner: it is how you get
@@ -72,6 +85,7 @@ export function EditColumn({
   onBack?: (() => void) | undefined;
   backLabel?: string | undefined;
   onDone: () => void;
+  actions?: ReactNode | undefined;
   aside?: ReactNode | undefined;
   children: ReactNode;
 }) {
@@ -144,6 +158,8 @@ export function EditColumn({
         <button type="button" className="inspector-col__done" onClick={onDone}>
           Done editing
         </button>
+
+        {actions && <div className="inspector-col__actions">{actions}</div>}
       </header>
 
       {onBack && (

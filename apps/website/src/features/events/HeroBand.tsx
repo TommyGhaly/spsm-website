@@ -31,7 +31,7 @@
  * about. Same as the public page, which renders the same `img`.
  */
 
-import { useRef, useState } from 'react';
+import { type DragEvent as ReactDragEvent, useRef, useState } from 'react';
 import { publicStorageUrl } from '@/lib/storage';
 import { Icon } from '@/components/Icon';
 
@@ -55,20 +55,63 @@ export function HeroBand({
   const [over, setOver] = useState(false);
   const busy = status.kind === 'uploading';
 
+  /*
+   * How deep into the band the drag currently is.
+   *
+   * `dragleave` fires every time the pointer crosses from the band onto one of
+   * its own children — the button, the icon, the `strong`, the tools — and the
+   * version before this cleared the highlight on every one of them. Dragging a
+   * photograph across the band therefore flashed the drop state on and off
+   * several times a second, which is the flicker being complained about rather
+   * than anything to do with the upload.
+   *
+   * Counting enters against leaves is the standard fix and the only one that
+   * works without knowing what is inside the band: the count only reaches zero
+   * when the drag has genuinely left the outer element. A ref rather than
+   * state, because the count is bookkeeping and must not repaint on its own.
+   */
+  const depth = useRef(0);
+
   function take(file: File | undefined) {
     if (file) onPick(file);
+  }
+
+  /**
+   * Whether this drag is carrying files at all.
+   *
+   * Dragging selected text, or a link, across the editor should not light up a
+   * photograph target it cannot satisfy. `types` is the one part of
+   * `dataTransfer` readable during a drag — `files` is empty until the drop —
+   * so it is what the test has to be made of.
+   */
+  function hasFiles(event: ReactDragEvent) {
+    return Array.from(event.dataTransfer.types ?? []).includes('Files');
   }
 
   return (
     <div
       className={over ? 'ee-hero ee-hero--over' : 'ee-hero'}
-      onDragOver={(event) => {
+      onDragEnter={(event) => {
+        if (!hasFiles(event)) return;
         event.preventDefault();
+        depth.current += 1;
         setOver(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragOver={(event) => {
+        if (!hasFiles(event)) return;
+        // Both of these are required for a drop to be allowed at all, and the
+        // cursor is set explicitly so the reader is told this copies a file
+        // rather than moving something out of the page.
+        event.preventDefault();
+        event.dataTransfer.dropEffect = busy ? 'none' : 'copy';
+      }}
+      onDragLeave={() => {
+        depth.current = Math.max(0, depth.current - 1);
+        if (depth.current === 0) setOver(false);
+      }}
       onDrop={(event) => {
         event.preventDefault();
+        depth.current = 0;
         setOver(false);
         if (!busy) take(event.dataTransfer.files?.[0]);
       }}
@@ -119,7 +162,8 @@ export function HeroBand({
 
       {over && (
         <p className="ee-hero__drop" aria-hidden="true">
-          Drop to use this photograph
+          <Icon name="photos" size={20} />
+          {busy ? 'Wait for this upload to finish' : 'Drop to use this photograph'}
         </p>
       )}
 

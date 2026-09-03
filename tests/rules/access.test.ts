@@ -115,6 +115,19 @@ beforeAll(async () => {
      * narrows, so this account must reach nothing — the test below is what
      * stops `hasFinance()` from being rewritten as an alternative door.
      */
+    /*
+     * Runs the camp's back office and nothing else — the `camp` flag, no
+     * `finance`, no program grant. The counterpart to `camp-treasurer` below:
+     * one holds the families and not the totals, the other the totals and not
+     * the families, and the rules have to refuse each of them the other half.
+     */
+    await setDoc(doc(db, 'members/camp-office'), {
+      displayName: 'camp-office',
+      email: 'camp-office@spsmwayland.org',
+      screenAdmin: { camp: true },
+      programAdmin: { programs: [], events: [] },
+    });
+
     await setDoc(doc(db, 'members/scoped-nobody'), {
       displayName: 'scoped-nobody',
       email: 'scoped-nobody@spsmwayland.org',
@@ -418,6 +431,73 @@ describe('the finance grant', () => {
       updateDoc(doc(db, 'financeRollups/camp__summercamp__2027'), {
         money: { receivedCents: 0, outstandingCents: 0 },
       }),
+    );
+  });
+
+  /**
+   * The mirror image of the test below it, and the pair is the whole model.
+   *
+   * `camp` and `finance` were separated on 2 Sep 2026 into two grants that both
+   * touch the camp's money and touch different halves of it. The camp's back
+   * office holds the families — names, grades, allergies, and the fee ledger on
+   * the same document, because rules grant documents and not fields. The
+   * treasurer holds the totals, with no name in them.
+   *
+   * So neither can stand in for the other, and this asserts the direction that
+   * is easy to lose: somebody running the camp is not thereby a treasurer.
+   * /admin/finance is refused them, rollup by rollup, including the camp's own.
+   */
+  it('the camp’s back office reaches no rollup, not even the camp’s', async () => {
+    const db = asServant(env, 'camp-office').firestore();
+
+    // What they do hold. Seeded in the same shape the camp screens read.
+    await assertSucceeds(
+      getDocs(query(collection(db, 'campRegistrations'), where('programId', '==', 'summercamp'))),
+    );
+
+    // And what they do not.
+    await assertFails(getDoc(doc(db, 'financeRollups/camp__summercamp__2027')));
+    await assertFails(getDocs(query(collection(db, 'financeRollups'), where('kind', '==', 'camp'))));
+    await assertFails(getDoc(doc(db, 'bookstoreStats/day-2026-08-30')));
+    await assertFails(getDoc(doc(db, 'orders/order-1')));
+  });
+
+  /**
+   * And it does not reach the forms drawer either.
+   *
+   * The camp's public sign-up lives at /forms/summer-camp and the hub lists it
+   * beside the church's other forms, which makes "whoever runs the camp edits
+   * the camp's form" a very easy thing to assume. It is not true and must not
+   * become true: the drawer on /forms edits *every* form definition and reads
+   * *every* submission behind them — the contact form's messages and the
+   * vehicle register among them — so a camp grant that opened it would hand the
+   * camp's administrator the parish's whole correspondence.
+   *
+   * The camp's own settings are `config/camp`, a different rule, which they do
+   * hold; and the servant sign-up is not a `forms` document at all.
+   */
+  it('the camp\u2019s back office cannot read or edit the forms', async () => {
+    const db = asServant(env, 'camp-office').firestore();
+
+    /*
+     * A form's settings are its own document — the definition, the two flags on
+     * the row, and `order`. There is nothing narrower to hold, so all three are
+     * refused together, and so is reading one at all.
+     */
+    await assertFails(getDoc(doc(db, 'forms/vehicle')));
+    await assertFails(updateDoc(doc(db, 'forms/vehicle'), { title: 'Vehicles' }));
+    await assertFails(updateDoc(doc(db, 'forms/vehicle'), { open: false }));
+    await assertFails(updateDoc(doc(db, 'forms/vehicle'), { order: 10 }));
+    await assertFails(deleteDoc(doc(db, 'forms/vehicle')));
+
+    // And the replies behind them.
+    await assertFails(getDoc(doc(db, 'formSubmissions/sub-1')));
+    await assertFails(getDocs(collection(db, 'formSubmissions')));
+
+    // What they do hold, asserted here too so that a change which took the camp
+    // away could not make this test pass by leaving them holding nothing.
+    await assertSucceeds(
+      getDocs(query(collection(db, 'campRegistrations'), where('programId', '==', 'summercamp'))),
     );
   });
 

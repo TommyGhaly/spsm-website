@@ -220,7 +220,7 @@ function BarAuth({ state }: { state: AuthState }) {
             <span>Sign out</span>
           </button>
 
-          {!isSuperadmin(state.claims) && <DeleteAccount variant="menu" />}
+          <DeleteAccount variant="menu" superadmin={isSuperadmin(state.claims)} />
         </div>
       )}
     </div>
@@ -253,7 +253,7 @@ function PanelAuth({ state }: { state: AuthState }) {
         <button type="button" className="nav-panel__button" onClick={() => void signOut()}>
           Sign out
         </button>
-        {!isSuperadmin(state.claims) && <DeleteAccount variant="panel" />}
+        <DeleteAccount variant="panel" superadmin={isSuperadmin(state.claims)} />
       </div>
     );
   }
@@ -317,21 +317,49 @@ function PanelAuth({ state }: { state: AuthState }) {
  * door that locks behind them. `functions/src/account.ts` is the authority on
  * both.
  *
- * ## Hidden for a superadmin, and that is not the guard
+ * ## A superadmin gets a third step, not a hidden row
  *
- * The endpoint refuses a superadmin with a 409 so the parish cannot lose its
- * last administrator by accident. Withholding the row here means they never
- * meet a button that cannot work — the same convenience-not-a-boundary
- * arrangement as the /access row above, and for the same reason: this is a
- * static export, so the code is public and the server is what decides.
+ * This row used to be withheld from a superadmin, because the endpoint refused
+ * every one of them outright and there was no point showing a button that
+ * could not work. Both halves of that have changed, and the old arrangement
+ * had a consequence worth stating plainly: the parish's only account is its
+ * superadmin, so "hidden from a superadmin" meant hidden from everybody who
+ * actually uses the site.
+ *
+ * A superadmin now sees the row, and the confirmation grows a checkbox they
+ * have to tick before the delete button will do anything. The tick is what
+ * sends `confirmLockout`, and the endpoint refuses without it — see
+ * `@spsm/shared/accountDeletion`, which is also where the recovery path is
+ * written down. The extra step is not ceremony: this is the one delete on the
+ * site that can leave the church unable to appoint an administrator from the
+ * website, and the sentence beside the box says so and says how it is undone.
+ *
+ * Which text they get is still a convenience rather than a boundary. This is a
+ * static export, so the code is public and anybody can call the endpoint; the
+ * verified token and the flag are what decide.
  * ---------------------------------------------------------------------------
  */
-function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
+function DeleteAccount({
+  variant,
+  superadmin,
+}: {
+  variant: 'menu' | 'panel';
+  superadmin: boolean;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Only ever meaningful for a superadmin, and reset with the panel rather than
+   * kept: cancelling and reopening should not still be holding a tick from a
+   * decision somebody backed out of.
+   */
+  const [acknowledged, setAcknowledged] = useState(false);
+  const ackId = useId();
 
   const prefix = variant === 'menu' ? 'header-auth' : 'nav-panel';
+  // A superadmin's delete is inert until the box is ticked. Nobody else has one.
+  const blocked = superadmin && !acknowledged;
 
   if (!confirming) {
     return (
@@ -340,6 +368,7 @@ function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
         className={`${prefix}__delete`}
         onClick={() => {
           setError(null);
+          setAcknowledged(false);
           setConfirming(true);
         }}
       >
@@ -364,6 +393,38 @@ function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
       </p>
 
       {/*
+        The superadmin's extra step.
+
+        A `label` wrapping its own input, so the whole sentence is the hit area
+        — this is a 13px checkbox in a dropdown, and on a phone the box alone is
+        not a target anybody should have to aim at. The text names what is lost
+        that the paragraph above does not cover: not the sign-in, which comes
+        back on the next Microsoft sign-in, but the superadmin claim, which
+        comes back only from a terminal.
+      */}
+      {superadmin && (
+        <label className={`${prefix}__confirmAck`} htmlFor={ackId}>
+          <input
+            id={ackId}
+            type="checkbox"
+            checked={acknowledged}
+            disabled={busy}
+            onChange={(event) => {
+              setAcknowledged(event.target.checked);
+              // A stale "confirm the lockout" refusal must not sit under a box
+              // that is now ticked.
+              setError(null);
+            }}
+          />
+          <span>
+            This is the superadmin account. The church may be left with nobody
+            able to allocate areas, and restoring it needs
+            <code> scripts/grant-admin.mjs</code> from a terminal.
+          </span>
+        </label>
+      )}
+
+      {/*
         The live region is on a wrapper that is always rendered while
         confirming, not on the message itself. A region that appears at the same
         moment as its text is not reliably announced — the assistive technology
@@ -385,6 +446,7 @@ function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
           onClick={() => {
             setConfirming(false);
             setError(null);
+            setAcknowledged(false);
           }}
           disabled={busy}
         >
@@ -393,11 +455,16 @@ function DeleteAccount({ variant }: { variant: 'menu' | 'panel' }) {
         <button
           type="button"
           className={`${prefix}__confirmGo`}
-          disabled={busy}
+          /*
+           * Disabled rather than hidden while the box is unticked, so the
+           * reason is visible: the button and the sentence that unlocks it are
+           * both on screen, and the box is immediately above it.
+           */
+          disabled={busy || blocked}
           onClick={() => {
             setBusy(true);
             setError(null);
-            void deleteAccount()
+            void deleteAccount(superadmin ? { confirmLockout: true } : {})
               .catch((cause: unknown) => {
                 /*
                  * Stay open, stay in the confirming state, and put the reason

@@ -314,7 +314,19 @@ export async function deleteServantRequest(id: string): Promise<void> {
  * write got right by accident and a whole-document save would have got wrong.
  * ---------------------------------------------------------------------------
  */
-export type CampSettingsPatch = Partial<Omit<CampConfig, 'programId'>>;
+export type CampSettingsPatch = Partial<Omit<CampConfig, 'programId'>> & {
+  /**
+   * One week's role list, by field path: `{ 'weekRoles.w2': ['Sports'] }`.
+   *
+   * A dotted path rather than the whole `weekRoles` map, so that saving week
+   * two's list cannot blank week one's — the same argument `updateDoc` makes
+   * against `setDoc` above, one level further in. Firestore treats a dotted key
+   * as a field path and merges into the map; `firestore.rules` sees `weekRoles`
+   * as the affected key either way, which is what the `config/camp` block
+   * allows.
+   */
+  [week: `weekRoles.${string}`]: string[] | undefined;
+};
 
 export async function writeCampSettings(
   patch: CampSettingsPatch,

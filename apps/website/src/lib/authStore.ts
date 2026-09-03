@@ -463,7 +463,11 @@ export async function signOut(): Promise<void> {
  * through the ordinary path.
  * ---------------------------------------------------------------------------
  */
-export async function deleteAccount(): Promise<void> {
+export async function deleteAccount(
+  /** Passed straight through; see `deleteOwnAccount` for why it is a parameter
+      rather than something either layer works out for itself. */
+  options: { confirmLockout?: boolean } = {},
+): Promise<void> {
   const mod = await import('./auth');
-  await mod.deleteOwnAccount();
+  await mod.deleteOwnAccount(options);
 }

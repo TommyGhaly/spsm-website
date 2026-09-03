@@ -282,15 +282,27 @@ const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), u
  *               /access, and the only one that reaches anything it was not
  *               explicitly given.
  *   staff@      the everyday development identity: every delegable area at
- *               once, plus the camp. Not a tier — it is nine ticked boxes, and
- *               the point of it is that it looks exactly like a person who was
- *               given nine boxes, because that is now all it is.
+ *               once, plus the camp's ministry. Not a tier — it is ten ticked
+ *               boxes, and the point of it is that it looks exactly like a
+ *               person who was given ten boxes, because that is now all it is.
+ *   camp@       the camp's back office and nothing else: the `camp` flag, no
+ *               `finance`, no program grant. The fixture for the split made on
+ *               2 Sep 2026 — it is the only way to see /admin/camp as a
+ *               registrar, which is the screen with the money taken out of it,
+ *               and to check that the camp's gallery and event pages stay
+ *               closed to somebody holding children's medical notes.
+ *   treasurer@  `finance` narrowed to the camp: the other half of that split.
+ *               Sees the camp's totals on /admin/finance and cannot open a
+ *               registration.
  *   servant@    signed in and allocated nothing. The most important fixture on
  *               this list: it is what almost every account in the parish will
  *               be, and the only thing it can reach is the servants' rota.
  *   father@     one area. Proves that a single flag opens its own screen and
  *               nothing beside it, which was untestable while `staff` existed.
- *   lead@       a whole program, and no screen at all.
+ *   lead@       a whole program, and no screen at all. Since the camp became a
+ *               screen flag this is also the fixture that proves the camp's
+ *               *ministry* — its page, its gatherings, its photographs — opens
+ *               none of its paperwork.
  *   volunteer@  one *event* inside a program. Must not inherit week 2 — see the
  *               rules tests.
  *
@@ -304,7 +316,7 @@ const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), u
 // here — they are the superadmin's, and the allocation screen does not offer
 // them. See packages/shared/src/screens.ts.
 const EVERY_AREA = [
-  'events', 'bulletin', 'bookstore', 'forms', 'finance',
+  'events', 'bulletin', 'bookstore', 'camp', 'forms', 'finance',
   'parking', 'servants', 'content', 'theme',
 ];
 
@@ -313,12 +325,24 @@ const accounts = [
   ['staff@spsmwayland.org', false, EVERY_AREA, { programs: ['summercamp'], events: [] }],
   ['servant@spsmwayland.org', false, [], null],
   ['father@spsmwayland.org', false, ['content'], null],
+  /*
+   * The two halves of the camp, one account each.
+   *
+   * `camp@` runs the camp and is not the treasurer: /admin/camp opens, the
+   * "Still owed" tile and the owed column are gone, and the editor offers one
+   * box for taking a payment instead of a ledger. `treasurer@` is the reverse —
+   * the camp's figures on /admin/finance and a permission error on any
+   * registration. Neither can be simulated by ticking boxes on `staff@`, which
+   * holds both.
+   */
+  ['camp@spsmwayland.org', false, ['camp'], null],
+  ['treasurer@spsmwayland.org', false, ['finance'], null, { bookstore: false, camp: true, forms: false }],
   // Holds a whole program: every camp, this year and every year.
   ['lead@spsmwayland.org', false, [], { programs: ['summercamp'], events: [] }],
   // Helps with one week. Must not inherit week 2 — see the rules tests.
   ['volunteer@spsmwayland.org', false, [], { programs: [], events: ['week-1-2027'] }],
 ];
-for (const [email, superadmin, screens, programAdmin] of accounts) {
+for (const [email, superadmin, screens, programAdmin, financeScopes] of accounts) {
   const uid = await user(email, superadmin, screens);
   await put(`members/${uid}`, {
     displayName: email.split('@')[0],
@@ -338,6 +362,17 @@ for (const [email, superadmin, screens, programAdmin] of accounts) {
      */
     screenAdmin: screenMap(screens),
     programAdmin: programAdmin ?? { programs: [], events: [] },
+    /*
+     * Which part of the church's money, and **only** written when a fixture
+     * says so.
+     *
+     * An absent map reads as all three — see `FINANCE_SOURCES` in
+     * packages/shared/src/screens.ts, and the grandfathering it exists for. So
+     * writing `{bookstore:false,camp:false,forms:false}` for every account
+     * would make the *unnarrowed* case, which is every real treasurer in the
+     * parish, the one shape this seed could not produce.
+     */
+    ...(financeScopes ? { financeScopes } : {}),
     ...audit(),
   });
 }
@@ -401,6 +436,30 @@ await put('config/camp', {
   // is a state worth being able to see, but not the default one to develop
   // against. Two consecutive Mondays in June 2027.
   weekStarts: ['2027-06-21', '2027-06-28'],
+  // What the sign-up form offers: a list per week — the second week's camp is
+  // not the first's — and a list per half of the camp, because elementary and
+  // middle school do not run the same stations. Keyed `w1_elementary` because
+  // Firestore has no array of arrays and a field path cannot hold a hyphen;
+  // see `CampConfig.weekRoles`.
+  //
+  // Week two's middle school is deliberately the odd one out — a trip instead
+  // of the pool — so a local sign-up form that showed one list for both halves
+  // would be visibly wrong rather than plausibly right. Leaving a list out is
+  // legal and shows the standard suggestions, which is a state worth being able
+  // to see but not the one to develop against.
+  //
+  // These are also the **stations** on the groups board: it draws one card per
+  // role in this list, minus the crew wish — see `campStationRoles`. That is
+  // why `w2_middle` is deliberately left saying `Group servant`, the spelling
+  // this vocabulary used before 2 Sep 2026: it is the fixture that proves
+  // `isCampCrewWish` still reads a stored answer, and without it nothing local
+  // exercises that path.
+  weekRoles: {
+    w1_elementary: ['Crew leader', 'Arts and crafts', 'Story time', 'Kitchen', 'Music'],
+    w1_middle: ['Crew leader', 'Sports', 'Bible study', 'Kitchen', 'Music'],
+    w2_elementary: ['Crew leader', 'Arts and crafts', 'Water play', 'Kitchen', 'Photography'],
+    w2_middle: ['Group servant', 'Sports', 'Trip chaperone', 'Kitchen', 'Photography'],
+  },
   waiverVersion: 'local-placeholder',
   waiverText:
     'PLACEHOLDER — not the parish waiver. Local emulator text so the consent ' +
@@ -449,7 +508,11 @@ await put('config/camp', {
   // Servants from 15 to 45, so the allocation board has real ages to show and
   // the teenage half of the roster is visible at a glance.
   const SERVANT_BIRTH_YEARS = [1982, 1990, 1996, 2001, 2005, 2008, 2010, 2011, 2012];
-  const ROLES = ['Sports','Crafts','Kitchen','Music','Group leader','Photography'];
+  // What a servant asked for. Half of these have to *match a station's name* or
+  // the satisfaction meter on the groups board reads zero everywhere — so these
+  // are the roles above, plus one crew wish and one ('Crafts') that matches
+  // nothing, which is the case the meter has to show as a miss.
+  const ROLES = ['Sports','Crafts','Kitchen','Music','Crew leader','Photography'];
   const WEEK_ONE = ['w1-mon','w1-tue','w1-wed','w1-thu','w1-fri'];
 
   let state = 7;
@@ -543,7 +606,6 @@ await put('config/camp', {
         allergies: rand() < 0.18 ? 'Peanuts & tree nuts' : '',
         medicalNotes: rand() < 0.1 ? 'Inhaler — morning and evening' : '',
         groupName: '',
-        photoConsent: rand() < 0.8,
         note: '',
       });
     }
@@ -600,7 +662,20 @@ await put('config/camp', {
         uid: null,
         dateOfBirth: `${SERVANT_BIRTH_YEARS[n % SERVANT_BIRTH_YEARS.length]}-0${1 + (n % 9)}-1${n % 10}`,
         sections: n % 3 === 0 ? ['elementary', 'middle-school'] : n % 2 ? ['elementary'] : ['middle-school'],
-        desiredRoles: [pick(ROLES)],
+        // Per week and per half of the camp, as the form now asks it — see
+        // `campWeekRoleKey`. Only the halves in `sections` above get a key,
+        // because a wish filed under a half somebody is not serving is exactly
+        // what the sectioned keys exist to stop. Everybody seeded here comes in
+        // week one only, so a `w2` key would be an answer about a week they are
+        // not coming to, which the form would flag.
+        desiredRolesByWeek: Object.fromEntries(
+          (n % 3 === 0
+            ? ['elementary', 'middle']
+            : n % 2
+              ? ['elementary']
+              : ['middle']
+          ).map((half) => [`w1_${half}`, [pick(ROLES)]]),
+        ),
         assignedRoles: [],
         shirtSize: pick(ADULT_SIZES),
         days: WEEK_ONE,
@@ -1305,11 +1380,16 @@ emulator's IdP widget. (Password  emulator-only  also works where a form asks.)
 
   admin@spsmwayland.org      superadmin — everything, and the only one who can
                                           allocate at /access
-  staff@spsmwayland.org      every area — plus the summer camp, by program grant
+  staff@spsmwayland.org      every area — including the camp, plus its ministry
   servant@spsmwayland.org    nothing    — the servants' rota, and that is all
   father@spsmwayland.org     content    — one area, to see that one flag opens
                                           one screen
-  lead@spsmwayland.org       all of Summercamp, via a program grant
+  camp@spsmwayland.org       the camp   — registrations, groups, register. No
+                                          money on screen, and no gallery
+  treasurer@spsmwayland.org  finance    — the camp's totals only. Cannot open a
+                                          registration
+  lead@spsmwayland.org       Summercamp as a ministry: its page, gatherings and
+                             photographs — and none of its paperwork
   volunteer@spsmwayland.org  Summercamp Week 1 only
 
 Now run:  NEXT_PUBLIC_USE_EMULATORS=1 npm run dev`);

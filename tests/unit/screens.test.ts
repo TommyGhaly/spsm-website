@@ -44,6 +44,60 @@ describe('defaultScreenAdmin', () => {
   });
 });
 
+/**
+ * The camp is a screen, and specifically not the camp's program grant.
+ *
+ * ---------------------------------------------------------------------------
+ * `camp` was `programAdmin.programs` containing the camp's id until
+ * 2 Sep 2026. A program grant is one tick over three things — the program page,
+ * its gatherings and every photograph sent in to them — so the person given the
+ * camp's registrations was necessarily the person publishing its event pages,
+ * and /access carried a caveat saying there was no way to give one without the
+ * other.
+ *
+ * There is nothing left in TypeScript that can be asserted about the *old*
+ * arrangement, which is the point: the flag is an ordinary member of
+ * `ADMIN_SCREENS` and behaves like one. What these tests hold is that it is
+ * present, that it is closed by default like everything else, and that it is
+ * not entangled with `finance` — the two grants divide the camp's money between
+ * them and a test that let one imply the other would be the way that quietly
+ * came undone. `tests/rules/camp.test.ts` and
+ * `tests/rules/program-galleries.test.ts` assert the halves this file cannot
+ * see.
+ * ---------------------------------------------------------------------------
+ */
+describe('the camp screen', () => {
+  it('is a screen flag, closed until granted', () => {
+    expect(ADMIN_SCREENS).toContain('camp');
+    expect(isAdminScreen('camp')).toBe(true);
+    expect(defaultScreenAdmin().camp).toBe(false);
+    expect(parseScreenAdmin({}).camp).toBe(false);
+  });
+
+  it('does not imply the money, and the money does not imply it', () => {
+    const office = parseScreenAdmin({ camp: true });
+    const treasurer = parseScreenAdmin({ finance: true });
+
+    expect(canAdminScreen(null, office, 'camp')).toBe(true);
+    expect(canAdminScreen(null, office, 'finance')).toBe(false);
+    expect(canSeeFinanceSource(null, office, allFinanceScopes(), 'camp')).toBe(false);
+
+    expect(canAdminScreen(null, treasurer, 'camp')).toBe(false);
+    expect(canSeeFinanceSource(null, treasurer, allFinanceScopes(), 'camp')).toBe(true);
+  });
+
+  it('is not implied by any other area of the site', () => {
+    const everythingElse = parseScreenAdmin(
+      Object.fromEntries(ADMIN_SCREENS.filter((s) => s !== 'camp').map((s) => [s, true])),
+    );
+    expect(canAdminScreen(null, everythingElse, 'camp')).toBe(false);
+  });
+
+  it('opens for a superadmin, like every other screen', () => {
+    expect(canAdminScreen({ superadmin: true }, defaultScreenAdmin(), 'camp')).toBe(true);
+  });
+});
+
 describe('parseScreenAdmin', () => {
   it('treats a missing document as no permissions', () => {
     for (const value of [undefined, null, {}, 'nonsense', 42, []]) {

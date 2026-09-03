@@ -124,8 +124,13 @@ const NAV: NavItem[] = [
 // robots.ts and sitemap.ts keep it out of search so the tag stays the only way
 // in.
 //
-// `/ministries` is absent for a plainer reason: it is read once, not weekly,
-// and it crowds out the links that are. It stays reachable from the footer.
+// `/ministries` is not a route at all any more. It was a `content` section with
+// a page of its own and a footer link, and both are gone: the standing work of
+// the church is `/events` — the ministries themselves, with their photographs
+// and their gatherings — and a second page of prose about them was a thinner
+// answer to the same question. The section survives in the schema so prose
+// already filed there is not orphaned; it has no URL. See NOT_A_PAGE in
+// `[section]/page.tsx`.
 //
 // The clergy are not a route at all any more — the roster is a section of
 // `/about/who-we-are`, and the footer link is `/about/who-we-are#clergy`.
@@ -184,26 +189,36 @@ const FOOTER_MORE = [
   { href: '/giving', label: 'Giving', external: false },
   { href: '/forms', label: 'Forms', external: false },
   { href: '/apps', label: 'Our apps', external: false },
+  /*
+   * Last, and in the footer rather than the header, which is where a privacy
+   * notice belongs: nobody browses to it, they go looking for it, and the foot
+   * of the page is the first place anybody looks. It is written from the code —
+   * see the note at the top of `app/privacy/page.tsx` — so a change to what the
+   * site collects is a change to that page.
+   */
+  { href: '/privacy', label: 'Privacy', external: false },
 ] as const;
 
 /**
- * Two links that appear only once there is something behind them.
+ * A link that appears only once there is something behind it.
  *
- * `/beliefs` and `/ministries` are `content` sections, and both are empty: each
- * renders "Nothing here yet", which is honest of the page and useless as a
- * destination. They sat in the footer anyway, which made two of its five links a
- * dead end.
+ * `/beliefs` is a `content` section and it is empty: it renders "Nothing here
+ * yet", which is honest of the page and useless as a destination. It sat in the
+ * footer anyway, which made one of its five links a dead end.
  *
- * Deleting them outright would have stranded two real routes with no way back —
+ * Deleting it outright would have stranded a real route with no way back —
  * nobody would remember to restore the link the day staff publish something. So
- * the link is conditional on the read instead: publish a page in either section
- * and it appears at the next build, with no code change. The same shape the
- * social icons and `ParishMap` already use — render nothing rather than render a
- * promise the data cannot keep.
+ * the link is conditional on the read instead: publish a page in the section and
+ * it appears at the next build, with no code change. The same shape the social
+ * icons and `ParishMap` already use — render nothing rather than render a promise
+ * the data cannot keep.
+ *
+ * `/ministries` was the other entry and is gone along with its page — see the
+ * note above NAV. Still a list rather than a bare link, because the condition is
+ * the point and a second section may earn a page again.
  */
 const FOOTER_SECTIONS = [
   { section: 'beliefs', href: '/beliefs', label: 'Our faith' },
-  { section: 'ministries', href: '/ministries', label: 'Ministries' },
 ] as const;
 
 /**
@@ -233,13 +248,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
    * Which `content` sections actually have a published page in them.
    *
    * One query for every section rather than one per section, and it is the same
-   * query `/beliefs` and `/ministries` each run for themselves — so the footer
-   * cannot offer a link to a page that will greet the visitor with "Nothing here
-   * yet". See FOOTER_SECTIONS.
+   * query `/beliefs` runs for itself — so the footer cannot offer a link to a
+   * page that will greet the visitor with "Nothing here yet". See
+   * FOOTER_SECTIONS.
    *
-   * A failed read yields `[]` through `safely()`, which hides both links. That
-   * is the right way round: a missing link is a smaller fault than a link into
-   * an empty room.
+   * A failed read yields `[]` through `safely()`, which hides the link. That is
+   * the right way round: a missing link is a smaller fault than a link into an
+   * empty room.
    */
   const filled = new Set((await getContentPages()).map((page) => page.section));
   const sections = FOOTER_SECTIONS.filter((item) => filled.has(item.section));

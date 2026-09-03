@@ -63,12 +63,39 @@ export function EditorBar({
   missing,
   busy,
   onDelete,
+  /* Destructured, and it has to be: left out, `history` in the body below
+     resolves to `window.history` and typechecks against the DOM's `History`. */
+  history,
   onDone,
 }: {
   autosave: AutosaveState;
   missing: string[];
   busy: boolean;
-  onDelete: () => void;
+  /**
+   * Optional, and absent means the ellipsis is not drawn at all.
+   *
+   * The About-pages editor reuses this bar and has nothing to delete — an About
+   * page cannot be removed, only its overrides reverted, and reverting belongs
+   * on the thing being reverted rather than in a menu at the foot of the
+   * window. A menu whose one item does nothing is worse than no menu, so the
+   * whole `Popover` goes with it.
+   */
+  onDelete?: (() => void) | undefined;
+  /**
+   * Undo and redo, when the caller keeps a history. Absent means no buttons.
+   *
+   * The About-pages editor does; the events editor does not, and its fields are
+   * not controlled the same way, so leaving its native undo alone is right
+   * there. See `features/about/history.ts` for why an in-place editor of
+   * controlled fields has to own ⌘Z rather than borrow it.
+   *
+   * At the *near* end of the actions group, before the ellipsis and Done: undo
+   * is pressed far more often than either, and it must not be the thing next to
+   * Done that somebody hits on the way out.
+   */
+  history?:
+    | { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean }
+    | undefined;
   onDone: () => void;
 }) {
   const status = statusOf(autosave);
@@ -84,11 +111,45 @@ export function EditorBar({
       </p>
 
       <div className="ee-bar__actions">
+        {history && (
+          <>
+            {/*
+              Disabled rather than hidden at the ends of the stack. A control
+              that vanishes when there is nothing to undo makes the row change
+              width as you work, and the first press slides Done under the
+              cursor.
+            */}
+            <button
+              type="button"
+              className="ee-bar__step"
+              onClick={history.undo}
+              disabled={!history.canUndo || busy}
+              /* The shortcut in the tooltip, because that is how this gets used
+                 once somebody knows it is there. */
+              title="Undo (⌘Z)"
+              aria-label="Undo the last change"
+            >
+              <Icon name="undo" size={16} />
+            </button>
+            <button
+              type="button"
+              className="ee-bar__step"
+              onClick={history.redo}
+              disabled={!history.canRedo || busy}
+              title="Redo (⌘⇧Z)"
+              aria-label="Redo the change that was undone"
+            >
+              <Icon name="redo" size={16} />
+            </button>
+          </>
+        )}
+
         {/*
           One item behind the ellipsis, and it stays an ellipsis rather than
           becoming a Delete button in the bar. A bin beside Done, both the same
           size, is a bin somebody presses by accident on the way out.
         */}
+        {onDelete && (
         <Popover
           className="ee-bar__more"
           label="More actions for this event"
@@ -121,6 +182,7 @@ export function EditorBar({
         >
           <span aria-hidden="true">···</span>
         </Popover>
+        )}
 
         <button
           type="button"

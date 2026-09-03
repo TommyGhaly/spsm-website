@@ -270,6 +270,54 @@ export function flattenGalleryTree<N extends GalleryTreeNode>(
 }
 
 /**
+ * One place a submitted photograph may be filed: a level, or the ministry
+ * itself.
+ *
+ * Not a `GalleryTreeRow`, and the difference is the point — the first row here
+ * is **not a node**. `GalleryMedia.programEventId` holding a *program* id is a
+ * documented state and always has been: it is what dropping a picture on the top
+ * row of `PictureManager` writes, it is what `healOrphans` rewrites a stranded
+ * picture to, and `getGalleryLevel` reads the whole program on the ministry page
+ * precisely so those appear. The upload form was the one surface that could not
+ * produce it, so a ministry with no levels yet offered nowhere to send anything
+ * and rendered no form at all.
+ *
+ * Tommy: *"all levels should be able to upload pictures even top levels."*
+ *
+ * Shared, beside `flattenGalleryTree`, for the reason given there: the mobile
+ * app builds the same picker over the same tree, and two answers to "what may a
+ * photograph be filed under" would eventually disagree — one of them in the
+ * direction of a form whose every submission `firestore.rules` refuses.
+ *
+ * The ministry sits first and at depth 0 with every level indented one further,
+ * so a native `<select>` reads as the tree it came from with the ministry as its
+ * root rather than as an odd extra row at the top.
+ */
+export interface SubmissionTarget {
+  /** Goes into `GalleryMedia.programEventId`. A level's id, or the program's. */
+  id: string;
+  title: string;
+  depth: number;
+  /** True for the one row that is the ministry rather than a level. */
+  isProgram: boolean;
+}
+
+export function submissionTargets<N extends GalleryTreeNode>(
+  program: { id: string; name: string },
+  tree: GalleryTree<N>,
+): SubmissionTarget[] {
+  return [
+    { id: program.id, title: program.name, depth: 0, isProgram: true },
+    ...flattenGalleryTree(tree).map(({ node, depth }) => ({
+      id: node.id,
+      title: node.title,
+      depth: depth + 1,
+      isProgram: false,
+    })),
+  ];
+}
+
+/**
  * The level a submitted photograph is filed under unless its sender says
  * otherwise.
  *
@@ -294,8 +342,12 @@ export function flattenGalleryTree<N extends GalleryTreeNode>(
  * photographs somewhere nobody chose. Nothing on screen would say so.
  *
  * `null` only for a ministry with no levels at all — a program created five
- * minutes ago. There is nowhere for a photograph to go, and `firestore.rules`
- * would refuse one, so the form renders nothing.
+ * minutes ago. That no longer means the form has nowhere to send anything: the
+ * ministry itself is a destination, so every caller reads a null here as "file
+ * it on the ministry" (`?? program.id`) and the form still renders. See
+ * `submissionTargets` above. The fourth fallback is deliberately *not* written
+ * into this function, because this one answers "which **level**" — and a program
+ * id is not a level, which is exactly the distinction the return type carries.
  */
 export function defaultSubmissionNode<N extends GalleryTreeNode>(
   tree: GalleryTree<N>,

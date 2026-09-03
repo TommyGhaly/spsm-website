@@ -42,26 +42,41 @@
  * loud — the reverse mistake, moving the others here, would be silent and
  * pointless. The bucket is US-EAST1 too, so the bytes never leave the region.
  */
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { CAPS } from './rateLimit.js';
 import { getStorage } from 'firebase-admin/storage';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { COLLECTIONS, type GalleryMedia } from '@spsm/shared';
+import {
+  COLLECTIONS,
+  PHOTO_MAX_EDGE,
+  PHOTO_QUALITY,
+  type GalleryMedia,
+} from '@spsm/shared';
 
 /** See the note at the top — this must match the Firestore database's region. */
 const REGION = 'us-east1';
 
 /**
- * Transcoding a 12MB HEIC needs real memory and is not instant. 1GiB and five
- * minutes are generous on purpose: the alternative to an over-provisioned
- * function here is a submission that silently never appears, and this runs
- * once per photograph ever uploaded rather than once per page view.
+ * 512MiB and five minutes, still generous: the alternative to an
+ * over-provisioned function here is a submission that silently never appears,
+ * and this runs once per photograph ever uploaded rather than once per page view.
+ *
+ * It was 1GiB, sized for a 12MB HEIC straight off a phone. The browser now
+ * downscales before uploading, so what arrives is a WebP of a few hundred
+ * kilobytes and the old figure was paying for a case that no longer happens.
+ *
+ * The pass itself stays, and deliberately. A canvas re-encode in the browser
+ * does drop EXIF — including the GPS tag on a photograph of somebody's child —
+ * but we cannot *know* it ran, because anyone can call the upload endpoint
+ * without running our JavaScript. `.rotate()` below is called the load-bearing
+ * line in this pipeline for that reason, and it stays load-bearing.
  */
 const RUNTIME = {
   region: REGION,
-  memory: '1GiB' as const,
+  memory: '512MiB' as const,
   timeoutSeconds: 300,
   /*
    * The cap with the largest bill behind it: one 1GiB instance per photograph,
@@ -80,12 +95,18 @@ const RUNTIME = {
 /**
  * The long edge of a web rendition, in pixels.
  *
- * 2000 rather than something larger: the biggest a gallery photograph is ever
- * displayed is full-bleed on a retina desktop, and beyond this the file grows
- * faster than anybody can see. It is also the ceiling on what the parish pays
- * to serve — forty photographs at 8MB each is a real number on a church budget.
+ * Imported rather than written here, and that is the point: the browser now
+ * downscales to the same number before uploading, so this file and
+ * `submissionLimits.ts` disagreeing would mean the server quietly shrinking
+ * every submitted photograph a second time and charging a second lossy pass
+ * for it. One number, one place.
+ *
+ * It was 2000 and is 2560. 2000 was chosen against a bill that no longer looks
+ * the same: a submitted photograph now arrives already downscaled at a few
+ * hundred kilobytes rather than as a 12MB original, so the extra detail costs
+ * far less than it used to, and it is visible full-bleed on a retina desktop.
  */
-const MAX_EDGE = 2000;
+const MAX_EDGE = PHOTO_MAX_EDGE;
 
 /**
  * A photograph the parish will serve for years, weighed against a bill.
@@ -95,7 +116,7 @@ const MAX_EDGE = 2000;
  * 2020. There is deliberately no JPEG fallback: maintaining two renditions
  * doubles the storage to serve a browser share that rounds to zero.
  */
-const WEBP_QUALITY = 82;
+const WEBP_QUALITY = PHOTO_QUALITY;
 
 /**
  * Make a Firebase download token so the approval queue can display this object.
@@ -145,22 +166,65 @@ function renditionPathFor(programEventId: string, mediaId: string, extension: st
  * That is a real limitation, not an oversight; it is written down here so the
  * next person does not go looking for the video path.
  */
-export const onGalleryMediaCreated = onDocumentCreated(
-  { ...RUNTIME, document: `${COLLECTIONS.galleryMedia}/{mediaId}` },
+export const onGalleryMediaCreated = onObjectFinalized(
+  RUNTIME,
   async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) return;
+    const objectName = event.data.name;
+
+    /*
+     * This is a Storage trigger and not, as it once was, a Firestore one.
+     *
+     * It fired on the creation of the `galleryMedia` document, which worked for
+     * exactly as long as the browser wrote the file first and the document
+     * second. Uploads now go through `galleryUploadUrl`, which writes the
+     * document when it issues the signed URL — *before* any bytes exist — so
+     * the old trigger would have raced the upload and lost it every single
+     * time, downloading a path with nothing behind it and swallowing the error.
+     *
+     * Keying on the object's arrival instead makes the ordering unracebale:
+     * there is a file by definition when this runs. The media id is recoverable
+     * because the endpoint names the object after it.
+     */
+    if (!objectName?.startsWith('submissions/')) return;
+
+    const fileName = objectName.slice(objectName.lastIndexOf('/') + 1);
+
+    // Our own output, landing under the same prefix so that one lifecycle rule
+    // covers both. Without this the preview would re-trigger this function.
+    if (fileName.startsWith('preview-')) return;
+
+    const mediaId = fileName.slice(0, fileName.lastIndexOf('.')) || fileName;
+    const reference = getFirestore().collection(COLLECTIONS.galleryMedia).doc(mediaId);
+    const snapshot = await reference.get();
+
+    /*
+     * No document means the object was not put there by the endpoint. That is
+     * not reachable while `storage.rules` refuses every client write to this
+     * prefix, but it costs one read to be certain, and the alternative is
+     * transcoding whatever anybody manages to place in the bucket.
+     */
+    if (!snapshot.exists) return;
 
     const media = snapshot.data() as GalleryMedia;
-    const mediaId = event.params['mediaId'] as string;
 
     // Only ever the anonymous submission path. A document created by an
     // administrator, or one restored from a backup with its rendition already
     // set, has nothing to do here.
     if (media.status !== 'pending' || media.previewPath) return;
-    if (media.kind !== 'photo') return;
 
     const bucket = getStorage().bucket();
+
+    /*
+     * The bytes are here, whatever else happens below. Recorded before the
+     * transcode rather than after it so that a photograph sharp cannot decode
+     * is still not an orphan — it has a real file behind it and belongs in the
+     * queue for somebody to look at and reject, which is precisely what the
+     * hourly sweep must not delete out from under them.
+     */
+    await reference.update({ sourceUploaded: true, updatedAt: FieldValue.serverTimestamp() });
+
+    // A clip is published as it arrived. See the note above.
+    if (media.kind !== 'photo') return;
 
     try {
       const [original] = await bucket.file(media.sourcePath).download();
@@ -205,7 +269,7 @@ export const onGalleryMediaCreated = onDocumentCreated(
        * output's size, post-rotation and post-resize — which is what the grid
        * actually renders, and therefore the only correct answer.
        */
-      await snapshot.ref.update({
+      await reference.update({
         previewPath,
         width: info.width,
         height: info.height,

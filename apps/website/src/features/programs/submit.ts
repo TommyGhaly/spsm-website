@@ -1,57 +1,51 @@
 /**
  * Sending a photograph to a program gallery, with no account.
  *
- * This is the only write path on the site a stranger can reach that stores a
- * file, so the shape of what it writes is not a detail — it is the thing
- * `firestore.rules` checks field by field before allowing the document. Every
- * literal below (`'pending'`, the three false placements, the empty caption)
- * is there because the rule requires exactly that value. Changing one here
- * without changing it there produces `permission-denied` on a form that looks
- * correct, which is a bad afternoon; the rule is the authority and this file
- * follows it.
+ * ---------------------------------------------------------------------------
+ * This file used to write to Cloud Storage and Firestore directly. It no longer
+ * writes to either, and cannot: `storage.rules` refuses every client write to
+ * `submissions/` and `firestore.rules` refuses every client create of
+ * `galleryMedia`. Both doors are shut, and `POST /api/gallery/upload-url` is
+ * what they are shut in favour of.
  *
- * ## Order of operations
+ * The reason is the ordering this file used to explain at length. The bytes
+ * went first and the document second — the right way round, because a document
+ * with no file behind it is worse than a file with no document — but it meant
+ * that every check the project had lived in the *second* step. A script that
+ * uploaded and simply never wrote the document skipped all of them, and left
+ * objects in a billed bucket that never appeared in the review queue, so nobody
+ * would have noticed. No rule fixes that, because the two writes are to two
+ * different services and only one of them was ever guarded.
  *
- * The file goes to Cloud Storage **first**, then the Firestore document. Not
- * the other way round, and not in parallel:
+ * What happens now, per file:
  *
- *  - document first would fire `onGalleryMediaCreated` against a `sourcePath`
- *    with nothing behind it, and the transcode would fail on every submission
- *    in a race it loses most of the time
- *  - file first can leave an orphaned object if the document write then fails.
- *    That costs nothing and is swept by the 120-day lifecycle rule in
- *    docs/gallery-console-setup.md §2. An unbacked document is the worse of the
- *    two failures, so this takes the cheaper one.
+ *   1. the photograph is condensed here in the browser (`downscalePhoto`)
+ *   2. the endpoint is asked for a signed URL, and decides whether it may
+ *   3. the bytes are `PUT` to that URL, straight to the bucket
+ *
+ * The endpoint writes the document in step 2. Nothing in this file does.
+ *
+ * ## What is left here, and why it is still worth doing
+ *
+ * Condensing, and the size check that goes with it, are a courtesy and a cost
+ * saving rather than enforcement — an attacker skips this file entirely. They
+ * stay because they make a batch of forty photographs upload in a minute
+ * instead of twenty, and because somebody who picks a 400MB video should be
+ * told before they wait for it rather than after.
+ * ---------------------------------------------------------------------------
  */
-import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
+import { uploadHeaders } from '@/lib/uploadSession';
+import { downscalePhoto } from '@/lib/downscale';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   COLLECTIONS,
-  DEFAULT_FOCAL,
+  worthMentioning,
+  VIDEO_MAX_BYTES,
+  formatBytes,
   type MediaKind,
   type Program,
 } from '@spsm/shared';
-import { db, storage } from '@/lib/firebase';
-
-/**
- * The ceiling `storage.rules` puts on `submissions/`, repeated for the message.
- *
- * The one bound that still exists on this site, along with the twin on
- * `formUploads/`, and for the same reason: both are paths an *unauthenticated*
- * caller can write to. The staff image paths lost their 8MB ceiling on
- * 2026-09-01 because refusing a trusted volunteer's phone photograph protected
- * nothing; a stranger writing to a billed bucket is a different question.
- *
- * 250MB rather than something tighter because this is a photograph straight off
- * a phone rather than one an administrator chose and exported. A modern phone
- * photograph is routinely 12MB and a short 4K clip is very much larger.
- *
- * Checked here as well as there so somebody who picks a 400MB video is told
- * before they wait for the upload, rather than after it with
- * `storage/unauthorized` — which reads as "you are not allowed" and not as
- * "that one is too big".
- */
-export const SUBMISSION_MAX_BYTES = 250 * 1024 * 1024;
+import { db } from '@/lib/firebase';
 
 /** What one file is doing, for the list the submitter watches. */
 export type SubmissionState =
@@ -61,141 +55,200 @@ export type SubmissionState =
   | { kind: 'failed'; message: string };
 
 /**
+ * The endpoint, through the Hosting rewrite. Same origin, so no CORS.
+ *
+ * In local development this is a Next proxy rather than a Hosting rewrite, the
+ * same arrangement `/api/square/checkout` needs; see docs/local-dev.md.
+ */
+const UPLOAD_URL_ENDPOINT = '/api/gallery/upload-url';
+
+/**
  * A photograph and a clip are different documents downstream, and the browser
  * already knows which is which.
- *
- * Anything that is neither is refused before it is uploaded. `storage.rules`
- * refuses it too — this is not the enforcement — but a rejection that names the
- * problem is worth the four lines.
  */
-function kindOf(file: File): MediaKind | null {
+export function kindOf(file: File): MediaKind | null {
   if (file.type.startsWith('image/')) return 'photo';
   if (file.type.startsWith('video/')) return 'video';
   return null;
 }
 
 /**
- * A name no other submission will take.
+ * What the submitter is told about one file before anything is sent.
  *
- * `storage.rules` allows `create` only when `resource == null` — a submitter
- * may not overwrite a file, so that an upload cannot be swapped after an
- * administrator has reviewed it. The consequence is that a colliding name is a
- * hard failure, and two people sending `IMG_0042.HEIC` from the same camp is
- * not a coincidence to guard against but the ordinary case.
- *
- * `randomUUID` rather than a timestamp for that reason: two phones uploading in
- * the same millisecond is rare, and "rare" is the wrong standard when the
- * failure is a parishioner being told their photograph was rejected.
- *
- * The original filename is deliberately **not** carried across. It is
- * uncontrolled input on a path, it is frequently somebody's name, and nothing
- * downstream reads it — the extension is all that is needed, and only so the
- * object is recognisable in the console.
+ * `null` means there is nothing to say. This is deliberately not a validation
+ * result: a photograph never fails, whatever its size, so the only refusal this
+ * can carry is a video that is too large to be sent at all.
  */
-function submissionPath(programEventId: string, file: File): string {
-  const dot = file.name.lastIndexOf('.');
-  const raw = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : '';
-  const extension = raw.replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
-  return `submissions/${programEventId}/${crypto.randomUUID()}.${extension}`;
+export interface Prepared {
+  file: File;
+  kind: MediaKind;
+  /** Set when the file cannot be sent. Only ever a video. */
+  refusal: string | null;
+  /** Set when it will be sent, but smaller than it arrived. */
+  note: string | null;
+  /** The bytes to send, once condensing has run. */
+  payload: Blob;
+  contentType: string;
 }
 
 /**
- * Send one file.
+ * Condense a photograph and work out what to say about it.
  *
- * `programId` is passed in rather than looked up per file: the rule compares it
- * against the occurrence's own `programId`, so a wrong value is a refusal, and
- * reading it once for a batch of forty photographs rather than forty times is
- * the difference between one document read and forty.
- *
- * `event` is now **the level the submitter chose**, which need not be the level
- * whose page they are standing on. Nothing here changes for that — the rule
- * already accepted any level in the program, because it checks the `programId`
- * against the target's own rather than against the page — but it is worth saying
- * out loud, because the level in a submission is now a stranger's opinion about
- * where a photograph belongs rather than a fact about where the form was. The
- * queue is what turns it into a fact.
+ * Runs when the file is *chosen*, not when it is sent, and that is the point:
+ * the note has to be on screen before the upload starts, so that nobody is
+ * surprised afterwards by what left their laptop.
  */
-export async function submitOne(
-  file: File,
-  event: { id: string; programId: string },
-): Promise<void> {
+export async function prepare(file: File, isProgramAdmin: boolean): Promise<Prepared> {
   const kind = kindOf(file);
   if (!kind) {
-    throw new Error('That file is not a photograph or a video.');
+    return {
+      file,
+      kind: 'photo',
+      refusal: 'That file is not a photograph or a video.',
+      note: null,
+      payload: file,
+      contentType: file.type,
+    };
   }
-  if (file.size > SUBMISSION_MAX_BYTES) {
-    throw new Error(
-      `That file is ${(file.size / 1024 / 1024).toFixed(0)}MB. The limit is 250MB.`,
-    );
+
+  /*
+   * A video, which cannot be made smaller here. There is no dependable
+   * client-side transcode — `MediaRecorder` and WebCodecs vary too much across
+   * Safari and phones to promise one — and the Function does not do video
+   * either. So this is the single remaining place the site tells somebody their
+   * file is too big, and the message says what the limit actually is.
+   */
+  if (kind === 'video') {
+    const tooBig = !isProgramAdmin && file.size > VIDEO_MAX_BYTES;
+    return {
+      file,
+      kind,
+      refusal: tooBig
+        ? `That clip is ${formatBytes(file.size)}. Videos have to be under ${formatBytes(VIDEO_MAX_BYTES)} — a photograph can be any size, but a video cannot be made smaller in a web browser.`
+        : null,
+      note: null,
+      payload: file,
+      contentType: file.type,
+    };
   }
 
-  const sourcePath = submissionPath(event.id, file);
-  await uploadBytes(ref(storage(), sourcePath), file, { contentType: file.type });
+  /*
+   * An administrator's own photograph goes up untouched. They are choosing and
+   * exporting a file deliberately rather than emptying a camera roll, and the
+   * gallery is theirs — if they want the full-resolution original in it, that
+   * is a decision they are entitled to make.
+   */
+  if (isProgramAdmin) {
+    return { file, kind, refusal: null, note: null, payload: file, contentType: file.type };
+  }
 
-  await addDoc(collection(db(), COLLECTIONS.galleryMedia), {
-    programId: event.programId,
-    programEventId: event.id,
-    // Legacy, and null forever: the third level is a `programEvents` document of
-    // its own now, so "which subgroup" is answered by `programEventId` above.
-    groupId: null,
+  const result = await downscalePhoto(file);
 
+  /*
+   * Told only when it is worth telling.
+   *
+   * Every photograph goes through the re-encode, so a note on all of them would
+   * be wallpaper nobody reads. The threshold is what separates "this was
+   * resized, as everything is" from "this is a phone photograph and it is now a
+   * twentieth of the size", which is the case somebody might actually want to
+   * know about.
+   */
+  const worthSaying = result.changed && worthMentioning(file.size, result.blob.size);
+
+  return {
+    file,
     kind,
-    // The only status a public create may carry. See firestore.rules.
-    status: 'pending',
+    refusal: null,
+    note: worthSaying
+      ? `${formatBytes(file.size)} → ${formatBytes(result.blob.size)}, condensed`
+      : null,
+    payload: result.blob,
+    contentType: result.contentType,
+  };
+}
 
-    sourcePath,
-    // All three written by the transcode Function, never by a client.
-    renditionPath: null,
-    previewPath: null,
-    posterPath: null,
+/** The refusal the endpoint sends when App Check will not attest the browser. */
+export const UNATTESTED =
+  'These photographs could not be sent from this browser — a privacy extension or a very ' +
+  'old browser will do it. Please try another browser, or email them to the church office.';
 
-    // Measured from the transcode output rather than guessed here: a browser
-    // can read an image's dimensions, but not after EXIF rotation, and a
-    // sideways aspect ratio would give the layout packer the wrong shape.
-    width: null,
-    height: null,
-    durationSeconds: null,
+/**
+ * Send one prepared file.
+ *
+ * `event` is the level the submitter chose, which need not be the level whose
+ * page they are standing on. The endpoint checks that the level really belongs
+ * to the ministry; a stranger's opinion about where a photograph goes is
+ * checked rather than trusted, and the queue is what turns it into a fact.
+ */
+export async function submitOne(
+  prepared: Prepared,
+  event: { id: string; programId: string },
+): Promise<void> {
+  if (prepared.refusal) throw new Error(prepared.refusal);
 
-    // Both required to be exactly this by the rule. A submitter writes no
-    // caption and chooses no placement — approving is what puts a photograph
-    // anywhere, and letting the form set either would be publishing past the
-    // queue.
-    caption: '',
-    focal: DEFAULT_FOCAL,
-    placement: { onPage: false, slideshow: false, homepage: false },
-    layout: null,
-    order: 0,
-
-    submittedAt: serverTimestamp(),
-    reviewedAt: null,
-    reviewedBy: null,
-
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    // Null rather than absent: this is the anonymous write path, and
-    // `AuditFields` says null means exactly that.
-    updatedBy: null,
+  const response = await fetch(UPLOAD_URL_ENDPOINT, {
+    method: 'POST',
+    headers: await uploadHeaders(),
+    body: JSON.stringify({
+      programId: event.programId,
+      programEventId: event.id,
+      contentType: prepared.contentType,
+      byteSize: prepared.payload.size,
+    }),
   });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    /*
+     * The one refusal with no self-service remedy, so it gets the one message
+     * that names a way out. App Check enforcement cannot be selective: a
+     * visitor with a hard privacy blocker or a very old browser fails it
+     * through no fault of their own, and leaving them at "upload failed" would
+     * be the cruellest error on the site.
+     */
+    if (body.error === 'unattested') throw new Error(UNATTESTED);
+    throw new Error(body.error ?? 'That photograph could not be sent. Please try again.');
+  }
+
+  const { uploadUrl } = (await response.json()) as { uploadUrl: string };
+
+  /*
+   * Straight to the bucket. The signed URL is pinned to this object name, this
+   * content type and this exact length, so the headers are not decoration —
+   * a mismatch is refused by Cloud Storage rather than quietly accepted.
+   */
+  const upload = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': prepared.contentType,
+      'x-goog-content-length-range': `${prepared.payload.size},${prepared.payload.size}`,
+    },
+    body: prepared.payload,
+  });
+
+  if (!upload.ok) {
+    /*
+     * The document already exists at this point, with `sourceUploaded: false`.
+     * Nothing is done about it here on purpose: the hourly sweep in
+     * `functions/src/galleries/orphans.ts` removes it, which is more reliable
+     * than a cleanup call from a browser that may be the thing that just died.
+     */
+    throw new Error('That photograph could not be sent. Please try again.');
+  }
 }
 
 /**
- * Whether this ministry is still collecting, read fresh at submit time.
+ * Whether this ministry is still collecting, read fresh before a batch.
  *
- * The page's copy of the program may be minutes old, and `submissionsOpen` is
- * the flag a program lead turns off when the parish has finished collecting. The
- * rule checks it against the live document, so a stale `true` here means the
- * upload succeeds and the document write then fails — the file is stored, the
- * submission is lost, and the message says "permission denied". Re-reading first
- * turns that into a sentence, at the cost of one document read per batch.
+ * A courtesy now rather than a necessity: the endpoint reads the same flag and
+ * is the thing that decides, so a stale `true` here costs one refused upload
+ * with a clear message rather than, as it once did, a stored file and a lost
+ * submission. It stays because refusing forty photographs one at a time after
+ * the fact is a worse afternoon than not offering the form.
  *
- * The **program**, not the level. It was the level, and it moved up with the
- * flag; see `Program.submissionsOpen` for why. The practical effect here is that
- * one read covers a batch however many levels the submitter files it across.
- *
- * Absent means open, matching `firestore.rules` exactly. A default that
- * disagreed with the rule would be the worse of the two failures in either
- * direction: `false` here hides a form the rules would have accepted, and
- * `false` there refuses a form this one offered.
+ * The **program**, not the level, and absent means open — matching the endpoint
+ * exactly. A default that disagreed would hide a form the endpoint would have
+ * accepted, or offer one it will refuse.
  */
 export async function programAcceptsSubmissions(programId: string): Promise<boolean> {
   const snapshot = await getDoc(doc(db(), COLLECTIONS.programs, programId));

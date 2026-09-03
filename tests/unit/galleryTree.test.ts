@@ -12,6 +12,7 @@ import {
   flattenGalleryTree,
   nodeSummary,
   resolveTrail,
+  submissionTargets,
   subtreeIds,
   subtreeSlideshow,
   summariseChildren,
@@ -269,6 +270,67 @@ describe('flattenGalleryTree', () => {
     expect(rows.map(({ node: one }) => one.id)).toContain('free');
     // Every node once, whatever the cycle did to the shape.
     expect(new Set(rows.map(({ node: one }) => one.id)).size).toBe(rows.length);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe('submissionTargets', () => {
+  const tree = buildGalleryTree(TREE);
+  const program = { id: 'summercamp', name: 'Summer camp' };
+
+  /*
+   * The list behind the "where does this belong" picker, on the upload form and
+   * in the approval queue.
+   *
+   * Worth a test rather than an eyeball for the reason the rest of this file
+   * gives: the failure is silent. A missing ministry row is a `<select>`
+   * rendered holding a value it does not contain, which snaps to whatever is
+   * first — so opening the queue would quietly re-file every ministry-level
+   * submission under the newest week and look like it had done nothing.
+   */
+  it('puts the ministry first, at the depth a level is indented from', () => {
+    const rows = submissionTargets(program, tree);
+    expect(rows[0]).toEqual({
+      id: 'summercamp',
+      title: 'Summer camp',
+      depth: 0,
+      isProgram: true,
+    });
+    const depths = new Map(rows.map(({ id, depth }) => [id, depth]));
+    // Every level one step deeper than `flattenGalleryTree` reports, because the
+    // ministry now occupies depth 0.
+    expect(depths.get('2027')).toBe(1);
+    expect(depths.get('week-1')).toBe(2);
+    expect(depths.get('the-hike')).toBe(4);
+  });
+
+  it('keeps the tree\'s reading order', () => {
+    expect(submissionTargets(program, tree).map(({ id }) => id)).toEqual([
+      'summercamp',
+      '2027',
+      'week-1',
+      'day-1',
+      'day-2',
+      'the-hike',
+      'week-2',
+      'chapel',
+    ]);
+  });
+
+  /*
+   * The case the whole helper exists for. Every published gallery in the parish
+   * was in this state, so the form's old "no levels, no form" guard hid the
+   * upload button on the entire site.
+   */
+  it('offers the ministry alone when it has no levels yet', () => {
+    const rows = submissionTargets(program, buildGalleryTree([]));
+    expect(rows.map(({ id }) => id)).toEqual(['summercamp']);
+    expect(rows.every(({ isProgram }) => isProgram)).toBe(true);
+  });
+
+  it('marks exactly one row as the ministry', () => {
+    expect(submissionTargets(program, tree).filter(({ isProgram }) => isProgram)).toHaveLength(1);
   });
 });
 

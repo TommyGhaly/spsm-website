@@ -201,6 +201,37 @@ service cloud.firestore {
       allow write: if hasScreen('content');
     }
 
+    // Staff's edits to the five About pages.
+    //
+    // Read by the world, and that is not a widening of anything — it is the
+    // copy on a public page. Three readers: `next build` reading it
+    // unauthenticated to bake the pages, every visitor's browser re-reading it
+    // over REST a moment after load to pick up an edit made since that build,
+    // and the editor itself.
+    //
+    // No `published` field, and none is wanted. `getAboutOverride` fetches this
+    // document **by id** and nothing ever lists the collection, so there is no
+    // query whose potential result set has to be proved — the trap in
+    // docs/decisions.md #10 cannot apply here. If something ever does list it,
+    // that reader needs a filter and this comment needs deleting.
+    //
+    // The `slug in [...]` clause is where "there is no sixth part of About"
+    // actually lives. A new part needs a route file for the static export to
+    // enumerate (see features/content/about.ts), so a document alone would only
+    // produce copy nothing renders; refusing it here means the editor cannot
+    // create one by accident. Add the slug in both places or in neither.
+    //
+    // Delete is closed outright. Clearing every field already restores the
+    // hand-written page — that is what `copyOf` and `pictureOf` are for — so a
+    // delete buys nothing and costs the audit trail.
+    match /aboutOverrides/{slug} {
+      allow read: if true;
+      allow create, update: if hasScreen('content')
+        && request.resource.data.slug == slug
+        && slug in ['who-we-are', 'our-belief', 'patron-saints', 'welcome-newcomers', 'future-plans'];
+      allow delete: if false;
+    }
+
     match /announcements/{announcementId} {
       // The `bulletin` grant. Note there is no editor for these today — the
       // week's bulletin is read through from the parish's own source and never
@@ -281,12 +312,17 @@ service cloud.firestore {
      *
      * It widened on 2 Sep 2026, from the single `servantSignUp` boolean to
      * everything on the document **except `programId`**, and the exception is
-     * the whole rule. `programId` names the ministry whose grant opens the camp;
-     * a camp administrator who could write it could point the camp at a
-     * ministry somebody else administers, or at one they administer and were
-     * never given the camp for. Every other key — the season, the week dates,
-     * the fee, the waiver, the two form switches — is a decision *about running
-     * this camp*, made by whoever is running it, several times a season.
+     * the whole rule. Every other key — the season, the week dates, the fee, the
+     * waiver, the two form switches — is a decision *about running this camp*,
+     * made by whoever is running it, several times a season.
+     *
+     * `programId` used to name the ministry whose grant *was* the camp grant, so
+     * writing it was a way to hand yourself somebody else's camp. It no longer
+     * decides who gets in — `runsCamp()` is a screen flag — and it stays refused
+     * for what it still does: it is the ministry the camp's registrations are
+     * filed under and the gallery its photographs go to, so a camp
+     * administrator who could write it could re-point the camp at a ministry
+     * they were given for its pictures, or at one that is not theirs at all.
      *
      * The argument for keeping the fee and the waiver shut was that both change
      * what a family is charged or what they agreed to. True, and it is the camp
@@ -304,9 +340,9 @@ service cloud.firestore {
      */
     match /config/camp {
       allow read: if true;
-      allow update: if adminsProgram(resource.data.programId)
+      allow update: if runsCamp()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'season', 'baseCents', 'weeks', 'weekStarts',
+             'season', 'baseCents', 'weeks', 'weekStarts', 'weekRoles',
              'waiverVersion', 'waiverText', 'note',
              'servantSignUp', 'familyRegistration',
              'updatedAt', 'updatedBy',
@@ -332,6 +368,18 @@ service cloud.firestore {
         && (!('weekStarts' in request.resource.data)
              || (request.resource.data.weekStarts is list
                  && request.resource.data.weekStarts.size() <= 6))
+        // What a servant may ask to do, one list per week per section, keyed
+        // `w1_elementary`. A map and not a list of lists because Firestore has
+        // no array of arrays — see `CampConfig.weekRoles`. The panel writes one
+        // week and one half of the camp at a time (`weekRoles.w2_middle`),
+        // which still reads as this one affected key.
+        //
+        // Eighteen: six weeks times the camp's two halves, plus the six bare
+        // `w1` keys written before the halves were told apart, which are read
+        // but never written and must not make a document unsaveable.
+        && (!('weekRoles' in request.resource.data)
+             || (request.resource.data.weekRoles is map
+                 && request.resource.data.weekRoles.keys().size() <= 18))
         && (!('servantSignUp' in request.resource.data)
              || request.resource.data.servantSignUp is bool)
         && (!('familyRegistration' in request.resource.data)
@@ -995,30 +1043,70 @@ service cloud.firestore {
         || (signedIn() && programId in memberGrants().get('programs', []));
     }
 
+    /*
+     * Whether the caller runs the summer camp's back office.
+     *
+     * -------------------------------------------------------------------------
+     * **This was `adminsProgram(<the camp's id>)` and is now a screen flag, and
+     * the difference is a decision rather than a refactor.**
+     *
+     * A program grant is one permission with three consequences: it opens the
+     * program document, every `programEvent` under it, and every photograph
+     * sent in to those events. Using it for the camp's paperwork therefore made
+     * "takes families at the registration desk" and "publishes the camp's event
+     * pages and gallery" the same job, and /access carried a caveat saying so.
+     * The two are now independent in both directions — `camp` in
+     * `ADMIN_SCREENS` is this, and `programAdmin.programs` still governs the
+     * camp's page, gatherings and pictures exactly as it governs every other
+     * ministry's.
+     *
+     * ## What that changes about the rules below, beyond the name
+     *
+     * A program grant can only be proven *against a document* — hence the
+     * `resource == null` branches on every `get` in this file and the rule that
+     * a `list` must constrain `programId` or be refused outright (decision #10).
+     * A screen flag is proven against the *caller*, so both of those go away
+     * here: a `get` on a document that does not exist is fine because nothing is
+     * read off it, and an unconstrained `getDocs` is now allowed. The camp
+     * screens still send `where('programId','==',…)`, because a register from
+     * another summer is not wanted rather than not permitted; nothing depends on
+     * the constraint any more.
+     *
+     * `programId` is still pinned across every update below. It no longer
+     * decides who may write — it decides which season's rollup a registration
+     * lands in and which queries find it, and a document that can re-file
+     * itself is a document that can go missing.
+     *
+     * ## Not the money, and be precise about why
+     *
+     * A registration carries `billing.payments[]`, so anybody who can read a
+     * registration can read the ledger on it. This flag does not *hide* that
+     * and could not: rules grant documents, not fields, which is the whole
+     * reason `financeRollups` exists. What is separated is the screen —
+     * /admin/camp shows balances and payment history only under
+     * `hasFinance('camp')`. That half is a preference in a browser, and this
+     * comment is where it says so rather than being mistaken for a boundary.
+     * -------------------------------------------------------------------------
+     */
+    function runsCamp() {
+      return hasScreen('camp');
+    }
+
     function adminsProgramEvent(programId, programEventId) {
       return adminsProgram(programId)
         || (signedIn() && programEventId in memberGrants().get('events', []));
     }
 
-    // The event an anonymous submission says it belongs to. Guarded by an
-    // `exists()` at the call site — `get()` on a missing document fails the
-    // whole evaluation, which denies, but denies for the wrong reason and is
-    // miserable to debug.
-    function submissionTarget() {
-      return get(/databases/$(database)/documents/programEvents/$(request.resource.data.programEventId)).data;
-    }
-
-    // The ministry an anonymous submission lands in, which is what decides
-    // whether the parish is collecting at all. Guarded by an `exists()` at the
-    // call site for the same reason as above.
+    // `submissionTarget()` and `submissionProgram()` were here, reading the
+    // level and the ministry an anonymous submission claimed. Both are gone
+    // with the `galleryMedia` create rule that called them: no client creates
+    // one now, so there is no untrusted `request.resource.data` to check.
     //
-    // This replaced a read of `submissionsOpen` on the *level* — see
-    // `Program.submissionsOpen`. The flag moved up because the upload form did:
-    // a visitor now picks any level in the ministry from a single picker, and a
-    // flag per level made that picker a list with unexplained holes in it.
-    function submissionProgram() {
-      return get(/databases/$(database)/documents/programs/$(request.resource.data.programId)).data;
-    }
+    // The same two reads still happen — in POST /api/gallery/upload-url, before
+    // it issues a signed URL. What has changed is who pays for them. Here they
+    // were on an unauthenticated write, so anybody could make the parish pay
+    // for three document reads by posting nonsense; there they are behind a
+    // verified App Check token.
 
     match /programs/{programId} {
       allow read: if isPublished(resource.data) || adminsProgram(programId);
@@ -1084,78 +1172,43 @@ service cloud.firestore {
         || adminsProgramEvent(resource.data.programId, resource.data.programEventId);
 
       /*
-       * Anonymous submission. Open on purpose, and narrow on purpose.
+       * No client may create one. This is the chokepoint.
        *
-       * There is no account behind this — a parishioner with camp photographs
-       * has no reason to have one — so every constraint that would normally
-       * come from knowing who somebody is has to be spelled out as a shape the
-       * document must have. A submission may only ever arrive pending, placed
-       * nowhere, laid out nowhere, and unreviewed. Anything else is somebody
-       * trying to publish straight past the queue.
+       * -------------------------------------------------------------------
+       * What used to be here was forty lines checking, field by field, that an
+       * anonymous stranger's document said `pending`, carried no caption, chose
+       * no placement, pointed at a `submissions/` path for its own event, and
+       * belonged to a program still collecting. It worked. It is deleted anyway,
+       * and not because it was wrong.
        *
-       * `submissionsOpen` costs a document read on an unauthenticated write,
-       * which is the price of the flag meaning anything at all. Without it,
-       * closing submissions on a three-year-old gallery would be a UI
-       * suggestion.
+       * It was only ever half of the write. The bytes went to Cloud Storage
+       * first — deliberately, since a document with no file behind it is the
+       * worse of the two failures — which meant every check in this block
+       * guarded the *second* step of a two-step operation. A script that
+       * uploaded a file and simply never wrote the document skipped all of it,
+       * and the orphaned objects never appeared in the review queue, so nobody
+       * would have noticed them sitting in a billed bucket.
+       *
+       * There is no rule that fixes that, because the two writes are to two
+       * different services and only one of them was ever guarded. So both doors
+       * are shut instead: `storage.rules` refuses every client write to
+       * `submissions/`, this refuses every client create, and
+       * POST /api/gallery/upload-url does both with the Admin SDK after
+       * verifying an App Check token and counting the upload against a daily
+       * quota that survives across Function instances.
+       *
+       * The field shape those forty lines enforced now lives in
+       * `functions/src/galleries/uploadUrl.ts`, spelled out in full for exactly
+       * that reason — it is the only thing holding it.
+       *
+       * A pleasant side effect: creating a submission cost up to three rule
+       * reads here (`exists` and `get` on programEvents and programs) on an
+       * *unauthenticated* write, which anyone could make the parish pay for by
+       * posting nonsense. It now costs nothing, because it is refused
+       * immediately.
+       * -------------------------------------------------------------------
        */
-      allow create: if request.resource.data.status == 'pending'
-        && request.resource.data.reviewedAt == null
-        && request.resource.data.reviewedBy == null
-        && request.resource.data.renditionPath == null
-        && request.resource.data.layout == null
-        && request.resource.data.placement.onPage == false
-        && request.resource.data.placement.slideshow == false
-        && request.resource.data.placement.homepage == false
-        && request.resource.data.caption == ''
-        && request.resource.data.kind in ['photo', 'video']
-        /*
-         * The file this document claims. Constrained to the quarantine folder
-         * for *this event*, and that is not tidiness.
-         *
-         * `sourcePath` is what the transcode Function copies into the public
-         * `galleries/` bucket on approval, using the Admin SDK — which bypasses
-         * storage.rules entirely and will fetch whatever it is pointed at. An
-         * unconstrained path therefore means an anonymous stranger chooses
-         * which object in the bucket gets published, including somebody else's
-         * un-reviewed submission, which is the one prefix that is not otherwise
-         * readable.
-         *
-         * Split rather than a regex: `programEventId` would be interpolated
-         * into the pattern, and a document id is not a safe thing to paste into
-         * a regular expression. The size check also proves the id contains no
-         * slash of its own.
-         */
-        && request.resource.data.sourcePath.split('/').size() == 3
-        && request.resource.data.sourcePath.split('/')[0] == 'submissions'
-        && request.resource.data.sourcePath.split('/')[1] == request.resource.data.programEventId
-        && exists(/databases/$(database)/documents/programEvents/$(request.resource.data.programEventId))
-        // `programId` is denormalised onto every item so the approval queue and
-        // the homepage band can filter without a join. Denormalised, and
-        // therefore forgeable: unchecked, a submitter picks which program's
-        // queue their upload lands in, and a photograph sent to Summercamp
-        // surfaces for the St. Simon lead to approve into the wrong gallery.
-        && request.resource.data.programId == submissionTarget().programId
-        /*
-         * Is the parish collecting at all.
-         *
-         * One flag on the ministry, not on the level — see
-         * `Program.submissionsOpen`. Defaulting to `true` when the field is
-         * absent is deliberate and is the one place in this file where a missing
-         * field permits rather than denies: every program document written
-         * before the field existed has no value for it, and reading absence as
-         * "closed" would refuse every upload the parish receives until somebody
-         * hand-wrote a field onto five documents. That is decision #10's failure
-         * mode — a policy that compiles, passes, and denies everything real.
-         *
-         * The flag's job is to turn a deliberately-public surface *off*, and
-         * every other constraint above still applies to what comes through it:
-         * pending, unplaced, uncaptioned, and quarantined.
-         *
-         * `Program.submissionsOpen` documents the same default. If one changes,
-         * both change; tests/rules/program-galleries.test.ts covers both sides.
-         */
-        && exists(/databases/$(database)/documents/programs/$(request.resource.data.programId))
-        && submissionProgram().get('submissionsOpen', true) == true;
+      allow create: if false;
 
       // Approving, filing, captioning, laying out, rejecting. The one thing a
       // submitter cannot do to their own upload is anything at all — they have
@@ -1174,6 +1227,27 @@ service cloud.firestore {
     }
 
     /* ======================================================================
+       Gallery submission quota
+       ====================================================================== */
+
+    // How many photographs one uploader has sent today. Closed to everybody.
+    //
+    // Written only by POST /api/gallery/upload-url through the Admin SDK, which
+    // bypasses this file entirely — so `if false` is the whole policy and not a
+    // placeholder. Nothing in a browser has any business reading it: the
+    // documents are keyed `uid:{uid}` and `ip:{sha256}`, and a readable
+    // collection of address hashes with timestamps is a log of who visited
+    // which gallery and when.
+    //
+    // It lives in Firestore rather than in the in-memory window in
+    // `functions/src/rateLimit.ts` because that window is per Function
+    // instance — its real allowance is the budget times maxInstances, which is
+    // fine for a speed bump and useless as a daily total.
+    match /submissionQuota/{key} {
+      allow read, write: if false;
+    }
+
+    /* ======================================================================
        Summer camp registrations
        ====================================================================== */
 
@@ -1183,33 +1257,38 @@ service cloud.firestore {
      *
      * A registration holds a child's date of birth, their allergies, their
      * medical notes and where they live. There is no public read, no anonymous
-     * create, and no self-service path of any kind — every operation takes a
-     * program grant on the camp's ministry, which is the third permission axis
-     * declared above `programs` and already means "runs Summercamp".
+     * create, and no self-service path of any kind — every operation takes
+     * `runsCamp()`, the `camp` screen flag, whose long note sits above
+     * `adminsProgram` in this file.
      *
-     * Deliberately *not* a screen flag, and specifically **not `finance`**,
-     * even though a registration carries a fee ledger. Rules grant documents
-     * and not fields, so a flag that reached the money here would also hand
-     * over a ten-year-old's allergies; `financeRollups` exists so the treasurer
-     * can have the figures without the children. See the long note on
-     * `'finance'` in packages/shared/src/screens.ts, and the assertions in
+     * **It used to take the camp's program grant, and that was one grant doing
+     * two jobs.** The same tick opened this collection and the camp's event
+     * pages and gallery, so the registrar and the person posting the week's
+     * photographs had to be the same person. They are now separate grants.
+     *
+     * Still specifically **not `finance`**, even though a registration carries a
+     * fee ledger. Rules grant documents and not fields, so a flag that reached
+     * the money here would also hand over a ten-year-old's allergies;
+     * `financeRollups` exists so the treasurer can have the figures without the
+     * children. See the long note on `'finance'` in
+     * packages/shared/src/screens.ts, and the assertions in
      * tests/rules/access.test.ts that hold this line.
      *
-     * Note what that costs, so nobody reports it as a bug: a `superadmin` gets
-     * in via `adminsProgram`, and everyone else needs `programAdmin.programs` to
-     * contain the camp's id — set by a superadmin on the member document, which
-     * members cannot write to themselves (see `match /members/{uid}` above,
-     * which pins `programAdmin` exactly as it pins `screenAdmin`).
+     * The converse is worth stating too, because /admin/camp acts as though it
+     * were not true: `camp` **can** read the ledger, because the ledger is a
+     * field on a document this flag opens. The screen hides the balances and
+     * the payment history from anybody without `hasFinance('camp')`, and that is
+     * a preference in a browser rather than anything enforced here.
      *
-     * ## Why a list query needs `programId`
+     * Note what the flag costs, so nobody reports it as a bug: a `superadmin`
+     * gets in via `hasScreen`, and everyone else needs `screenAdmin.camp` on
+     * their member document — set by a superadmin at /access, and pinned against
+     * self-writes by `match /members/{uid}` above.
      *
-     * Firestore judges a list by what it *could* return, so an unfiltered query
-     * here can only be proven by `isSuper()` and a camp administrator
-     * with a program grant would be refused the whole screen — decision #10's
-     * failure mode, which the galleries hit and tests/rules caught. Every read
-     * from the registration screen therefore carries
-     * `where('programId','==',…)`, which is what `adminsProgram` can prove for
-     * the superadmin and the volunteer alike.
+     * A list needs no `programId` constraint any more; the flag is proven
+     * against the caller, not against a candidate document. The screens still
+     * send one, because a different season's records are unwanted rather than
+     * forbidden.
      */
     /*
      * Servants who have signed themselves up, waiting to be accepted.
@@ -1221,7 +1300,7 @@ service cloud.firestore {
      * `campRegistrations` below is administrator-only in both directions, and
      * it has to stay that way: it holds children's allergies and medical notes.
      * A servant signing up is not that. It is one person saying which days they
-     * can serve, and requiring a program grant to type it in is how a camp ends
+     * can serve, and requiring the camp grant to type it in is how a camp ends
      * up with a spreadsheet nobody reconciles.
      *
      * So sign-ups land here instead, and this collection is written by exactly
@@ -1239,64 +1318,56 @@ service cloud.firestore {
      */
     match /campServantRequests/{requestId} {
       /*
-       * `get` and `list` are split for the same reason as the registrations
-       * below: a query is judged by what it could return, so a list has to
-       * constrain `programId` to be provable at all. Unlike there, `get` needs
-       * no null-resource branch — nothing reads one of these back before
-       * writing it, because nothing writes one of these from a browser.
+       * `get` and `list` were split because a program grant had to be proven
+       * against `resource.data.programId`, which a query cannot do without a
+       * `where` on it. The flag is proven against the caller, so both are the
+       * same condition now. They are left as two lines because the collection
+       * gains a public read the day somebody decides a servant should see their
+       * own pending sign-up, and that is a `get`.
        */
-      allow get: if adminsProgram(resource.data.programId);
-      allow list: if adminsProgram(resource.data.programId);
+      allow get: if runsCamp();
+      allow list: if runsCamp();
 
       // The Function only. See above.
       allow create, update: if false;
 
       // Dismissing a sign-up, and the second half of accepting one. Both are
       // the administrator's own delete of a document they can already read.
-      allow delete: if adminsProgram(resource.data.programId);
+      allow delete: if runsCamp();
     }
 
     match /campRegistrations/{registrationId} {
       /*
-       * `get` and `list` are split, and the `resource == null` branch is the
-       * reason.
+       * One condition for both, and the bug that used to live here is worth
+       * keeping in view.
        *
        * The save path reads a registration back before writing it, so a
        * replacing `setDoc` can carry `createdAt` across instead of destroying
-       * it. On the *first* save there is nothing there: `resource` is null,
-       * `resource.data.programId` is an evaluation error, and the error denies
-       * the read — which takes the whole save down with it, reported as a rules
-       * failure on a document nobody could have been refused.
-       *
-       * Allowing it costs nothing. A document that does not exist has no data
-       * to protect, and what comes back is an empty snapshot. What it does
-       * expose is whether an id is in use, which for ids of the form
-       * `reg-<time>-<random>` is not a question anybody can usefully ask.
-       *
-       * `list` keeps the strict form. A query never evaluates against a null
-       * resource, and loosening it there would break the property the whole
-       * collection rests on — that a list has to constrain `programId` to be
-       * provable at all.
-       *
-       * Found by saving a registration in a browser. The rules tests wrote
-       * without reading first, so they passed; there is now one that does both.
+       * it. Under the old program grant the *first* save read a document that
+       * did not exist, `resource.data.programId` was an evaluation error, and
+       * the error denied the read and took the whole save down with it — so the
+       * `get` needed an explicit `resource == null ||` branch and the `list`
+       * could not have one. A flag reads nothing off the document, so neither
+       * problem exists and neither branch is needed. If this ever goes back to
+       * being proven against a document, both come back with it.
        */
-      allow get: if resource == null || adminsProgram(resource.data.programId);
-      allow list: if adminsProgram(resource.data.programId);
+      allow get: if runsCamp();
+      allow list: if runsCamp();
 
       // The bounds below are transcribed from packages/shared/src/schema/camp.ts.
       // A bound only present in TypeScript is not a bound — this file is what
       // somebody with a console has to get past. If one changes, both change.
-      allow create: if adminsProgram(request.resource.data.programId)
+      allow create: if runsCamp()
         && isCampRegistration(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
 
-      // The programId is pinned across an update for the same reason
-      // `programEvents` pins it: re-filing a registration under a ministry you
-      // administer would otherwise be a way to pull one out of a ministry you do
-      // not. There is no legitimate reason to move a camp registration between
-      // ministries, so this is a flat refusal rather than a both-grants check.
-      allow update: if adminsProgram(resource.data.programId)
+      // The programId is still pinned across an update, for a reason that
+      // changed with the grant. It is no longer who may write — it is which
+      // season's finance rollup this family lands in and which queries find
+      // them, and a record that can re-file itself is a record that can go
+      // missing. There is no legitimate reason to move a registration between
+      // ministries, so this stays a flat refusal.
+      allow update: if runsCamp()
         && request.resource.data.programId == resource.data.programId
         && isCampRegistration(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
@@ -1305,7 +1376,7 @@ service cloud.firestore {
       // — `CAMP_STATUSES` has `withdrawn` precisely so that a family who pulled
       // out is still answerable for six months — so this is for a duplicate row
       // typed twice at a desk, and nothing else.
-      allow delete: if adminsProgram(resource.data.programId);
+      allow delete: if runsCamp();
     }
 
     // The shape check, kept out of the rules above so they read as policy.
@@ -1342,8 +1413,8 @@ service cloud.firestore {
      * How a season is divided up: grade bands, their groups, the stations, and
      * which child or servant is in each.
      *
-     * The same door as the registrations above — a program grant on the camp's
-     * ministry — and for the same reason rather than by copying. This document
+     * The same door as the registrations above — `runsCamp()`, the `camp`
+     * screen flag — and for the same reason rather than by copying. This document
      * holds no names, no dates of birth and no medical notes: a group is a list
      * of keys of the form `registrationId/childId`, and every name on the screen
      * is looked up from `campRegistrations`. So the *contents* here are close to
@@ -1364,42 +1435,40 @@ service cloud.firestore {
      */
     match /campAllocations/{allocationId} {
       /*
-       * `resource == null` on `get`, the same as the registrations above and
-       * found the same way.
+       * No `resource == null` branch, and there used to be one.
        *
        * The screen opens on a season nobody has allocated yet, and the save
        * path reads the document back before writing so a replacing `setDoc`
-       * carries `createdAt` across. Both are reads of a document that does not
-       * exist: `resource.data.programId` is an evaluation error, the error
-       * denies the read, and the whole screen reports permission denied on its
-       * very first paint. Allowing it exposes nothing — an absent document has
-       * no data — beyond whether `summercamp__2027` is in use, which is not a
-       * question anybody has to guess at.
+       * carries `createdAt` across. Under a program grant both were reads of a
+       * document that did not exist, `resource.data.programId` was an
+       * evaluation error, and the error denied the read and blanked the screen
+       * on its first paint. A flag reads nothing off the document, so the
+       * branch is gone rather than merely unnecessary.
        */
-      allow get: if resource == null || adminsProgram(resource.data.programId);
+      allow get: if runsCamp();
 
       /*
        * Listing the seasons, for the year list on the camp's front door.
        *
-       * `resource` is each candidate document here, never null, so this needs
-       * none of the care the `get` above does. What it does need is the client
-       * constraining the query by `programId` — a `list` rule that reads
-       * `resource.data.programId` denies any query that could return a document
-       * from a ministry the caller does not administer, which means an
-       * unconstrained `getDocs` fails outright rather than filtering. Same
-       * shape as the galleryMedia list, and the same trap: the failure looks
-       * like a permission bug and is a missing `where`.
+       * This needed `where('programId','==',…)` on every caller, because a rule
+       * reading `resource.data.programId` refuses any query that *could* return
+       * another ministry's document rather than filtering it — the galleryMedia
+       * trap, where the failure looks like a permission bug and is a missing
+       * `where`. The flag is proven against the caller, so an unconstrained
+       * query is allowed now. The screens still constrain it, for their own
+       * reasons.
        */
-      allow list: if adminsProgram(resource.data.programId);
+      allow list: if runsCamp();
 
-      allow create: if adminsProgram(request.resource.data.programId)
+      allow create: if runsCamp()
         && isCampAllocation(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
 
       // The programId is pinned across an update, exactly as it is on a
-      // registration: re-filing an allocation under a ministry you administer
-      // would be a way to pull one out of a ministry you do not.
-      allow update: if adminsProgram(resource.data.programId)
+      // registration, and now for the same narrower reason: the id of this
+      // document encodes it, so a write that changed it would leave
+      // `summercamp__2027` claiming to belong to another ministry.
+      allow update: if runsCamp()
         && request.resource.data.programId == resource.data.programId
         && isCampAllocation(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
@@ -1408,7 +1477,7 @@ service cloud.firestore {
       // no registration is touched, and re-creating it is starting over. It is
       // allowed because a season allocated by mistake has to be removable, and
       // the screen asks first.
-      allow delete: if adminsProgram(resource.data.programId);
+      allow delete: if runsCamp();
     }
 
     /*
@@ -1433,21 +1502,19 @@ service cloud.firestore {
         && doc.season.size() > 0
         && doc.season.size() <= 120
         /*
-         * One arrangement for the whole camp, so the bands and the stations
-         * are back at the top level where they started. Sixteen is `MAX_BANDS`
-         * and forty is `MAX_STATIONS`; the groups inside a band and the people
-         * inside a group stay out of reach here, as they always were.
+         * One board per week: `weeks` is a list, and everything draggable is
+         * inside it. Nine is `MAX_CAMP_WEEKS`; the bands and stations within a
+         * week, the groups within a band and the people within a group all stay
+         * out of reach here, as they always have.
          *
-         * A document written while the camp was arranged per week has `weeks`
-         * at the top and no `bands`. It is still *readable* — the parser lifts
-         * week one out of it — but it cannot be written back in that shape, and
-         * that is the right way round: every write comes from the screen, and
-         * the screen has already converted it.
+         * A document written while the camp had one flat arrangement has
+         * `bands` and `stations` at the top and no `weeks`. It is still
+         * *readable* — the parser lifts it into week one — but it cannot be
+         * written back in that shape, and that is the right way round: every
+         * write comes from the screen, and the screen has already converted it.
          */
-        && doc.bands is list
-        && doc.bands.size() <= 16
-        && doc.stations is list
-        && doc.stations.size() <= 40;
+        && doc.weeks is list
+        && doc.weeks.size() <= 9;
     }
 
     /* ======================================================================
@@ -1457,12 +1524,12 @@ service cloud.firestore {
     /*
      * The register: one document per day of camp, one entry per child.
      *
-     * The same door again — a program grant on the camp's ministry — and this
-     * time the contents genuinely warrant it rather than merely matching. An
+     * The same door again — `runsCamp()` — and this time the contents
+     * genuinely warrant it rather than merely matching. An
      * allocation is a list of opaque keys; a register is a statement about
      * which named children were on a site this morning and which of them are
      * still there at four o'clock. It is read from a phone at a gate, and the
-     * grant is the only thing between that phone and the answer.
+     * flag is the only thing between that phone and the answer.
      *
      * ## Merge writes, and what rules see of them
      *
@@ -1482,27 +1549,25 @@ service cloud.firestore {
      */
     match /campAttendance/{dayId} {
       /*
-       * `resource == null` on `get`, for the third time and the same reason:
-       * a day nobody has ticked yet is the normal first state of this screen,
-       * the id is derived rather than searched for, and reading
-       * `resource.data.programId` off a document that does not exist is an
-       * evaluation error that denies the read and blanks the page.
+       * No `resource == null` branch, for the third time and the same reason as
+       * the two above: a day nobody has ticked yet is the normal first state of
+       * this screen, and `runsCamp()` reads nothing off the document that is
+       * not there.
        */
-      allow get: if resource == null || adminsProgram(resource.data.programId);
+      allow get: if runsCamp();
 
       /*
        * Listing a season's registers — for a summary across the fortnight.
        *
-       * Nothing queries this yet. It is here rather than added later because
-       * the trap is worth stating once: a `list` rule that reads
-       * `resource.data.programId` **refuses** an unconstrained query rather
-       * than filtering it, so any caller must send
-       * `where('programId','==',…)`. Same shape as the allocations above, and
-       * the galleryMedia list before them.
+       * Nothing queries this yet, and it costs nothing to allow: the flag is
+       * the same whatever the query asks for. Were this ever proven against the
+       * document again, the trap is the one stated above — a rule reading
+       * `resource.data.programId` refuses an unconstrained query rather than
+       * filtering it.
        */
-      allow list: if adminsProgram(resource.data.programId);
+      allow list: if runsCamp();
 
-      allow create: if adminsProgram(request.resource.data.programId)
+      allow create: if runsCamp()
         && isCampAttendance(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
 
@@ -1515,7 +1580,7 @@ service cloud.firestore {
        * changed it would leave `campAttendance/…__w1-tue` claiming to be
        * Wednesday, and every reader here derives the id from the day it wants.
        */
-      allow update: if adminsProgram(resource.data.programId)
+      allow update: if runsCamp()
         && request.resource.data.programId == resource.data.programId
         && request.resource.data.day == resource.data.day
         && isCampAttendance(request.resource.data)

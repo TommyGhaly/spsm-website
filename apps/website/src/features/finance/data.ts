@@ -23,6 +23,8 @@ import {
   parseFinanceRollup,
   type BookstoreStats,
   type CampFinanceRollup,
+  type CampPaymentMethod,
+  type CampStatus,
   type FinanceSource,
   type FormFinanceRollup,
 } from '@spsm/shared';
@@ -125,4 +127,150 @@ export async function refreshFinance(): Promise<void> {
   if (!response.ok) {
     throw new Error(body.error ?? 'Could not refresh the figures.');
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * The season, family by family
+ * ------------------------------------------------------------------------ */
+
+/**
+ * One registration's money, with just enough of the family to know who it is.
+ *
+ * ---------------------------------------------------------------------------
+ * The shape is a statement of intent, the same way `CampFinanceInput` is.
+ *
+ * A `CampRegistration` carries a child's date of birth, allergies, medical
+ * notes and an emergency contact. **None of it belongs on a finance screen**,
+ * so this is what is lifted off and the rest is dropped at the boundary rather
+ * than merely left unrendered — a component that never reads a field is one
+ * refactor away from reading it, and this is not a mistake worth leaving
+ * available.
+ *
+ * What is kept is the contact's name, the children's first names and grades,
+ * and the bill. That is the row a registrar already reads on /admin/camp, and
+ * nobody reaches this without the grant that draws that screen.
+ * ---------------------------------------------------------------------------
+ */
+export interface CampFinanceRow {
+  id: string;
+  name: string;
+  kind: 'family' | 'servant';
+  status: CampStatus;
+  /** "Marina (3rd), Peter (K)" — empty for a servant. */
+  who: string;
+  weeks: number;
+  subtotalCents: number;
+  discountCents: number;
+  dueCents: number;
+  paidCents: number;
+  /** Positive when owed, negative when overpaid. */
+  balanceCents: number;
+  /** Every payment, newest first: what came in, how, and on what day. */
+  payments: { cents: number; method: CampPaymentMethod; on: string }[];
+}
+
+export interface CampRoster {
+  rows: CampFinanceRow[];
+  /** Live registrations still owing something, and what they owe between them. */
+  owing: number;
+  owedCents: number;
+  /**
+   * Servants left out of `rows` because no money has ever touched them.
+   *
+   * ---------------------------------------------------------------------------
+   * On the seeded 2027 season this was 14 rows of 38 — better than a third of a
+   * money table reading "— — — — —", because a servant is billed nothing and so
+   * has nothing in any column of it. They were not noise to be tidied away; they
+   * were the wrong rows for this table, on a screen where a dash in the balance
+   * column is supposed to mean something.
+   *
+   * They are counted rather than dropped silently, and the count is on screen:
+   * a treasurer who knows the season has 38 registrations must be able to see
+   * why 24 are listed. And a servant who *has* a payment against them — a refund
+   * of something, a correction — stays in the table, because a figure nobody can
+   * see is the one failure a money screen cannot have.
+   * ---------------------------------------------------------------------------
+   */
+  servantsOmitted: number;
+}
+
+/**
+ * Read one season's registrations and reduce them to money.
+ *
+ * ---------------------------------------------------------------------------
+ * The one read on this screen that is not a rollup, and the one that is live.
+ *
+ * Behind `session.runsCamp` — see the long note on `useFinanceAdmin`. It is
+ * the *camp's* grant, not the treasurer's, and firestore.rules will refuse this
+ * flatly to a reader holding only `finance`, which is the point.
+ *
+ * `readRegistrations` is imported from the camp feature rather than
+ * reimplemented: its two equality filters are what make the list provable to
+ * the rules, and a second copy of that query is a second thing to get wrong the
+ * next time the rule moves. The dynamic import keeps the camp's parsing out of
+ * the chunk a treasurer without the camp flag downloads.
+ *
+ * Being live is not incidental. The rollup runs hourly, which is right for a
+ * season total and wrong for "the Girgis family paid ten minutes ago" — and
+ * this is the part of the screen where somebody is about to make a phone call.
+ * The section says which figures are which.
+ * ---------------------------------------------------------------------------
+ */
+export async function readCampRoster(programId: string, season: string): Promise<CampRoster> {
+  const [{ readRegistrations }, shared] = await Promise.all([
+    import('@/features/camp/data'),
+    import('@spsm/shared'),
+  ]);
+  const registrations = await readRegistrations(programId, season);
+
+  const all: CampFinanceRow[] = registrations.map((registration) => {
+    const bill = shared.campBill(registration);
+    return {
+      id: registration.id,
+      name: shared.registrationName(registration),
+      kind: registration.kind,
+      status: registration.status,
+      who: registration.children
+        .map(
+          (child) =>
+            `${child.firstName.trim() || 'Child'} (${shared.campGradeShort(child.grade)})`,
+        )
+        .join(', '),
+      weeks: bill.billableWeeks,
+      subtotalCents: bill.subtotalCents,
+      discountCents: bill.discountCents,
+      dueCents: bill.dueCents,
+      paidCents: bill.paidCents,
+      balanceCents: bill.balanceCents,
+      payments: [...registration.billing.payments]
+        .map((payment) => ({
+          cents: Math.round(payment.amountCents),
+          method: shared.readCampPaymentMethod(payment.method),
+          on: typeof payment.receivedOn === 'string' ? payment.receivedOn : '',
+        }))
+        .sort((a, b) => b.on.localeCompare(a.on)),
+    };
+  });
+
+  /*
+   * `registered` only, matching `LIVE_STATUSES` in the rollup.
+   *
+   * The two figures below sit next to the rollup's `outstandingCents` on the
+   * same screen, and a chase list built on a wider set of statuses than the
+   * total above it would disagree with it in front of the treasurer. A draft
+   * or a waitlisted family is not owed anything yet — see the note on
+   * `LIVE_STATUSES` in packages/shared/src/schema/finance.ts.
+   */
+  const live = all.filter((row) => row.status === 'registered' && row.balanceCents > 0);
+
+  // See `servantsOmitted`: a servant with nothing billed and nothing paid has no
+  // figure in any column of this table.
+  const rows = all.filter((row) => row.kind === 'family' || row.payments.length > 0);
+
+  return {
+    rows,
+    owing: live.length,
+    owedCents: live.reduce((sum, row) => sum + row.balanceCents, 0),
+    servantsOmitted: all.length - rows.length,
+  };
 }

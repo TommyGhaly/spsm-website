@@ -10,7 +10,7 @@ import { storageUrl } from '@/lib/storage';
  *
  * The heading id is the **slug**, not the document id. A section renders all of
  * its pages at one URL, so the slug is the only way to link to a particular one
- * — `/ministries#mother-of-mercy` — and it is the thing a person can read,
+ * — `/beliefs#the-nicene-creed` — and it is the thing a person can read,
  * guess, and type. The document id happens to equal the slug for anything
  * seed-content.mjs wrote, but that is a coincidence of that script rather than a
  * property of the collection, and it would not hold for a page created any

@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   flattenGalleryTree,
+  submissionTargets,
   type DocOf,
   type GalleryTree,
   type Program,
   type ProgramEvent,
+  type SubmissionTarget,
 } from '@spsm/shared';
 import { updateProgram } from './adminData';
 import {
@@ -88,6 +90,20 @@ export function SubmissionQueue({
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const rows = useMemo(() => flattenGalleryTree(tree), [tree]);
+
+  /*
+   * Where a reviewer may file one, which is **not** the same list as `rows`.
+   *
+   * `rows` is levels, and the priority control below needs exactly that — a
+   * priority that named the ministry would not resolve in the tree and would read
+   * as "no priority" forever. This list carries the ministry as well, because a
+   * photograph may arrive filed on it: the upload form offers it, and so does
+   * dropping one on the top row of `PictureManager`. Without it the `<select>`
+   * below would be rendered holding a value it does not contain, which snaps
+   * silently to the first option — so opening the queue would quietly re-file
+   * every ministry-level submission under the newest week.
+   */
+  const targets = useMemo(() => submissionTargets(program, tree), [program, tree]);
 
   const load = useCallback(async () => {
     try {
@@ -191,7 +207,10 @@ export function SubmissionQueue({
               <ReviewRow
                 key={item.media.id}
                 item={item}
-                rows={rows}
+                targets={targets}
+                sentTo={
+                  item.media.programEventId === program.id ? program.name : item.eventTitle
+                }
                 uid={uid}
                 busy={busy.has(item.media.id)}
                 onApprove={(target) => void act(item, 'approve', target)}
@@ -312,14 +331,22 @@ const INDENT = '\u00a0\u00a0\u00a0';
 
 function ReviewRow({
   item,
-  rows,
+  targets,
+  sentTo,
   uid,
   busy,
   onApprove,
   onRefuse,
 }: {
   item: ReviewItem;
-  rows: { node: DocOf<ProgramEvent>; depth: number }[];
+  targets: readonly SubmissionTarget[];
+  /**
+   * What the sender chose, named. `ReviewItem.eventTitle` falls back to the raw
+   * id, and the one id it cannot look up is the ministry's own — that is a
+   * `programs` document and it queries `programEvents` — so the caller resolves
+   * it and this renders whatever it is handed.
+   */
+  sentTo: string;
   uid: string | null;
   busy: boolean;
   onApprove: (target: string) => void;
@@ -363,8 +390,26 @@ function ReviewRow({
   const moved = target !== item.media.programEventId;
 
   return (
-    <li className="review-queue__item">
+    <li className={`review-queue__item${busy ? ' is-busy' : ''}`}>
       <div className="review-queue__frame">
+        {/*
+          The same photograph again, blurred, filling the mat behind it.
+
+          The frame holds the picture `contain`ed — a reviewer has to see all of
+          it — and a contained portrait on a flat near-black ground is two wide
+          black bars, which is what made this screen look like a media player
+          from 2009. Filling those bars with the picture's own colours, thrown out
+          of focus, is the treatment every photo tool uses now and it costs one
+          more `<img>` off the same object URL: no second download, nothing to
+          resolve, and it disappears by itself when there is no preview to show.
+
+          Videos are excluded — a `<video>` cannot be reused this way, and the
+          poster is not resolved here.
+        */}
+        {url !== null && item.media.kind !== 'video' && (
+          <img className="review-queue__wash" src={url} alt="" aria-hidden="true" />
+        )}
+
         {resolving && <span className="meta">loading…</span>}
         {!resolving && url === null && (
           /*
@@ -385,22 +430,27 @@ function ReviewRow({
             // `alt=""` because the caption below is the accessible name once one
             // is written, and an un-captioned pending photograph has no honest
             // description to give.
-            <img src={url} alt="" />
+            <img className="review-queue__shot" src={url} alt="" />
           ))}
-      </div>
 
-      <div className="review-queue__detail">
         {/*
           The level the sender chose, named before the control that overrides it.
           A `<select>` alone would show where it is going and hide where it came
           from, and "somebody thought this was Day 3" is the only information in
           the row that an administrator cannot work out for themselves.
+
+          It is a chip on the corner of the picture rather than a line of grey
+          caps above the fields. It belongs to the photograph — it is a fact about
+          where this one arrived — and moving it there leaves the panel below as
+          two labelled controls and a decision, which is the whole of the work.
         */}
         <p className="review-queue__from">
-          Sent to {item.eventTitle}
+          Sent to {sentTo}
           {moved && <span className="review-queue__moved"> · being moved</span>}
         </p>
+      </div>
 
+      <div className="review-queue__detail">
         {/*
           Both fields carry a visible label now rather than a hidden one. They had
           `visually-hidden` labels and a placeholder each, which is correct for a
@@ -412,10 +462,10 @@ function ReviewRow({
         <label className="review-queue__field review-queue__where">
           <span>File it under</span>
           <select value={target} disabled={busy} onChange={(e) => setTarget(e.target.value)}>
-            {rows.map(({ node, depth }) => (
-              <option key={node.id} value={node.id}>
+            {targets.map(({ id, title, depth }) => (
+              <option key={id} value={id}>
                 {INDENT.repeat(depth)}
-                {node.title}
+                {title}
               </option>
             ))}
           </select>
@@ -434,9 +484,9 @@ function ReviewRow({
           />
         </label>
 
-        <p className="review-queue__actions">
+        <div className="review-queue__actions">
           <button
-            className="button button--small"
+            className="button button--small review-queue__approve"
             onClick={() => onApprove(target)}
             disabled={busy}
           >
@@ -458,14 +508,14 @@ function ReviewRow({
             </button>
           ) : (
             <button
-              className="button button--quiet button--small"
+              className="button button--quiet button--small review-queue__refuse"
               onClick={() => setConfirming(true)}
               disabled={busy}
             >
               Refuse
             </button>
           )}
-        </p>
+        </div>
       </div>
     </li>
   );

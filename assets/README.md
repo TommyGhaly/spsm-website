@@ -41,7 +41,9 @@ table records what is known; **unknown is not the same as cleared.**
 | `stock/stock-parking-lot.jpg` | Unsplash `photo-1506521781263-d8422e82f27a`, 2026-08-26 | **Unsplash License** — commercial use, no permission needed, attribution not required. Vehicle registration. |
 | `stock/stock-passenger-van.jpg` | Unsplash `photo-1746985094087-e703bf52c71b`, 2026-08-26 | **Unsplash License.** Van request. |
 | `stock/stock-small-group.jpg` | Unsplash `photo-1529070538774-1843cb3265df`, 2026-08-26 | **Unsplash License.** New service request. |
-| `stock/stock-gathering.jpg` | Unsplash `photo-1517457373958-b7bdd4587205`, 2026-08-26 | **Unsplash License.** Events request. |
+| `stock/stock-gathering.jpg` | Unsplash `photo-1517457373958-b7bdd4587205`, 2026-08-26 | **Unsplash License.** Events request. It was also the summer-camp sign-up's picture until 2026-09-02; that form has its own now. |
+| `stock/stock-camp.jpg` | Unsplash `photo-1606092195730-5d7b9af1efc5` by Artem Kniaz, 2026-09-02 | **Unsplash License.** The summer-camp servant sign-up — its banner on /forms/summer-camp and its card on /forms. Children with a parachute in a field, seen mostly from behind. |
+| `stock/stock-office.jpg` | Unsplash `photo-1556442350-74d5dccbcec5` by CHUTTERSNAP, 2026-09-02 | **Unsplash License.** Contact the church office — its card on /forms and its banner on /contact. A telephone, a pen and a notepad; no faces. |
 | `Festival.jpg` | Parish | Not used. Past event. |
 | `SPSM-Church-Image.jpg` | Old Wix site | Not used. 176×176 thumbnail. |
 | `brand/instagram.svg`, `brand/facebook.svg`, `brand/youtube.svg` | Official brand marks | Third-party trademarks. See below. |

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { NO_PAYMENT, isKnownFormHost, toFormSlug, type FormDraft } from '@spsm/shared';
 import { PicturePicker } from './PicturePicker';
+import { uploadFormPicture } from '../uploads';
 import { writeForm } from './adminData';
 
 /**
@@ -171,7 +172,11 @@ export function EmbedImport({ onImported }: { onImported: () => Promise<void> })
         <small>One or two sentences, shown on the card and above the form.</small>
       </label>
 
-      <PicturePicker slug={toFormSlug(title) || 'embed'} value={image} onChange={setImage} />
+      <PicturePicker
+        value={image}
+        onChange={setImage}
+        upload={(file) => uploadFormPicture(toFormSlug(title) || 'embed', file)}
+      />
 
       <button type="button" className="button" disabled={!ready || busy} onClick={() => void add()}>
         {busy ? 'Adding…' : 'Add the form'}

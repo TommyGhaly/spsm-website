@@ -62,6 +62,19 @@ const asOtherLead = (e: RulesTestEnvironment) => e.authenticatedContext('other-1
 const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol-1', {});
 
 /**
+ * Runs Summercamp **as a ministry** — its page, its gatherings, its gallery —
+ * and has not been given the camp's back office.
+ *
+ * This context is the whole point of the change made on 2 Sep 2026. It is the
+ * seeding `asCampLead` used to have: `programAdmin.programs` containing the
+ * camp's id. That one tick used to open the registrations, the allocation and
+ * the register as well as the photographs, so the person posting the week's
+ * pictures was necessarily the person holding children's medical notes. It is
+ * refused everywhere in this file now.
+ */
+const asCampMinistry = (e: RulesTestEnvironment) => e.authenticatedContext('min-1', {});
+
+/**
  * Every area on the site, and no program grant.
  *
  * The control this whole file is measured against, and it is deliberately the
@@ -73,8 +86,18 @@ const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol
  */
 const asEveryArea = (e: RulesTestEnvironment) => e.authenticatedContext('every-area-1', {});
 
-/** A complete screen map with everything ticked. */
-const everyScreen = Object.fromEntries(ADMIN_SCREENS.map((s) => [s, true]));
+/**
+ * A complete screen map with everything ticked **except the camp**.
+ *
+ * `camp` joined `ADMIN_SCREENS` when the camp's back office was separated from
+ * the camp's program grant, and `Object.fromEntries(ADMIN_SCREENS…)` therefore
+ * started handing this control the very permission it exists to be refused.
+ * Derived from the constant rather than listed, so a screen added tomorrow is
+ * still in it, and the one exclusion is named.
+ */
+const everyScreenButCamp = Object.fromEntries(
+  ADMIN_SCREENS.filter((s) => s !== 'camp').map((s) => [s, true]),
+);
 
 
 /** One week's board. The camp is arranged per week, so this is what the top
@@ -122,7 +145,7 @@ function allocation(over: Record<string, unknown> = {}) {
   return {
     programId: CAMP,
     season: SEASON,
-    ...weekBoard(1),
+    weeks: [weekBoard(1)],
     archivedAt: null,
     archivedBy: null,
     note: '',
@@ -154,7 +177,14 @@ beforeEach(async () => {
 
     // The grants. Written through the bypass because in production only a
     // superadmin can set them — which the members suite already asserts.
+    // The camp lead holds the `camp` screen flag and **no program grant** —
+    // that separation is what this seeding is asserting. Whoever posts the
+    // camp's photographs is `min-1` below and gets nothing here.
     await setDoc(doc(db, 'members', 'lead-1'), {
+      screenAdmin: { camp: true },
+      programAdmin: { programs: [], events: [] },
+    });
+    await setDoc(doc(db, 'members', 'min-1'), {
       programAdmin: { programs: [CAMP], events: [] },
     });
     await setDoc(doc(db, 'members', 'other-1'), {
@@ -164,7 +194,7 @@ beforeEach(async () => {
       programAdmin: { programs: [], events: ['week-1-2027'] },
     });
     await setDoc(doc(db, 'members', 'every-area-1'), {
-      screenAdmin: everyScreen,
+      screenAdmin: everyScreenButCamp,
       programAdmin: { programs: [], events: [] },
     });
   });
@@ -184,7 +214,7 @@ describe('reading an allocation', () => {
    * door would look defensible. It is not: the document is a key into the
    * registrations, and the same grant guards both.
    */
-  it('denies a staff member with no camp grant', async () => {
+  it('denies somebody holding every area but not the camp', async () => {
     await assertFails(getDoc(doc(asEveryArea(env).firestore(), 'campAllocations', DOC)));
   });
 
@@ -201,8 +231,25 @@ describe('reading an allocation', () => {
     await assertFails(getDoc(doc(asAnon(env).firestore(), 'campAllocations', DOC)));
   });
 
-  it('denies a camp lead reading another ministry’s allocation', async () => {
-    await assertFails(
+  /**
+   * The camp's own ministry is not the camp's back office, as of 2 Sep 2026.
+   *
+   * This is the grant that used to open the allocation — `programAdmin.programs`
+   * with the camp's id in it — and it now buys the camp's page, its gatherings
+   * and its photographs and nothing else.
+   */
+  it('denies the camp’s own ministry', async () => {
+    await assertFails(getDoc(doc(asCampMinistry(env).firestore(), 'campAllocations', DOC)));
+  });
+
+  /**
+   * The cost of a flag over a program grant, asserted rather than implied: it
+   * is not scoped by ministry. There is one camp and only a superadmin may
+   * re-point `config/camp.programId`, which is what keeps a second one from
+   * existing. `camp.test.ts` has the long version.
+   */
+  it('lets the camp grant read an allocation filed under another ministry', async () => {
+    await assertSucceeds(
       getDoc(doc(asCampLead(env).firestore(), 'campAllocations', `${OTHER}__${SEASON}`)),
     );
   });
@@ -228,7 +275,7 @@ describe('writing an allocation', () => {
     await assertSucceeds(setDoc(doc(db, 'campAllocations', DOC), allocation()));
   });
 
-  it('denies a staff member with no camp grant', async () => {
+  it('denies somebody holding every area but not the camp', async () => {
     const db = asEveryArea(env).firestore();
     await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ updatedBy: 'staff-1' })));
   });
@@ -247,9 +294,19 @@ describe('writing an allocation', () => {
     await assertFails(updateDoc(doc(db, 'campAllocations', DOC), { programId: OTHER }));
   });
 
-  it('denies creating one under a ministry the writer does not administer', async () => {
+  /**
+   * Creating one under another ministry is allowed, and pinning is what still
+   * matters.
+   *
+   * A program grant refused this; the flag does not look at `programId` at all.
+   * What it cannot do is *move* an existing allocation — the test above this one
+   * — so the season somebody arranged cannot be pulled out from under the
+   * screens. Writing a new document under a ministry nobody uses achieves
+   * nothing but a document nothing reads.
+   */
+  it('allows creating one under another ministry, which nothing reads', async () => {
     const db = asCampLead(env).firestore();
-    await assertFails(
+    await assertSucceeds(
       setDoc(
         doc(db, 'campAllocations', `${OTHER}__2099`),
         allocation({ programId: OTHER, season: '2099' }),
@@ -269,35 +326,53 @@ describe('writing an allocation', () => {
     await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ season: '' })));
   });
 
-  it('denies more bands than a camp can have', async () => {
+  it('denies more weeks than a camp can have', async () => {
     const db = asCampLead(env).firestore();
-    const bands = Array.from({ length: 17 }, (_unused, index) => weekBoard(index + 1).bands[0]);
-    await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ bands })));
+    const weeks = Array.from({ length: 10 }, (_unused, index) => weekBoard(index + 1));
+    await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ weeks })));
   });
 
-  it('denies bands that are not a list at all', async () => {
+  it('denies weeks that are not a list at all', async () => {
     const db = asCampLead(env).firestore();
-    await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ bands: 'lots' })));
+    await assertFails(setDoc(doc(db, 'campAllocations', DOC), allocation({ weeks: 'lots' })));
   });
 
   /*
-   * The per-week shape, refused on the way in.
+   * The flat shape, refused on the way in.
    *
-   * A document written while the camp was arranged per week has `weeks` at the
-   * top level and no `bands`, and it stays *readable* — `parseCampAllocation`
-   * lifts week one out of it. Writing it back that way is what must not happen,
-   * because every write comes from the screen and the screen has already
-   * converted it; a top-level `weeks` arriving now is a client that is out of
-   * date.
+   * A document written while the camp had one arrangement for the whole summer
+   * has `bands` and `stations` at the top and no `weeks`, and it stays
+   * *readable* — `parseCampAllocation` lifts it into week one. Writing it back
+   * that way is what must not happen, because every write comes from the screen
+   * and the screen has already converted it; a top-level `bands` arriving now
+   * is a client that is out of date.
    */
-  it('denies the per-week shape, whatever else is on it', async () => {
+  it('denies the old flat shape, whatever else is on it', async () => {
     const db = asCampLead(env).firestore();
     const old = allocation();
-    delete (old as Record<string, unknown>)['bands'];
-    delete (old as Record<string, unknown>)['stations'];
+    delete (old as Record<string, unknown>)['weeks'];
+    const board = weekBoard(1);
     await assertFails(
-      setDoc(doc(db, 'campAllocations', DOC), { ...old, weeks: [weekBoard(1)] }),
+      setDoc(doc(db, 'campAllocations', DOC), {
+        ...old,
+        bands: board.bands,
+        stations: board.stations,
+      }),
     );
+  });
+
+  /*
+   * A week's board is not itself bounded here, and that is the same gap the
+   * bands had: `MAX_BANDS`, `MAX_STATIONS` and every count inside them are
+   * enforced by `parseCampAllocation` alone. Pinned so nobody reads the rule and
+   * assumes otherwise.
+   */
+  it('allows a week carrying more bands than the parser will keep', async () => {
+    const db = asCampLead(env).firestore();
+    const fat = weekBoard(1, {
+      bands: Array.from({ length: 20 }, (_unused, index) => weekBoard(index + 1).bands[0]),
+    });
+    await assertSucceeds(setDoc(doc(db, 'campAllocations', DOC), allocation({ weeks: [fat] })));
   });
 });
 
@@ -325,13 +400,28 @@ describe('listing the seasons', () => {
     );
   });
 
-  it('denies a list that is not constrained to a ministry', async () => {
+  /**
+   * Inverted on 2 Sep 2026, and worth keeping for that.
+   *
+   * Under a program grant an unconstrained list was refused outright rather
+   * than filtered — decision #10, the failure that looks like a broken screen
+   * and is a missing `where`. A flag is proven against the caller, so the trap
+   * does not exist here any more. The screen still sends the constraint.
+   */
+  it('allows a list that is not constrained to a ministry', async () => {
     const db = asCampLead(env).firestore();
-    await assertFails(getDocs(collection(db, 'campAllocations')));
+    await assertSucceeds(getDocs(collection(db, 'campAllocations')));
   });
 
   it('denies a lead of another ministry listing this one', async () => {
     const db = asOtherLead(env).firestore();
+    await assertFails(
+      getDocs(query(collection(db, 'campAllocations'), where('programId', '==', CAMP))),
+    );
+  });
+
+  it('denies the camp’s own ministry listing the seasons', async () => {
+    const db = asCampMinistry(env).firestore();
     await assertFails(
       getDocs(query(collection(db, 'campAllocations'), where('programId', '==', CAMP))),
     );

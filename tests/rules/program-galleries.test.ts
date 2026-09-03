@@ -52,6 +52,18 @@ const asProgramLead = (e: RulesTestEnvironment) => e.authenticatedContext('lead-
 const asWeekVolunteer = (e: RulesTestEnvironment) => e.authenticatedContext('vol-1', {});
 /** Signed in, trusted with nothing. */
 const asOutsider = (e: RulesTestEnvironment) => e.authenticatedContext('nobody-1', {});
+/**
+ * Runs the summer camp's **back office** — the `camp` screen flag — and holds
+ * no program grant at all.
+ *
+ * The other half of the separation made on 2 Sep 2026, and it belongs in this
+ * file rather than only in the camp suites. Until then one tick did both jobs:
+ * whoever was given the camp's registrations was thereby given its event pages
+ * and every photograph sent in to them. `tests/rules/camp.test.ts` asserts that
+ * the ministry no longer reaches the paperwork; these assert that the paperwork
+ * does not reach the pictures.
+ */
+const asCampOffice = (e: RulesTestEnvironment) => e.authenticatedContext('camp-office-1', {});
 
 function media(over: Record<string, unknown> = {}) {
   return {
@@ -142,6 +154,10 @@ beforeEach(async () => {
       programAdmin: { programs: [], events: [WEEK_1] },
     });
     await setDoc(doc(db, 'members', 'nobody-1'), {
+      programAdmin: { programs: [], events: [] },
+    });
+    await setDoc(doc(db, 'members', 'camp-office-1'), {
+      screenAdmin: { camp: true },
       programAdmin: { programs: [], events: [] },
     });
   });
@@ -238,182 +254,110 @@ describe('public gallery reads', () => {
   });
 });
 
-describe('anonymous submission', () => {
-  it('accepts a well-formed pending upload from nobody at all', async () => {
-    await assertSucceeds(addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media()));
-  });
-
-  it('refuses one that arrives already approved', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({ status: 'approved' })),
-    );
-  });
-
-  it('refuses one that places itself on the page', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        placement: { onPage: true, slideshow: false, homepage: false },
-      })),
-    );
-  });
-
-  it('refuses one that places itself on the homepage', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        placement: { onPage: false, slideshow: false, homepage: true },
-      })),
-    );
-  });
-
-  it('refuses one that arrives pre-reviewed', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        reviewedBy: 'lead-1', reviewedAt: new Date(),
-      })),
-    );
+describe('submission is closed to every client', () => {
+  /*
+   * -------------------------------------------------------------------------
+   * This suite used to be the opposite of itself.
+   *
+   * It asserted that a well-formed anonymous create *succeeded*, and then spent
+   * two hundred lines proving that each way of malforming it failed: a status
+   * of `approved`, a placement on the homepage, a `sourcePath` pointing at
+   * another event's quarantine folder, a `programId` that disagreed with its
+   * event. Every one of those was a real hole and the rule really did close it.
+   *
+   * The rule is now `allow create: if false`, and all of it is gone — not
+   * because those checks stopped mattering, but because they were only ever
+   * half the write. The bytes went to Cloud Storage first, and *nothing*
+   * guarded that, so a script that uploaded a file and never wrote a document
+   * walked past every assertion this suite made. Uploads go through
+   * POST /api/gallery/upload-url now, which does both writes with the Admin SDK.
+   *
+   * So what is left to test here is the door being shut, and that is genuinely
+   * all a rules test can say. **The field-shape checks did not disappear; they
+   * moved.** They live in `functions/src/galleries/uploadUrl.ts` and are covered
+   * by `tests/unit/galleryUploadUrl.test.ts`. If you are here because you
+   * changed what a submission looks like, that is the file you want.
+   * -------------------------------------------------------------------------
+   */
+  it('refuses a well-formed pending upload from nobody at all', async () => {
+    await assertFails(addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media()));
   });
 
   /*
-   * Whether the parish is collecting is one flag on the *ministry* now, and
-   * these four are the whole of that change at the rules layer.
+   * The one that would otherwise be missed.
    *
-   * It used to be a flag per level, and there was a test here asserting that a
-   * submission to Week 2 — which the fixture closes — was refused. The opposite
-   * is now correct, and it is a deliberate loss rather than a regression: the
-   * upload form offers a visitor every level in the ministry, and a flag per
-   * level made that picker a list with holes in it that nobody on the public side
-   * could see the reason for. See `Program.submissionsOpen`.
+   * Closing the door to strangers while leaving it open to anyone with an
+   * account would be no defence at all: the upload path signs visitors in
+   * anonymously, so *every* submitter now has a uid and would sail through a
+   * rule that merely asked for `signedIn()`. A program's own administrator is
+   * refused too — they upload through the same endpoint as everybody else.
    */
-  it('accepts a submission to a level whose own submissionsOpen is false', async () => {
-    await assertSucceeds(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        programEventId: WEEK_2,
-        sourcePath: `submissions/${WEEK_2}/abc.heic`,
-      })),
-    );
-  });
-
-  it('refuses every submission while the ministry is not collecting', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await updateDoc(doc(ctx.firestore(), 'programs', SUMMERCAMP), { submissionsOpen: false });
-    });
-
-    const db = asAnon(env).firestore();
-    // Both levels, to make it unambiguous that the ministry's flag is what
-    // decided it rather than anything on the level.
-    await assertFails(addDoc(collection(db, 'galleryMedia'), media()));
-    await assertFails(
-      addDoc(collection(db, 'galleryMedia'), media({
-        programEventId: WEEK_2,
-        sourcePath: `submissions/${WEEK_2}/abc.heic`,
-      })),
-    );
-  });
-
-  /*
-   * The default, asserted rather than assumed.
-   *
-   * Neither program fixture carries `submissionsOpen`, which is exactly the
-   * state of every program document the parish wrote before the field existed.
-   * The rule reads absence as open, and `Program.submissionsOpen` says the same
-   * in prose — if either changes, this test is what notices. A default of
-   * `false` would deny every real upload while passing `rules:check` clean.
-   */
-  it('accepts a submission when the ministry has no submissionsOpen field at all', async () => {
-    await assertSucceeds(addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media()));
-  });
-
-  /*
-   * A level whose ministry is gone.
-   *
-   * Not a hypothetical: deleting a program is refused while any level remains
-   * (`deleteProgram`), but that check is client-side and the rules allow the
-   * delete, so an orphaned level is one console click away. Both `get()`s in the
-   * rule are guarded by an `exists()` for this case — an unguarded `get()` on a
-   * missing document fails the whole evaluation, which denies, but denies for a
-   * reason that takes an afternoon to find.
-   */
-  it('refuses a submission to a level whose program no longer exists', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'programEvents', 'orphan-level'), {
-        programId: 'ghost-program', parentId: null, slug: 'orphan', title: 'Orphan',
-        description: '', startAt: null, endAt: null, timeZone: 'America/New_York',
-        order: 0, featuredMediaIds: [], coverMediaId: null, calendarEventId: null,
-        published: true, publishAt: null,
-        createdAt: new Date(), updatedAt: new Date(), updatedBy: null,
-      });
-    });
-
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        programId: 'ghost-program',
-        programEventId: 'orphan-level',
-        sourcePath: 'submissions/orphan-level/abc.heic',
-      })),
-    );
-  });
-
-  it('refuses a submission to an event that does not exist', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({ programEventId: 'invented' })),
-    );
-  });
-
-  /**
-   * `sourcePath` is what the transcode Function copies into the public bucket,
-   * using the Admin SDK, which ignores storage.rules. Left unconstrained, an
-   * anonymous stranger names the file that gets published — and `submissions/`
-   * is the one prefix nobody can otherwise read.
-   */
-  it('refuses a submission pointing at another event\'s quarantine folder', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        sourcePath: `submissions/${WEEK_2}/somebody-elses.heic`,
-      })),
-    );
-  });
-
-  it('refuses a submission pointing outside the quarantine folder entirely', async () => {
-    const db = asAnon(env).firestore();
-    for (const sourcePath of [
-      'galleries/summercamp/already-public.webp',
-      'members/lead-1/avatar.jpg',
-      'clergy/portrait.jpg',
-      `submissions/${WEEK_1}/nested/deeper.heic`,
-    ]) {
-      await assertFails(addDoc(collection(db, 'galleryMedia'), media({ sourcePath })));
+  it('refuses it from a signed-in account, and from the ministry\'s own lead', async () => {
+    for (const ctx of [asServant(env), asProgramLead(env)]) {
+      await assertFails(addDoc(collection(ctx.firestore(), 'galleryMedia'), media()));
     }
   });
 
-  /**
-   * `programId` is denormalised so the approval queue can filter without a
-   * join, which also makes it forgeable. Unchecked, a submitter chooses whose
-   * queue their upload appears in.
+  it('refuses a superadmin too, because nothing writes these from a browser', async () => {
+    await assertFails(addDoc(collection(asSuper(env).firestore(), 'galleryMedia'), media()));
+  });
+
+  /*
+   * The shapes the old rule policed, asserted as a group now rather than one
+   * test each. They are all refused for the same reason — no client creates
+   * these — and a test per field would imply the rule still reads them.
    */
-  it('refuses a submission whose programId disagrees with its event', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({ programId: SENIORS })),
-    );
+  it('refuses every shape the old field-by-field rule used to police', async () => {
+    const db = asAnon(env).firestore();
+    for (const override of [
+      { status: 'approved' },
+      { placement: { onPage: true, slideshow: false, homepage: false } },
+      { placement: { onPage: false, slideshow: false, homepage: true } },
+      { reviewedBy: 'lead-1', reviewedAt: new Date() },
+      { kind: 'executable' },
+      { programId: SENIORS },
+      { sourcePath: 'galleries/summercamp/already-public.webp' },
+      { sourcePath: `submissions/${WEEK_2}/somebody-elses.heic` },
+    ]) {
+      await assertFails(addDoc(collection(db, 'galleryMedia'), media(override)));
+    }
   });
 
-  it('refuses a submission of an invented kind', async () => {
-    await assertFails(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({ kind: 'executable' })),
-    );
-  });
-
-  it('accepts a video, which is a kind the parish does want', async () => {
-    await assertSucceeds(
-      addDoc(collection(asAnon(env).firestore(), 'galleryMedia'), media({
-        kind: 'video', sourcePath: `submissions/${WEEK_1}/clip.mov`,
-      })),
-    );
-  });
-
-  it('does not let a submitter edit or delete their own upload afterwards', async () => {
+  it('does not let a submitter edit or delete an upload afterwards', async () => {
     const db = asAnon(env).firestore();
     await assertFails(updateDoc(doc(db, 'galleryMedia', 'pending-1'), { caption: 'mine' }));
     await assertFails(deleteDoc(doc(db, 'galleryMedia', 'pending-1')));
+  });
+
+  /*
+   * Reading is unchanged, and it matters that this still passes: the public
+   * gallery is a stranger reading approved photographs, and shutting the create
+   * door must not have touched it.
+   */
+  it('still lets a stranger read approved photographs', async () => {
+    const db = asAnon(env).firestore();
+    await assertSucceeds(
+      getDocs(query(collection(db, 'galleryMedia'), where('status', '==', 'approved'))),
+    );
+  });
+});
+
+describe('the submission quota is nobody\'s business', () => {
+  /*
+   * Written only by the upload endpoint through the Admin SDK, which ignores
+   * this file entirely — so `if false` is the whole policy rather than a
+   * placeholder waiting for a real rule.
+   *
+   * Read is closed as firmly as write, and that is the part worth a test: the
+   * documents are keyed `uid:{uid}` and `ip:{sha256}` with timestamps, so a
+   * readable collection would be a log of who visited which gallery and when.
+   */
+  it('refuses reads and writes from everybody, signed in or not', async () => {
+    for (const ctx of [asAnon(env), asServant(env), asProgramLead(env), asSuper(env)]) {
+      const db = ctx.firestore();
+      await assertFails(getDoc(doc(db, 'submissionQuota', 'uid:someone')));
+      await assertFails(setDoc(doc(db, 'submissionQuota', 'uid:someone'), { day: '2026-09-02', count: 1 }));
+    }
   });
 });
 
@@ -611,6 +555,42 @@ describe('program grants', () => {
         coverMediaId: null, calendarEventId: null, submissionsOpen: true,
         published: false, publishAt: null,
         createdAt: new Date(), updatedAt: new Date(), updatedBy: 'lead-1',
+      }),
+    );
+  });
+
+  /**
+   * The `camp` flag is the registrations, the groups and the register — and
+   * deliberately not the camp's page, its gatherings or its photographs.
+   *
+   * This is the assertion that makes the separation real in both directions.
+   * The camp's registrar can hold children's medical notes and still have no
+   * way to publish an event page or approve a photograph, which is the whole
+   * argument for splitting the grant.
+   */
+  it('denies the camp’s back office the camp’s own gallery and events', async () => {
+    const db = asCampOffice(env).firestore();
+
+    await assertFails(
+      updateDoc(doc(db, 'galleryMedia', 'pending-1'), {
+        status: 'approved', reviewedBy: 'camp-office-1', reviewedAt: new Date(),
+      }),
+    );
+    await assertFails(
+      getDocs(query(
+        collection(db, 'galleryMedia'),
+        where('programId', '==', SUMMERCAMP),
+        where('status', '==', 'pending'),
+      )),
+    );
+    await assertFails(
+      addDoc(collection(db, 'programEvents'), {
+        programId: SUMMERCAMP, slug: 'week-4-2027', title: 'Week 4', description: '',
+        parentId: null, order: 0, featuredMediaIds: [],
+        startAt: null, endAt: null, timeZone: 'America/New_York',
+        coverMediaId: null, calendarEventId: null, submissionsOpen: true,
+        published: false, publishAt: null,
+        createdAt: new Date(), updatedAt: new Date(), updatedBy: 'camp-office-1',
       }),
     );
   });
