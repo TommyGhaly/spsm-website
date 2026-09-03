@@ -6,10 +6,12 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   COLLECTIONS,
   CONFIG_DOC_CAMP,
-  canAdminProgram,
+  canAdminScreen,
+  canSeeFinanceSource,
   defaultCampConfig,
   parseCampConfig,
-  parseProgramAdmin,
+  parseFinanceScopes,
+  parseScreenAdmin,
   type CampConfig,
   type SpsmClaims,
 } from '@spsm/shared';
@@ -17,32 +19,54 @@ import { db } from '@/lib/firebase';
 import { getServerSnapshot, getSnapshot, subscribe } from '@/lib/authStore';
 
 /**
- * Whether the person reading /forms runs the camp, and what the camp is set to.
+ * Whether the person reading the camp screens runs the camp, whether they may
+ * see its money, and what the camp is set to.
  *
  * ---------------------------------------------------------------------------
- * Two reads, and why neither is optional.
+ * ## Two permissions, not one, and that is the point of this file
  *
- * The permission this asks about is a **program grant**, and those deliberately
- * do not live in the token. `programAdmin.ts` says why: grants change often
- * enough that waiting up to an hour for a token refresh would be a support call
- * every time somebody is given the camp. They live on the member document
- * instead, and reading them costs one `get`. `useFormsAdmin` next door pays the
- * same cost for the same reason — since the role ladder went, every permission
- * on this site except `superadmin` is a field on that document.
+ * `canEdit` used to be `canAdminProgram(claims, grants, config.programId)` — a
+ * program grant on the camp's ministry. That made "runs the camp's paperwork"
+ * and "runs the camp's event pages and gallery" the same permission, because a
+ * program grant is one tick over all three. It is now the `camp` screen flag,
+ * and the camp's programEvents and photographs stay with the program grant
+ * where every other ministry's are. The long version is on `'camp'` in
+ * `packages/shared/src/screens.ts`.
+ *
+ * `canSeeMoney` is the second answer and a different grant again: `finance`,
+ * narrowed to the `camp` source. The camp's balances, discounts and payment
+ * history are the treasurer's, and a registrar taking families at a desk does
+ * not need them on screen to do their job.
+ *
+ * **Be exact about what that second answer is.** The fees ledger is a field on
+ * a `campRegistrations` document, and rules grant documents rather than fields,
+ * so `camp` can read it whatever this hook says. `canSeeMoney` is therefore a
+ * *preference* — it decides what the screens draw, and it is honest about the
+ * one thing it cannot be, which is a wall. What is genuinely enforced is the
+ * other direction: `finance` is refused `campRegistrations` outright by
+ * firestore.rules, which is why `financeRollups` exists.
+ *
+ * ## Two reads, and why neither is optional
+ *
+ * Neither permission lives in the token. Grants change often enough that
+ * waiting up to an hour for a refresh would be a support call every time
+ * somebody is given the camp, so both `screenAdmin` and `financeScopes` are
+ * fields on the member document and cost one `get` between them. `useFormsAdmin`
+ * next door pays the same cost for the same reason.
  *
  * The second read is `config/camp` — the season and the fee. It is not a
  * permission, but it is needed before anything can be created (a new
  * registration copies the fee onto itself), and fetching it here means the
  * screen never opens into a state where it cannot save.
  *
- * Both are behind `signed-in`, so a visitor triggers neither. Nothing is read
- * until somebody with a session is actually on the page.
+ * Only the member read is behind `signed-in`; the settings are world-readable
+ * and the public sign-up form needs them.
  * ---------------------------------------------------------------------------
  *
  * ## Not a security boundary
  *
  * This decides what to draw. What protects a child's medical notes is
- * `firestore.rules` refusing the query without the grant — someone who flips
+ * `firestore.rules` refusing the query without the flag — someone who flips
  * `canEdit` in their own browser gets an empty drawer and a permission error.
  */
 export interface CampAdminSession {
@@ -51,6 +75,16 @@ export interface CampAdminSession {
   claims: SpsmClaims | null;
   /** True when this person may read and write the camp's registrations. */
   canEdit: boolean;
+  /**
+   * True when the camp's money may be shown: totals, balances, discounts and
+   * the payment history.
+   *
+   * `finance` narrowed to `camp`, which is nothing to do with `canEdit` — a
+   * registrar has the first and not this, a treasurer has this and not the
+   * first, and the two overlap only in whoever the parish gives both to. False
+   * does not mean the ledger is unreachable; see the note above.
+   */
+  canSeeMoney: boolean;
   config: CampConfig;
   uid: string | null;
 }
@@ -98,9 +132,15 @@ function watchCampConfig(
 
 export function useCampAdmin(): CampAdminSession {
   const auth = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const [state, setState] = useState<{ ready: boolean; canEdit: boolean; config: CampConfig }>({
+  const [state, setState] = useState<{
+    ready: boolean;
+    canEdit: boolean;
+    canSeeMoney: boolean;
+    config: CampConfig;
+  }>({
     ready: false,
     canEdit: false,
+    canSeeMoney: false,
     config: defaultCampConfig(),
   });
 
@@ -132,7 +172,9 @@ export function useCampAdmin(): CampAdminSession {
      */
     if (!signedIn || !uid) {
       if (auth.kind !== 'signed-out') return; // restoring / signing-in: unknown.
-      return watchCampConfig((config) => setState({ ready: true, canEdit: false, config }));
+      return watchCampConfig((config) =>
+        setState({ ready: true, canEdit: false, canSeeMoney: false, config }),
+      );
     }
 
     let live = true;
@@ -141,14 +183,15 @@ export function useCampAdmin(): CampAdminSession {
     const readerUid = uid;
 
     /*
-     * The grant is answered once against the *first* settings this reads, and
-     * then followed.
+     * The grants are answered once, on the first settings this reads, and then
+     * the settings are followed without asking again.
      *
-     * `programId` is what the grant is checked against, and it is the one key
-     * on this document a camp administrator may not write — so it cannot change
-     * under somebody mid-session except by a superadmin's hand, and re-running
-     * the member read on every settings edit would be a Firestore read per
-     * keystroke on the season field.
+     * Nothing on `config/camp` decides either permission any more — that was
+     * true of the old program grant, which was checked against `programId`, and
+     * the flag is about the caller. The settings are still awaited before
+     * answering so the screen opens with a season and a fee in hand rather than
+     * in two paints, and re-reading the member document on every settings edit
+     * would be a Firestore read per keystroke on the season field.
      */
     let answered = false;
     const stop = watchCampConfig((config) => {
@@ -157,35 +200,44 @@ export function useCampAdmin(): CampAdminSession {
         return;
       }
       answered = true;
-      void grantFor(config).then((canEdit) => {
-        if (live) setState({ ready: true, canEdit, config });
+      void grants().then(({ canEdit, canSeeMoney }) => {
+        if (live) setState({ ready: true, canEdit, canSeeMoney, config });
       });
     });
 
-    async function grantFor(config: CampConfig): Promise<boolean> {
-      let canEdit = false;
+    async function grants(): Promise<{ canEdit: boolean; canSeeMoney: boolean }> {
+      /*
+       * A superadmin's `canEdit` is answered from the token alone.
+       *
+       * Not merely a saving. The first admin is bootstrapped by
+       * `grant-admin.mjs` and may have no member document at all — reading
+       * grants they do not need would lock the person who can do everything out
+       * of the one screen they went looking for.
+       *
+       * `canSeeMoney` still reads the document, because the finance *sources*
+       * deliberately do not short-circuit on `superadmin`: they answer "which
+       * part of this do you look after", and a superadmin who has unticked the
+       * camp meant it. An absent map reads as all three, so a superadmin who has
+       * never touched those rows sees the money exactly as before. The long
+       * version is on `canSeeFinanceSource` in packages/shared/src/screens.ts.
+       */
       try {
-        /*
-         * A superadmin is answered from the token alone.
-         *
-         * Not merely a saving. The first admin is bootstrapped by
-         * `grant-admin.mjs` and may have no member document at all — reading
-         * grants they do not need would lock the person who can do everything
-         * out of the one screen they went looking for.
-         */
-        if (claims?.superadmin === true) {
-          canEdit = true;
-        } else {
-          const member = await getDoc(doc(db(), COLLECTIONS.members, readerUid));
-          const grants = parseProgramAdmin(member.data()?.['programAdmin']);
-          canEdit = canAdminProgram(claims, grants, config.programId);
-        }
+        const member = await getDoc(doc(db(), COLLECTIONS.members, readerUid));
+        const screens = parseScreenAdmin(member.data()?.['screenAdmin']);
+        const scopes = parseFinanceScopes(member.data()?.['financeScopes']);
+        return {
+          canEdit: canAdminScreen(claims, screens, 'camp'),
+          canSeeMoney: canSeeFinanceSource(claims, screens, scopes, 'camp'),
+        };
       } catch (error) {
-        // A failed grant read is "not allowed", not "allowed by default".
-        console.warn('[camp] could not read your program grants', error);
+        // A failed grant read is "not allowed", not "allowed by default" — with
+        // the one exception the superadmin bootstrap needs.
+        console.warn('[camp] could not read your grants', error);
+        return {
+          canEdit: claims?.superadmin === true,
+          canSeeMoney: claims?.superadmin === true,
+        };
       }
-
-      return canEdit;
     }
 
     return () => {

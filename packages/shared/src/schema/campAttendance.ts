@@ -1,13 +1,21 @@
 import type { AuditFields, Timestamped } from './common.js';
 import {
   CAMP_GRADES,
+  CAMP_WEEKDAYS,
+  campDayDate,
+  campDayKey,
   campDayLabel,
   campGradeLabel,
   parseCampDayKey,
   type CampDayKey,
   type CampGrade,
 } from './camp.js';
-import type { CampAllocationDraft, CampPerson, CampPersonKey } from './campAllocation.js';
+import {
+  weekBoardOf,
+  type CampAllocationDraft,
+  type CampPerson,
+  type CampPersonKey,
+} from './campAllocation.js';
 
 /**
  * The camp's register: one document per day of camp, one tick per child.
@@ -101,9 +109,11 @@ export interface CampAttendanceMark {
  * One child's day.
  *
  * Both marks nullable and independent. `collected` without `arrived` is not a
- * state the screen can produce — the pickup control is disabled until the child
- * is in — but it is a state a console can, so nothing here treats it as
- * impossible.
+ * state the screen can produce any more — the afternoon half lists only
+ * children who arrived, so there is no Out control on a child who has no In —
+ * but it is a state a console can, and one that older registers hold, so
+ * nothing here treats it as impossible. `attendanceState` still reads it as
+ * `gone`.
  */
 export interface CampAttendanceEntry {
   arrived: CampAttendanceMark | null;
@@ -312,6 +322,161 @@ export function everyoneCollected(tally: CampAttendanceTally): boolean {
 }
 
 /* ---------------------------------------------------------------------------
+ * The two halves of a day
+ * ---------------------------------------------------------------------------
+ *
+ * A day of camp is worked in two halves, and the register is a different screen
+ * in each of them. The morning is *who showed up* — every child down for today,
+ * plus anybody who turned up who was not, and one tick each. The afternoon is
+ * *who is still here and who is collecting them* — only the children who
+ * actually arrived, with a guardian's name and number beside each one.
+ *
+ * This reverses something written at the top of this file: In and Out used to
+ * sit on the same row, on purpose, so that nobody could be in the wrong half at
+ * the one moment where being in the wrong half means a child is marked as gone
+ * home who is not. Tommy asked for the halves anyway, and the two things that
+ * make it safe are here rather than in the screen:
+ *
+ *  - the half is **derived, then overridable** — `campHalfForDay` says which
+ *    half a day is in and the servant can say otherwise at any time, so a
+ *    pickup at eleven or an arrival at one is never blocked, only a tap away;
+ *  - the afternoon still shows **the arrival time** on every row, so a child
+ *    whose "Left" was tapped by mistake is visibly still ticked in.
+ * ------------------------------------------------------------------------ */
+
+/** Which half of a day of camp is being worked. */
+export type CampHalf = 'morning' | 'afternoon';
+
+/**
+ * Noon, local, is when a day of camp turns over.
+ *
+ * The camp's own boundary, not a computed one: there is no "sessions" field on
+ * `config/camp` and inventing one would be a setting nobody would ever change.
+ * A servant who needs the other half before or after noon taps for it.
+ */
+export const CAMP_AFTERNOON_FROM_HOUR = 12;
+
+export function campHalfLabel(half: CampHalf): string {
+  return half === 'afternoon' ? 'Afternoon' : 'Morning';
+}
+
+/**
+ * Which half a given day of camp should open on.
+ *
+ * A day that has already been and gone opens on the afternoon — it is being
+ * read, not worked, and the afternoon is where the day's ending is. A day still
+ * to come opens on the morning. Today is the only one that depends on the
+ * clock, and it flips at noon.
+ *
+ * With no dates on `config/camp` there is no way to know whether the chosen day
+ * is past or future — every day key is equally undated — so the clock alone
+ * decides, which is right for the only day anybody is ticking.
+ */
+export function campHalfForDay(
+  weekStarts: readonly string[],
+  day: CampDayKey,
+  now: Date = new Date(),
+): CampHalf {
+  const byClock: CampHalf =
+    now.getHours() >= CAMP_AFTERNOON_FROM_HOUR ? 'afternoon' : 'morning';
+
+  const date = campDayDate(weekStarts, day);
+  if (!date) return byClock;
+
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+
+  if (date.getTime() < midnight.getTime()) return 'afternoon';
+  if (date.getTime() > midnight.getTime()) return 'morning';
+  return byClock;
+}
+
+/**
+ * The day of camp nearest to now, which is the day the register opens on.
+ *
+ * Today when today is a day of camp, and otherwise the closest one in either
+ * direction — the Saturday in the middle of a fortnight opens Friday, which was
+ * yesterday, over Monday, which is two days off. A tie goes to the day ahead:
+ * on the Sunday between the two weeks, the register is far more likely to be
+ * being read in preparation for Monday than in review of Friday.
+ *
+ * Before and after the camp this collapses to the first and last day, which is
+ * what an administrator opening the register in February wants — the alternative
+ * was week one Monday all year, right one day in twelve months.
+ */
+export function nearestCampDay(
+  weekStarts: readonly string[],
+  weeks: number,
+  now: Date = new Date(),
+): CampDayKey {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+
+  let best: CampDayKey | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestAhead = false;
+
+  for (let week = 1; week <= weeks; week += 1) {
+    for (const weekday of CAMP_WEEKDAYS) {
+      const key = campDayKey(week, weekday);
+      const date = campDayDate(weekStarts, key);
+      if (!date) continue;
+
+      const offset = date.getTime() - midnight.getTime();
+      const distance = Math.abs(offset);
+      const ahead = offset >= 0;
+
+      // Strictly closer wins; equally close and ahead beats equally close and
+      // behind. Only ever one comparison, so the whole rule is these two lines.
+      if (distance < bestDistance || (distance === bestDistance && ahead && !bestAhead)) {
+        best = key;
+        bestDistance = distance;
+        bestAhead = ahead;
+      }
+    }
+  }
+
+  // A camp with no dates set has no nearest day. Week one Monday is the only
+  // honest answer, and it is what this screen always did.
+  return best ?? campDayKey(1, 'mon');
+}
+
+/** The afternoon's register: who is still on site, and who has gone home. */
+export interface CampAttendancePresence {
+  /** Arrived, not yet collected. The list that has to reach empty. */
+  onSite: CampAttendanceRow[];
+  /** Collected, newest tick last. Kept, so a mistap is undoable. */
+  goneHome: CampAttendanceRow[];
+}
+
+/**
+ * The afternoon's two lists, out of the day's rows.
+ *
+ * Children who never arrived are dropped outright — that is the whole
+ * difference between the two halves. Somebody absent all morning is not a
+ * pickup anybody is waiting on, and a Friday afternoon list of ninety names
+ * where eleven of them matter is a list that gets read wrong.
+ *
+ * Collected children are *kept*, in their own list, rather than vanishing. A
+ * servant taps the row below the one they meant perhaps once a week, and a
+ * child who has disappeared off the only screen they were on cannot be put
+ * back without changing half.
+ */
+export function attendancePresence(
+  rows: readonly CampAttendanceRow[],
+): CampAttendancePresence {
+  const onSite: CampAttendanceRow[] = [];
+  const goneHome: CampAttendanceRow[] = [];
+
+  for (const row of rows) {
+    if (row.state === 'here') onSite.push(row);
+    else if (row.state === 'gone') goneHome.push(row);
+  }
+
+  return { onSite, goneHome };
+}
+
+/* ---------------------------------------------------------------------------
  * Sections
  * ------------------------------------------------------------------------ */
 
@@ -388,8 +553,18 @@ export function attendanceByGrade(rows: readonly CampAttendanceRow[]): CampAtten
  */
 export function attendanceByGroup(
   rows: readonly CampAttendanceRow[],
-  board: CampAllocationDraft | null,
+  allocation: CampAllocationDraft | null,
+  /**
+   * Which week's arrangement to read.
+   *
+   * Required since the board went back to one arrangement per week: the same
+   * child is in Blue in week one and Green in week two, and a register that
+   * guessed the week would head a Tuesday-of-week-two section with week one's
+   * group. The caller has the day key, so it knows.
+   */
+  week: number,
 ): CampAttendanceSection[] {
+  const board = allocation ? weekBoardOf(allocation, week) : null;
   const byKey = new Map<CampPersonKey, CampAttendanceRow>();
   for (const row of rows) byKey.set(row.person.key, row);
 

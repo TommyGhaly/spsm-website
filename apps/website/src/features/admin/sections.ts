@@ -4,13 +4,9 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   COLLECTIONS,
-  CONFIG_DOC_CAMP,
-  canAdminProgram,
+  canAdminScreen,
   financeSourcesFor,
-  defaultCampConfig,
-  parseCampConfig,
   parseFinanceScopes,
-  parseProgramAdmin,
   parseScreenAdmin,
   type FinanceScopes,
   type FinanceSource,
@@ -153,22 +149,6 @@ export function useAdminAccess(enabled = true): AdminAccess {
 
       try {
         /*
-         * The camp's own settings are read for one field: which ministry the
-         * camp belongs to. The grant is on that program id, and it is
-         * configurable — a parish that renamed the ministry should not lose the
-         * screen with it. `config` is world-readable, so this costs nothing in
-         * permissions and falls back to the committed default if unreachable.
-         */
-        let config = defaultCampConfig();
-        try {
-          const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_CAMP));
-          if (snapshot.exists()) config = parseCampConfig(snapshot.data());
-        } catch {
-          // Falls back to the default program id. Wrong only for a parish that
-          // renamed the ministry *and* cannot reach Firestore.
-        }
-
-        /*
          * Claims read from the store here rather than taken from the render's
          * `auth`, so this effect can depend on the uid and the one claim alone.
          * The auth object is rebuilt on every emission — including the hourly
@@ -178,44 +158,45 @@ export function useAdminAccess(enabled = true): AdminAccess {
         const claims = now.kind === 'signed-in' ? now.claims : null;
 
         /*
-         * One member read, both axes.
-         *
-         * The camp is a program grant and finance is a screen flag, and they
-         * live on the same document — so reading it once and parsing both is
-         * the difference between one billed read per menu open and two.
-         *
-         * A superadmin is answered from the token alone and reads nothing, as
-         * `useCampAdmin` does and for the same reason: the first admin is
-         * bootstrapped by `grant-admin.mjs` and may have no member document at
-         * all, so reading grants they do not need is how the one person who can
-         * do everything gets an empty menu.
-         */
-        /*
-         * One member read, every axis — and it is no longer skipped for a
-         * superadmin.
+         * One member read, every axis — and it is not skipped for a superadmin.
          *
          * It used to be: a superadmin was answered from the token alone,
-         * because `canAdminProgram` and `canAdminScreen` both short-circuit on
-         * the claim and the first administrator may have no member document at
-         * all. That still holds for those two, and both still short-circuit
-         * below. It does not hold for `financeScopes`, which is not a
-         * permission a superadmin already has but a statement of which part of
-         * the money they look after — and skipping the read made the one person
-         * who can set it the one person it did not apply to.
+         * because `canAdminScreen` short-circuits on the claim and the first
+         * administrator may have no member document at all. That still holds for
+         * the flags, and they still short-circuit below. It does not hold for
+         * `financeScopes`, which is not a permission a superadmin already has
+         * but a statement of which part of the money they look after — and
+         * skipping the read made the one person who can set it the one person it
+         * did not apply to.
+         *
+         * The program grants used to be parsed here too, for the camp row. Every
+         * row on this menu is a screen flag now.
          *
          * A missing document is an ordinary answer here: every parser reads
-         * `undefined` as its default, which is no screens, no programs and all
-         * three sources. The claim does the rest.
+         * `undefined` as its default, which is no screens and all three sources.
+         * The claim does the rest.
          */
         const member = await getDoc(doc(db(), COLLECTIONS.members, uid));
-        const grants = parseProgramAdmin(member.data()?.['programAdmin']);
         const screens = parseScreenAdmin(member.data()?.['screenAdmin']);
         // An absent map reads as all three — see `FINANCE_SOURCES` in
         // shared/screens.ts.
         const money: FinanceScopes = parseFinanceScopes(member.data()?.['financeScopes']);
-        const campAdmin = canAdminProgram(claims, grants, config.programId);
-
-        if (SHOW_CAMP && campAdmin) {
+        /*
+         * The camp is a screen flag as of 2 Sep 2026, and this row is where the
+         * change is most visible.
+         *
+         * It was `canAdminProgram(claims, grants, config.programId)`, which
+         * meant this menu row appeared for whoever ran the camp *as a ministry*
+         * — the person posting the week's photographs — and the screen behind it
+         * held children's medical notes. It is `camp` now, and the ministry
+         * grant draws no row here at all, because a program grant's screens are
+         * the gallery and the event page and both are edited in place.
+         *
+         * That deleted a read: this used to fetch `config/camp` for one field,
+         * the ministry the grant was checked against. Nothing on that document
+         * decides a permission any more.
+         */
+        if (SHOW_CAMP && canAdminScreen(claims, screens, 'camp')) {
           sections.push({
             href: '/admin/camp',
             title: 'Summer camp',

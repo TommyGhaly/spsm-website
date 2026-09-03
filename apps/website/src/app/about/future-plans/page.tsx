@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { aboutHref, aboutPage } from '@/features/content';
 import { FutureScreen } from '@/features/future';
+import { AboutOverlay, AboutSections, getAboutOverride } from '@/features/about';
 import { PageHeader } from '@/components/PageHeader';
 
 /**
@@ -34,6 +35,16 @@ import { PageHeader } from '@/components/PageHeader';
  * answer to the office instead of implying this page is it.
  * ---------------------------------------------------------------------------
  */
+/*
+ * ## Staff can edit this page again, and that is not a return to `content`
+ *
+ * `AboutOverlay` reads `aboutOverrides/{slug}` at build time and hands it to
+ * the `<Editable>` slots inside the screen below; the same document is re-read
+ * in the browser a moment after load, so an edit is live without a deploy. The
+ * page itself is still hand-written React and still server-rendered — only the
+ * declared slots and the appended sections can be changed. See
+ * `features/about/slots.ts` for what is declared and why the rest is not.
+ */
 
 const META = aboutPage('future-plans');
 
@@ -44,9 +55,11 @@ export const metadata: Metadata = {
   alternates: { canonical: aboutHref('future-plans') },
 };
 
-export default function FuturePlansPage() {
+export default async function FuturePlansPage() {
+  const baked = await getAboutOverride('future-plans');
+
   return (
-    <>
+    <AboutOverlay page="future-plans" baked={baked}>
       {/* Hidden, like every page's. The visible opening is the band below. */}
       <PageHeader title={META?.title ?? 'Future Plans'} />
 
@@ -64,7 +77,12 @@ export default function FuturePlansPage() {
         `BackLink` to the index inside it. See `components/MoreOfAbout`, which
         the other four parts of About now end on too.
       */}
-      <FutureScreen />
-    </>
+      {/*
+        The appended sections go in as `foot` rather than after the screen,
+        because this is the one page of the five whose `MoreOfAbout` is inside
+        its screen — see the note above and `FutureScreen`.
+      */}
+      <FutureScreen foot={<AboutSections baked={baked.sections} />} />
+    </AboutOverlay>
   );
 }

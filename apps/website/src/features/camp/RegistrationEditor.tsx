@@ -1,11 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   CAMP_GRADES,
   CAMP_PAYMENT_METHODS,
-  CAMP_SECTIONS,
-  CAMP_STATUSES,
   MAX_CHILDREN,
   SHIRT_SIZES,
   blankChild,
@@ -14,7 +12,7 @@ import {
   campGradeLabel,
   campLineId,
   campPaymentMethodLabel,
-  campSectionLabel,
+  clearDesiredRolesForSection,
   shirtSizeLabel,
   validateCampRegistration,
   type CampChild,
@@ -22,7 +20,6 @@ import {
   type CampDiscount,
   type CampPaymentRecord,
   type CampRegistrationDraft,
-  type CampSection,
 } from '@spsm/shared';
 import { DayGrid } from './DayGrid';
 import { deleteRegistration, writeRegistration } from './data';
@@ -62,6 +59,15 @@ export interface RegistrationEditorProps {
   draft: CampRegistrationDraft;
   config: CampConfig;
   uid: string | null;
+  /**
+   * True when the fees ledger may be shown — `finance` narrowed to `camp`.
+   *
+   * False is the registrar: they get one control for recording a payment as it
+   * is handed over, and no totals, no balance, no discounts and no history. See
+   * `Billing` below, and `canSeeMoney` on `useCampAdmin` for why this is a
+   * preference in a browser rather than a rule.
+   */
+  canSeeMoney: boolean;
   /** True when this document has never been written. Changes the delete copy. */
   isNew: boolean;
   onDone: () => void;
@@ -72,6 +78,7 @@ export function RegistrationEditor({
   draft: initial,
   config,
   uid,
+  canSeeMoney,
   isNew,
   onDone,
 }: RegistrationEditorProps) {
@@ -92,26 +99,30 @@ export function RegistrationEditor({
    * name is a form that is shouting at them for not having finished. The list
    * appears when they press the button, and then updates as they fix it.
    */
+  /*
+   * What is still missing, said and never enforced.
+   *
+   * ---------------------------------------------------------------------------
+   * This used to gate the save: a registration that was not a `draft` could not
+   * be written until every problem was fixed, and the way out was to put the
+   * status back to **Draft**. Two states, a picker to move between them, a badge
+   * on every row, and a save that sometimes silently did nothing — all to
+   * express "this form is not finished yet", which the list of problems already
+   * says perfectly well.
+   *
+   * So the list stays and the gate goes. A registrar at a desk types a name and
+   * a phone number, presses Save, and it saves; the panel underneath says what
+   * the camp still needs from them. Nothing about a half-filled registration is
+   * dangerous — it is on no register until somebody puts them in a group, and
+   * the allocation board already draws "no days" and "no grade" loudly.
+   * ---------------------------------------------------------------------------
+   */
   const problems = useMemo(
     () => validateCampRegistration(draft, { waiverInForce: config.waiverText.trim().length > 0 }),
     [draft, config.waiverText],
   );
-  const [showProblems, setShowProblems] = useState(false);
 
   async function save() {
-    /*
-     * A draft saves whatever it holds; anything else must be complete.
-     *
-     * The registration desk needs to be able to put a name and a phone number
-     * down and come back to it — that is what `draft` is for. Marking one
-     * `registered` is the claim that a child is coming, and that claim needs an
-     * emergency contact behind it.
-     */
-    if (draft.status !== 'draft' && problems.length > 0) {
-      setShowProblems(true);
-      return;
-    }
-
     setSaving(true);
     setError(null);
     try {
@@ -144,6 +155,16 @@ export function RegistrationEditor({
     }
   }
 
+  /*
+   * Always true now, and kept as a name rather than removed.
+   *
+   * A servant's registration is read, never edited — `RegistrationsScreen`
+   * sends those to `ServantSheet` — so the servant half of this form is gone
+   * and this editor only ever sees a family. The flag stays because the labels
+   * that read it ("Parent or guardian", "The family") would otherwise be
+   * asserting the same thing in prose, and because deleting it would hide from
+   * the next reader that this file used to do both.
+   */
   const family = draft.kind === 'family';
 
   return (
@@ -156,21 +177,23 @@ export function RegistrationEditor({
           <h2>{draft.contact.name.trim() || (family ? 'New family' : 'New servant')}</h2>
         </div>
         <div className="camp-editor__headActions">
-          <label className="camp-inline">
-            <span>Status</span>
-            <select
-              className="input input--narrow"
-              value={draft.status}
+          {/*
+            One switch, not a four-value picker.
+            ------------------------------------------------------------------
+            `draft` and `waitlisted` are gone — see `CAMP_STATUSES`. What is
+            left is the only one that ever meant anything: they pulled out. It
+            is a switch rather than a delete because a withdrawn family may have
+            paid, and the camp has to be able to answer for it in six months.
+          */}
+          <label className="camp-tick camp-tick--tight">
+            <input
+              type="checkbox"
+              checked={draft.status === 'withdrawn'}
               onChange={(event) =>
-                edit({ status: event.target.value as CampRegistrationDraft['status'] })
+                edit({ status: event.target.checked ? 'withdrawn' : 'registered' })
               }
-            >
-              {CAMP_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {statusLabel(status)}
-                </option>
-              ))}
-            </select>
+            />
+            <span>{family ? 'Withdrawn from camp' : 'No longer serving'}</span>
           </label>
           <button type="button" className="button" disabled={saving} onClick={() => void save()}>
             {saving ? 'Saving…' : 'Save'}
@@ -180,16 +203,16 @@ export function RegistrationEditor({
 
       {error ? <p className="camp-settings__error">{error}</p> : null}
 
-      {showProblems && problems.length > 0 ? (
-        <div className="notice notice--warn camp-problems">
-          <h3>Not ready to register yet</h3>
+      {problems.length > 0 ? (
+        <div className="camp-problems">
+          <h3>Still to come from them</h3>
           <ul>
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
           </ul>
           <p className="note">
-            Set the status to <strong>Draft</strong> to save it as it stands and come back.
+            None of this stops you saving. It is what the camp still needs before they turn up.
           </p>
         </div>
       ) : null}
@@ -298,9 +321,7 @@ export function RegistrationEditor({
             </p>
           )}
         </Section>
-      ) : (
-        <ServantFields draft={draft} config={config} onChange={edit} />
-      )}
+      ) : null}
 
       <Section title="Waiver">
         {config.waiverText.trim() ? (
@@ -354,7 +375,13 @@ export function RegistrationEditor({
       </Section>
 
       {family ? (
-        <Billing draft={draft} onChange={edit} uid={uid} bill={bill} />
+        <Billing
+          draft={draft}
+          onChange={edit}
+          uid={uid}
+          bill={bill}
+          canSeeMoney={canSeeMoney}
+        />
       ) : null}
 
       <Section title="Anything else" hint="Only the camp sees this.">
@@ -496,149 +523,7 @@ function ChildCard({
           onChange={(medicalNotes) => onChange({ ...child, medicalNotes })}
         />
       </div>
-
-      <label className="camp-tick">
-        <input
-          type="checkbox"
-          checked={child.photoConsent}
-          onChange={(event) => onChange({ ...child, photoConsent: event.target.checked })}
-        />
-        <span>Photographs of them may be used by the church.</span>
-      </label>
     </article>
-  );
-}
-
-/* ---------------------------------------------------------------------------
- * Servants
- * ------------------------------------------------------------------------ */
-
-function ServantFields({
-  draft,
-  config,
-  onChange,
-}: {
-  draft: CampRegistrationDraft;
-  config: CampConfig;
-  onChange: (patch: Partial<CampRegistrationDraft>) => void;
-}) {
-  const servant = draft.servant;
-  if (!servant) return null;
-
-  const set = (patch: Partial<NonNullable<CampRegistrationDraft['servant']>>) =>
-    onChange({ servant: { ...servant, ...patch } });
-
-  const age = campAge(servant.dateOfBirth);
-
-  return (
-    <>
-      <Section title="Serving">
-        <div className="camp-grid">
-          <label className="camp-field">
-            <span className="camp-field__label">Date of birth</span>
-            <input
-              type="date"
-              className="input"
-              value={servant.dateOfBirth}
-              onChange={(event) => set({ dateOfBirth: event.target.value })}
-            />
-            <span className="camp-field__hint">
-              {age === null ? 'Needed — a servant under 18 is placed differently' : `${age} years old`}
-            </span>
-          </label>
-          <label className="camp-field">
-            <span className="camp-field__label">Shirt</span>
-            <select
-              className="input"
-              value={servant.shirtSize}
-              onChange={(event) =>
-                set({ shirtSize: event.target.value as typeof servant.shirtSize })
-              }
-            >
-              {SHIRT_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {shirtSizeLabel(size)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <fieldset className="camp-checks">
-          <legend className="camp-field__label">Which half of the camp</legend>
-          {CAMP_SECTIONS.map((section) => (
-            <label className="camp-tick" key={section}>
-              <input
-                type="checkbox"
-                checked={servant.sections.includes(section)}
-                onChange={(event) =>
-                  set({
-                    sections: event.target.checked
-                      ? ([...servant.sections, section] as CampSection[])
-                      : servant.sections.filter((entry) => entry !== section),
-                  })
-                }
-              />
-              <span>{campSectionLabel(section)}</span>
-            </label>
-          ))}
-          <p className="camp-field__hint">
-            Both is normal. A servant who ticks neither is offered in no group, and the groups
-            screen says so rather than hiding them.
-          </p>
-        </fieldset>
-
-        <DayGrid
-          label="Which days they can serve"
-          weeks={config.weeks}
-          weekStarts={config.weekStarts}
-          days={servant.days}
-          onChange={(days) => set({ days })}
-        />
-
-        <Text
-          label="Anything about when they can be there"
-          multiline
-          value={servant.availability}
-          onChange={(availability) => set({ availability })}
-        />
-      </Section>
-
-      <Section title="Roles">
-        <div className="camp-grid">
-          <Text
-            label="What they asked for"
-            hint="What they wrote on their own sign-up. Never rewritten."
-            value={servant.desiredRoles.join(', ')}
-            onChange={(value) =>
-              set({ desiredRoles: value.split(',').map((role) => role.trim()).filter(Boolean) })
-            }
-          />
-          <Text
-            label="What they have been given"
-            hint="Comma separated. This is the camp's answer, and it can be filled in weeks later."
-            value={servant.assignedRoles.join(', ')}
-            onChange={(value) =>
-              set({ assignedRoles: value.split(',').map((role) => role.trim()).filter(Boolean) })
-            }
-          />
-        </div>
-
-        <label className="camp-tick">
-          <input
-            type="checkbox"
-            checked={servant.cleared}
-            onChange={(event) => set({ cleared: event.target.checked })}
-          />
-          <span>Safeguarding paperwork is done.</span>
-        </label>
-        <Text
-          label="Note about that"
-          value={servant.clearedNote}
-          onChange={(clearedNote) => set({ clearedNote })}
-        />
-      </Section>
-    </>
   );
 }
 
@@ -647,7 +532,8 @@ function ServantFields({
  * ------------------------------------------------------------------------ */
 
 /**
- * What they owe, what has come in, and what is left.
+ * What they owe, what has come in, and what is left — or, for a registrar, one
+ * box for taking a payment.
  *
  * ---------------------------------------------------------------------------
  * The fee is **per child per week**, and the itemised lines are here because
@@ -658,6 +544,28 @@ function ServantFields({
  * and none of it goes through Square — see the camp's decisions. A refund is a
  * negative payment rather than a deletion, so a family who paid and pulled out
  * reads as a family who paid and was refunded.
+ *
+ * ## Two versions of this section, and the split is deliberate
+ *
+ * The camp's money is the treasurer's, not the camp's: it is read on
+ * /admin/finance, under `finance` narrowed to `camp`, and *this* screen is a
+ * camp screen. But a registration is taken at a desk with a family standing at
+ * it holding a check, and a camp that cannot write that down is a camp with a
+ * shoebox of checks nobody reconciles. So the two grants divide by verb rather
+ * than by area — **the camp records, finance corrects**:
+ *
+ *   `camp` alone      the payment box, and the lines it has just added
+ *   with `finance`    the charges, the balance, the discounts, the history
+ *
+ * A payment typed here can be taken back until the registration is saved,
+ * because that is fixing a typo rather than editing a ledger. After the save it
+ * belongs to whoever holds the money, and this screen offers no way at it.
+ *
+ * What this is not is a wall. `billing` is a field on a document the `camp`
+ * flag opens, so anybody on this screen could read the ledger with a console;
+ * rules grant documents and not fields, which is the whole reason
+ * `financeRollups` exists. This decides what the screen shows, and the note on
+ * `canSeeMoney` in ./useCampAdmin.ts is where that is spelled out.
  * ---------------------------------------------------------------------------
  */
 function Billing({
@@ -665,13 +573,97 @@ function Billing({
   onChange,
   uid,
   bill,
+  canSeeMoney,
 }: {
   draft: CampRegistrationDraft;
   onChange: (patch: Partial<CampRegistrationDraft>) => void;
   uid: string | null;
   bill: ReturnType<typeof campBill>;
+  canSeeMoney: boolean;
 }) {
   const { billing } = draft;
+
+  /*
+   * Which payments were already on the record when this editor opened.
+   *
+   * A registrar sees only what they have added since — with no history and no
+   * total, a payment box that swallows a number and shows nothing is a box
+   * somebody types into twice. A ref rather than state because it is answered
+   * once per opened registration and must not follow the draft.
+   */
+  const openedWith = useRef<Set<string>>(new Set(billing.payments.map((entry) => entry.id)));
+  const justAdded = billing.payments.filter((entry) => !openedWith.current.has(entry.id));
+
+  if (!canSeeMoney) {
+    return (
+      <Section
+        title="Payment"
+        hint="Recorded here, reconciled by whoever keeps the church's books."
+      >
+        <p className="note">
+          What this family has been charged and what they still owe is on{' '}
+          <a href="/admin/finance">the finance screen</a>, which is a separate permission.
+          Write down what is handed over and it will reach the treasurer.
+        </p>
+
+        {justAdded.length > 0 && (
+          <>
+            <h4>Taken just now</h4>
+            <table className="camp-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>How</th>
+                  <th>Reference</th>
+                  <th className="camp-table__num">Amount</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {justAdded.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>{payment.receivedOn || '—'}</td>
+                    <td>{campPaymentMethodLabel(payment.method)}</td>
+                    <td>{payment.reference || '—'}</td>
+                    <td className="camp-table__num">{money(payment.amountCents)}</td>
+                    <td>
+                      {/* Only what has not been saved yet — a typo, not history. */}
+                      <button
+                        type="button"
+                        className="camp-danger camp-danger--small"
+                        onClick={() =>
+                          onChange({
+                            billing: {
+                              ...billing,
+                              payments: billing.payments.filter(
+                                (entry) => entry.id !== payment.id,
+                              ),
+                            },
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="note">
+              Nothing is recorded until this registration is saved.
+            </p>
+          </>
+        )}
+
+        <AddPayment
+          onAdd={(payment) =>
+            onChange({ billing: { ...billing, payments: [...billing.payments, payment] } })
+          }
+          uid={uid}
+        />
+      </Section>
+    );
+  }
 
   return (
     <Section title="Money">

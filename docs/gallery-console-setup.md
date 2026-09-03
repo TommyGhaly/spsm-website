@@ -204,11 +204,75 @@ of a developer — it is a page that spins in front of a visitor.
       `www.spsmwayland.org` / `spsmwayland.org` / `localhost`. Site key is in
       `.env` as `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY`.
 - [x] *(`initializeAppCheck` wired — see the note in 1d)*
-- [ ] **1b key registered in App Check** ← the next thing, and it enables the
-      App Check API, which is still off. Nothing attests until this is done.
+- [x] **1b key registered in App Check** — done 2026-09-03, and it was skipped
+      for a fortnight while 1c below was ticked. That ordering is what broke
+      the live site: 1c enforced Cloud Storage on 2026-09-02 against an app
+      that had no attestation provider, so no browser could mint a token and
+      every Storage request came back 401 — surfacing as
+      `storage/unauthenticated`, "please authenticate", to people who were
+      signed in. **1c must never be ticked before 1b.** Verify with:
+
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"recaptchaEnterpriseToken":"bogus"}' \
+            "https://firebaseappcheck.googleapis.com/v1/projects/spsm-database/apps/$APP_ID:exchangeRecaptchaEnterpriseToken?key=$WEB_API_KEY"
+
+      `App not registered` means 1b is undone. `App attestation failed` is the
+      healthy answer — the app is registered and rejected a fake token.
 - [ ] 1d debug token created and put in `.env` (needed for `npm run dev`
       against the real project; irrelevant under the emulators)
-- [ ] 1c **enforce on Cloud Storage**, leave Firestore unenforced
+- [x] 1c **enforce on Cloud Storage**, leave Firestore unenforced. Done
+      2026-09-02 — before 1b, see above.
+      Note the upload endpoint verifies its own App Check token in code rather
+      than relying on enforcement — it is an `onRequest`, so `enforceAppCheck`
+      does not apply to it — which means the *upload* path is attested the
+      moment 1b is done, whether or not 1c is. 1c still matters for everything
+      else that reads the bucket.
 - [ ] 2 lifecycle rule applied and verified
 - [ ] 3 budget alert at $25
 - [ ] 4 CORS — only if a CORS error appears
+- [ ] **5 `roles/iam.serviceAccountTokenCreator`** ← blocks every upload until done
+
+---
+
+## 5. Let the Functions service account sign a URL
+
+New with the upload chokepoint, and the one item on this list that stops the
+feature dead rather than merely weakening it. `POST /api/gallery/upload-url`
+finishes by calling `getSignedUrl({ version: 'v4', action: 'write', … })`, and
+v4 signing requires the runtime service account to be able to sign **as
+itself**. Without the grant that call throws at runtime, every upload returns a
+500, and nothing in the console says why.
+
+```bash
+gcloud projects add-iam-policy-binding spsm-database \
+  --member="serviceAccount:spsm-database@appspot.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+Check the member name against the account the Functions actually run as before
+running it — Firebase projects created after 2023 often use the Compute Engine
+default (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`) instead.
+
+**This creates no key file.** `docs/integrations.md` is right that a service
+account key is a bearer credential and that this project should not be minting
+them; this grant is a different thing entirely — it lets an account that is
+already running sign with its own identity, and there is nothing to leak. The
+distinction is worth keeping straight, because "grant a service account role" and
+"download a service account key" read similarly and only one of them is safe.
+
+### Why the upload path needs a signed URL at all
+
+Because browsers no longer write to Cloud Storage. `storage.rules` refuses every
+client write to `submissions/` and `firestore.rules` refuses every client create
+of `galleryMedia`, so the endpoint is the only door.
+
+That closed a hole no rule could have closed. Uploads used to write the bytes
+first and the document second — the right order, since a document with no file
+behind it is worse than the reverse — but it meant every check the project had
+lived in the *second* step. A script that uploaded a file and never wrote a
+document skipped all of them, and the orphaned objects never appeared in the
+review queue for anyone to notice.
+
+A signed URL addresses the GCS API directly and is not evaluated against
+`storage.rules`, which is exactly why shutting that door does not shut the
+feature.

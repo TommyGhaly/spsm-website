@@ -10,7 +10,6 @@ import {
 import { refreshClaims, signIn } from '@/lib/authStore';
 import { useScreenGrants } from '@/lib/screenGrants';
 import {
-  AREA_CAMP,
   AREA_PROGRAMS,
   FINANCE_SOURCE_ROWS,
   SCREEN_AREAS,
@@ -501,43 +500,14 @@ function Allocator() {
               )}
             </section>
 
-            <section
-              className={
-                draft.programAdmin.programs.includes(loaded.campProgramId)
-                  ? 'access__area access__area--on'
-                  : 'access__area'
-              }
-              aria-labelledby="access-camp"
-            >
-              <h4 className="access__areaName" id="access-camp">{AREA_CAMP.label}</h4>
-              <p className="access__blurb">{AREA_CAMP.blurb}</p>
-              {AREA_CAMP.caveat && <p className="access__caveat">{AREA_CAMP.caveat}</p>}
-              <label className="access__check">
-                <input
-                  type="checkbox"
-                  checked={draft.programAdmin.programs.includes(loaded.campProgramId)}
-                  onChange={(event) =>
-                    setDraft((current) =>
-                      current === null
-                        ? current
-                        : {
-                            ...current,
-                            programAdmin: withProgram(
-                              current.programAdmin,
-                              loaded.campProgramId,
-                              event.target.checked,
-                            ),
-                          },
-                    )
-                  }
-                />
-                <span>Runs the summer camp</span>
-              </label>
-              <p className="access__caveat">
-                The same grant as <code>{loaded.campProgramId}</code> in the list above; the two
-                stay in step.
-              </p>
-            </section>
+            {/*
+              Summer camp used to have a bespoke section here, drawing the same
+              checkbox as `summercamp` in the list above and a line of prose
+              admitting it. It is a screen flag now — `camp` in ADMIN_SCREENS —
+              so it is the first of the ordinary rows below, and the camp's
+              gatherings and photographs are the ministry tick above like every
+              other ministry's. See the note on `AREA_CAMP`.
+            */}
 
             <h3 className="access__group">Areas of the site</h3>
 
@@ -795,15 +765,16 @@ function pendingChange(
   const gained = [...now].filter((id) => !was.has(id));
   const lost = [...was].filter((id) => !now.has(id));
 
-  // The camp is named rather than counted. It is one of the ministries, and it
-  // is the one whose grant opens children's medical notes — so "1 ministry"
-  // would be the least informative possible way to report it.
+  // The camp's ministry is named rather than counted, and named as its
+  // *gatherings* — "the summer camp" is the Summer camp row above now, which is
+  // the registrations, and a status line that used the same words for both
+  // would be reporting the one change this screen most needs to keep distinct.
   for (const [ids, into] of [
     [gained, added],
     [lost, removed],
   ] as const) {
     const ministries = ids.filter((id) => id !== campProgramId).length;
-    if (ids.includes(campProgramId)) into.push('the summer camp');
+    if (ids.includes(campProgramId)) into.push('the camp’s gatherings and photographs');
     if (ministries > 0) into.push(`${ministries} ministr${ministries === 1 ? 'y' : 'ies'}`);
   }
 

@@ -17,6 +17,7 @@ import {
   COLLECTIONS,
   CONFIG_DOC_CAMP,
   allocationDocId,
+  countPlacements,
   blankAllocation,
   parseCampAllocation,
   type CampAllocation,
@@ -45,8 +46,7 @@ function toDraft(stored: CampAllocation): CampAllocationDraft {
   return {
     programId: stored.programId,
     season: stored.season,
-    bands: stored.bands,
-    stations: stored.stations,
+    weeks: stored.weeks,
     archivedAt: stored.archivedAt,
     archivedBy: stored.archivedBy,
     note: stored.note,
@@ -160,14 +160,11 @@ export async function readSeasons(programId: string): Promise<AllocationSeason[]
 
   const seasons = snapshot.docs.map((entry) => {
     const parsed = parseCampAllocation(entry.data());
-    let placed = 0;
-    for (const band of parsed.bands) {
-      for (const group of band.groups) {
-        placed += group.childKeys.length + group.servantKeys.length;
-      }
-    }
-    for (const station of parsed.stations) placed += station.servantKeys.length;
-    return { season: parsed.season, archived: parsed.archivedAt != null, placed };
+    return {
+      season: parsed.season,
+      archived: parsed.archivedAt != null,
+      placed: countPlacements(parsed),
+    };
   });
 
   // Lexical descending is right for four-digit years and is honest about

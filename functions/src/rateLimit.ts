@@ -85,6 +85,19 @@ export const BUDGETS = {
    * or four times in a minute, and nobody posts a fifth legitimately.
    */
   campServantRequest: 5,
+  /**
+   * Asking for a signed URL to upload one gallery photograph.
+   *
+   * Sixty, because this is called once per *file* and a batch is sixty files —
+   * somebody emptying a camp's worth of pictures must not be stopped halfway
+   * through their own upload. That makes it the loosest public budget here, and
+   * the map is not what bounds it: this endpoint verifies an App Check token
+   * before it does any work, which is the thing the header of this file
+   * recommends when a speed bump is not enough, and it counts every issued URL
+   * against a Firestore quota that survives across instances. This entry only
+   * stops a single instance being asked faster than a person could ask.
+   */
+  galleryUpload: 60,
 
   // ── The address gate on authenticated endpoints ───────────────────────────
   /**
@@ -155,6 +168,13 @@ export const CAPS = {
   orderLookup: 10,
   formSubmit: 20,
   campServantRequest: 10,
+  /**
+   * Handing out signed upload URLs. Cheap per call — it verifies two tokens,
+   * touches a counter and signs a string, and never sees a byte of the
+   * photograph, which goes straight to the bucket. Ten is a queue for a very
+   * busy afternoon rather than a refusal.
+   */
+  galleryUpload: 10,
   /** Must not shed during a rush; a refused checkout is a lost sale. */
   squareCheckout: 20,
   squareWebhook: 10,

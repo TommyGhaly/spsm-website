@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { aboutHref, aboutPage } from '@/features/content';
 import { WhoScreen } from '@/features/who';
+import { AboutOverlay, AboutSections, getAboutOverride } from '@/features/about';
 import { PageHeader } from '@/components/PageHeader';
 import { MoreOfAbout } from '@/components/MoreOfAbout';
 
@@ -30,6 +31,16 @@ import { MoreOfAbout } from '@/components/MoreOfAbout';
  * and the sitemap needed no change at all.
  * ---------------------------------------------------------------------------
  */
+/*
+ * ## Staff can edit this page again, and that is not a return to `content`
+ *
+ * `AboutOverlay` reads `aboutOverrides/{slug}` at build time and hands it to
+ * the `<Editable>` slots inside the screen below; the same document is re-read
+ * in the browser a moment after load, so an edit is live without a deploy. The
+ * page itself is still hand-written React and still server-rendered — only the
+ * declared slots and the appended sections can be changed. See
+ * `features/about/slots.ts` for what is declared and why the rest is not.
+ */
 
 const META = aboutPage('who-we-are');
 
@@ -40,9 +51,11 @@ export const metadata: Metadata = {
   alternates: { canonical: aboutHref('who-we-are') },
 };
 
-export default function WhoWeArePage() {
+export default async function WhoWeArePage() {
+  const baked = await getAboutOverride('who-we-are');
+
   return (
-    <>
+    <AboutOverlay page="who-we-are" baked={baked}>
       {/* Hidden, like every page's. The visible opening is the band below. */}
       <PageHeader title={META?.title ?? 'Who We Are'} />
 
@@ -53,12 +66,15 @@ export default function WhoWeArePage() {
       */}
       <WhoScreen />
 
+      {/* Sections staff have added, between the page and the links off it. */}
+      <AboutSections baked={baked.sections} />
+
       {/*
         The foot: the other four parts of About, and the way back to the index.
         It replaced a bare `.wrap` holding one "All of About" link — see
         `MoreOfAbout` for why a correct link still looked wrong there.
       */}
       <MoreOfAbout current="who-we-are" />
-    </>
+    </AboutOverlay>
   );
 }

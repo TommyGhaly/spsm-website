@@ -552,6 +552,42 @@ export async function moveProgramEvent(
 }
 
 /**
+ * The same renumbering, for a level carried to an arbitrary place in its list.
+ *
+ * `moveProgramEvent` moves one step and works out the destination itself, which
+ * is all a pair of ‹ › buttons ever needed. A dropped row lands wherever it was
+ * let go, so the shelf works out the new order and hands the whole sibling list
+ * over already arranged — the same shape `reorderPrograms` takes, and for the
+ * same reason: one batch, renumbered 10, 20, 30… from scratch, so a list whose
+ * documents have gaps and zeroes in their `order` comes out of a single drag
+ * completely numbered.
+ *
+ * The caller passes *siblings*, not the whole tree. Renumbering a set that spans
+ * two parents would interleave two lists into one sequence.
+ */
+export async function reorderProgramEvents(
+  ordered: readonly DocOf<ProgramEvent>[],
+  uid: string | null,
+): Promise<void> {
+  const batch = writeBatch(db());
+  let touched = 0;
+
+  ordered.forEach((node, index) => {
+    const position = (index + 1) * 10;
+    if ((node.order ?? 0) === position) return;
+    touched += 1;
+    batch.update(doc(db(), COLLECTIONS.programEvents, node.id), {
+      order: position,
+      updatedAt: serverTimestamp(),
+      updatedBy: uid,
+    });
+  });
+
+  if (touched === 0) return;
+  await batch.commit();
+}
+
+/**
  * Re-file a level under a different parent, or up to the top of the ministry.
  *
  * The one operation the fixed three levels made impossible and the tree makes

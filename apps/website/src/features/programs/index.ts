@@ -14,7 +14,8 @@ export { GalleryShell } from './GalleryShell';
 export { ProgramDirectory } from './ProgramDirectory';
 export { SubmitPhotos } from './SubmitPhotos';
 export { SubmissionQueue } from './SubmissionQueue';
-export { submitOne, programAcceptsSubmissions, SUBMISSION_MAX_BYTES } from './submit';
+export { submitOne, prepare, kindOf, programAcceptsSubmissions, UNATTESTED } from './submit';
+export type { Prepared, SubmissionState } from './submit';
 export {
   isPresenting,
   parseGalleryPath,

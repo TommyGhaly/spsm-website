@@ -1,3 +1,5 @@
+import { Editable } from '@/features/about/Editable';
+import { EditableCaption } from '@/features/about/EditableCaption';
 import {
   SAINT_CREDITS,
   SAINT_IMAGES,
@@ -40,9 +42,12 @@ export function SaintFigure({
   priority = false,
   name,
   also,
+  captionSlot,
 }: {
   slug: string;
   priority?: boolean;
+  /** Makes the caption rewritable. See `EditableCaption`. */
+  captionSlot?: string | undefined;
   /** The saint's name, for the two figures in the opening diptych. It goes
    *  *inside* the caption rather than under the whole figure: the name and the
    *  caption belong to the same picture, and printed as two separate blocks
@@ -82,7 +87,19 @@ export function SaintFigure({
             {also && <span className="saint-figure__also">{also}</span>}
           </span>
         )}
-        {image.caption}
+        {/*
+          The caption only. The saint's name beside it is a `span` inside the
+          same `figcaption` and is not offered: it is the name the church is
+          called by, it is repeated in the heading above, and the two drifting
+          apart is worse than either being unchangeable.
+        */}
+        {captionSlot === undefined ? (
+          image.caption
+        ) : (
+          <Editable slot={captionSlot} as="span" prose>
+            {image.caption}
+          </Editable>
+        )}
       </figcaption>
     </figure>
   );
@@ -97,7 +114,13 @@ export function SaintFigure({
  * picture or force the figures to use the cropped one. See the saints block in
  * `scripts/optimize-assets.mjs` for why nothing here is cropped on the way out.
  */
-export function SaintTile({ slug }: { slug: string }) {
+export function SaintTile({
+  slug,
+  captionSlot,
+}: {
+  slug: string;
+  captionSlot?: string | undefined;
+}) {
   const image = SAINT_IMAGES[slug];
   if (!image) return null;
 
@@ -121,7 +144,9 @@ export function SaintTile({ slug }: { slug: string }) {
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="saint-tile__caption">{image.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="saint-tile__caption">
+        {image.caption}
+      </EditableCaption>
     </figure>
   );
 }
@@ -134,18 +159,66 @@ export function SaintTile({ slug }: { slug: string }) {
  * this is the Coptic Orthodox calendar, and the Gregorian equivalent is the
  * translation, not the other way round.
  */
-export function FeastList({ feasts, label }: { feasts: readonly Feast[]; label: string }) {
+export function FeastList({
+  feasts,
+  label,
+  slotPrefix,
+}: {
+  feasts: readonly Feast[];
+  label: string;
+  /**
+   * Makes the label and every feast rewritable, keyed by row index.
+   *
+   * By index rather than by the Coptic date, for the reason `DefinitionSpine`
+   * gives at more length: keying by the date means correcting a wrong date
+   * throws away the line attached to it.
+   */
+  slotPrefix?: string | undefined;
+}) {
   return (
     <div className="saint-feasts">
-      <p className="saint-feasts__label">{label}</p>
+      {slotPrefix === undefined ? (
+        <p className="saint-feasts__label">{label}</p>
+      ) : (
+        <Editable slot={`${slotPrefix}-label`} as="p" className="saint-feasts__label">
+          {label}
+        </Editable>
+      )}
       <dl className="saint-feasts__list">
-        {feasts.map((feast) => (
+        {feasts.map((feast, index) => (
           <div className="saint-feasts__row" key={feast.coptic}>
             <dt>
-              <span className="saint-feasts__coptic">{feast.coptic}</span>
-              <span className="saint-feasts__gregorian">{feast.gregorian}</span>
+              {slotPrefix === undefined ? (
+                <>
+                  <span className="saint-feasts__coptic">{feast.coptic}</span>
+                  <span className="saint-feasts__gregorian">{feast.gregorian}</span>
+                </>
+              ) : (
+                <>
+                  <Editable
+                    slot={`${slotPrefix}-${index}-coptic`}
+                    as="span"
+                    className="saint-feasts__coptic"
+                  >
+                    {feast.coptic}
+                  </Editable>
+                  <Editable
+                    slot={`${slotPrefix}-${index}-gregorian`}
+                    as="span"
+                    className="saint-feasts__gregorian"
+                  >
+                    {feast.gregorian}
+                  </Editable>
+                </>
+              )}
             </dt>
-            <dd>{feast.what}</dd>
+            {slotPrefix === undefined ? (
+              <dd>{feast.what}</dd>
+            ) : (
+              <Editable slot={`${slotPrefix}-${index}-what`} as="dd" prose>
+                {feast.what}
+              </Editable>
+            )}
           </div>
         ))}
       </dl>

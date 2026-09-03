@@ -189,11 +189,17 @@ function contact(): FormDraft {
       'A question for the office, or a way for the church to reach you. No account needed.',
     icon: 'mail',
     /*
-     * No photograph, and this is the case `FormDefinition.image` was written
-     * for: there is no picture of "getting in touch". The ornamental tile is
-     * honest about being a mark rather than decoration standing in for a
-     * subject.
+     * A telephone, a pen and a notepad — `stock-office`, licensed and recorded
+     * in `assets/README.md`.
+     *
+     * This said "no photograph" until 2 Sep 2026, on the argument that there is
+     * no picture of *getting in touch* and an ornamental tile is honest about
+     * being a mark. Tommy asked for a photograph, and the argument was weaker
+     * than it read: there is no picture of getting in touch, but there is a
+     * very clear picture of **the desk you are writing to**, which is what this
+     * form actually reaches. The tile remains what a form with no picture gets.
      */
+    image: '/img/stock-office-1000.webp',
     order: 1,
     kind: 'native',
     fields: [

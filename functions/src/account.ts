@@ -1,7 +1,11 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { COLLECTIONS } from '@spsm/shared';
+import {
+  COLLECTIONS,
+  LOCKOUT_NOT_CONFIRMED,
+  lockoutAcknowledged,
+} from '@spsm/shared';
 import { callerOf } from './httpAuth.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 
@@ -85,9 +89,58 @@ export const deleteOwnAccount = onRequest(
     }
 
     /*
+     * A superadmin has to confirm the lockout, and this is a guard against an
+     * accident rather than a permission check.
+     *
+     * `superadmin` is a custom claim set by `scripts/grant-admin.mjs`, which
+     * needs project credentials to run. It is the claim that /access reads to
+     * decide who may allocate areas to anybody — so an administrator deleting
+     * their own account through the website can remove the last person able to
+     * grant that claim to a replacement.
+     *
+     * This was a flat refusal: *"Ask a developer to remove it."* It protected
+     * the accident and forbade the intent, and it could not tell them apart —
+     * which on a project whose only account is its only superadmin meant the
+     * delete button existed for nobody at all. It is now the acknowledgement in
+     * `@spsm/shared/accountDeletion`: no flag, same 409; flag, and the person
+     * who read the sentence gets what they asked for. That file carries the
+     * recovery path — sign in again, re-run `grant-admin.mjs`, re-allocate at
+     * /access — and the confirmation text in `HeaderAuth` says the same thing
+     * to the person about to do it.
+     *
+     * Still not conditioned on being the *last* superadmin, and that reasoning
+     * is unchanged. Counting them means paginating every user in the project and
+     * reading their claims, which is a slow and rate-limited call to make a
+     * destructive decision against — and the answer would be a race the moment
+     * two administrators did this at once. Asking every superadmin to confirm is
+     * one sentence to read and has no failure mode.
+     *
+     * `req.body` and not a query parameter: a uid never appears in this request
+     * and neither should the confirmation, because a URL is the part of a
+     * request that gets copied, logged by Hosting, and pasted into a chat.
+     */
+    if (caller.superadmin && !lockoutAcknowledged(req.body)) {
+      res.status(409).json({ error: LOCKOUT_NOT_CONFIRMED });
+      return;
+    }
+    /*
      * The uid gate. Tight, because deleting an account is idempotent in effect
      * but not in cost: a retry loop on a token that has already had its user
      * removed would otherwise keep verifying and keep writing.
+     *
+     * **Below the acknowledgement check, and that order is load-bearing.**
+     * `BUDGETS.accountDelete` is 2. With this first, a superadmin who arrives
+     * without the flag spends one of their two attempts on a 409 that deleted
+     * nothing — and the confirmed retry that follows a second later can spend
+     * the other and then be refused as flooding, which reads as the delete
+     * being broken rather than rate-limited. A refusal must not consume the
+     * budget the confirmation needs. Found by probing the emulator: two
+     * unconfirmed attempts were enough to lock out the confirmed one.
+     *
+     * Nothing is lost by moving it. The address-level gate above still runs
+     * first and is what stops a flood; the token is already verified by the
+     * time either of these is reached, and the check below is a field
+     * comparison with no read and no write behind it.
      */
     if (
       throttled(req, res, {
@@ -96,35 +149,6 @@ export const deleteOwnAccount = onRequest(
         max: BUDGETS.accountDelete,
       })
     ) {
-      return;
-    }
-
-    /*
-     * A superadmin may not delete themselves here, and this is a lockout guard
-     * rather than a permission check.
-     *
-     * `superadmin` is a custom claim set by `scripts/grant-admin.mjs`, which
-     * needs project credentials to run. It is the claim that /access reads to
-     * decide who may allocate areas to anybody — so an administrator who
-     * deleted their own account through the website could remove the last
-     * person able to grant that claim to a replacement, and the way back is a
-     * developer with a service account rather than anything the parish can do
-     * on a Sunday.
-     *
-     * Not conditioned on being the *last* superadmin, deliberately. Counting
-     * them means paginating every user in the project and reading their claims,
-     * which is a slow and rate-limited call to make a destructive decision
-     * against — and the answer would be a race the moment two administrators
-     * did this at once. Refusing all of them is one sentence to read and has no
-     * failure mode; there are a very small number of these accounts and the
-     * remedy is the script that made them.
-     */
-    if (caller.superadmin) {
-      res.status(409).json({
-        error:
-          'A superadmin account cannot be deleted from the website, so the church cannot ' +
-          'lose its last administrator by accident. Ask a developer to remove it.',
-      });
       return;
     }
 

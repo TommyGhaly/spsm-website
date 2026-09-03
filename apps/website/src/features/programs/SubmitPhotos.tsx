@@ -5,18 +5,24 @@ import { createPortal } from 'react-dom';
 import { Icon } from '@/components/Icon';
 import {
   defaultSubmissionNode,
-  flattenGalleryTree,
+  submissionTargets,
   type DocOf,
   type GalleryTree,
   type Program,
   type ProgramEvent,
+  type SubmissionTarget,
+  MAX_FILES_PER_BATCH,
+  VIDEO_MAX_BYTES,
+  formatBytes,
 } from '@spsm/shared';
 import {
+  prepare,
   programAcceptsSubmissions,
   submitOne,
-  SUBMISSION_MAX_BYTES,
+  type Prepared,
   type SubmissionState,
 } from './submit';
+import { useProgramAdmin } from './useProgramAdmin';
 
 /**
  * The form a parishioner uses to send photographs to a gallery.
@@ -93,6 +99,16 @@ interface Picked {
    */
   id: string;
   file: File;
+  /**
+   * The condensed bytes and what to say about them, or null while that is
+   * still being worked out.
+   *
+   * Computed when the file is *chosen* rather than when it is sent, which is
+   * the whole point of it living on the row: the "condensed" note has to be on
+   * screen before anything is uploaded, so that nobody is surprised afterwards
+   * by what left their laptop.
+   */
+  prepared: Prepared | null;
   /** The level its sender chose for it. */
   target: string;
   state: SubmissionState;
@@ -150,14 +166,39 @@ export function SubmitPhotos({
   const inputRef = useRef<HTMLInputElement>(null);
 
   /*
-   * Every level in the ministry, in reading order, with its depth.
+   * Whether the person filling this in runs the ministry, held in a ref.
+   *
+   * A ref because `add` is a plain function called from an event handler and
+   * would otherwise close over a stale value from the render in which the file
+   * input was created — the grant arrives asynchronously, so on a fast pick it
+   * is very often still false at that moment.
+   *
+   * It decides one thing only: whether to condense. `useProgramAdmin` says in
+   * its own header that it decides what to *draw*, and this is no exception —
+   * the upload endpoint makes the same decision independently from a verified
+   * token, so getting this wrong costs a needlessly shrunk photograph, never an
+   * upload somebody was not entitled to.
+   */
+  const admin = useProgramAdmin();
+  const isProgramAdmin = useRef(false);
+  isProgramAdmin.current = admin.ready && admin.canEditProgram(program.id);
+
+  /*
+   * Everywhere a photograph may be sent: the ministry itself, then every level
+   * in it in reading order, with its depth.
    *
    * The whole tree rather than this level's subtree, and that is the point of the
    * control: somebody standing on Day 1 with photographs of Day 3 can say so.
    * Memoised because a `<select>` of two hundred options should not be rebuilt on
    * every keystroke of nothing.
+   *
+   * **The ministry is one of the rows now** — see `submissionTargets`. That is
+   * what makes this list impossible to be empty, which in turn is what removed
+   * the early return below: a program with no levels yet used to render no form,
+   * and the five ministries in production have no published levels between them,
+   * so in practice the upload button existed nowhere at all.
    */
-  const rows = useMemo(() => flattenGalleryTree(tree), [tree]);
+  const rows = useMemo(() => submissionTargets(program, tree), [program, tree]);
 
   /*
    * Where a file goes unless the sender says otherwise — the priority section,
@@ -181,9 +222,20 @@ export function SubmitPhotos({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, picked.length, busy]);
 
+  /*
+   * Where a file goes unless the sender says otherwise.
+   *
+   * `defaultSubmissionNode` answers "which level" and returns null for a ministry
+   * with none; the ministry itself is the answer to that null now rather than a
+   * reason to render nothing. The order it applies — priority section, then this
+   * page, then the first level — is unchanged, so a ministry that *has* levels
+   * preselects exactly what it did before and no reviewer's habits change.
+   */
   const fallback = useMemo(
-    () => defaultSubmissionNode(tree, program.prioritySubmissionNodeId, node?.id ?? null),
-    [tree, program.prioritySubmissionNodeId, node],
+    () =>
+      defaultSubmissionNode(tree, program.prioritySubmissionNodeId, node?.id ?? null) ??
+      program.id,
+    [tree, program.prioritySubmissionNodeId, node, program.id],
   );
 
   /*
@@ -252,11 +304,24 @@ export function SubmitPhotos({
       return {
         id: crypto.randomUUID(),
         file,
+        prepared: null,
         target: fallback ?? '',
         state: { kind: 'waiting' } as SubmissionState,
         preview,
       };
     });
+
+    /*
+     * Decided out here, against this render's `picked`, for the reason given
+     * inside the updater below. It can only disagree with the trim if state
+     * changed between the choice and the update — which needs a second batch
+     * mid-flight — and being wrong costs a sentence, not a photograph.
+     */
+    if (picked.length + incoming.length > MAX_FILES_PER_BATCH) {
+      setNotice(
+        `That is more than ${MAX_FILES_PER_BATCH} photographs at once. The first ${MAX_FILES_PER_BATCH} are below — send those, then choose the rest.`,
+      );
+    }
 
     setPicked((previous) => {
       const seen = new Set(previous.map(({ file }) => identity(file)));
@@ -275,8 +340,66 @@ export function SubmitPhotos({
         added.push(candidate);
       }
 
+      /*
+       * The cap, applied to the batch as a whole rather than to one pick.
+       *
+       * Sixty comfortably covers a camp day emptied off a phone. It is here to
+       * stop the accident — a whole photo library dragged in by mistake, which
+       * would otherwise sit there condensing for ten minutes — rather than to
+       * stop an attacker, who is not running this file at all.
+       *
+       * The message about it is *not* set from in here, and cannot be. React
+       * invokes an updater twice in development to surface impurity, so a
+       * `setNotice` on this line would be a side effect inside an updater — the
+       * same shape of bug that once doubled every cart statistic in the
+       * bookstore. Nor can a flag be set here and read after the call: the
+       * updater is deferred, so the read happens first and always sees `false`
+       * (measured — the trim worked and the message never appeared). The
+       * message is decided before the call instead, from the render's own
+       * `picked`, which is current at the moment somebody chooses files.
+       */
+      const room = MAX_FILES_PER_BATCH - previous.length;
+      if (added.length > room) {
+        for (const extra of added.slice(Math.max(0, room))) revoke(extra.preview);
+        added.length = Math.max(0, room);
+      }
+
       return added.length === 0 ? previous : [...previous, ...added];
     });
+
+    /*
+     * Condense in the background, one at a time.
+     *
+     * Sequential rather than `Promise.all`: each of these decodes a full-size
+     * photograph onto a canvas, and forty at once on a phone is how you get the
+     * tab killed. The rows are already on screen and each one fills in its own
+     * note as it finishes, so the wait is visible rather than a frozen form.
+     */
+    void (async () => {
+      for (const candidate of candidates) {
+        try {
+          const result = await prepare(candidate.file, isProgramAdmin.current);
+          patch(candidate.id, {
+            prepared: result,
+            ...(result.refusal
+              ? { state: { kind: 'failed', message: result.refusal } as SubmissionState }
+              : {}),
+          });
+        } catch (error) {
+          /*
+           * Never silently. `prepare` is written not to throw — every failure
+           * inside it returns the original file — so reaching this means
+           * something unforeseen, and an unhandled rejection here would leave
+           * the row sitting at "ready" forever with no note and no explanation.
+           *
+           * The row is left with `prepared: null`, which `send` treats as "not
+           * condensed yet" and redoes on the spot. So the photograph still goes,
+           * just without the saving.
+           */
+          console.error('[galleries] could not prepare a file for sending:', error);
+        }
+      }
+    })();
 
     /*
      * Cleared so that choosing the *same* file again is a change event the
@@ -306,7 +429,7 @@ export function SubmitPhotos({
   }
 
   /** Patch one row. Functional, so a run of quick changes cannot collapse. */
-  function patch(id: string, next: Partial<Pick<Picked, 'state' | 'target'>>) {
+  function patch(id: string, next: Partial<Pick<Picked, 'state' | 'target' | 'prepared'>>) {
     setPicked((previous) => previous.map((one) => (one.id === id ? { ...one, ...next } : one)));
   }
 
@@ -351,7 +474,15 @@ export function SubmitPhotos({
       }
       patch(one.id, { state: { kind: 'sending' } });
       try {
-        await submitOne(one.file, { id: target, programId: program.id });
+        /*
+         * Condensing normally finished while the sender was choosing levels,
+         * but Send is reachable before it has: forty photographs take a moment
+         * and nothing stops somebody pressing it immediately. Doing the work
+         * here in that case is simpler than disabling the button, and it is the
+         * same call — `prepare` is what filled the row in the first place.
+         */
+        const ready = one.prepared ?? (await prepare(one.file, isProgramAdmin.current));
+        await submitOne(ready, { id: target, programId: program.id });
         patch(one.id, { state: { kind: 'sent' } });
         sent.push(one.id);
       } catch (error) {
@@ -389,12 +520,19 @@ export function SubmitPhotos({
     }
   }
 
-  // Closed by the parish, or a ministry with no levels to file anything under.
-  // The second is not a failure: a program created five minutes ago has nowhere
-  // for a photograph to go yet, and a form whose every submission would be
-  // refused is worse than no form.
+  /*
+   * Closed by the parish, and that is now the only thing that hides this form.
+   *
+   * There was a second return here — `rows.length === 0`, a ministry with no
+   * levels to file anything under — on the argument that a form whose every
+   * submission the rules would refuse is worse than no form. The argument was
+   * sound and the premise stopped being true: the ministry itself is a
+   * destination, `firestore.rules` accepts it, and so a program with no levels
+   * has somewhere for a photograph to go. What the old return actually did in
+   * production was hide the upload button on every gallery on the site, because
+   * no ministry has a published level yet.
+   */
   if (program.submissionsOpen === false) return null;
-  if (rows.length === 0) return null;
 
   /*
    * Escape closes it, and only when there is nothing half-done.
@@ -485,9 +623,20 @@ export function SubmitPhotos({
           <span className="submit-drop__call">
             {picked.length === 0 ? 'Choose photographs' : 'Add more photographs'}
           </span>
+          {/*
+            No number for photographs, because there is no longer a limit on
+            one — anything too large is condensed and sent, and the row says so
+            when it happens. Promising "up to 250MB each", as this did, invited
+            somebody to check whether their photograph qualified when the
+            answer is that it always does.
+
+            The video figure is stated, because a clip is the one thing that can
+            still be refused: a browser cannot re-encode video, so there is
+            nothing to condense it down to.
+          */}
           <span className="submit-drop__hint">
-            or drop them here — as many as you like, up to{' '}
-            {Math.round(SUBMISSION_MAX_BYTES / 1024 / 1024)}MB each
+            or drop them here — any size, large ones are made smaller
+            automatically. Video clips up to {formatBytes(VIDEO_MAX_BYTES)}.
           </span>
         </span>
       </label>
@@ -555,6 +704,20 @@ export function SubmitPhotos({
                     {one.file.name}
                   </span>
                   <StateLabel state={one.state} />
+                  {/*
+                    Shown only when the file genuinely shrank by a good margin,
+                    which in practice means a photograph straight off a phone.
+
+                    Every picture goes through the re-encode, so a note on all
+                    of them would be wallpaper nobody reads — and the ones that
+                    barely change are exactly the ones nobody needs telling
+                    about. Deliberately plain: no warning colour, no icon. It is
+                    information, not a problem, and nothing the gallery would
+                    have shown is being lost.
+                  */}
+                  {one.prepared?.note && (
+                    <span className="submit-list__note">{one.prepared.note}</span>
+                  )}
                 </span>
 
                 <LevelSelect
@@ -705,7 +868,7 @@ function LevelSelect({
   label,
   placeholder,
 }: {
-  rows: { node: { id: string; title: string }; depth: number }[];
+  rows: readonly SubmissionTarget[];
   value: string;
   onChange: (nodeId: string) => void;
   disabled: boolean;
@@ -725,10 +888,10 @@ function LevelSelect({
       }}
     >
       {placeholder && <option value="">{placeholder}</option>}
-      {rows.map(({ node, depth }) => (
-        <option key={node.id} value={node.id}>
+      {rows.map(({ id, title, depth }) => (
+        <option key={id} value={id}>
           {INDENT.repeat(depth)}
-          {node.title}
+          {title}
         </option>
       ))}
     </select>

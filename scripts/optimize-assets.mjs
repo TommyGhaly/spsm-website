@@ -927,6 +927,13 @@ for (const [source, slug] of [
     'stock-passenger-van',
     'stock-small-group',
     'stock-gathering',
+    // Added 2026-09-02. `stock-gathering` was doing two jobs — the events
+    // request *and* the summer-camp sign-up — and it is an evening social with
+    // string lights, which is not what a parish means by summer camp. The camp
+    // gets a photograph of children at one; the office gets a telephone and a
+    // notepad, replacing the ornamental tile the contact form had.
+    'stock-camp',
+    'stock-office',
   ]) {
     const source = join(SRC, `stock/${name}.jpg`);
     const meta = await sharp(source).metadata();

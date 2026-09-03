@@ -33,8 +33,29 @@
  * promise, and it is the price of five pages that are each worth more than a
  * markdown body.
  *
- * The cost of the reversal, stated plainly: staff can no longer rewrite any of
- * these five from the console, and changing a word in one is a deploy.
+ * The cost of the reversal used to be stated here plainly: *staff can no longer
+ * rewrite any of these five from the console, and changing a word in one is a
+ * deploy.* **That is no longer true, and it was the half of the trade worth
+ * buying back.**
+ *
+ * `features/about` is an overlay on these five routes: each band declares a few
+ * named slots — a heading, a paragraph, a photograph — and
+ * `aboutOverrides/{slug}` may override them. The page keeps its layout, its
+ * widgets and its srcsets; the document is read at build time and re-read in the
+ * browser, so a correction is live without a deploy. Staff can also append
+ * sections to the foot of any of the five.
+ *
+ * What is deliberately *not* editable is the reason this is an overlay rather
+ * than a return to `content`: the Creed, the dated spines, the feast tables, the
+ * tour's station bodies and the area schedule are all computed or structured,
+ * and none of them is prose a volunteer should be handed a markdown box for. The
+ * manifest of what is reachable is `features/about/slots.ts`, and a slot that is
+ * not in it cannot be written by anything, including the console.
+ *
+ * **The sixth-part warning above still stands, and the database now enforces
+ * it.** `firestore.rules` refuses any `aboutOverrides` id outside these five
+ * slugs, because a document with no route file behind it is copy nothing
+ * renders.
  *
 
  * Note what this does **not** do: `/beliefs` and `/welcome` still exist and are

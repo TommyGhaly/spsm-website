@@ -61,6 +61,13 @@ const FIXED_ROUTES = [
    * not ours to list.
    */
   '/apps',
+  /*
+   * Listed for the same reason `/apps` is: it answers a search somebody really
+   * makes — "does this church website track me" — and the honest answer is a
+   * page, not an absence. It is also the URL a store review or a browser
+   * warning asks for by name.
+   */
+  '/privacy',
 ] as const;
 
 // `clergy` joins these because it is no longer a route: the biographies are
@@ -70,7 +77,16 @@ const FIXED_ROUTES = [
 // `about` joins them for the reason `contact` did: it is a real route now, and
 // it is listed in FIXED_ROUTES above. Left here as well it would be written
 // twice.
-const EXCLUDED_SECTIONS: readonly string[] = ['contact', 'clergy', 'misc', 'welcome', 'about'];
+// `ministries` joins them because it stopped being a page: `/events` carries the
+// ministries themselves, and that is what a search for them should land on.
+const EXCLUDED_SECTIONS: readonly string[] = [
+  'contact',
+  'clergy',
+  'misc',
+  'welcome',
+  'about',
+  'ministries',
+];
 
 export const dynamic = 'force-static';
 

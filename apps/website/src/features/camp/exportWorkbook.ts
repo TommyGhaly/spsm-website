@@ -30,7 +30,7 @@ import {
  *
  * ## The object URL is revoked, and it matters here
  *
- * A roster of two hundred children is a few hundred kilobytes, and this button
+ * A workbook of four sheets is a few tens of kilobytes, and this button
  * is pressed repeatedly — after every re-shuffle, to see whether the ratios came
  * out right. An un-revoked blob URL keeps its blob alive for the life of the
  * document, so twenty exports is twenty copies of the file held in memory. The
@@ -49,7 +49,10 @@ export function downloadAllocationWorkbook(input: AllocationWorkbookInput): void
 
   const link = document.createElement('a');
   link.href = url;
-  link.download = allocationWorkbookName(input.allocation.season, generatedAt);
+  link.download = allocationWorkbookName(input.allocation.season, generatedAt, {
+    weeks: input.weeks,
+    sections: input.sections,
+  });
   /*
    * Appended to the document before it is clicked.
    *

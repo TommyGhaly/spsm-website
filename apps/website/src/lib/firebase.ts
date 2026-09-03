@@ -17,7 +17,12 @@
  * Next at build time, so a throw there means the build itself was misconfigured.
  */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import {
+  getToken as getAppCheckToken,
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  type AppCheck,
+} from 'firebase/app-check';
 import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
 import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getPublicConfig } from '@spsm/shared';
@@ -97,6 +102,7 @@ export function usingEmulators(): boolean {
  * a point about attestation.
  */
 let appCheckStarted = false;
+let appCheck: AppCheck | null = null;
 
 function ensureAppCheck(): void {
   if (appCheckStarted) return;
@@ -167,7 +173,7 @@ function ensureAppCheck(): void {
       (self as unknown as Record<string, unknown>)['FIREBASE_APPCHECK_DEBUG_TOKEN'] = debugToken;
     }
 
-    initializeAppCheck(firebaseApp(), {
+    appCheck = initializeAppCheck(firebaseApp(), {
       provider: new ReCaptchaEnterpriseProvider(siteKey),
       // Refresh in the background so a long-lived tab — the kiosk running a
       // gallery presentation in the hall all evening — does not reach the end
@@ -178,6 +184,32 @@ function ensureAppCheck(): void {
     // Already initialised (a second call for the same app throws), or the
     // provider could not start. Neither is worth breaking a page over.
     console.warn('[appcheck] could not start App Check:', error);
+  }
+}
+
+/**
+ * An App Check token for a request this SDK is not making itself.
+ *
+ * Firestore and Storage attach one on their own; a `fetch` to one of our own
+ * Cloud Functions does not, so the gallery upload endpoint — which verifies the
+ * token by hand, being an `onRequest` rather than an `onCall` — needs it passed
+ * explicitly as `X-Firebase-AppCheck`.
+ *
+ * Returns null when App Check is not running: during the export build, under
+ * the emulators, with no site key configured, and on localhost without a debug
+ * token. That last one is worth knowing before it wastes an afternoon — the
+ * upload endpoint refuses a request with no token, so **testing uploads on
+ * localhost requires `NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN`**, the same
+ * variable that turns on the full attestation path above.
+ */
+export async function appCheckTokenForFetch(): Promise<string | null> {
+  ensureAppCheck();
+  if (!appCheck) return null;
+  try {
+    return (await getAppCheckToken(appCheck, /* forceRefresh */ false)).token;
+  } catch (error) {
+    console.warn('[appcheck] could not mint a token:', error);
+    return null;
   }
 }
 

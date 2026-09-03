@@ -6,6 +6,13 @@
 export const COLLECTIONS = {
   /** Public static-ish content: beliefs, clergy bios, contact copy. */
   content: 'content',
+  /**
+   * Staff's edits to the five About pages — an overlay on hand-written routes,
+   * never the pages themselves. One document per slug, five ever; the rule
+   * refuses any other id, because a sixth part of About needs a route file the
+   * static export can enumerate. See schema/about.ts.
+   */
+  aboutOverrides: 'aboutOverrides',
   /** Homepage / push announcements, authored by staff here. */
   announcements: 'announcements',
   /**
@@ -38,6 +45,19 @@ export const COLLECTIONS = {
   programs: 'programs',
   programEvents: 'programEvents',
   galleryMedia: 'galleryMedia',
+  /**
+   * How many photographs one uploader has sent today. Closed to every client.
+   *
+   * Written only by `galleryUploadUrl`, which is the only thing that may create
+   * a `galleryMedia` document at all now. It lives in Firestore rather than in
+   * `rateLimit.ts`'s in-memory window because that window is per instance —
+   * a real daily total has to be shared across all of them.
+   *
+   * Keyed `uid:{uid}` and `ip:{sha256}`. The address is hashed rather than
+   * stored: a plain one would make this collection a log of who visited which
+   * gallery and when, which is personal data the site does not otherwise keep.
+   */
+  submissionQuota: 'submissionQuota',
   /**
    * Configuration only servants may read.
    *

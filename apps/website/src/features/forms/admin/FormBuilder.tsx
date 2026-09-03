@@ -18,6 +18,7 @@ import {
 } from '@spsm/shared';
 import { FieldInput } from '../FormFields';
 import { PicturePicker } from './PicturePicker';
+import { uploadFormPicture } from '../uploads';
 import { writeForm, type WithId } from './adminData';
 
 /**
@@ -267,9 +268,9 @@ function Settings({
       </label>
 
       <PicturePicker
-        slug={draft.slug || draft.id}
         value={draft.image}
         onChange={(image) => edit({ image })}
+        upload={(file) => uploadFormPicture(draft.slug || draft.id || 'form', file)}
       />
 
 
@@ -315,8 +316,9 @@ function Settings({
 
           It was a number nobody could use: every form is created at 100, so
           getting one above another meant opening both, working out what the
-          other one said, and typing a smaller number. The forms list has arrows
-          now, which renumber the whole list — two controls for one property
+          other one said, and typing a smaller number. A form is dragged into
+          place on the list now, which renumbers the whole list — two controls
+          for one property
           would let a stray 100 typed here jump a form to the end for reasons
           invisible from the list.
         */}

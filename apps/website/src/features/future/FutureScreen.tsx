@@ -1,4 +1,6 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
+import { Editable } from '@/features/about';
 import { MoreOfAbout } from '@/components/MoreOfAbout';
 import { GiveButton } from '@/features/giving';
 import { Figures } from './Figures';
@@ -82,7 +84,7 @@ import {
  * above it asks for anything. Do not seed a second ask further up.
  * ---------------------------------------------------------------------------
  */
-export function FutureScreen() {
+export function FutureScreen({ foot }: { foot?: ReactNode }) {
   return (
     <div className="future">
       {/* Renders nothing. Marks the blocks below and reveals them as they come
@@ -91,18 +93,22 @@ export function FutureScreen() {
 
       <section className="band band--deep band--tight-end future-hero">
         <div className="wrap future-hero__inner">
-          <p className="future-hero__eyebrow">About</p>
+          <Editable slot="future-hero.eyebrow" as="p" className="future-hero__eyebrow">
+            About
+          </Editable>
           {/*
             A `p`, not a heading. `PageHeader` has already rendered the page's
             hidden `h1`; a second would give the document two, and the sections
             below need `h2` to be the level under it.
           */}
-          <p className="future-hero__title">Future Plans</p>
-          <p className="future-hero__lede">
+          <Editable slot="future-hero.title" as="p" className="future-hero__title">
+            Future Plans
+          </Editable>
+          <Editable slot="future-hero.lede" as="p" prose className="future-hero__lede">
             A church, a youth centre with housing above it, and a diocese centre — three buildings
             on the land at 169 Rice Road, drawn and filed with the town. None of it is built. This
             is what has been designed, and how far it has got.
-          </p>
+          </Editable>
         </div>
       </section>
 
@@ -135,7 +141,10 @@ export function FutureScreen() {
       <section className="band future-what" aria-labelledby="what-is-being-built">
         <div className="wrap future-split">
           <div className="future-split__body prose">
-            <h2 id="what-is-being-built">Three buildings, one courtyard</h2>
+            <Editable slot="what-is-being-built.h2" as="h2" id="what-is-being-built">
+              Three buildings, one courtyard
+            </Editable>
+            <Editable slot="what-is-being-built.body" as="div" prose>
             <p>
               The church now worships in a building it did not build. It was put up for an
               Episcopal congregation, it was bought in 2016, and the altar, the screen and the
@@ -162,13 +171,18 @@ export function FutureScreen() {
               civil, traffic, code, mechanical, landscape, wetland and survey — and the drawings
               have been in front of the Wayland Planning Board since August 2025.
             </p>
+            </Editable>
           </div>
-          <Plate name="campus-aerial" className="future-split__plate" />
+          <Plate
+            name="campus-aerial"
+            className="future-split__plate"
+            captionSlot="what-is-being-built.cap-campus-aerial"
+          />
         </div>
 
         <div className="wrap">
           <Figures />
-          <WidePlate name="piazza" />
+          <WidePlate name="piazza" captionSlot="what-is-being-built.cap-piazza" />
         </div>
       </section>
 
@@ -176,7 +190,10 @@ export function FutureScreen() {
         <div className="wrap future-split future-split--flipped">
           <div className="future-split__body prose">
             <p className="future-tag">Building A</p>
-            <h2 id="the-church">The church</h2>
+            <Editable slot="the-church.h2" as="h2" id="the-church">
+              The church
+            </Editable>
+            <Editable slot="the-church.body" as="div" prose>
             <p>
               A nave of 5,429 square feet under barrel vaults, with a dome over the crossing and a
               gallery above the west end. Seating for 570 — about three times what the present
@@ -202,12 +219,17 @@ export function FutureScreen() {
               three church offices, and a small chapel of 887 square feet for the weekday services
               that do not need 570 seats.
             </p>
+            </Editable>
           </div>
-          <Plate name="steps" className="future-split__plate" />
+          <Plate
+            name="steps"
+            className="future-split__plate"
+            captionSlot="the-church.cap-steps"
+          />
         </div>
 
         <div className="wrap">
-          <WidePlate name="west-front" />
+          <WidePlate name="west-front" captionSlot="the-church.cap-west-front" />
         </div>
       </section>
 
@@ -215,7 +237,10 @@ export function FutureScreen() {
         <div className="wrap future-split">
           <div className="future-split__body prose">
             <p className="future-tag">Building B</p>
-            <h2 id="youth-and-housing">Sunday school, sport, and housing</h2>
+            <Editable slot="youth-and-housing.h2" as="h2" id="youth-and-housing">
+              Sunday school, sport, and housing
+            </Editable>
+            <Editable slot="youth-and-housing.body" as="div" prose>
             <p>
               The largest of the three at 60,458 square feet, and the one that carries most of what
               the church does between Sundays. Thirteen classrooms on the ground floor, from 487 to
@@ -234,8 +259,13 @@ export function FutureScreen() {
               members of the congregation: housing on the same ground as the church, so that
               growing old does not mean leaving it.
             </p>
+            </Editable>
           </div>
-          <Plate name="youth-center" className="future-split__plate" />
+          <Plate
+            name="youth-center"
+            className="future-split__plate"
+            captionSlot="youth-and-housing.cap-youth-center"
+          />
         </div>
       </section>
 
@@ -243,7 +273,10 @@ export function FutureScreen() {
         <div className="wrap future-split future-split--flipped">
           <div className="future-split__body prose">
             <p className="future-tag">Building C</p>
-            <h2 id="the-diocese-centre">The diocese centre</h2>
+            <Editable slot="the-diocese-centre.h2" as="h2" id="the-diocese-centre">
+              The diocese centre
+            </Editable>
+            <Editable slot="the-diocese-centre.body" as="div" prose>
             <p>
               The smallest of the three, at 23,983 square feet over three levels, and the one that
               serves beyond this congregation. Its ground floor is the function room — 5,639 square
@@ -260,8 +293,13 @@ export function FutureScreen() {
               which is the plain reason the present church has to come down before this one can go
               up.
             </p>
+            </Editable>
           </div>
-          <Plate name="diocese-center" className="future-split__plate" />
+          <Plate
+            name="diocese-center"
+            className="future-split__plate"
+            captionSlot="the-diocese-centre.cap-diocese-center"
+          />
         </div>
       </section>
 
@@ -277,12 +315,16 @@ export function FutureScreen() {
       <section className="band future-gallery-band" aria-labelledby="more-views">
         <div className="wrap">
           <header className="future-head">
-            <p className="future-head__eyebrow">Ten more views</p>
-            <h2 id="more-views">Walk round it</h2>
-            <p className="lede">
+            <Editable slot="more-views.eyebrow" as="p" className="future-head__eyebrow">
+              Ten more views
+            </Editable>
+            <Editable slot="more-views.h2" as="h2" id="more-views">
+              Walk round it
+            </Editable>
+            <Editable slot="more-views.lede" as="p" prose className="lede">
               More frames from the same flythrough — the approach, the court, the two buildings
               behind, and the whole site from above. Open any of them.
-            </p>
+            </Editable>
           </header>
 
           <Gallery />
@@ -292,12 +334,16 @@ export function FutureScreen() {
       <section className="band band--tinted future-uses-band" aria-labelledby="all-of-it">
         <div className="wrap">
           <header className="future-head">
-            <p className="future-head__eyebrow">119,458 square feet, accounted for</p>
-            <h2 id="all-of-it">What the space is for</h2>
-            <p className="lede">
+            <Editable slot="all-of-it.eyebrow" as="p" className="future-head__eyebrow">
+              119,458 square feet, accounted for
+            </Editable>
+            <Editable slot="all-of-it.h2" as="h2" id="all-of-it">
+              What the space is for
+            </Editable>
+            <Editable slot="all-of-it.lede" as="p" prose className="lede">
               Straight off the schedule that repeats on every floor plan in the filed set, summed
               across the three buildings. The seven lines add to the total exactly.
-            </p>
+            </Editable>
           </header>
 
           <ByUse />
@@ -307,20 +353,24 @@ export function FutureScreen() {
       <section className="band future-land" aria-labelledby="the-land">
         <div className="wrap">
           <header className="future-head">
-            <p className="future-head__eyebrow">Five and a half acres</p>
-            <h2 id="the-land">How it sits on the land</h2>
-            <p className="lede">
+            <Editable slot="the-land.eyebrow" as="p" className="future-head__eyebrow">
+              Five and a half acres
+            </Editable>
+            <Editable slot="the-land.h2" as="h2" id="the-land">
+              How it sits on the land
+            </Editable>
+            <Editable slot="the-land.lede" as="p" prose className="lede">
               The lot is the one the church already owns — Map 40, Lot 008, between Rice Road and
               Turkey Hill Road. No land is being bought, and the buildings are fitted to what is
               there.
-            </p>
+            </Editable>
           </header>
 
-          <WidePlate name="roofs-aerial" />
+          <WidePlate name="roofs-aerial" captionSlot="the-land.cap-roofs-aerial" />
 
-          <WidePlate name="site-plan" openable />
+          <WidePlate name="site-plan" openable captionSlot="the-land.cap-site-plan" />
 
-          <div className="future-land__body prose">
+          <Editable slot="the-land.body" as="div" prose className="future-land__body prose">
             <p>
               The three buildings are set back from both streets and turned inward, so that what
               they enclose is a courtyard rather than a frontage. The car park wraps around the
@@ -341,26 +391,31 @@ export function FutureScreen() {
               sheet, and it is the honest one: the congregation would be worshipping in the
               building on the day the drawings for its replacement are approved.
             </p>
-          </div>
+          </Editable>
 
-          <WidePlate name="massing" openable />
+          {/* `massing` is in this band, not the one below it. */}
+          <WidePlate name="massing" openable captionSlot="the-land.cap-massing" />
         </div>
       </section>
 
       <section className="band band--sunken future-stands" aria-labelledby="where-it-stands">
         <div className="wrap">
           <header className="future-head">
-            <p className="future-head__eyebrow">Nothing has been dug</p>
-            <h2 id="where-it-stands">Where the work stands</h2>
-            <p className="lede">
+            <Editable slot="where-it-stands.eyebrow" as="p" className="future-head__eyebrow">
+              Nothing has been dug
+            </Editable>
+            <Editable slot="where-it-stands.h2" as="h2" id="where-it-stands">
+              Where the work stands
+            </Editable>
+            <Editable slot="where-it-stands.lede" as="p" prose className="lede">
               Dates below are the ones printed on the drawings themselves, not dates anybody
               remembers.
-            </p>
+            </Editable>
           </header>
 
           <Progress />
 
-          <div className="future-stands__foot prose">
+          <Editable slot="where-it-stands.foot" as="div" prose className="future-stands__foot prose">
             <p>
               Every sheet in the set is stamped <i>not for construction</i>, and the line on the
               cover reading <i>date site plan endorsed</i> is still blank. The design has been
@@ -374,7 +429,7 @@ export function FutureScreen() {
               this page was written, <Link href="/contact">ask the office</Link> — that answer will
               be current and this one will not.
             </p>
-          </div>
+          </Editable>
         </div>
       </section>
 
@@ -387,13 +442,17 @@ export function FutureScreen() {
       <section className="band band--tinted future-team-band" aria-labelledby="who-is-drawing-it">
         <div className="wrap">
           <header className="future-head">
-            <p className="future-head__eyebrow">Nine firms</p>
-            <h2 id="who-is-drawing-it">Who is drawing it</h2>
-            <p className="lede">
+            <Editable slot="who-is-drawing-it.eyebrow" as="p" className="future-head__eyebrow">
+              Nine firms
+            </Editable>
+            <Editable slot="who-is-drawing-it.h2" as="h2" id="who-is-drawing-it">
+              Who is drawing it
+            </Editable>
+            <Editable slot="who-is-drawing-it.lede" as="p" prose className="lede">
               A structural engineer, a traffic consultant, a code consultant, a wetland scientist
               and a licensed land surveyor, each named on the sheets they are responsible for. This
               is not a sketch somebody made for the church.
-            </p>
+            </Editable>
           </header>
 
           <Team />
@@ -433,16 +492,18 @@ export function FutureScreen() {
       */}
       <section className="band band--deep future-give" aria-labelledby="paying-for-it">
         <div className="wrap future-give__inner">
-          <h2 id="paying-for-it">Paying for it</h2>
-          <p className="future-give__lede">
+          <Editable slot="paying-for-it.h2" as="h2" id="paying-for-it">
+            Paying for it
+          </Editable>
+          <Editable slot="paying-for-it.lede" as="p" prose className="future-give__lede">
             The drawings are paid for. The buildings are not, and they will be built the way
             everything in this church is built — out of what the congregation gives.
-          </p>
-          <p className="future-give__fund">
+          </Editable>
+          <Editable slot="paying-for-it.fund" as="p" prose className="future-give__fund">
             When the form opens, change the fund to <strong>SPSM Construction Project</strong>. It
             opens on the general fund, and an offering left there supports the church's day-to-day
             work rather than this.
-          </p>
+          </Editable>
           {/*
             A `div`, not a `p`, and this cost a hydration error to learn.
             `GiveButton` renders its overlay as a sibling of the trigger, and a
@@ -455,12 +516,22 @@ export function FutureScreen() {
           <div className="future-give__act">
             <GiveButton className="button">Give to the construction fund</GiveButton>
           </div>
-          <p className="future-give__note">
-            One offering or a recurring one, through the church's Tithe.ly form.{' '}
+          <Editable slot="paying-for-it.note" as="p" prose className="future-give__note">
+            One offering or a recurring one, through the church&rsquo;s Tithe.ly form.{' '}
             <Link href="/giving">More ways to give</Link>.
-          </p>
+          </Editable>
         </div>
       </section>
+
+      {/*
+        Sections staff have added, if any — between the last band written into
+        this page and the links off it. This screen is the one of the five that
+        carries its own `MoreOfAbout` (see the note in the route about the hole
+        a pale strip left between this page's dark last band and the footer),
+        which is why the foot arrives as a prop rather than being appended by
+        the route the way it is on the other four.
+      */}
+      {foot}
 
       <MoreOfAbout current="future-plans" />
     </div>

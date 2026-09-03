@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { Editable } from '@/features/about';
 import { Gallery } from './parts';
 import { STATION_CONTENT } from './content';
 import { TOUR_CREDITS, TOUR_STATIONS } from './stations';
@@ -65,13 +66,15 @@ export function TourScreen() {
     <div className="tour" ref={root}>
       <section className="band band--deep tour-hero">
         <div className="wrap tour-hero__inner">
-          <p className="tour-hero__eyebrow">Follow the tour</p>
-          <p className="tour-hero__title">
+          <Editable slot="tour-hero.eyebrow" as="p" className="tour-hero__eyebrow">
+            Follow the tour
+          </Editable>
+          <Editable slot="tour-hero.title" as="p" className="tour-hero__title">
             Six stations through the Coptic Orthodox Church
-          </p>
-          <p className="tour-hero__lede">
+          </Editable>
+          <Editable slot="tour-hero.lede" as="p" prose className="tour-hero__lede">
             The same six stops the guides walk. Collect a stamp at each one.
-          </p>
+          </Editable>
         </div>
       </section>
 
@@ -98,10 +101,24 @@ export function TourScreen() {
                   </span>
                   <span>Station {station.number}</span>
                 </p>
-                <h2 className="tour-station__title" id={`${station.id}-title`}>
+                {/*
+                  The station's own title and standfirst, from `TOUR_STATIONS`.
+                  Its *body* is deliberately not editable — a station body is a
+                  `Reveal`, a `Stepper`, a `Switcher`, a hymn table and a stamp
+                  button, and a markdown box in its place would save cleanly and
+                  quietly delete the tour. See `features/about/slots.ts`.
+                */}
+                <Editable
+                  slot={`${station.id}.h2`}
+                  as="h2"
+                  className="tour-station__title"
+                  id={`${station.id}-title`}
+                >
                   {station.title}
-                </h2>
-                <p className="tour-station__lede">{station.lede}</p>
+                </Editable>
+                <Editable slot={`${station.id}.lede`} as="p" prose className="tour-station__lede">
+                  {station.lede}
+                </Editable>
               </header>
 
               {/*

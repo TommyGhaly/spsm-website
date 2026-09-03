@@ -148,6 +148,43 @@ export const enforceTenantOnCreate = beforeUserCreated(
       throw new AuthHttpsError('invalid-argument', 'No user on the creation event.');
     }
 
+    /*
+     * The anonymous upload session, which is not a person and has no tenant.
+     *
+     * Gallery submissions are open to anyone — sign-in here is Microsoft-only
+     * against the parish tenant, so requiring an account would mean only clergy
+     * and servants could ever send a photograph, which is precisely backwards
+     * for the parishioner with forty pictures of the camp. The upload endpoint
+     * signs them in anonymously so the upload has a uid to be counted and
+     * rate-limited against; nobody is shown a sign-in screen.
+     *
+     * Such an account reaches this hook with no credential at all, so
+     * `presentedTenant` returns null and the tenant check below refuses it —
+     * every anonymous upload would fail at account creation with a message
+     * about the church directory. Hence this exemption, which must come first.
+     *
+     * `providerData` is the discriminator rather than the absent credential,
+     * and that distinction is load-bearing. A missing credential is also what a
+     * *legitimate* Microsoft sign-in looks like when `idToken: true` is dropped
+     * from the options above — the failure the comment there warns about — so
+     * keying on its absence would turn that misconfiguration into an open door
+     * instead of the loud refusal it currently is. An anonymous user is the only
+     * one Firebase gives an empty `providerData`.
+     *
+     * These accounts get no claims: they fall through with the empty block
+     * below rather than being provisioned, they hold no grant anywhere, and
+     * every rule that matters asks for a screen or a program grant they cannot
+     * have. What they can do is exactly what the upload endpoint does on their
+     * behalf, and nothing else.
+     */
+    if (user.providerData.length === 0) {
+      // The same empty block a first Microsoft sign-in gets, for the reason
+      // given where that one is returned: the shape is always present, so no
+      // reader has to special-case a missing `screens`. Every value in it is
+      // false or empty, and no member document is written.
+      return { customClaims: { ...DEFAULT_CLAIMS, screens: [] } };
+    }
+
     if (event.credential?.providerId && event.credential.providerId !== MICROSOFT_PROVIDER) {
       // Microsoft is the only provider enabled on the project, so this is
       // unreachable unless someone enables another one in the console. Refusing

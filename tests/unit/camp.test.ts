@@ -4,8 +4,19 @@ import {
   CAMP_PAYMENT_METHODS,
   MAX_CHILDREN,
   campAllDayKeys,
+  campDesiredRoles,
+  campDesiredRolesFor,
+  campDesiredRolesForWeek,
+  clearDesiredRolesForSection,
   campSectionForGrade,
   campWeekKeys,
+  campWeekRoleKey,
+  campWeekRoleOptions,
+  campWeeksOf,
+  CAMP_ROLE_SUGGESTIONS,
+  describeCampDesiredRoles,
+  parseCampWeekRoleKey,
+  toggleDesiredRole,
   describeCampDays,
   acceptedServantRegistration,
   blankChild,
@@ -315,18 +326,37 @@ describe('validation', () => {
     };
     const problems = validateCampRegistration(draft);
     expect(problems.some((p) => p.includes('which group'))).toBe(true);
-    expect(problems.some((p) => p.includes('role'))).toBe(true);
+    // Nothing about roles yet: they are asked per week, and a servant with no
+    // days has no week to be asked about.
+    expect(problems.some((p) => p.includes('days'))).toBe(true);
 
-    // A role without a group is still incomplete: the camp runs two sections
-    // and "Sports" does not say which one.
-    draft.servant = { ...draft.servant!, desiredRoles: ['Sports'] };
-    expect(validateCampRegistration(draft).some((p) => p.includes('which group'))).toBe(true);
-
-    draft.servant = { ...draft.servant, sections: ['middle-school'] };
-    expect(validateCampRegistration(draft).some((p) => p.includes('days'))).toBe(true);
-
+    draft.servant = { ...draft.servant!, sections: ['middle-school'] };
     draft.servant = { ...draft.servant, days: campWeekKeys(2) };
+    // Now there is a week, so the week is asked about — and named, along with
+    // the half of the camp, because a servant coming to both weeks or serving
+    // both halves must not be told "choose a role" twice with no way to tell
+    // which one is missing.
+    expect(validateCampRegistration(draft)).toEqual([
+      'Choose at least one thing the servant would like to do in middle school, week 2.',
+    ]);
+
+    // Answering week one does not answer week two.
+    draft.servant = { ...draft.servant, desiredRolesByWeek: { w1_middle: ['Sports'] } };
+    expect(validateCampRegistration(draft)).toHaveLength(1);
+
+    // Nor does answering the other half of the camp: the stations differ, so
+    // an elementary answer says nothing about the middle-school week.
+    draft.servant = { ...draft.servant, desiredRolesByWeek: { w2_elementary: ['Sports'] } };
+    expect(validateCampRegistration(draft)).toHaveLength(1);
+
+    draft.servant = { ...draft.servant, desiredRolesByWeek: { w2_middle: ['Sports'] } };
     expect(validateCampRegistration(draft)).toEqual([]);
+
+    // Serving both halves is two answers, and the missing one is named.
+    draft.servant = { ...draft.servant, sections: ['elementary', 'middle-school'] };
+    expect(validateCampRegistration(draft)).toEqual([
+      'Choose at least one thing the servant would like to do in elementary, week 2.',
+    ]);
   });
 
   /**
@@ -441,7 +471,14 @@ describe('parseCampRegistration', () => {
   it('reads an empty document into something usable', () => {
     const parsed = parseCampRegistration({});
     expect(parsed.kind).toBe('family');
-    expect(parsed.status).toBe('draft');
+    // Not `draft`: that status and `waitlisted` are history, and a stored
+    // document still holding one is a real registration filed under a state no
+    // screen draws. See `CAMP_STATUSES`.
+    expect(parsed.status).toBe('registered');
+    expect(parseCampRegistration({ status: 'draft' }).status).toBe('registered');
+    expect(parseCampRegistration({ status: 'waitlisted' }).status).toBe('registered');
+    // The one that still means something survives untouched.
+    expect(parseCampRegistration({ status: 'withdrawn' }).status).toBe('withdrawn');
     expect(parsed.children).toEqual([]);
     expect(parsed.billing.baseCents).toBe(0);
   });
@@ -493,11 +530,6 @@ describe('parseCampRegistration', () => {
     expect(parsed.billing.baseCents).toBe(0);
     expect(parsed.billing.payments[0]?.amountCents).toBe(-2500);
   });
-
-  it('defaults photo consent to withheld', () => {
-    const parsed = parseCampRegistration({ kind: 'family', children: [{ id: 'c1' }] });
-    expect(parsed.children[0]?.photoConsent).toBe(false);
-  });
 });
 
 describe('parseCampConfig', () => {
@@ -531,6 +563,296 @@ describe('parseCampConfig', () => {
   });
 });
 
+/*
+ * What a servant would like to do, week by week.
+ *
+ * The behaviour these pin is the one the screens depend on and the one a
+ * refactor would quietly break: an old flat `desiredRoles` still reads, an
+ * empty week has no key, and the union the allocation board draws on a chip is
+ * derived rather than stored.
+ */
+describe('per-week desired roles', () => {
+  it('keys a week the way the day keys do', () => {
+    expect(campWeekRoleKey(1)).toBe('w1');
+    expect(campWeekRoleKey(2)).toBe('w2');
+    // Clamped, not thrown: a mistyped week from a hand-edited document lands
+    // somewhere real rather than producing `wNaN`.
+    expect(campWeekRoleKey(0)).toBe('w1');
+    expect(campWeekRoleKey(99)).toBe('w6');
+
+    // The half of the camp is in the key, and spelled `middle` rather than
+    // `middle-school`: these are written as Firestore field paths, which a
+    // hyphen makes unparseable.
+    expect(campWeekRoleKey(1, 'elementary')).toBe('w1_elementary');
+    expect(campWeekRoleKey(2, 'middle-school')).toBe('w2_middle');
+    expect(campWeekRoleKey(2, null)).toBe('w2');
+
+    expect(parseCampWeekRoleKey('w2')).toEqual({ week: 2, section: null });
+    expect(parseCampWeekRoleKey('w2_middle')).toEqual({ week: 2, section: 'middle-school' });
+    expect(parseCampWeekRoleKey('w1_elementary')).toEqual({ week: 1, section: 'elementary' });
+    expect(parseCampWeekRoleKey('w9')).toBe(null);
+    expect(parseCampWeekRoleKey('w1-mon')).toBe(null);
+    expect(parseCampWeekRoleKey('w1_middle-school')).toBe(null);
+    expect(parseCampWeekRoleKey(2)).toBe(null);
+  });
+
+  it('names the weeks somebody has any day in', () => {
+    expect(campWeeksOf(['w2-wed', 'w1-mon', 'w2-fri'])).toEqual([1, 2]);
+    expect(campWeeksOf([])).toEqual([]);
+    expect(campWeeksOf(['nonsense'])).toEqual([]);
+  });
+
+  it('unions across weeks and halves for the screens that want one line', () => {
+    const servant = {
+      desiredRolesByWeek: {
+        w2_middle: ['Kitchen', 'Sports'],
+        w1_elementary: ['Sports'],
+        w2_elementary: ['Arts and crafts'],
+      },
+    };
+    // Week order, deduped — not the order the keys happen to be stored in.
+    expect(campDesiredRoles(servant)).toEqual(['Sports', 'Arts and crafts', 'Kitchen']);
+
+    // One week, one half: what the form and the drawer ask.
+    expect(campDesiredRolesFor(servant, 2, 'middle-school')).toEqual(['Kitchen', 'Sports']);
+    expect(campDesiredRolesFor(servant, 2, 'elementary')).toEqual(['Arts and crafts']);
+    expect(campDesiredRolesFor(servant, 1, 'middle-school')).toEqual([]);
+
+    // One week, both halves: what a chip shows.
+    expect(campDesiredRolesForWeek(servant, 2)).toEqual([
+      'Arts and crafts',
+      'Kitchen',
+      'Sports',
+    ]);
+    expect(campDesiredRolesForWeek(servant, 3)).toEqual([]);
+    expect(campDesiredRoles(null)).toEqual([]);
+  });
+
+  it('takes a half of the camp’s answers away with the half', () => {
+    const before = {
+      w1_elementary: ['Arts and crafts'],
+      w1_middle: ['Sports'],
+      w2_middle: ['Trip chaperone'],
+    };
+    // Unticking middle school leaves nothing filed under a half they are not
+    // serving — invisible on their own form, and read by the person building
+    // the boards as somebody who wants to be there.
+    expect(clearDesiredRolesForSection(before, 'middle-school')).toEqual({
+      w1_elementary: ['Arts and crafts'],
+    });
+    expect(clearDesiredRolesForSection(before, 'elementary')).toEqual({
+      w1_middle: ['Sports'],
+      w2_middle: ['Trip chaperone'],
+    });
+  });
+
+  it('drops a week and half nobody wants anything in, rather than storing an empty list', () => {
+    let map: Record<string, string[]> = {};
+    map = toggleDesiredRole(map, 1, 'middle-school', 'Sports', true);
+    map = toggleDesiredRole(map, 1, 'middle-school', 'Kitchen', true);
+    expect(map).toEqual({ w1_middle: ['Sports', 'Kitchen'] });
+
+    // Ticking the same box twice is not two roles.
+    expect(toggleDesiredRole(map, 1, 'middle-school', 'Sports', true)).toEqual(map);
+
+    // The same job in the other half is a second answer, not the same one —
+    // "Kitchen" for elementary is a different rota from "Kitchen" for middle
+    // school, and unticking one must not untick the other.
+    map = toggleDesiredRole(map, 1, 'elementary', 'Kitchen', true);
+    expect(map.w1_elementary).toEqual(['Kitchen']);
+    map = toggleDesiredRole(map, 1, 'elementary', 'Kitchen', false);
+    expect(map).not.toHaveProperty('w1_elementary');
+    expect(map.w1_middle).toEqual(['Sports', 'Kitchen']);
+
+    map = toggleDesiredRole(map, 1, 'middle-school', 'Sports', false);
+    map = toggleDesiredRole(map, 1, 'middle-school', 'Kitchen', false);
+    expect(map).toEqual({});
+  });
+
+  it('says what was asked for a week at a time, naming the halves only when they differ', () => {
+    const servant = {
+      desiredRolesByWeek: { w1_middle: ['Sports'], w2_middle: ['Kitchen'] },
+    };
+    expect(describeCampDesiredRoles(servant, 2)).toBe('Week 1: Sports · Week 2: Kitchen');
+    // A camp shortened to one week must not hide what somebody said about the
+    // second one — they signed up for it.
+    expect(describeCampDesiredRoles(servant, 1)).toContain('Week 2: Kitchen');
+    expect(describeCampDesiredRoles({ desiredRolesByWeek: {} }, 2)).toBe('');
+
+    // Both halves, the same answer in each: said once, because naming the
+    // sections there is two lines carrying one fact.
+    expect(
+      describeCampDesiredRoles(
+        { desiredRolesByWeek: { w1_elementary: ['Sports'], w1_middle: ['Sports'] } },
+        1,
+      ),
+    ).toBe('Week 1: Sports');
+
+    // Both halves, different answers: told apart, which is the whole point of
+    // the sectioned keys.
+    expect(
+      describeCampDesiredRoles(
+        { desiredRolesByWeek: { w1_elementary: ['Arts and crafts'], w1_middle: ['Sports'] } },
+        1,
+      ),
+    ).toBe('Week 1 elementary: Arts and crafts · Week 1 middle school: Sports');
+  });
+
+  it('reads a flat list from before the split as covering the weeks and halves they came to', () => {
+    /*
+     * The first of the two migrations. `desiredRoles` used to be a single
+     * list, and the honest reading of it is "what they wanted while they were
+     * here" — so it lands on every week they have days in, which is exactly the
+     * span it used to cover, and on every half they signed up to serve.
+     */
+    const migrated = parseCampRegistration({
+      kind: 'servant',
+      servant: {
+        desiredRoles: ['Sports'],
+        sections: ['middle-school'],
+        days: ['w2-mon', 'w2-tue'],
+      },
+    });
+    expect(migrated.servant?.desiredRolesByWeek).toEqual({ w2_middle: ['Sports'] });
+
+    // No days at all: week one, because a wish filed under no week is a wish
+    // no screen will ever show. No sections either: both halves, because a
+    // record with wishes and no section is one to show whole rather than to
+    // file under a half nobody chose.
+    const noDays = parseCampRegistration({
+      kind: 'servant',
+      servant: { desiredRoles: ['Kitchen'] },
+    });
+    expect(noDays.servant?.desiredRolesByWeek).toEqual({
+      w1_elementary: ['Kitchen'],
+      w1_middle: ['Kitchen'],
+    });
+
+    // A document that has both is a document somebody has already saved since
+    // the split, so the map wins and the legacy field is ignored.
+    const both = parseCampRegistration({
+      kind: 'servant',
+      servant: {
+        desiredRoles: ['Sports'],
+        sections: ['elementary'],
+        desiredRolesByWeek: { w1_elementary: ['Music'] },
+        days: ['w1-mon'],
+      },
+    });
+    expect(both.servant?.desiredRolesByWeek).toEqual({ w1_elementary: ['Music'] });
+  });
+
+  it('reads a bare week key from before the halves were told apart as meaning both', () => {
+    /*
+     * The second migration. A `w1` was written by a form that offered one set
+     * of boxes to somebody who had already ticked their sections, so it meant
+     * "week one, in whichever halves I serve".
+     */
+    const spread = parseCampRegistration({
+      kind: 'servant',
+      servant: {
+        sections: ['elementary', 'middle-school'],
+        desiredRolesByWeek: { w1: ['Sports'] },
+        days: ['w1-mon'],
+      },
+    });
+    expect(spread.servant?.desiredRolesByWeek).toEqual({
+      w1_elementary: ['Sports'],
+      w1_middle: ['Sports'],
+    });
+
+    // A sectioned key beside a bare one is an administrator's save, half done.
+    // What they typed wins; the old key only fills the half they did not touch.
+    const halfMigrated = parseCampRegistration({
+      kind: 'servant',
+      servant: {
+        sections: ['elementary', 'middle-school'],
+        desiredRolesByWeek: { w1: ['Sports'], w1_elementary: ['Arts and crafts'] },
+        days: ['w1-mon'],
+      },
+    });
+    expect(halfMigrated.servant?.desiredRolesByWeek).toEqual({
+      w1_elementary: ['Arts and crafts'],
+      w1_middle: ['Sports'],
+    });
+  });
+
+  it('refuses a week key it did not write, and an empty list', () => {
+    const parsed = parseCampRegistration({
+      kind: 'servant',
+      servant: {
+        sections: ['elementary'],
+        desiredRolesByWeek: {
+          w1_elementary: ['Sports'],
+          w9_elementary: ['Nonsense'],
+          'w1_middle-school': ['Nonsense'],
+          nope: ['Nonsense'],
+          w2_elementary: [],
+        },
+      },
+    });
+    expect(parsed.servant?.desiredRolesByWeek).toEqual({ w1_elementary: ['Sports'] });
+  });
+});
+
+describe('the camp’s own list of roles', () => {
+  it('offers the suggestions until the camp has chosen', () => {
+    const config = parseCampConfig({}, new Date('2027-03-04T00:00:00Z'));
+    expect(config.weekRoles).toEqual({});
+    expect(campWeekRoleOptions(config, 1, 'elementary')).toEqual([...CAMP_ROLE_SUGGESTIONS]);
+    expect(campWeekRoleOptions(config, 1, 'middle-school')).toEqual([...CAMP_ROLE_SUGGESTIONS]);
+  });
+
+  it('reads one list per week and half, and keeps a week past the camp’s length', () => {
+    const config = parseCampConfig(
+      {
+        weeks: 2,
+        weekRoles: {
+          w1_elementary: [' Arts and crafts ', 'Arts and crafts', ''],
+          w2_elementary: ['Water play'],
+          w2_middle: ['Trip chaperone'],
+          w3_middle: ['Something for a week the camp no longer runs'],
+          nope: ['Ignored'],
+        },
+      },
+      new Date('2027-03-04T00:00:00Z'),
+    );
+
+    // Trimmed and deduped; a blank name is dropped, because a checkbox with no
+    // label cannot be ticked meaningfully.
+    expect(config.weekRoles.w1_elementary).toEqual(['Arts and crafts']);
+    // The halves are distinct: week two's middle school is a trip, and
+    // elementary is not offered it.
+    expect(campWeekRoleOptions(config, 2, 'middle-school')).toEqual(['Trip chaperone']);
+    expect(campWeekRoleOptions(config, 2, 'elementary')).toEqual(['Water play']);
+    // A half the camp has not filled in falls through to the suggestions on its
+    // own, without borrowing the other half's list.
+    expect(campWeekRoleOptions(config, 1, 'middle-school')).toEqual([...CAMP_ROLE_SUGGESTIONS]);
+    // Unlike `weekStarts`, a week past `weeks` is kept: shortening the camp for
+    // a year has not unsaid what the camp typed.
+    expect(config.weekRoles.w3_middle).toHaveLength(1);
+    expect(config.weekRoles).not.toHaveProperty('nope');
+    // An empty list is not stored, so it reads as "not chosen" and the form
+    // shows the suggestions.
+    expect(
+      campWeekRoleOptions(parseCampConfig({ weekRoles: { w1_elementary: [] } }), 1, 'elementary'),
+    ).toEqual([...CAMP_ROLE_SUGGESTIONS]);
+  });
+
+  it('offers a list written before the halves were told apart to both of them', () => {
+    const config = parseCampConfig(
+      { weeks: 2, weekRoles: { w1: ['Sports', 'Kitchen'], w1_middle: ['Bible study'] } },
+      new Date('2027-03-04T00:00:00Z'),
+    );
+
+    // A bare `w1` meant "week one, everybody", so it is what elementary sees
+    // until the camp gives elementary a list of its own.
+    expect(campWeekRoleOptions(config, 1, 'elementary')).toEqual(['Sports', 'Kitchen']);
+    // And it is shadowed the moment either half is edited.
+    expect(campWeekRoleOptions(config, 1, 'middle-school')).toEqual(['Bible study']);
+  });
+});
+
 describe('shirtCounts', () => {
   it('counts every child and servant, and excludes the withdrawn', () => {
     const rows = [
@@ -557,7 +879,7 @@ describe('shirtCounts', () => {
       {
         status: 'registered' as const,
         children: [],
-        servant: { uid: null, sections: ['elementary' as const], desiredRoles: [], assignedRoles: [], shirtSize: 'AL' as const, days: [], availability: '', cleared: true, clearedNote: '' },
+        servant: { uid: null, sections: ['elementary' as const], desiredRolesByWeek: {}, assignedRoles: [], shirtSize: 'AL' as const, days: [], availability: '', cleared: true, clearedNote: '' },
       },
     ];
 
@@ -636,7 +958,7 @@ function signUpDraft(over: Partial<CampRegistrationDraft> = {}): CampRegistratio
       ...(base.servant ?? blankServant()),
       dateOfBirth: '2009-06-01',
       sections: ['elementary'],
-      desiredRoles: ['Sports'],
+      desiredRolesByWeek: { w1_elementary: ['Sports'] },
       days: ['w1-mon', 'w1-tue'],
       shirtSize: 'AM',
     },
@@ -658,8 +980,28 @@ describe('validating a servant’s own sign-up', () => {
     expect(problems).toContain('Enter your name.');
     expect(problems.some((problem) => problem.includes('date of birth'))).toBe(true);
     expect(problems.some((problem) => problem.includes('which group'))).toBe(true);
-    expect(problems.some((problem) => problem.includes('role'))).toBe(true);
     expect(problems.some((problem) => problem.includes('days'))).toBe(true);
+
+    // Once there is a week and a half of the camp, both are named. A servant
+    // serving both halves across both weeks would otherwise be told "choose a
+    // role" four times with no way to tell which one is missing — and the two
+    // halves do not run the same stations, so they genuinely are four answers.
+    const both = {
+      ...bare,
+      servant: {
+        ...bare.servant!,
+        sections: ['elementary', 'middle-school'] as const,
+        days: ['w1-mon'] as const,
+      },
+    };
+    const named = validateServantSignUp(
+      both as unknown as Parameters<typeof validateServantSignUp>[0],
+      { waiverInForce: false },
+    );
+    expect(named).toContain('Choose at least one thing you would like to do in elementary, week 1.');
+    expect(named).toContain(
+      'Choose at least one thing you would like to do in middle school, week 1.',
+    );
   });
 
   it('speaks to the servant, not about them', () => {
@@ -710,21 +1052,25 @@ describe('accepting a sign-up', () => {
     expect(accepted.kind).toBe('servant');
     expect(accepted.takenByUid).toBe('lead-1');
     expect(accepted.children).toEqual([]);
-    expect(accepted.servant?.desiredRoles).toEqual(['Sports']);
+    expect(accepted.servant?.desiredRolesByWeek).toEqual({ w1_elementary: ['Sports'] });
   });
 
-  it('accepts an incomplete one as a draft rather than refusing it', () => {
+  it('registers an incomplete one rather than filing it as a draft', () => {
     /*
-     * A waiver that came into force after the sign-up was sent is the case
-     * this exists for. Refusing would leave a real person's sign-up stuck in a
-     * queue for a reason they cannot see and cannot fix; `draft` says "this is
-     * real and it is not finished", which is exactly true.
+     * A waiver that came into force after the sign-up was sent is the case this
+     * exists for. It used to be filed as a `draft`, which sounds careful and was
+     * not: the administrator had already read it and pressed **Accept**, and the
+     * only thing the status changed was that the editor then refused to save any
+     * correction they made to it. What is missing is shown on the editor as a
+     * list of things still to come; nothing blocks.
      */
     const accepted = acceptedServantRegistration(request(), {
       takenByUid: 'lead-1',
       waiverInForce: true,
     });
-    expect(accepted.status).toBe('draft');
+    expect(accepted.status).toBe('registered');
+    // And it really is incomplete — the point is that it saves anyway.
+    expect(validateCampRegistration(accepted, { waiverInForce: true })).not.toEqual([]);
   });
 
   it('keeps what the servant wrote, and labels whose words they are', () => {

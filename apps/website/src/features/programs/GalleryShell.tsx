@@ -104,6 +104,7 @@ import {
   updateBand,
   listProgramEventsForAdmin,
   moveProgramEvent,
+  reorderProgramEvents,
   renameProgramEvent,
   updateProgramEvent,
   moveMediaWithin,
@@ -1966,6 +1967,22 @@ function LevelView({
       legend={childLabel}
       busy={saving}
       addLabel={`Add to ${childLabel.toLowerCase()}…`}
+      /*
+        A dropped row lands anywhere, so the whole sibling list goes over already
+        arranged rather than one step at a time. `children` is what the shelf is
+        drawing and it is already sorted the way the page sorts, so its indices
+        and the shelf's are the same indices.
+      */
+      onReorder={(from, to) =>
+        void write(async () => {
+          const ordered = [...children];
+          const [lifted] = ordered.splice(from, 1);
+          if (!lifted) return;
+          ordered.splice(to, 0, lifted);
+          await reorderProgramEvents(ordered, admin.uid);
+          refresh();
+        })
+      }
       empty={
         node
           ? 'Nothing inside this yet. Add a part — “Day 1”, “Chapel”, “The hike” — and it gets its own page.'
@@ -2516,9 +2533,9 @@ function LevelView({
 
               `SubmitPhotos` is a button here now rather than a section at the foot of
               the page — Tommy: *"I want the add photos section to be on the top and I
-              want it to be a button that opens a panel."* It renders nothing at all
-              when the parish has stopped collecting or the ministry has no levels
-              yet, so the row can be unconditional without ever being empty of both.
+              want it to be a button that opens a panel."* It renders nothing only
+              when the parish has stopped collecting, so the row can be unconditional
+              without ever being empty of both.
             */}
             <p className="gallery-head__actions">
               {presentable.length > 0 && (
@@ -2881,9 +2898,13 @@ function LevelView({
           made a section the wrong shape: at the top it pushed the pictures down, at
           the bottom nobody sending photographs could find it.
 
-          It still renders on every level and on the ministry page, still nothing when
-          the parish has stopped collecting (`Program.submissionsOpen`, one flag for
-          the whole tree) and nothing in a ministry with no levels yet.
+          It renders on every level and on the ministry page, and nothing at all only
+          when the parish has stopped collecting (`Program.submissionsOpen`, one flag
+          for the whole tree). It used to render nothing in a ministry with no levels
+          yet as well; the ministry itself is a destination now, so that case has
+          somewhere to send a photograph — which matters more than it sounds, because
+          no ministry in production has a published level and the guard was therefore
+          hiding the button on every gallery on the site.
         */}
 
         {/*

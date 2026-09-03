@@ -134,6 +134,19 @@ export { calendar } from './calendar.js';
 // spsm-database is us-east1. See the note at the top of galleries.ts.
 export { onGalleryMediaCreated, onGalleryMediaReviewed } from './galleries.js';
 
+/*
+ * The one door into a gallery submission, and the sweep that tidies up after
+ * the uploads it authorises that never happen.
+ *
+ * us-central1 like every other HTTP endpoint here, unlike the two triggers
+ * above. Only Firestore and Storage triggers have to match their resource's
+ * region; this one merely talks to them, and putting it with its siblings keeps
+ * the Hosting rewrites uniform. The sweep is a scheduled job, not a trigger,
+ * and is under the same rule.
+ */
+export { galleryUploadUrl } from './galleries/uploadUrl.js';
+export { sweepUnuploadedSubmissions, sweepStaleQuotas } from './galleries/orphans.js';
+
 // Declared as secrets, not env vars: these are read from Secret Manager at
 // runtime and never appear in source, in git, or in a deployed bundle.
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');

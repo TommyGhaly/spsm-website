@@ -45,6 +45,30 @@ export interface FinanceSession {
    */
   sources: FinanceSource[];
   can: (source: FinanceSource) => boolean;
+  /**
+   * True when this reader also runs the camp — the `camp` screen flag.
+   *
+   * ---------------------------------------------------------------------------
+   * A *second* grant, and the only thing on this screen that is not a rollup.
+   *
+   * Everything else here is deliberately faceless: `financeRollups` exists
+   * precisely because `finance` cannot be given `campRegistrations`, which holds
+   * a child's grade, allergies and medical notes beside the fee. That does not
+   * change and must not.
+   *
+   * What changes is that some people hold *both* — the priest, the camp director
+   * who also keeps its books — and for them the season's family-by-family
+   * detail is already theirs: `runsCamp()` in firestore.rules serves them the
+   * whole collection on /admin/camp today. Withholding it here would not protect
+   * anything; it would only mean opening a second screen to answer "who has not
+   * paid".
+   *
+   * So this is the gate on the roster below, and it is exactly `runsCamp()`.
+   * Somebody with `finance` narrowed to `camp` and no camp flag sees the season
+   * totals and nothing else, which is the same screen it has always been.
+   * ---------------------------------------------------------------------------
+   */
+  runsCamp: boolean;
 }
 
 /**
@@ -75,5 +99,6 @@ export function useFinanceAdmin(): FinanceSession {
     canView: canAdmin('finance'),
     sources: FINANCE_SOURCES.filter((source) => canSeeFinance(source)),
     can: canSeeFinance,
+    runsCamp: canAdmin('camp'),
   };
 }

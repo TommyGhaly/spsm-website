@@ -1,3 +1,6 @@
+import { DefinitionSpine } from '@/components/DefinitionSpine';
+import { Editable } from '@/features/about/Editable';
+import { EditableCaption } from '@/features/about/EditableCaption';
 import { clericInitial } from '@/features/content/deacons';
 import { bundledPortrait } from '@/features/content/portraits';
 import type { Moment } from './chronologies';
@@ -17,7 +20,16 @@ import { WHO_CREDITS, WHO_PICTURES, whoLarge, whoSmall, type WhoPictureName } fr
  * descriptor for the large file is that file's real width — see the note in
  * `images.ts` about `withoutEnlargement`.
  */
-export function Plate({ name, className = '' }: { name: WhoPictureName; className?: string }) {
+export function Plate({
+  name,
+  className = '',
+  captionSlot,
+}: {
+  name: WhoPictureName;
+  className?: string;
+  /** Makes the caption rewritable. See `EditableCaption`. */
+  captionSlot?: string | undefined;
+}) {
   const picture = WHO_PICTURES[name];
 
   return (
@@ -33,7 +45,9 @@ export function Plate({ name, className = '' }: { name: WhoPictureName; classNam
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="who-plate__caption">{picture.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="who-plate__caption">
+        {picture.caption}
+      </EditableCaption>
     </figure>
   );
 }
@@ -43,7 +57,13 @@ export function Plate({ name, className = '' }: { name: WhoPictureName; classNam
  * prose. The landscapes need it — the monastery under its cliff is a smear at
  * column width — and it gives a page of six long bands somewhere to breathe.
  */
-export function WidePlate({ name }: { name: WhoPictureName }) {
+export function WidePlate({
+  name,
+  captionSlot,
+}: {
+  name: WhoPictureName;
+  captionSlot?: string | undefined;
+}) {
   const picture = WHO_PICTURES[name];
 
   return (
@@ -59,7 +79,9 @@ export function WidePlate({ name }: { name: WhoPictureName }) {
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="who-plate__caption">{picture.caption}</figcaption>
+      <EditableCaption slot={captionSlot} className="who-plate__caption">
+        {picture.caption}
+      </EditableCaption>
     </figure>
   );
 }
@@ -76,7 +98,7 @@ export function WidePlate({ name }: { name: WhoPictureName }) {
  * The 2400 file is the largest the optimiser emits; 1000 is the phone. There is
  * no 640, which is why `sizes` stops where it does.
  */
-export function Sanctuary() {
+export function Sanctuary({ captionSlot }: { captionSlot?: string | undefined }) {
   return (
     <figure className="who-plate who-plate--full">
       <img
@@ -90,10 +112,10 @@ export function Sanctuary() {
         loading="lazy"
         decoding="async"
       />
-      <figcaption className="who-plate__caption">
+      <EditableCaption slot={captionSlot} className="who-plate__caption">
         The sanctuary at Wayland. The screen, the icons and the altar behind them were put in by
         this congregation; the walls around them were built by another one.
-      </figcaption>
+      </EditableCaption>
     </figure>
   );
 }
@@ -102,25 +124,24 @@ export function Sanctuary() {
  * One dated spine — the nineteen centuries in Egypt, or the sixty years in New
  * England.
  *
- * A `dl`, because that is what it is: a term and the thing said about it. Each
- * pair is wrapped in a `div` so the two halves can be one grid row and the year
- * can hold its column; `dt`/`dd` as direct grid children would let a long entry
- * pull its year out of line.
- *
- * The year is *not* a heading. It looks like one, but a screen reader jumping
- * by heading through this page should land on the six sections, not on twenty
- * years.
+ * The markup and the reasoning behind it moved to
+ * `components/DefinitionSpine`, because a staff-added list on an About page is
+ * the same thing and should not be a second implementation of `.who-chron`
+ * that drifts from this one. The name stays here: a nineteen-century spine is a
+ * meaningful thing on this page in a way "definition list" is not.
  */
-export function Chronology({ moments }: { moments: readonly Moment[] }) {
+export function Chronology({
+  moments,
+  slotPrefix,
+}: {
+  moments: readonly Moment[];
+  slotPrefix?: string | undefined;
+}) {
   return (
-    <dl className="who-chron">
-      {moments.map((moment) => (
-        <div key={moment.when + moment.what.slice(0, 24)} className="who-chron__row">
-          <dt className="who-chron__when">{moment.when}</dt>
-          <dd className="who-chron__what">{moment.what}</dd>
-        </div>
-      ))}
-    </dl>
+    <DefinitionSpine
+      rows={moments.map((moment) => ({ term: moment.when, detail: moment.what }))}
+      slotPrefix={slotPrefix}
+    />
   );
 }
 
@@ -184,9 +205,36 @@ export function Clergy() {
                 {clericInitial(cleric.name)}
               </span>
             )}
-            <p className="who-cleric__name">{cleric.name}</p>
-            <p className="who-cleric__rank">{cleric.rank}</p>
-            <p className="who-cleric__note">{cleric.note}</p>
+            {/*
+              The roster's three lines. Editable, so a rank or a note can be
+              corrected the day it changes rather than at the next deploy — but
+              note that `clericInitial(cleric.name)` above and the homepage both
+              read the *coded* name, so rewriting a name here changes it on this
+              page only. Renaming somebody is still a code change; fixing the
+              spelling of their note is not.
+            */}
+            <Editable
+              slot={`the-clergy-here.cleric-${cleric.slug}-name`}
+              as="p"
+              className="who-cleric__name"
+            >
+              {cleric.name}
+            </Editable>
+            <Editable
+              slot={`the-clergy-here.cleric-${cleric.slug}-rank`}
+              as="p"
+              className="who-cleric__rank"
+            >
+              {cleric.rank}
+            </Editable>
+            <Editable
+              slot={`the-clergy-here.cleric-${cleric.slug}-note`}
+              as="p"
+              prose
+              className="who-cleric__note"
+            >
+              {cleric.note}
+            </Editable>
           </li>
         );
       })}

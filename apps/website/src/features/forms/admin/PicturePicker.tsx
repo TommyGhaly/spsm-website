@@ -1,35 +1,15 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { uploadFormPicture } from '../uploads';
+import { STOCK_PICTURES, type PictureChoice } from '@/features/media/stockPictures';
+import type { UploadResult } from '@/lib/uploadNaming';
 
-/**
- * Pictures a form may wear.
- *
- * The four stock photographs first: each one says what a form is *for* — a car
- * park, a van, a group meeting, a gathering — which is the job a generic
- * photograph can do honestly. Their licence and photo ids are recorded in
- * `assets/README.md`, unlike every other stock image this repo inherited.
- *
- * The parish's own images follow, for a form where they genuinely fit.
- *
- * A fixed list rather than a free text box, because a box here is how a form
- * ends up hotlinking a photograph from somebody else's website.
- *
- * Notable absence: the Crucifixion icon. It is genuine and beautiful, and an
- * icon is venerated rather than used as page furniture — nobody should meet it
- * at the top of a form about parking a car.
+/*
+ * The stock list lives in `features/media/stockPictures` now — the About pages
+ * choose a picture too, and a list of the photographs this site ships is not a
+ * fact about forms. The four stock photographs, the parish's own images, and
+ * the reasoning for both are documented there.
  */
-const PICTURES: { value: string | null; label: string }[] = [
-  { value: '/img/stock-parking-lot-1000.webp', label: 'Car park' },
-  { value: '/img/stock-passenger-van-1000.webp', label: 'Passenger van' },
-  { value: '/img/stock-small-group-1000.webp', label: 'Small group' },
-  { value: '/img/stock-gathering-1000.webp', label: 'Gathering' },
-  { value: '/img/home-sanctuary-1000.webp', label: 'The sanctuary (ours)' },
-  { value: '/img/cross-coptic-360.webp', label: 'Coptic cross (ours)' },
-  { value: '/img/hero-glass-1000.webp', label: 'Stained glass' },
-  { value: null, label: 'No picture' },
-];
 
 /**
  * Choosing or uploading a form's picture.
@@ -58,15 +38,29 @@ const PICTURES: { value: string | null; label: string }[] = [
  * ---------------------------------------------------------------------------
  */
 export function PicturePicker({
-  slug,
   value,
   onChange,
+  upload: send,
+  choices = STOCK_PICTURES,
+  label = 'Picture',
+  note = 'Shown on the card on /forms, and as a band above the form itself.',
 }: {
-  /** Where an uploaded file is filed under. The form's slug, or its id before
-      it has one. */
-  slug: string;
   value: string | null;
   onChange: (image: string | null) => void;
+  /**
+   * Where an uploaded file goes.
+   *
+   * A function rather than a folder name, because the two callers file into
+   * prefixes with different rules behind them — `forms/` and `content/about/` —
+   * and each already has a helper that knows its own path, its own size policy
+   * and its own error translation. Passing the upload in keeps this component
+   * ignorant of Storage entirely.
+   */
+  upload: (file: File) => Promise<UploadResult>;
+  /** Defaults to the stock list. The About editor adds every plate the site ships. */
+  choices?: readonly PictureChoice[];
+  label?: string;
+  note?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -75,13 +69,13 @@ export function PicturePicker({
   /* An uploaded picture is a URL that is not in the list, so the select would
      otherwise fall back to showing the first option and misreport what the form
      is actually wearing. */
-  const known = PICTURES.some((picture) => picture.value === (value ?? null));
+  const known = choices.some((picture) => picture.value === (value ?? null));
 
   async function upload(chosen: File | undefined) {
     if (!chosen) return;
     setFailed(null);
     setBusy(true);
-    const result = await uploadFormPicture(slug || 'form', chosen);
+    const result = await send(chosen);
     setBusy(false);
     if (!result.ok) {
       setFailed(result.reason);
@@ -93,19 +87,19 @@ export function PicturePicker({
   return (
     <div className="fxb__picture">
       <label className="field">
-        <span>Picture</span>
+        <span>{label}</span>
         <select
           value={known ? value ?? '' : '__uploaded'}
           onChange={(event) => onChange(event.target.value || null)}
         >
           {!known && <option value="__uploaded">Uploaded picture</option>}
-          {PICTURES.map((picture) => (
+          {choices.map((picture) => (
             <option key={picture.label} value={picture.value ?? ''}>
               {picture.label}
             </option>
           ))}
         </select>
-        <small>Shown on the card on /forms, and as a band above the form itself.</small>
+        <small>{note}</small>
       </label>
 
       <div className="fxb__picture-actions">

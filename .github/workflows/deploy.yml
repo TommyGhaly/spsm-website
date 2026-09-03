@@ -1,0 +1,209 @@
+# =============================================================================
+# Every commit on main goes to production.
+# =============================================================================
+# Until this existed, a deploy was somebody running `firebase deploy` on a
+# laptop, and the two failure modes that produces are both in this repo's
+# history:
+#
+#   - **A deploy ships the working tree, not the commit.** Whatever was on that
+#     machine went out, including half-finished work from another branch and
+#     rules nobody had reviewed. On a runner the tree *is* the commit, which is
+#     the whole reason this is worth doing rather than a habit.
+#   - **The released ruleset drifts behind the repository.** `aboutOverrides`
+#     was written, tested, merged and never deployed — so on the live site every
+#     read of it was refused, the About editor's saves failed silently, and the
+#     symptom reported was that edits "should sync to every other device not
+#     local". The rules deploy below is what stops that class of bug recurring.
+#
+# ## What it deploys, and what it deliberately does not
+#
+# Hosting and the two rulesets. **Not the Cloud Functions**, and that is a
+# considered exclusion: `firebase deploy --only functions:X` resolves *every*
+# function's secrets, so one unset secret in the project fails the whole
+# command — see the note in docs about a single missing secret blocking every
+# deploy. Wiring that into every commit would mean a red main the first time
+# somebody rotated a key, on a job whose whole value is that people trust it.
+# Functions stay a deliberate, by-hand deploy.
+#
+# ## Why the gate is repeated here instead of chaining off Checks
+#
+# `workflow_run` was the obvious alternative and is worse in the case that
+# matters: `checks.yml` cancels in-flight runs on a new push, and a cancelled
+# run is not a success, so a quick second commit would leave main built and
+# never deployed with nothing saying why. A gate inside this workflow cannot
+# get into that state. It costs a couple of runner minutes and it is the same
+# commands, so the two cannot drift into disagreeing about what "green" means.
+#
+# The gate is not `continue-on-error` and the deploy `needs` it, so a tree that
+# does not typecheck cannot reach production.
+# =============================================================================
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run without an empty commit — the usual reason being
+  # a secret that was missing the first time.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two deploys at once, and **never cancel one in flight**: a half-finished
+# `firebase deploy` is the one state worth avoiding here, unlike a check run,
+# where the answer for an older commit simply stops being interesting.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Types, unit tests, functions build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The website and the tests import @spsm/shared's compiled dist/, which is
+      # gitignored — so this is not an optimisation, it is the thing without
+      # which everything below fails to resolve.
+      - name: Build @spsm/shared
+        run: npm run build --workspace @spsm/shared
+
+      - name: Typecheck every workspace
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # A Function that does not compile is not deployed by this workflow, but
+      # it is still broken, and main is where that gets noticed.
+      - name: Build the Cloud Functions
+        run: npm run build --workspace @spsm/functions
+
+      - name: No credentials in the tree
+        run: npm run audit:secrets
+
+  deploy:
+    name: Build and deploy production
+    needs: gate
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+      NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY }}
+      ANNOUNCEMENTS_PROJECT_ID: ${{ secrets.ANNOUNCEMENTS_PROJECT_ID }}
+      ANNOUNCEMENTS_COLLECTION_PATH: ${{ secrets.ANNOUNCEMENTS_COLLECTION_PATH }}
+      ANNOUNCEMENTS_DATABASE_ID: ${{ secrets.ANNOUNCEMENTS_DATABASE_ID }}
+      ANNOUNCEMENTS_SERVICE_ACCOUNT: ${{ secrets.ANNOUNCEMENTS_SERVICE_ACCOUNT }}
+      NEXT_PUBLIC_SQUARE_APPLICATION_ID: ${{ secrets.NEXT_PUBLIC_SQUARE_APPLICATION_ID }}
+      NEXT_PUBLIC_SQUARE_LOCATION_ID: ${{ secrets.NEXT_PUBLIC_SQUARE_LOCATION_ID }}
+      NEXT_PUBLIC_SQUARE_ENVIRONMENT: ${{ secrets.NEXT_PUBLIC_SQUARE_ENVIRONMENT }}
+      NEXT_PUBLIC_TITHELY_GIVING_URL: ${{ secrets.NEXT_PUBLIC_TITHELY_GIVING_URL }}
+      NEXT_PUBLIC_TITHELY_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_TITHELY_PUBLIC_KEY }}
+      NEXT_PUBLIC_AZURE_TENANT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_TENANT_ID }}
+      NEXT_PUBLIC_AZURE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build @spsm/shared
+        run: npm run build --workspace @spsm/shared
+
+      # Before the build, not after: `getPublicConfig()` throws
+      # `MissingConfigError` naming every variable it could not find, which is a
+      # far better failure than a deploy that succeeds and quietly serves the
+      # committed defaults.
+      - name: Check the build can reach its configuration
+        run: |
+          set -euo pipefail
+          node --input-type=module -e \
+            "import { getPublicConfig } from './packages/shared/dist/index.js';
+             getPublicConfig();
+             console.log('Firebase web config present.');"
+          if [ -z "${ANNOUNCEMENTS_SERVICE_ACCOUNT:-}" ]; then
+            echo '::error::ANNOUNCEMENTS_SERVICE_ACCOUNT is not set. The build' \
+                 'would succeed and deploy a homepage with no bulletin.'
+            exit 1
+          fi
+
+      # ---------------------------------------------------------------------
+      # The rules go out FIRST, and the order is load-bearing.
+      #
+      # `next build` reads Firestore anonymously to bake the pages — the About
+      # pages' overrides, the events, the shop. If a rule the *new* build needs
+      # is not released yet, `safely()` re-throws the permission denial and the
+      # build fails; if it went out after the hosting deploy instead, the site
+      # would be live for however long the rules deploy took with reads its own
+      # HTML depends on being refused.
+      #
+      # `NEXT_DIST_DIR` is deliberately not set anywhere in this job: it moves
+      # the export out of `apps/website/out`, which is what `firebase.json`
+      # points `hosting.public` at, and a deploy that sets it ships whatever
+      # stale export was there before.
+      # ---------------------------------------------------------------------
+      - name: Deploy the rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/deploy-key.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+          trap 'rm -f "$KEY"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          npx --yes firebase-tools@15 deploy \
+            --only firestore:rules,storage \
+            --project spsm-database \
+            --non-interactive
+
+      - name: Build the website
+        run: npm run build --workspace @spsm/website
+
+      # firebase-tools reads GOOGLE_APPLICATION_CREDENTIALS as a path, so the
+      # key has to touch disk. It goes in the runner's temp directory, which is
+      # outside the checkout — a stray `git add -A` in some future step cannot
+      # sweep it into a commit. Pinned to 15 to match the CLI on the machine
+      # deploys are run from by hand.
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/deploy-key.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+          trap 'rm -f "$KEY"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          npx --yes firebase-tools@15 deploy \
+            --only hosting \
+            --project spsm-database \
+            --non-interactive \
+            --message "${GITHUB_SHA:0:7} on main ($GITHUB_RUN_ID)"
+
+      # A Hosting 404 outlives its deploy — the CDN caches per encoding, so
+      # `curl` can report 200 while a browser still gets 404. Said here rather
+      # than in a runbook because this is where somebody will be looking when a
+      # fresh page is missing.
+      - name: What to check if a new page 404s
+        if: success()
+        run: |
+          echo 'Deployed. A brand-new route can still 404 in a browser for a'
+          echo 'few minutes: Hosting caches 404s per content-encoding, so curl'
+          echo 'may say 200 while Chrome does not. Re-check with a hard reload'
+          echo 'before assuming the export missed the page.'

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { builtInForm, parseFormDefinition, type FormDefinition } from '@spsm/shared';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
+import { BackLink } from '@/components/BackLink';
 import { FormRenderer } from './FormRenderer';
 import { FormEmbed } from './FormEmbed';
 import { VehicleForm } from './VehicleForm';
@@ -79,6 +80,7 @@ export function FormScreen() {
       <>
         <PageHeader title="Form" />
         <PageBody>
+          <BackLink href="/forms" label="Forms" />
           <p className="note">Loading…</p>
         </PageBody>
       </>
@@ -90,6 +92,7 @@ export function FormScreen() {
       <>
         <PageHeader title="Form not found" />
         <PageBody>
+          <BackLink href="/forms" label="Forms" />
           <p className="note">
             There is no form at this address. It may have been taken down.{' '}
             <a href="/forms">See the forms the church keeps online</a>.
@@ -104,6 +107,7 @@ export function FormScreen() {
       <>
         <PageHeader title="Form" />
         <PageBody>
+          <BackLink href="/forms" label="Forms" />
           <p className="note">
             The form could not be loaded. Check your connection and reload the page.
           </p>
@@ -118,6 +122,17 @@ export function FormScreen() {
     <>
       <PageHeader title={form.title} />
       <PageBody>
+        {/*
+          The way out, above the picture. Every form on this shell was reached
+          from the hub at /forms, `PageHeader` renders nothing visible, and a
+          form is long — so without this the only way back is the browser's own
+          button. Tommy, 2 Sep 2026: *"all of the forms need a back arrow."*
+
+          It sits above the band rather than under it: a control below a
+          photograph reads as a caption on the photograph, and the point of it
+          is to be the first thing at the top of the page.
+        */}
+        <BackLink href="/forms" label="Forms" />
         {/*
           The picture, when the parish chose one, and deliberately a BAND rather
           than a hero.

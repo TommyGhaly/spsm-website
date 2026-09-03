@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SUMMARY_COVERS, type DocOf, type GalleryMedia, type ProgramEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
@@ -70,6 +70,7 @@ export function SubgroupShelf({
   legend,
   items,
   onAdd,
+  onReorder,
   inline = false,
   addLabel,
   empty,
@@ -80,6 +81,20 @@ export function SubgroupShelf({
   legend: string;
   items: readonly ShelfItem[];
   onAdd: (name: string) => void;
+  /**
+   * Carry a row from one place in the list to another.
+   *
+   * Given, every row grows a grip and can be dragged; withheld, the list is
+   * fixed. Indices into `items` as it is currently drawn, which is the order the
+   * caller handed over — so a caller that already has a `move(from, to)` passes
+   * it straight through.
+   *
+   * This replaced a pair of ‹ › buttons on every row. Tommy: *"the ordering of
+   * the subsections should be drag and drop"*. They were also two more targets in
+   * a row that already had four, and moving a week from the bottom of a camp to
+   * the top of it was eleven clicks.
+   */
+  onReorder?: ((from: number, to: number) => void) | undefined;
   /**
    * Rendered inside the editing column rather than floating in a corner.
    *
@@ -127,6 +142,207 @@ export function SubgroupShelf({
    */
   const [shot, setShot] = useState(0);
   const longest = Math.max(0, ...items.map((item) => item.coverPaths?.length ?? 0));
+
+  /*
+   * Dragging a row to a new place.
+   *
+   * ## Nothing is reordered until the finger comes up
+   *
+   * This is the second version, and the first one is worth writing down because
+   * it looked like a rendering fault rather than a logic one. It held the
+   * insertion index in state, re-spliced the list on every move so the gap
+   * opened live, and re-measured the rows it was passing from their *current*
+   * boxes. Three loops came out of that, all of them visible as the row
+   * juddering under the hand:
+   *
+   * 1. Crossing a midpoint moved the rows, which moved their midpoints, which
+   *    could put the pointer back on the other side of one — so the target
+   *    flipped back and forth between two slots several times a second.
+   * 2. The lifted row's `translateY` was measured from an origin recomputed by
+   *    an effect that re-ran on every move, off a box that already carried the
+   *    translation. Each move therefore cancelled most of the previous one and
+   *    the row stuttered instead of following the finger.
+   * 3. Re-splicing moved the lifted row's own place in the flow, so the offset
+   *    it was translating *from* jumped by a whole row exactly when the gap
+   *    moved.
+   *
+   * So the geometry is measured once, at the moment of the grab, and never
+   * again: the rows are displaced with inline transforms — a paint, not a
+   * mutation — and the caller is told the new order once, on release. It is the
+   * same arrangement as the forms drawer, which is worth having on purpose:
+   * these are the two hand-arranged lists in the back office and they should
+   * behave identically.
+   *
+   * `window` listeners rather than the handle's own, so a drag that ends off the
+   * panel still finishes.
+   */
+  const list = useRef<HTMLUListElement | null>(null);
+  /*
+   * There is no React state for the drag at all, and that is the point rather
+   * than an economy. Everything a gesture changes — the lifted row's class, the
+   * list's class, the transforms — is written to the DOM directly, so the one
+   * thing that must not happen during a drag cannot: a re-render, which would
+   * throw away the inline transforms the whole thing is drawn with.
+   */
+  const liveRef = useRef<HTMLParagraphElement | null>(null);
+
+  const grab = useCallback(
+    (event: React.PointerEvent, index: number) => {
+      const node = list.current;
+      if (!node || !onReorder) return;
+      // Left button and touch only; a right-click on the handle is not a drag.
+      if (event.button !== 0) return;
+      // Or the browser starts its own drag on the tile's photograph instead.
+      event.preventDefault();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        /* a synthetic pointer; the window listeners below still carry it */
+      }
+
+      const rows = [...node.querySelectorAll<HTMLElement>('[data-shelf]')];
+      const boxes = rows.map((row) => row.getBoundingClientRect());
+      const middles = boxes.map((box) => box.top + box.height / 2);
+      /*
+       * Each row's own pitch — its height plus the gap below it. Not one number
+       * for the list: a two-line ministry name is taller than a one-line one,
+       * and displacing every row by the first row's height leaves them
+       * overlapping.
+       */
+      const gap = boxes.length > 1 ? boxes[1]!.top - boxes[0]!.bottom : 0;
+      const pitch = boxes.map((box, i) =>
+        i + 1 < boxes.length ? boxes[i + 1]!.top - box.top : box.height + gap,
+      );
+      const startY = event.clientY;
+      const label = items[index]?.label ?? 'Row';
+
+      /*
+       * A press is not a drag until it has travelled. Without this a press that
+       * only means to focus the handle before using `[` and `]` ran a whole
+       * gesture, and any tremor wrote the order back.
+       */
+      const THRESHOLD = 4;
+      let live = false;
+      let at = index;
+      let travel = 0;
+
+      /** Where the lifted row must be drawn to sit in slot `to`. */
+      const offsetFor = (to: number) => {
+        let d = 0;
+        if (to > index) for (let i = index + 1; i <= to; i += 1) d += pitch[i]!;
+        if (to < index) for (let i = to; i < index; i += 1) d -= pitch[i]!;
+        return d;
+      };
+
+      const paint = () => {
+        // Clamped to the ends of the list, plus half a row of overshoot so it
+        // still feels attached rather than nailed down.
+        const slack = (pitch[index] ?? 0) / 2;
+        const low = offsetFor(0) - slack;
+        const high = offsetFor(rows.length - 1) + slack;
+        const y = Math.max(low, Math.min(high, travel));
+        rows[index]!.style.transform = `translate3d(0, ${y}px, 0)`;
+      };
+
+      const settle = (target: number) => {
+        if (target === at) return;
+        at = target;
+        for (let i = 0; i < rows.length; i += 1) {
+          if (i === index) continue;
+          /*
+           * A row the lifted one has passed moves by the *lifted* row's pitch —
+           * that is the space which opened where it used to be, not the row's
+           * own height.
+           */
+          const shift =
+            (target > index && i > index && i <= target && -pitch[index]!) ||
+            (target < index && i < index && i >= target && pitch[index]!) ||
+            0;
+          rows[i]!.style.transform = shift ? `translate3d(0, ${shift}px, 0)` : '';
+        }
+        if (liveRef.current) {
+          liveRef.current.textContent = `${label}, position ${target + 1} of ${rows.length}`;
+        }
+      };
+
+      const onMove = (moveEvent: PointerEvent) => {
+        travel = moveEvent.clientY - startY;
+
+        if (!live) {
+          if (Math.abs(travel) < THRESHOLD) return;
+          live = true;
+          rows[index]!.classList.add('is-moving');
+          node.classList.add('is-dragging');
+          document.body.classList.add('is-reordering');
+        }
+
+        paint();
+
+        /*
+         * Nudge the panel when the pointer is near its edge, so a list longer
+         * than the visible panel can be reordered end to end. Both `clientY`
+         * and `middles` are viewport coordinates, so a scroll moves them
+         * together and the geometry stays true without re-measuring.
+         */
+        const scroller = node.closest<HTMLElement>('.subshelf__body, .inspector-col');
+        if (scroller) {
+          const edge = scroller.getBoundingClientRect();
+          const margin = 40;
+          const up = moveEvent.clientY - edge.top;
+          const down = edge.bottom - moveEvent.clientY;
+          if (up < margin) scroller.scrollTop -= Math.min(16, margin - up) / 2;
+          else if (down < margin) scroller.scrollTop += Math.min(16, margin - down) / 2;
+        }
+
+        /*
+         * The slot the pointer is over, counted against the midpoints the rows
+         * had when the drag began — which is the whole geometry, since nothing
+         * has actually moved. Clamped rather than ignored, so dragging past
+         * either end parks the row there.
+         */
+        let target = middles.filter((middle) => moveEvent.clientY > middle).length;
+        if (target > index) target -= 1;
+        settle(Math.max(0, Math.min(rows.length - 1, target)));
+      };
+
+      /** Put the list back the way it was drawn, and let go of the gesture. */
+      const clear = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', drop);
+        window.removeEventListener('pointercancel', abandon);
+        node.classList.remove('is-dragging');
+        document.body.classList.remove('is-reordering');
+        // The transforms come off in the same commit the new order goes in, so
+        // the row never appears twice in one place or jumps back before it
+        // lands.
+        for (const row of rows) row.style.transform = '';
+        rows[index]!.classList.remove('is-moving');
+      };
+
+      const drop = () => {
+        clear();
+        // A press that never travelled is a press, not a drag.
+        if (!live) return;
+        if (at !== index) onReorder(index, at);
+      };
+
+      /*
+       * A cancelled drag writes nothing. `pointercancel` and `pointerup` shared
+       * a handler before, so anything that took the pointer away mid-gesture —
+       * the browser deciding it was a scroll after all, a touch becoming a
+       * system gesture — committed the half-finished move.
+       */
+      const abandon = () => {
+        clear();
+        if (live && liveRef.current) liveRef.current.textContent = 'Move cancelled';
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', drop);
+      window.addEventListener('pointercancel', abandon);
+    },
+    [items, onReorder],
+  );
 
   useEffect(() => {
     if (!open || !readOnly || longest < 2) return;
@@ -184,10 +400,30 @@ export function SubgroupShelf({
         <div className="subshelf__body">
           {items.length === 0 && <p className="subshelf__empty">{empty}</p>}
 
+          {/*
+            What the drag is doing, said out loud. The handle's own label
+            carries the position, but it is written at render time and a drag
+            deliberately does not re-render — so during the one gesture where
+            the position is changing it is the only stale thing on screen.
+          */}
+          {!readOnly && onReorder && (
+            <p ref={liveRef} className="visually-hidden" role="status" aria-live="polite" />
+          )}
+
           {items.length > 0 && (
-            <ul className="subshelf__tiles">
+            <ul className="subshelf__tiles" ref={list}>
+              {/*
+                `items`, not a copy re-spliced as the pointer moves. The list's
+                order is the caller's until the gesture finishes — see the note
+                on the drag. `is-moving` and `is-dragging` are added to the DOM
+                directly for the same reason: this must not re-render mid-drag.
+              */}
               {items.map((item, index) => (
-                <li key={item.id}>
+                <li
+                  key={item.id}
+                  data-shelf={item.id}
+                  className={onReorder && !readOnly ? 'has-grip' : undefined}
+                >
                   {renaming?.id === item.id ? (
                     <form
                       className="subshelf__rename"
@@ -225,6 +461,43 @@ export function SubgroupShelf({
                         half-painted image — and a part with no cover keeps the
                         plain ground, which is the honest thing for it to look like.
                       */}
+                      {/*
+                        The grip, and it is deliberately the first thing in the
+                        row rather than one more button at the end of it. A handle
+                        on the left of a vertical list is where a hand goes
+                        looking; among the rename and remove buttons it would be a
+                        third icon to tell apart at 12px.
+
+                        Its own element and not the tile, because the tile selects
+                        the level — a pointer press that both starts a drag and
+                        arms a click is how you end up selecting something every
+                        time you fail to move it.
+                      */}
+                      {!readOnly && onReorder && (
+                        <button
+                          type="button"
+                          className="subshelf__grip"
+                          disabled={busy}
+                          onPointerDown={busy ? undefined : (event) => grab(event, index)}
+                          /*
+                            A keyboard route, because a drag has none. `[` and `]`
+                            rather than the arrow keys, matching `PictureStrip`:
+                            this sits inside a scrolling panel and the arrows are
+                            how somebody scrolls it.
+                          */
+                          onKeyDown={(key) => {
+                            const step = key.key === '[' ? -1 : key.key === ']' ? 1 : 0;
+                            if (step === 0) return;
+                            key.preventDefault();
+                            item.onMove(step);
+                          }}
+                          aria-label={`Move ${item.label}. Press [ or ] to move it up or down.`}
+                          title={`Drag to move ${item.label}`}
+                        >
+                          <Icon name="grip" size={13} />
+                        </button>
+                      )}
+
                       <Tile item={item} shot={shot} readOnly={readOnly} />
 
                       {!readOnly && (
@@ -232,33 +505,11 @@ export function SubgroupShelf({
                         <button
                           type="button"
                           className="subshelf__action"
-                          disabled={index === 0 || busy}
-                          aria-label={`Move ${item.label} earlier`}
-                          onClick={() => item.onMove(-1)}
-                        >
-                          <Icon name="prev" size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          className="subshelf__action"
-                          disabled={index === items.length - 1 || busy}
-                          aria-label={`Move ${item.label} later`}
-                          onClick={() => item.onMove(1)}
-                        >
-                          <Icon name="next" size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          className="subshelf__action"
                           aria-label={`Rename ${item.label}`}
-                          /* A `title` as well as the label. The glyph is `expand`,
-                             which means "open this bigger" everywhere else on the
-                             site and is the closest thing the set has to a pencil —
-                             so the tooltip is doing the work the icon cannot. */
                           title={`Rename ${item.label}`}
                           onClick={() => setRenaming({ id: item.id, name: item.label })}
                         >
-                          <Icon name="expand" size={12} />
+                          <Icon name="pencil" size={13} />
                         </button>
                         <button
                           type="button"

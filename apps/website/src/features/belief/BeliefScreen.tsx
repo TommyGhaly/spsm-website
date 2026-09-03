@@ -1,3 +1,4 @@
+import { Editable, EditablePicture } from '@/features/about';
 import { ARTICLES } from './articles';
 import { CREED } from './creed';
 import { Credits, Plate, WidePlate } from './parts';
@@ -39,18 +40,22 @@ export function BeliefScreen() {
     <div className="belief">
       <section className="band band--deep belief-hero">
         <div className="wrap belief-hero__inner">
-          <p className="belief-hero__eyebrow">About</p>
+          <Editable slot="belief-hero.eyebrow" as="p" className="belief-hero__eyebrow">
+            About
+          </Editable>
           {/*
             A `p`, not a heading. `PageHeader` has already rendered the page's
             hidden `h1`; a second one here would give the document two, and the
             sections below need `h2` to be the level under it.
           */}
-          <p className="belief-hero__title">Our Belief</p>
-          <p className="belief-hero__lede">
+          <Editable slot="belief-hero.title" as="p" className="belief-hero__title">
+            Our Belief
+          </Editable>
+          <Editable slot="belief-hero.lede" as="p" prose className="belief-hero__lede">
             The Coptic Orthodox Church confesses the faith the Apostles handed down, in the words
             the whole Church settled at Nicaea in 325. That Creed is said aloud at every Liturgy.
             Everything else on this page is an unfolding of it.
-          </p>
+          </Editable>
         </div>
       </section>
 
@@ -67,6 +72,7 @@ export function BeliefScreen() {
               <span lang="la">Lex orandi, lex credendi</span>
               <span className="belief-opening__gloss">As the Church prays, so it believes</span>
             </h2>
+            <Editable slot="the-faith.body" as="div" prose>
             <p>
               The phrase is Prosper of Aquitaine&rsquo;s, written about 435 —{' '}
               <i lang="la">ut legem credendi lex statuat supplicandi</i>, that the law of praying
@@ -93,22 +99,33 @@ export function BeliefScreen() {
               icons on the walls, in the seven hours of the Agpeya, and in the fasts that take up
               more than half the year.
             </p>
+            </Editable>
           </div>
-          <Plate name="wadi-natrun-frescos" className="belief-split__plate" />
+          <EditablePicture slot="the-faith.picture" className="belief-split__plate">
+            <Plate
+              name="wadi-natrun-frescos"
+              className="belief-split__plate"
+              captionSlot="the-faith.cap-wadi-natrun-frescos"
+            />
+          </EditablePicture>
         </div>
       </section>
 
       <section className="band band--tinted belief-creed" aria-labelledby="the-creed">
         <div className="wrap belief-creed__inner">
           <header className="belief-creed__head">
-            <p className="belief-creed__eyebrow">Said standing, at every Liturgy</p>
-            <h2 id="the-creed">The Nicene Creed</h2>
-            <p className="lede">
+            <Editable slot="the-creed.eyebrow" as="p" className="belief-creed__eyebrow">
+              Said standing, at every Liturgy
+            </Editable>
+            <Editable slot="the-creed.h2" as="h2" id="the-creed">
+              The Nicene Creed
+            </Editable>
+            <Editable slot="the-creed.lede" as="p" prose className="lede">
               Three hundred and eighteen bishops met at Nicaea in 325 to answer one question:
               whether the Son of God is a creature. Their answer is this. It was completed at
               Constantinople in 381, and the Church has said it in this form ever since — after the
               readings and before the offering, and again at every baptism.
-            </p>
+            </Editable>
           </header>
 
           <div className="belief-creed__body">
@@ -124,26 +141,53 @@ export function BeliefScreen() {
               Church's line breaks apart from the ones a narrow screen makes.
             */}
             <blockquote className="belief-creed__text">
-              {CREED.map((stanza) => (
+              {CREED.map((stanza, index) => (
                 <p key={stanza.id} id={stanza.id} className="belief-creed__stanza">
-                  {stanza.lines.map((line) => (
-                    <span key={line} className="belief-creed__line">
+                  {/*
+                    Each **line** is its own slot, not each stanza. A stanza
+                    edited as one string would lose where the lines break, and
+                    the breaks are content here rather than styling: the Creed is
+                    said in breaths, and the breaks are where the church
+                    breathes.
+
+                    Editable at all only because Tommy asked for every word on
+                    every page — *"try to get all the text on each page not
+                    skipping anything."* The note that used to stand here said
+                    the Creed must never be editable because a typo would be
+                    said aloud with it. That risk is real and is now a matter of
+                    who holds the grant; what removes most of its sting is that
+                    clearing a box restores the coded line exactly, and ⌘Z
+                    restores it before that.
+                  */}
+                  {stanza.lines.map((line, at) => (
+                    <Editable
+                      key={line}
+                      slot={`the-creed.stanza-${index}-line-${at}`}
+                      as="span"
+                      className="belief-creed__line"
+                    >
                       {line}
-                    </span>
+                    </Editable>
                   ))}
                 </p>
               ))}
             </blockquote>
 
             <div className="belief-creed__aside">
-              <Plate name="council-of-nicaea" />
-              <p className="note">
+              <Plate name="council-of-nicaea" captionSlot="the-creed.cap-council-of-nicaea" />
+              {/*
+                The commentary, not the Creed. Editable for that reason: it
+                explains a choice of English, which is the sort of thing somebody
+                may want to word better. The stanzas themselves stay in
+                `creed.ts` — see `features/about/slots.ts`.
+              */}
+              <Editable slot="the-creed.note" as="p" prose className="note">
                 Two things in this English are deliberate. The Church says{' '}
                 <b>&ldquo;Who proceeds from the Father&rdquo;</b>, without the later Western
                 addition <i>and the Son</i>; and it opens the article on the Holy Spirit with{' '}
                 <b>&ldquo;Yes&rdquo;</b> — an affirmation, carried over from the Coptic, rather than
                 a continuation of the sentence before it.
-              </p>
+              </Editable>
             </div>
           </div>
         </div>
@@ -152,7 +196,10 @@ export function BeliefScreen() {
       <section className="band belief-councils" aria-labelledby="the-councils">
         <div className="wrap belief-split">
           <div className="belief-split__body prose">
-            <h2 id="the-councils">Three councils, and one word</h2>
+            <Editable slot="the-councils.h2" as="h2" id="the-councils">
+              Three councils, and one word
+            </Editable>
+            <Editable slot="the-councils.body" as="div" prose>
             <p>
               Arius was a priest of Alexandria who taught that there was a time when the Son was
               not: that He was the highest and first of the creatures, but a creature. Alexander,
@@ -179,18 +226,25 @@ export function BeliefScreen() {
               Orthodox Church receives as ecumenical, and the whole of the Creed comes from the
               first two.
             </p>
+            </Editable>
           </div>
-          <Plate name="alexandrian-fathers" className="belief-split__plate" />
+          <Plate
+            name="alexandrian-fathers"
+            className="belief-split__plate"
+            captionSlot="the-councils.cap-alexandrian-fathers"
+          />
         </div>
       </section>
 
       <section className="band band--sunken belief-articles" aria-labelledby="line-by-line">
         <div className="wrap">
           <header className="belief-articles__head">
-            <h2 id="line-by-line">The Creed, line by line</h2>
-            <p className="lede">
+            <Editable slot="line-by-line.h2" as="h2" id="line-by-line">
+              The Creed, line by line
+            </Editable>
+            <Editable slot="line-by-line.lede" as="p" prose className="lede">
               What the church is saying when it says it. The order is the Creed&rsquo;s own.
-            </p>
+            </Editable>
           </header>
 
           <ol className="belief-articles__list">
@@ -201,12 +255,37 @@ export function BeliefScreen() {
                 className={`belief-article${article.picture ? ' belief-article--plated' : ''}`}
               >
                 <div className="belief-article__body prose">
-                  <p className="belief-article__line">{article.line}</p>
-                  <h3 className="belief-article__heading">{article.heading}</h3>
-                  {article.body}
+                  {/* The Creed line this article explains, quoted. */}
+                  <Editable
+                    slot={`line-by-line.art-${article.id}-line`}
+                    as="p"
+                    className="belief-article__line"
+                  >
+                    {article.line}
+                  </Editable>
+                  <Editable
+                    slot={`line-by-line.art-${article.id}-heading`}
+                    as="h3"
+                    className="belief-article__heading"
+                  >
+                    {article.heading}
+                  </Editable>
+                  {/*
+                    `article.body` is JSX with links and emphasis in it — see
+                    `articles.tsx`. Wrapped in a `div` rather than passed as a
+                    string, which is the whole reason `Editable` falls back to
+                    its children.
+                  */}
+                  <Editable slot={`line-by-line.art-${article.id}-body`} as="div" prose>
+                    {article.body}
+                  </Editable>
                 </div>
                 {article.picture && (
-                  <Plate name={article.picture} className="belief-article__plate" />
+                  <Plate
+                    name={article.picture}
+                    className="belief-article__plate"
+                    captionSlot={`line-by-line.art-${article.id}-caption`}
+                  />
                 )}
               </li>
             ))}
@@ -217,12 +296,16 @@ export function BeliefScreen() {
       <section className="band belief-see" aria-labelledby="the-see">
         <div className="wrap belief-see__inner">
           <header className="belief-see__head">
-            <h2 id="the-see">Whose confession this is</h2>
+            <Editable slot="the-see.h2" as="h2" id="the-see">
+              Whose confession this is
+            </Editable>
           </header>
 
-          <WidePlate name="st-mark-preaching" />
+          <EditablePicture slot="the-see.picture">
+            <WidePlate name="st-mark-preaching" captionSlot="the-see.cap-st-mark-preaching" />
+          </EditablePicture>
 
-          <div className="belief-see__body prose">
+          <Editable slot="the-see.body" as="div" prose className="belief-see__body prose">
             <p>
               St. Mark the Evangelist brought the Gospel to Alexandria in the middle of the first
               century and was martyred there. The Church he founded has had an unbroken line of
@@ -253,7 +336,7 @@ export function BeliefScreen() {
               churches in the agreed statements of 1989 and 1990, which found the two families
               confessing one faith in two vocabularies.
             </p>
-          </div>
+          </Editable>
 
           {/*
             The picture credits, hidden. See `Credits` — they stay in the markup

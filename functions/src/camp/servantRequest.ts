@@ -148,19 +148,20 @@ export const campServantRequest = onRequest(
         ? {
             ...draft.servant,
             /*
-             * Both of these are the camp's own judgements about a person and are
-             * cleared on the way in, whatever the request said.
+             * `assignedRoles`, `cleared` and `clearedNote` were set to empty
+             * here, and they are gone because the fields are gone: all three
+             * were deleted from `CampServantDetails` when servant registrations
+             * became read-only.
              *
-             * `assignedRoles` is what administrators gave somebody, as opposed to
-             * `desiredRoles` which is what they asked for — a sign-up that could
-             * set the first would be a servant assigning themselves a role.
-             * `cleared` is the safeguarding flag, and a stranger able to set it
-             * on their own record is the most serious thing this endpoint could
-             * get wrong.
+             * The comment they carried is worth keeping, because it is the
+             * reason this endpoint was ever safe: `assignedRoles` was what
+             * administrators gave somebody as opposed to what they asked for, so
+             * a sign-up able to set it would be a servant assigning themselves a
+             * role; and `cleared` was the safeguarding flag, where a stranger
+             * setting it on their own record was the most serious thing this
+             * endpoint could get wrong. Neither is expressible now, which is a
+             * stronger guarantee than clearing them was.
              */
-            assignedRoles: [],
-            cleared: false,
-            clearedNote: '',
             // Nobody is signed in. A uid could only be one they made up.
             uid: null,
           }
