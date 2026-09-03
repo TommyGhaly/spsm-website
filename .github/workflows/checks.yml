@@ -47,9 +47,9 @@ jobs:
     name: Types, unit tests, credentials
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -97,9 +97,9 @@ jobs:
     name: Firestore and Storage rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -107,7 +107,7 @@ jobs:
       # The emulators are Java. Pinned rather than relying on whatever the
       # runner image ships, because that changes underneath you and the failure
       # — an emulator that will not start — reads like a broken test suite.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21

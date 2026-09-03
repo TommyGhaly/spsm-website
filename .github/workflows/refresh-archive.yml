@@ -62,9 +62,9 @@ jobs:
       changed: ${{ steps.commit.outputs.changed }}
       deployable: ${{ steps.commit.outputs.deployable }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -191,11 +191,11 @@ jobs:
       # `ref: main` explicitly: a scheduled run checks out the commit that
       # triggered it, which is the one *before* the refresh job pushed. Without
       # this the deploy would faithfully publish the old snapshot.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
