@@ -61,9 +61,9 @@ jobs:
     name: Types, unit tests, functions build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -115,9 +115,9 @@ jobs:
       NEXT_PUBLIC_AZURE_TENANT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_TENANT_ID }}
       NEXT_PUBLIC_AZURE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_CLIENT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -164,6 +164,17 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
+            # firebase-tools' own message here is "Failed to authenticate, have
+            # you run `firebase login`?", which is true on a laptop and useless
+            # on a runner — it sends whoever reads it looking for an interactive
+            # login that cannot exist. Say what is actually wrong.
+            echo '::error::FIREBASE_SERVICE_ACCOUNT is not set, so nothing can' \
+                 'be deployed. Create a service-account key with Firebase' \
+                 'Hosting Admin and Firebase Rules Admin, then:' \
+                 'gh secret set FIREBASE_SERVICE_ACCOUNT < key.json'
+            exit 1
+          fi
           KEY="$RUNNER_TEMP/deploy-key.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
           trap 'rm -f "$KEY"' EXIT
@@ -186,6 +197,17 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
+            # firebase-tools' own message here is "Failed to authenticate, have
+            # you run `firebase login`?", which is true on a laptop and useless
+            # on a runner — it sends whoever reads it looking for an interactive
+            # login that cannot exist. Say what is actually wrong.
+            echo '::error::FIREBASE_SERVICE_ACCOUNT is not set, so nothing can' \
+                 'be deployed. Create a service-account key with Firebase' \
+                 'Hosting Admin and Firebase Rules Admin, then:' \
+                 'gh secret set FIREBASE_SERVICE_ACCOUNT < key.json'
+            exit 1
+          fi
           KEY="$RUNNER_TEMP/deploy-key.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
           trap 'rm -f "$KEY"' EXIT
