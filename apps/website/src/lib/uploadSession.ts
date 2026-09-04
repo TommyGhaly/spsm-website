@@ -79,7 +79,40 @@ export async function getIdToken(): Promise<string> {
     });
   });
 
-  if (existing) return (existing as { getIdToken(): Promise<string> }).getIdToken();
+  if (existing) {
+    const user = existing as { isAnonymous?: boolean; getIdToken(): Promise<string> };
+    try {
+      return await user.getIdToken();
+    } catch (error) {
+      /*
+       * The session in this browser outlived the account behind it.
+       *
+       * Firebase's **automatic clean-up of anonymous users** deletes accounts
+       * roughly a month old, and it deletes them *server-side only* — the
+       * browser goes on holding the persisted session in IndexedDB, so the
+       * loop above restores a user that no longer exists anywhere. The cached
+       * ID token lasts an hour, which a returning visitor is well past, so the
+       * refresh is attempted and fails: `auth/user-token-expired`, or
+       * `auth/user-not-found`.
+       *
+       * Uncaught, that throws out of `uploadHeaders()` before the request is
+       * built and hands the visitor a raw SDK error once per file — the exact
+       * failure the provider being disabled used to cause, arriving through a
+       * different door and only for people who uploaded something a month ago.
+       * Signing in again is the whole remedy: an anonymous account is a quota
+       * key and nothing else, so a new one is as good as the old one and there
+       * is nothing to migrate.
+       *
+       * **Only when the dead session was itself anonymous.** A servant's
+       * Microsoft session can fail to refresh too — revoked, tenant removed,
+       * password changed — and falling through for them would sign them in
+       * anonymously over the top of their own identity and then refuse them the
+       * administrator bypass they hold, which is the hazard the comment above
+       * exists to prevent. They have to be told, so their error is rethrown.
+       */
+      if (user.isAnonymous !== true) throw error;
+    }
+  }
 
   /*
    * The anonymous sign-in, and the one refusal it has that is ours rather than

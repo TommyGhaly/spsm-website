@@ -515,3 +515,40 @@ The single-tenant warning on `/servantEvents` is separate and still stands:
 `isPerson()` excludes anonymous sessions, and a multi-tenant Microsoft account
 is a real sign-in. If that app registration is ever switched, the rota opens to
 every Microsoft account in the world and nothing here catches it.
+
+### Automatic clean-up of anonymous users — yes, enable it
+
+The checkbox on the same console screen. Firebase deletes anonymous accounts at
+about a month old, and it should: this project re-identifies an anonymous
+uploader **never**. The uid is a same-day quota key in `submissionQuota` and
+nothing else — `galleryMedia.updatedBy` and `autoApproveBy` are both written
+`null` for a stranger, on purpose, because an anonymous session is a browser
+rather than a person and an audit field must not claim otherwise. So there is
+nothing on the far end of one of these accounts to strand. Left off, the
+project accumulates an account per uploader per browser forever.
+
+Two things were checked before ticking it, and both are the reason it is safe:
+
+- **No auth `onDelete` trigger exists.** A sweep of thousands of accounts fires
+  no Function. (`mirrorGrantsToClaims` is a Firestore trigger on
+  `members/{uid}`, and an anonymous session never has one.)
+- **Nothing persists an anonymous uid.** Only the daily counter, which is keyed
+  by a string and resets anyway.
+
+**It needed one code change, and this is the part worth remembering.** Clean-up
+deletes the account *server-side only* — the browser keeps its persisted session
+in IndexedDB, so `onAuthStateChanged` restores a user that no longer exists. The
+cached ID token lasts an hour, which a returning visitor is well past, so the
+refresh is attempted and fails with `auth/user-token-expired` or
+`auth/user-not-found`. Uncaught, that threw out of `uploadHeaders()` and handed
+the visitor a raw SDK error once per file — the same unreadable failure the
+disabled provider caused, arriving through a different door, invisible for the
+first month after ticking the box, and only ever hitting people who came back.
+
+`getIdToken` now signs such a session in again, **and only when it was
+anonymous**. A servant's Microsoft session can also fail to refresh — revoked,
+removed from the tenant, password changed — and falling through for them would
+hand them an anonymous uid and then refuse them the administrator bypass they
+still believe they hold. That is a wrong answer wearing the shape of a working
+upload, so their error is rethrown instead. `tests/unit/uploadSession.test.ts`
+pins all three callers apart.
