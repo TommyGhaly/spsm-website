@@ -296,6 +296,15 @@ export const galleryUploadUrl = onRequest(
         groupId: null,
 
         kind,
+        /*
+         * Pending for everybody, including the ministry's own administrator.
+         *
+         * Their photographs do not wait for a queue, but the waving-through
+         * happens at the *end* of the pipeline rather than here — see
+         * `autoApproveBy` below and the long note on it in the schema. Writing
+         * `approved` at this point would skip the transcode and strand the
+         * document with no file the sweep could see.
+         */
         status: 'pending',
 
         sourcePath,
@@ -330,15 +339,35 @@ export const galleryUploadUrl = onRequest(
         reviewedAt: null,
         reviewedBy: null,
 
+        /*
+         * The one thing on this document that says "this photograph belongs to
+         * somebody who did not need to be asked".
+         *
+         * `isProgramAdmin` was decided above from a verified ID token and the
+         * caller's own member document — the same predicate `firestore.rules`
+         * would use to let them approve it by hand a moment later. Waving it
+         * through here saves them the second act, and nothing is granted that
+         * they did not already hold.
+         *
+         * The uid rather than a boolean, because `reviewedBy` has to name
+         * somebody when the Function publishes it, and "the parish's data says
+         * a person approved this" must stay true.
+         */
+        autoApproveBy: isProgramAdmin ? uid : null,
+
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         /*
-         * Null even though there is a uid now. `AuditFields` reads this as "a
-         * person did this", and an anonymous session is a browser, not a
-         * person — putting a uid nobody can look up into an audit field would
-         * make the queue claim to know who sent a photograph when it does not.
+         * Null for a stranger even though there is a uid. `AuditFields` reads
+         * this as "a person did this", and an anonymous session is a browser,
+         * not a person — putting a uid nobody can look up into an audit field
+         * would make the queue claim to know who sent a photograph when it does
+         * not.
+         *
+         * An administrator's uid *is* a person, and one the parish can look up,
+         * so theirs is recorded.
          */
-        updatedBy: null,
+        updatedBy: isProgramAdmin ? uid : null,
       });
 
     /*

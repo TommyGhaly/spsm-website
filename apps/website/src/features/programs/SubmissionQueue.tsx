@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   flattenGalleryTree,
   submissionTargets,
@@ -12,11 +12,20 @@ import {
 } from '@spsm/shared';
 import { updateProgram } from './adminData';
 import {
+  filingFor,
+  filingsFor,
+  keepPresent,
+  keepPresentFilings,
+  type Filings,
+} from './queueSelection';
+import {
   approveInto,
-  listPendingForProgram,
+  approveMany,
   refuseAndDelete,
+  refuseMany,
   reviewUrl,
   setCaption,
+  watchPendingForProgram,
   type ReviewItem,
 } from './review';
 import { useProgramAdmin } from './useProgramAdmin';
@@ -49,6 +58,19 @@ import { useProgramAdmin } from './useProgramAdmin';
  * can still be *given* the program if they are meant to review it. What they must
  * not get is a screen that renders and then fails.
  *
+ * ## It is live
+ *
+ * A listener, not a read. Two people work this screen at once during a camp —
+ * one emptying a phone, one clearing the queue — and a list that only tells the
+ * truth when reloaded makes the second person work from something wrong in both
+ * directions. Rows appear as they are uploaded and leave as they are decided,
+ * whoever decided them.
+ *
+ * The listener is opened only for somebody who may read it. A visitor opens
+ * none, which matters because this is a public page: a listen that is refused
+ * still costs a round trip and logs a permission denial for every stranger who
+ * looks at the ministry.
+ *
  * ## What approving and refusing actually do
  *
  * Approving writes the decision and the filing in one update. The bytes are
@@ -57,6 +79,17 @@ import { useProgramAdmin } from './useProgramAdmin';
  *
  * Refusing deletes: the files, then the document, with nothing kept. It cannot
  * be undone and the button says so. See `refuseAndDelete`.
+ *
+ * Neither is done to a selection without the same protections: "Decline" in the
+ * bar arms exactly as a row's does, and says how many it is about to destroy.
+ *
+ * ## Where a photograph is going is not saved until it is approved
+ *
+ * `filings` holds every re-pointing anybody has made on this screen and never
+ * writes one. Move six photographs to Week 2, close the tab, and all six are
+ * back where their senders put them — the choice was an intention, and only
+ * approving turns it into a fact. See queueSelection.ts, which is where that
+ * rule lives and is tested.
  *
  * ## The priority section sits above the queue
  *
@@ -83,11 +116,20 @@ export function SubmissionQueue({
 }) {
   const admin = useProgramAdmin();
   const uid = admin.uid;
+  const canReview = admin.ready && admin.canEditProgram(program.id);
 
   const [items, setItems] = useState<ReviewItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Ids currently being written, so a second click cannot double-submit. */
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  /** Ticked rows. A working set; means nothing outside this screen. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(EMPTY_SELECTION);
+  /** Re-pointings made here and not yet approved. Never written. */
+  const [filings, setFilings] = useState<Filings>(EMPTY_FILINGS);
+  /** Whether a whole selection is being written, and which way. */
+  const [bulk, setBulk] = useState<'idle' | 'approving' | 'declining'>('idle');
+  /** Whether the bar's Decline has been armed. See the row's own comment. */
+  const [arming, setArming] = useState(false);
 
   const rows = useMemo(() => flattenGalleryTree(tree), [tree]);
 
@@ -105,23 +147,44 @@ export function SubmissionQueue({
    */
   const targets = useMemo(() => submissionTargets(program, tree), [program, tree]);
 
-  const load = useCallback(async () => {
-    try {
-      setItems(await listPendingForProgram(program.id));
-      setError(null);
-    } catch (caught) {
-      console.error('[galleries] could not load the queue:', caught);
+  /*
+   * Every snapshot reconciles the two local maps against what is actually in the
+   * queue. Both keep their identity when nothing was dropped, so the ordinary
+   * snapshot — somebody else uploading a photograph — does not re-render every
+   * row of a screen being worked.
+   */
+  const receive = useCallback((next: ReviewItem[]) => {
+    const present = new Set(next.map((item) => item.media.id));
+    setItems(next);
+    setSelected((previous) => keepPresent(previous, present));
+    setFilings((previous) => keepPresentFilings(previous, present));
+  }, []);
+
+  useEffect(() => {
+    if (!canReview) return;
+    return watchPendingForProgram(program.id, receive, (caught) => {
+      console.error('[galleries] could not read the queue:', caught);
       setError(
         'The queue could not be read. If this keeps happening, the composite index for ' +
           'pending photographs may not be deployed.',
       );
-    }
-  }, [program.id]);
+    });
+  }, [canReview, program.id, receive]);
 
-  useEffect(() => {
-    if (!admin.ready) return;
-    void load();
-  }, [admin.ready, load]);
+  /** Tick or untick one row, disarming the bar — a changed set is a changed act. */
+  const toggle = useCallback((mediaId: string) => {
+    setArming(false);
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(mediaId)) next.add(mediaId);
+      return next;
+    });
+  }, []);
+
+  /** Point one row somewhere else. Local until it is approved. */
+  const refile = useCallback((mediaId: string, programEventId: string) => {
+    setFilings((previous) => new Map(previous).set(mediaId, programEventId));
+  }, []);
 
   async function act(item: ReviewItem, decision: 'approve' | 'refuse', target: string) {
     const mediaId = item.media.id;
@@ -130,25 +193,63 @@ export function SubmissionQueue({
     try {
       if (decision === 'approve') await approveInto(mediaId, target, uid);
       else await refuseAndDelete(item.media);
-      // Dropped from the list rather than reloaded: the write has succeeded and
-      // the document no longer matches `status == pending`, so a refetch would
-      // cost a round trip to learn something already known.
-      setItems((previous) => previous?.filter((row) => row.media.id !== mediaId) ?? null);
-      // The page above, though, does need re-reading — an approved photograph
-      // has just joined the gallery.
+      // Not removed from the list by hand any more. The write lands in the local
+      // cache first, so the listener drops the row before the server has even
+      // answered — and doing it here as well would fight the snapshot.
       if (decision === 'approve') onDecided();
     } catch (caught) {
       console.error(`[galleries] could not ${decision} ${mediaId}:`, caught);
-      setError(
-        'That could not be saved. Approving a photograph needs a grant on this ' +
-          'ministry — being staff is not enough on its own.',
-      );
+      setError(REFUSED_MESSAGE);
     } finally {
       setBusy((previous) => {
         const next = new Set(previous);
         next.delete(mediaId);
         return next;
       });
+    }
+  }
+
+  async function approveSelected() {
+    if (!uid || bulk !== 'idle' || selected.size === 0) return;
+    const filed = filingsFor(items ?? [], selected, filings);
+    if (filed.length === 0) return;
+    setBulk('approving');
+    try {
+      await approveMany(filed, uid);
+      setSelected(EMPTY_SELECTION);
+      onDecided();
+    } catch (caught) {
+      console.error('[galleries] could not approve the selection:', caught);
+      setError(REFUSED_MESSAGE);
+    } finally {
+      setBulk('idle');
+    }
+  }
+
+  async function declineSelected() {
+    if (bulk !== 'idle') return;
+    const chosen = (items ?? [])
+      .filter((item) => selected.has(item.media.id))
+      .map((item) => item.media);
+    if (chosen.length === 0) return;
+    setArming(false);
+    setBulk('declining');
+    try {
+      await refuseMany(chosen);
+      setSelected(EMPTY_SELECTION);
+    } catch (caught) {
+      /*
+       * Unlike approving, this is not all-or-nothing — see `refuseMany`. Some of
+       * the selection is gone and some is not, and the queue itself is the
+       * record of which: the listener has already removed whatever went.
+       */
+      console.error('[galleries] could not refuse all of the selection:', caught);
+      setError(
+        'Some of those could not be deleted. Whatever is still below was not ' +
+          'touched — you can try again.',
+      );
+    } finally {
+      setBulk('idle');
     }
   }
 
@@ -159,9 +260,10 @@ export function SubmissionQueue({
    * queue heading that flashes onto a public page before the answer arrives is
    * still wrong, and it is the kind of wrong that gets reported as a leak.
    */
-  if (!admin.ready || !admin.canEditProgram(program.id)) return null;
+  if (!canReview) return null;
 
   const pending = items?.length ?? 0;
+  const working = bulk !== 'idle';
 
   return (
     <section className="review-panel" aria-labelledby="queue-title">
@@ -191,7 +293,7 @@ export function SubmissionQueue({
       {items !== null && pending === 0 && (
         <p className="review-panel__note">
           Photographs appear here when somebody sends them from any page of this
-          ministry.
+          ministry. Your own go straight into the gallery.
         </p>
       )}
 
@@ -200,8 +302,28 @@ export function SubmissionQueue({
           <p className="review-panel__note">
             Nothing here is visible anywhere on the site until it is approved.
             Approving files it where the box says. Refusing deletes it, and that
-            cannot be undone.
+            cannot be undone. Tick several to decide them together — where you
+            have moved them to is not saved until you approve.
           </p>
+
+          <SelectionBar
+            total={pending}
+            chosen={selected.size}
+            arming={arming}
+            bulk={bulk}
+            onAll={() => {
+              setArming(false);
+              setSelected(new Set((items ?? []).map((item) => item.media.id)));
+            }}
+            onNone={() => {
+              setArming(false);
+              setSelected(EMPTY_SELECTION);
+            }}
+            onApprove={() => void approveSelected()}
+            onArm={() => setArming(true)}
+            onDecline={() => void declineSelected()}
+          />
+
           <ul className="review-queue">
             {items.map((item) => (
               <ReviewRow
@@ -212,7 +334,11 @@ export function SubmissionQueue({
                   item.media.programEventId === program.id ? program.name : item.eventTitle
                 }
                 uid={uid}
-                busy={busy.has(item.media.id)}
+                busy={busy.has(item.media.id) || working}
+                target={filingFor(item.media, filings)}
+                onTarget={(value) => refile(item.media.id, value)}
+                selected={selected.has(item.media.id)}
+                onSelect={() => toggle(item.media.id)}
                 onApprove={(target) => void act(item, 'approve', target)}
                 onRefuse={() => void act(item, 'refuse', item.media.programEventId)}
               />
@@ -221,6 +347,121 @@ export function SubmissionQueue({
         </>
       )}
     </section>
+  );
+}
+
+/** Shared identities, so an unchanged reconciliation is genuinely a no-op. */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+const EMPTY_FILINGS: Filings = new Map();
+
+/** The one refusal both paths produce, and the one thing it is ever about. */
+const REFUSED_MESSAGE =
+  'That could not be saved. Approving a photograph needs a grant on this ministry — ' +
+  'being staff is not enough on its own.';
+
+/**
+ * Select all, approve the selection, delete the selection.
+ *
+ * It sits above the rows rather than floating over them. A bar pinned to the
+ * foot of the window is the fashionable answer and is wrong here: this section
+ * lives at the bottom of a long public page, so a floating bar would hang over
+ * the gallery while somebody scrolled it, and the queue is short enough that the
+ * controls are on screen with the first rows anyway.
+ *
+ * ## Everything is stated as a count
+ *
+ * "Approve 12", not "Approve selected". The number is the only thing that makes
+ * a bulk action checkable before it happens — the difference between clearing an
+ * evening and clearing a camp is one stray click on "select all", and a button
+ * that says the same words either way hides it.
+ */
+function SelectionBar({
+  total,
+  chosen,
+  arming,
+  bulk,
+  onAll,
+  onNone,
+  onApprove,
+  onArm,
+  onDecline,
+}: {
+  total: number;
+  chosen: number;
+  arming: boolean;
+  bulk: 'idle' | 'approving' | 'declining';
+  onAll: () => void;
+  onNone: () => void;
+  onApprove: () => void;
+  onArm: () => void;
+  onDecline: () => void;
+}) {
+  const all = useRef<HTMLInputElement>(null);
+  const some = chosen > 0 && chosen < total;
+
+  /*
+   * `indeterminate` is a property, not an attribute, so React cannot set it from
+   * JSX and this is the only way to draw the third state a "select all" box
+   * genuinely has. Without it a partial selection shows an empty box, and the one
+   * click it invites is the one that discards the selection.
+   */
+  useEffect(() => {
+    if (all.current) all.current.indeterminate = some;
+  }, [some]);
+
+  const working = bulk !== 'idle';
+
+  return (
+    <div className="review-bar">
+      <label className="review-bar__all">
+        <input
+          ref={all}
+          type="checkbox"
+          checked={chosen > 0 && chosen === total}
+          disabled={working}
+          onChange={() => (chosen === total ? onNone() : onAll())}
+        />
+        <span>
+          {chosen === 0 ? `Select all ${total}` : `${chosen} of ${total} selected`}
+        </span>
+      </label>
+
+      {chosen > 0 && (
+        <div className="review-bar__actions">
+          <button
+            className="button button--small review-queue__approve"
+            onClick={onApprove}
+            disabled={working}
+          >
+            {bulk === 'approving' ? 'Approving…' : `Approve ${chosen}`}
+          </button>
+
+          {/*
+            Armed in two clicks, exactly as a single row is, and for a much
+            better reason: this one destroys everything ticked at once. The armed
+            label names the number rather than saying "these", because "these" is
+            what somebody reads when they have forgotten they pressed select all.
+          */}
+          {arming ? (
+            <button
+              className="button button--small review-queue__confirm"
+              onClick={onDecline}
+              disabled={working}
+            >
+              {bulk === 'declining' ? 'Deleting…' : `Delete ${chosen} permanently`}
+            </button>
+          ) : (
+            <button
+              className="button button--quiet button--small review-queue__refuse"
+              onClick={onArm}
+              disabled={working}
+            >
+              Decline {chosen}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -335,6 +576,10 @@ function ReviewRow({
   sentTo,
   uid,
   busy,
+  target,
+  onTarget,
+  selected,
+  onSelect,
   onApprove,
   onRefuse,
 }: {
@@ -349,14 +594,23 @@ function ReviewRow({
   sentTo: string;
   uid: string | null;
   busy: boolean;
+  /**
+   * Where this one will be filed. Held by the panel above rather than here, and
+   * for a reason that is not tidiness: the bar has to be able to approve twelve
+   * of these at once, so it needs their destinations — and a queue that is live
+   * re-renders rows whenever anybody uploads anything, which would drop state
+   * held in a row that unmounted.
+   */
+  target: string;
+  onTarget: (programEventId: string) => void;
+  selected: boolean;
+  onSelect: () => void;
   onApprove: (target: string) => void;
   onRefuse: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [resolving, setResolving] = useState(true);
   const [caption, setCaptionText] = useState(item.media.caption);
-  /** Where this one will be filed. Starts on the level its sender chose. */
-  const [target, setTarget] = useState(item.media.programEventId);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
@@ -377,6 +631,12 @@ function ReviewRow({
    * The reviewer's hands are already on approve and refuse; a third button per
    * row is one more thing to forget. Saved before the decision is taken, so
    * approving immediately after typing does not lose the words.
+   *
+   * Note that this *is* written straight away, unlike the filing beside it. The
+   * two are different kinds of thing: a caption is a description of the
+   * photograph and is worth keeping whatever is decided about it, and a
+   * half-written one surviving a refusal costs nothing. Where a photograph goes
+   * only means anything at the moment it is published.
    */
   async function saveCaption() {
     if (!uid || caption === item.media.caption) return;
@@ -390,7 +650,9 @@ function ReviewRow({
   const moved = target !== item.media.programEventId;
 
   return (
-    <li className={`review-queue__item${busy ? ' is-busy' : ''}`}>
+    <li
+      className={`review-queue__item${busy ? ' is-busy' : ''}${selected ? ' is-picked' : ''}`}
+    >
       <div className="review-queue__frame">
         {/*
           The same photograph again, blurred, filling the mat behind it.
@@ -434,6 +696,21 @@ function ReviewRow({
           ))}
 
         {/*
+          The tick, on the picture rather than beside the buttons.
+
+          It has to be somewhere the eye already is: this is the corner somebody
+          is looking at while they decide, and a checkbox down among the controls
+          would be a fourth thing in a row that already has three. It carries its
+          own visible label rather than an `aria-label` alone, because "Choose"
+          on a card is also what tells a first-time reviewer that deciding
+          several at once is possible at all.
+        */}
+        <label className="review-queue__pick">
+          <input type="checkbox" checked={selected} disabled={busy} onChange={onSelect} />
+          <span>{selected ? 'Chosen' : 'Choose'}</span>
+        </label>
+
+        {/*
           The level the sender chose, named before the control that overrides it.
           A `<select>` alone would show where it is going and hide where it came
           from, and "somebody thought this was Day 3" is the only information in
@@ -461,7 +738,7 @@ function ReviewRow({
         */}
         <label className="review-queue__field review-queue__where">
           <span>File it under</span>
-          <select value={target} disabled={busy} onChange={(e) => setTarget(e.target.value)}>
+          <select value={target} disabled={busy} onChange={(e) => onTarget(e.target.value)}>
             {targets.map(({ id, title, depth }) => (
               <option key={id} value={id}>
                 {INDENT.repeat(depth)}

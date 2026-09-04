@@ -1322,6 +1322,9 @@ for (const [id, node, file, status, placement, layout] of shots) {
     submittedAt: day(-20, 12),
     reviewedAt: approved ? day(-19, 9) : null,
     reviewedBy: approved ? 'seed' : null,
+    // A seeded photograph is a parishioner's, never an administrator's own —
+    // the pending ones exist so the review queue has something in it.
+    autoApproveBy: null,
     ...audit(),
   });
 }
@@ -1357,6 +1360,7 @@ for (const [id, node, file, status, placement, layout] of shots) {
     submittedAt: day(-20, 12),
     reviewedAt: day(-19, 9),
     reviewedBy: 'seed',
+    autoApproveBy: null,
     ...audit(),
   });
 }

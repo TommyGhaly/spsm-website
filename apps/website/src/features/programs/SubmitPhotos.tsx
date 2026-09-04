@@ -173,11 +173,18 @@ export function SubmitPhotos({
    * input was created — the grant arrives asynchronously, so on a fast pick it
    * is very often still false at that moment.
    *
-   * It decides one thing only: whether to condense. `useProgramAdmin` says in
-   * its own header that it decides what to *draw*, and this is no exception —
-   * the upload endpoint makes the same decision independently from a verified
-   * token, so getting this wrong costs a needlessly shrunk photograph, never an
-   * upload somebody was not entitled to.
+   * It decides two things, both of them cosmetic or nearly so: whether to
+   * condense, and which of two sentences this panel tells somebody about what
+   * happens next. `useProgramAdmin` says in its own header that it decides what
+   * to *draw*, and this is no exception — the upload endpoint makes the same
+   * decision independently from a verified token, so getting this wrong costs a
+   * needlessly shrunk photograph or a wrong promise, never an upload somebody
+   * was not entitled to.
+   *
+   * The promise it makes is real, though, and made in the same place: an
+   * administrator's own photographs are waved through without a queue, because
+   * `galleryUploadUrl` marks them and `onGalleryMediaCreated` approves them once
+   * they are transcoded. See `GalleryMedia.autoApproveBy`.
    */
   const admin = useProgramAdmin();
   const isProgramAdmin = useRef(false);
@@ -513,7 +520,9 @@ export function SubmitPhotos({
       });
       setNotice(
         sent.length === queue.length
-          ? 'Thank you. The church will look at these before they appear here.'
+          ? isProgramAdmin.current
+            ? 'Sent. They are in the gallery — you may need to reload to see them.'
+            : 'Thank you. The church will look at these before they appear here.'
           : `${sent.length} of ${queue.length} were sent. The rest are still below — you can try again.`,
       );
       if (inputRef.current) inputRef.current.value = '';
@@ -560,10 +569,19 @@ export function SubmitPhotos({
             {/* The same words as the button that opened it: a panel whose heading
                 renames the action makes you check you pressed the right thing. */}
             <h2 className="submit-photos__title">Upload your photos</h2>
+            {/*
+              Two sentences, because for one person on this site the third one is
+              a lie. An administrator's own uploads are not reviewed — they are
+              waved through the moment they are transcoded — and telling them
+              otherwise would have them waiting at a queue that is never going to
+              show their photographs.
+            */}
             <p className="submit-photos__lede">
               Photographs and short films from {program.name} are welcome. Choose the
-              part of it each one belongs to. They are reviewed before they appear on
-              the site.
+              part of it each one belongs to.{' '}
+              {isProgramAdmin.current
+                ? 'Yours go straight into the gallery.'
+                : 'They are reviewed before they appear on the site.'}
             </p>
           </div>
           <button
@@ -804,7 +822,11 @@ export function SubmitPhotos({
       <button
         type="button"
         className="button button--ghost submit-invite"
-        title="Upload your own photos and short films to the parish. They are reviewed before they appear on the site."
+        title={
+          isProgramAdmin.current
+            ? 'Upload your own photos and short films. Yours go straight into the gallery.'
+            : 'Upload your own photos and short films to the parish. They are reviewed before they appear on the site.'
+        }
         onClick={() => setOpen(true)}
       >
         <Icon name="photos" size={17} /> Upload your photos
