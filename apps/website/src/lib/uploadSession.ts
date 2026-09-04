@@ -37,6 +37,16 @@
  * one of these sign-ins would have been rejected as "not part of the church
  * directory" until that hook learned to let an empty `providerData` through.
  * The two changes belong together; neither works alone.
+ *
+ * ## And so did the Firebase console
+ *
+ * There is a third thing, and it is not code: the **Anonymous** provider has to
+ * be enabled under Authentication → Sign-in method. It was off on
+ * `spsm-database` until 2026-09-04, and while it was off this whole file threw
+ * on its first call for every visitor without a parish account — so uploads
+ * were broken for precisely everybody the feature is for, and worked for
+ * precisely everybody who might have noticed. See the long note on
+ * `signInAnonymously` below, and docs/gallery-console-setup.md §6.
  * ---------------------------------------------------------------------------
  */
 import { appCheckTokenForFetch } from './firebase';
@@ -69,8 +79,48 @@ export async function getIdToken(): Promise<string> {
     });
   });
 
-  const user = existing ?? (await signInAnonymously(auth)).user;
-  return (user as { getIdToken(): Promise<string> }).getIdToken();
+  if (existing) return (existing as { getIdToken(): Promise<string> }).getIdToken();
+
+  /*
+   * The anonymous sign-in, and the one refusal it has that is ours rather than
+   * the visitor's.
+   *
+   * The Anonymous provider is a switch in the Firebase console, off by default,
+   * and nothing in this repository can turn it on or notice that it is off — no
+   * rule, no deploy, no test. While it is off, `signInAnonymously` rejects
+   * before a single byte is prepared, and it does so *only for people who are
+   * not signed in*: a servant with a Microsoft session returns above and never
+   * reaches this line. So the feature looks like it works to everybody who
+   * could report it working, and fails for exactly the parishioners it exists
+   * for. It was off on the live project until 2026-09-04, which is how this
+   * comment came to be written.
+   *
+   * The visitor is told something true and given the way out, because there is
+   * nothing they can do about it — the same shape as `UNATTESTED` in
+   * `features/programs/submit.ts`. The console line carries the diagnosis,
+   * because the person who needs the switch's name is not the one reading the
+   * page.
+   */
+  try {
+    return await (await signInAnonymously(auth)).user.getIdToken();
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === 'auth/admin-restricted-operation' || code === 'auth/operation-not-allowed') {
+      console.error(
+        '[uploads] anonymous sign-in is disabled on this Firebase project, so nobody ' +
+          'without an account can upload anything. Firebase console → Authentication ' +
+          '→ Sign-in method → Anonymous → Enable. ' +
+          'See docs/gallery-console-setup.md §6.',
+        error,
+      );
+      throw new Error(
+        'Uploads from this website are not switched on at the moment. This is a fault at ' +
+          'our end rather than anything you have done — please email the church office, ' +
+          'and it will be put right.',
+      );
+    }
+    throw error;
+  }
 }
 
 /**

@@ -1,7 +1,13 @@
 import { beforeAll, afterAll, describe, it } from 'vitest';
 import { assertSucceeds, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { ref, uploadBytes, getBytes, deleteObject } from 'firebase/storage';
-import { createTestEnv, asAnon, asScreens, asServant } from './helpers.js';
+import {
+  createTestEnv,
+  asAnon,
+  asAnonymousSession,
+  asScreens,
+  asServant,
+} from './helpers.js';
 
 /**
  * Storage reads the grants from a **claim**, not from a member document.
@@ -600,5 +606,85 @@ describe('formUploads/ — photographs attached to a submission', () => {
     });
     await assertFails(deleteObject(ref(asAnon(env).storage(), path)));
     await assertSucceeds(deleteObject(ref(asForms(env).storage(), path)));
+  });
+});
+
+/**
+ * The uploader's own token, turned on this file.
+ *
+ * ---------------------------------------------------------------------------
+ * Enabling the Anonymous provider (2026-09-04, docs/gallery-console-setup.md
+ * §6) gave every gallery uploader something they had never had here: a request
+ * where `request.auth != null` is true. Three rules in this file were written
+ * on the assumption that could not happen, and each of them meant "somebody
+ * from the church" when it said "authenticated".
+ *
+ * The delete is the sharp one. `submissions/` allowed a delete by anyone
+ * authenticated, because rejecting a submission runs in a reviewer's browser
+ * and the prefix cannot be narrowed to a program without reading Firestore —
+ * which this file cannot do. Left as it was, the people *filling* the
+ * quarantine folder could also empty it, and a submission could be withdrawn
+ * from under a reviewer mid-decision by whoever sent it.
+ *
+ * The avatar path is the quiet one, and it matters because of what it undoes:
+ * `members/{uid}/**` is world-readable and was writable by its own uid, and an
+ * anonymous session owns its uid. That is a free, unmetered, publicly readable
+ * upload target on the parish's bucket — exactly the thing the upload
+ * chokepoint was built to remove, arriving back through a door nobody was
+ * watching.
+ * ---------------------------------------------------------------------------
+ */
+describe('an anonymous upload session, against the bucket', () => {
+  it('cannot read back out of the quarantine prefix it writes into', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/anon-read.png'), png, meta);
+    });
+    await assertFails(
+      getBytes(ref(asAnonymousSession(env).storage(), 'submissions/week-1-2027/anon-read.png')),
+    );
+  });
+
+  it('cannot delete a submission awaiting review', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), 'submissions/week-1-2027/anon-delete.png'), png, meta);
+    });
+    await assertFails(
+      deleteObject(
+        ref(asAnonymousSession(env).storage(), 'submissions/week-1-2027/anon-delete.png'),
+      ),
+    );
+    // And the reviewer still can, which is the half that must not break.
+    await assertSucceeds(
+      deleteObject(ref(asServant(env).storage(), 'submissions/week-1-2027/anon-delete.png')),
+    );
+  });
+
+  it('cannot write an avatar under its own uid, which would be a free file host', async () => {
+    const anon = asAnonymousSession(env, 'anon-session-2');
+    await assertFails(
+      uploadBytes(
+        ref(anon.storage(), `members/anon-session-2/${RUN}-avatar.png`),
+        png,
+        meta,
+      ),
+    );
+  });
+
+  it('still writes a gallery submission, because that is what the session is for', async () => {
+    // The counterweight. Everything above is a denial, and a ruleset that
+    // denied an anonymous session outright would pass all three and delete the
+    // feature — the bytes go to a signed URL that never consults this file, so
+    // what is asserted here is only that nothing in it started refusing the
+    // reads the upload page itself performs.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `galleries/week-1-2027/${RUN}-public.png`),
+        png,
+        meta,
+      );
+    });
+    await assertSucceeds(
+      getBytes(ref(asAnonymousSession(env).storage(), `galleries/week-1-2027/${RUN}-public.png`)),
+    );
   });
 });

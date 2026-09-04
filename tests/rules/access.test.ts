@@ -15,7 +15,13 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { createTestEnv, asServant, asSignedIn, asSuper } from './helpers.js';
+import {
+  createTestEnv,
+  asAnonymousSession,
+  asServant,
+  asSignedIn,
+  asSuper,
+} from './helpers.js';
 
 /**
  * `hasScreen()` — the whole of the site's authorization.
@@ -915,13 +921,72 @@ describe('signing in, on its own, is worth nothing but the rota', () => {
   /**
    * …and the one thing it *is* worth.
    *
-   * `servantEvents` is `signedIn()`, which is the whole of what an account buys:
+   * `servantEvents` is `isPerson()`, which is the whole of what an account buys:
    * needing an allocation to see when you are serving would be exactly
    * backwards. If this ever starts failing, the model has lost its floor.
+   *
+   * The pair to this is in "an anonymous upload session" below, and neither
+   * test means much alone: this one says an account with nothing still reads
+   * the rota, that one says a token with nothing behind it does not.
    */
   it('reads the servants’ rota', async () => {
     const db = asSignedIn(env, 'nothing-servant').firestore();
     await assertSucceeds(getDoc(doc(db, 'servantEvents/rota-1')));
+  });
+});
+
+/**
+ * An anonymous upload session, which holds a token and is nobody.
+ *
+ * ---------------------------------------------------------------------------
+ * The Anonymous provider was enabled on this project on 2026-09-04 so that
+ * parishioners without accounts could send photographs to the galleries. It had
+ * to be — sign-in is Microsoft-only against the church's Entra tenant, so the
+ * people who *can* hold an account are clergy, staff and servants, precisely
+ * not the grandmother with forty photographs of the camp.
+ *
+ * The cost of that switch is these tests. Every rule on this site that said
+ * "signed in" was written while anonymous sign-in was impossible, so it meant
+ * "in the church directory" without having to say so. That inference is dead.
+ * An anonymous uid is free and anybody can mint one from a browser console with
+ * the web API key, which is in the public bundle by design and cannot not be.
+ *
+ * The rota is the collection this would have cost. `servantEvents` is read by
+ * anybody with an account on purpose, and for one day it was readable by
+ * anybody at all — every servant's name against every date they are down to
+ * serve, to whoever asked. `isPerson()` is what keeps the two apart, and it is
+ * asserted here rather than described because `rules:check` compiles a policy
+ * that denies nothing and calls it a pass.
+ * ---------------------------------------------------------------------------
+ */
+describe('an anonymous upload session', () => {
+  it('cannot read the servants’ rota', async () => {
+    const db = asAnonymousSession(env).firestore();
+    await assertFails(getDoc(doc(db, 'servantEvents/rota-1')));
+  });
+
+  it('cannot write it either, which was never in doubt', async () => {
+    const db = asAnonymousSession(env).firestore();
+    await assertFails(updateDoc(doc(db, 'servantEvents/rota-1'), { title: 'Mine' }));
+  });
+
+  it('buys nothing else a stranger did not already have', async () => {
+    // The same denials `asAnon` gets. If any of these ever starts passing, a
+    // rule has been written with `signedIn()` where it meant `isPerson()`.
+    const db = asAnonymousSession(env).firestore();
+    await assertFails(getDoc(doc(db, 'formSubmissions/sub-1')));
+    await assertFails(getDoc(doc(db, 'vehicles/car-1')));
+    await assertFails(getDocs(collection(db, 'members')));
+    await assertFails(updateDoc(doc(db, 'config/theme'), { tokens: { hue: 9 } }));
+  });
+
+  it('still reads what the public reads, so the galleries keep working', async () => {
+    // The other direction, and the reason this is not simply "deny anonymous
+    // everywhere": the upload form runs under this session and its page has to
+    // render. A regression here empties the gallery pages for uploaders only.
+    const db = asAnonymousSession(env).firestore();
+    await assertSucceeds(getDoc(doc(db, 'events/liturgy-1')));
+    await assertSucceeds(getDoc(doc(db, 'scheduleEntries/entry-1')));
   });
 });
 

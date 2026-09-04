@@ -8,7 +8,9 @@ Project: `spsm-database`
 Bucket: `gs://spsm-database.firebasestorage.app`
 Site: `https://www.spsmwayland.org`
 
-**Do #1 and #2 before the upload form goes live.** #3 and #4 can follow.
+**Do #1, #2 and #6 before the upload form goes live.** #3 and #4 can follow.
+
+#6 is last on the page and was missing from it entirely until 2026-09-04, which is the whole reason it now exists as a section: while it is undone the upload form is not weakened, it is dead — and dead *only* for the people it was built for.
 
 ---
 
@@ -317,6 +319,10 @@ of a developer — it is a page that spins in front of a visitor.
       `778458603931-compute@developer.gserviceaccount.com` (the Compute Engine
       default, *not* the appspot account this file used to name).
 
+- [ ] **6 Anonymous sign-in enabled** — the one item here that fails for
+      signed-out visitors only, so every person able to report it is a person
+      it works for. Off on this project until 2026-09-04.
+
 4 and 5 fail identically from the outside — the upload stops and the site says
 something vague — and they fail in opposite places. 5 throws *inside* the
 Function, so Cloud Logging has a stack trace and the browser sees a 500. 4 stops
@@ -381,3 +387,131 @@ review queue for anyone to notice.
 A signed URL addresses the GCS API directly and is not evaluated against
 `storage.rules`, which is exactly why shutting that door does not shut the
 feature.
+
+---
+
+## 6. Anonymous sign-in — required
+
+Firebase console → **Authentication** → **Sign-in method** → **Anonymous** →
+**Enable**.
+
+> **Deploy the rules first.** `firebase deploy --only firestore:rules,storage`
+> before touching the switch, not after. Enabling the provider while the old
+> rulesets are live makes `/servantEvents` — the servants' rota, every name
+> against every date — readable by anybody who opens a browser console. See
+> "What the switch costs, and what had to move with it" below. The two are one
+> change in two places, and this is the order.
+
+That is the whole action, and it was undone on `spsm-database` from the day the
+upload form shipped until **2026-09-04**. For that entire period no parishioner
+without a parish account could send a photograph to a gallery, or attach one to
+a form — which is every parishioner, since sign-in here is Microsoft-only
+against the church's Entra tenant.
+
+### Why nothing in the repository could have caught it
+
+`lib/uploadSession.ts` signs an uploader in anonymously before asking the
+endpoint for a URL. The uid it gets is not authentication — anyone can mint as
+many as they like — it is *attribution*: a stable key for the daily quota to
+count against, and something to refuse if one session turns out to be a
+nuisance. App Check is the wall; this is what makes the quota mean anything.
+
+The Anonymous provider is a project setting. No rule references it, no deploy
+carries it, and no test can observe it — `tests/rules/` authenticates its own
+contexts directly and never asks the real project whether a browser would have
+been allowed to sign in at all. So the switch is invisible from inside the code
+in both directions: nothing turns it on, and nothing notices it is off.
+
+### Why it was invisible from outside as well
+
+`getIdToken` reuses a Microsoft session when there is one — deliberately, so a
+servant uploads as themselves and reaches the administrator bypass in the
+endpoint. The consequence is that **the failure cannot happen to staff.** Every
+person in a position to test the feature, demonstrate it, or notice it was
+broken had an account, and for all of them it worked perfectly. It failed only
+in the browsers of the people it exists for, who have no account, do not read
+consoles, and mostly do not report bugs.
+
+The browser said `Firebase: Error (auth/admin-restricted-operation)` — the JS
+SDK's rendering of `ADMIN_ONLY_OPERATION` — once per file, on all forty rows.
+It names nothing.
+
+`uploadSession.ts` now catches that code, tells the visitor it is our fault and
+to email the office, and logs the console path above at error level. The message
+is a courtesy on top of the fix, not a substitute for it: while the switch is
+off, nothing uploads.
+
+### Confirming it, without a browser and without the console
+
+Anonymous sign-in *is* an unauthenticated REST call, so its own endpoint answers
+the question honestly:
+
+```bash
+curl -s -X POST \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$NEXT_PUBLIC_FIREBASE_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"returnSecureToken":true}'
+```
+
+`ADMIN_ONLY_OPERATION` means the provider is off. An `idToken` in the reply means
+it is on — and costs one throwaway anonymous account, exactly as a visitor
+loading the form does.
+
+The admin config is the second witness, and reads clean rather than false when
+the provider is off — `signIn` simply carries no `anonymous` key:
+
+```bash
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "x-goog-user-project: spsm-database" \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/spsm-database/config"
+```
+
+### The blocking function already expects this
+
+`enforceTenantOnCreate` refuses any account that does not present the church's
+tenant, and an anonymous account presents no credential at all. It lets an empty
+`providerData` through for exactly this reason — see the note in
+`functions/src/auth.ts`. That half was done long ago and does nothing on its
+own; enabling the provider is the half that was missing. Neither works alone,
+and turning the provider on does not need the hook to be touched again.
+
+### What the switch costs, and what had to move with it
+
+Enabling the provider is not free, and the cost is not in the bucket. It is
+that **`request.auth != null` quietly changed meaning across both rulesets.**
+
+Sign-in here is Microsoft-only against the church's Entra tenant, and
+`enforceTenantOnCreate` refuses anything outside it. So for as long as that was
+the *only* way to hold a token, "authenticated" and "in the church directory"
+were the same sentence, and rules were written saying the first and meaning the
+second. Reasonably — there was no third kind of caller.
+
+An anonymous uid is the third kind. It is free, and anybody can mint one from a
+browser console with the web API key, which is in the public bundle by design
+and cannot not be. Four rules were written against the old meaning:
+
+| Rule | What the bare check would have allowed |
+|---|---|
+| `firestore.rules` `/servantEvents` read | **the rota, world-readable** — every servant's name against every date they are down to serve |
+| `storage.rules` `submissions/` read | the people filling the quarantine prefix could read back out of it, which is the approval gate |
+| `storage.rules` `submissions/` delete | **destructive** — an uploader could withdraw a submission from under a reviewer mid-decision |
+| `storage.rules` `members/{uid}/**` write | a free, unmetered, world-readable upload target under the session's own uid |
+
+All four now check `isPerson()` instead: signed in **and**
+`firebase.sign_in_provider != 'anonymous'`. It reads the caller's own token and
+never Firestore, so it costs nothing. The last row is the one to keep in mind
+if this file grows — `members/{uid}/**` is world-readable, so an anonymous
+session writing under its own uid would have put back precisely the anonymous
+bucket write that §1c and the upload chokepoint exist to have removed.
+
+`tests/rules/access.test.ts` and `tests/rules/storage.test.ts` both have an
+`an anonymous upload session` block, built on the `asAnonymousSession` fixture.
+Each of those four rows was checked by reverting the rule and watching the test
+fail, because `rules:check` compiles a policy that denies nothing and calls it a
+pass. **`asAnonymousSession` is not `asAnon`** — the latter is a request with no
+credential at all, and the gap between them is the whole subject of this
+section.
+
+The single-tenant warning on `/servantEvents` is separate and still stands:
+`isPerson()` excludes anonymous sessions, and a multi-tenant Microsoft account
+is a real sign-in. If that app registration is ever switched, the rota opens to
+every Microsoft account in the world and nothing here catches it.

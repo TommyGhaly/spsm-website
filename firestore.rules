@@ -49,6 +49,36 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    /*
+     * A person in the church directory, as opposed to *any* authenticated
+     * request.
+     *
+     * `signedIn()` stopped meaning the first thing on 2026-09-04, when the
+     * Anonymous provider was enabled on the project so that parishioners
+     * without accounts could send photographs to the galleries
+     * (`lib/uploadSession.ts`, docs/gallery-console-setup.md §6). Before that
+     * the two were the same by accident: sign-in was Microsoft-only, so the
+     * only way to hold a token was to be in the parish's Entra tenant, and a
+     * rule could say `signedIn()` and mean "on the rota".
+     *
+     * It cannot any more. Anyone can mint an anonymous uid from a console with
+     * the web API key, which is in the public bundle by design — so every bare
+     * `signedIn()` read rule became a world-readable one the moment that switch
+     * was flipped. `/servantEvents` was the one that mattered and it said so
+     * itself; see the note there.
+     *
+     * `.get()` twice rather than `token.firebase.sign_in_provider`, because a
+     * missing key in a rules map is an error rather than a falsy value, and a
+     * rule that errors denies. Every real ID token carries `firebase`, but a
+     * rule this load-bearing should not be the place that assumes it.
+     *
+     * Costs nothing: it reads the caller's own token and never Firestore.
+     */
+    function isPerson() {
+      return signedIn()
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'anonymous';
+    }
+
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
     }
@@ -469,18 +499,30 @@ service cloud.firestore {
        *
        * This is the schedule every servant is on, and needing an allocation to
        * see when you are serving would be the wrong way round — so the check is
-       * `signedIn()` and nothing more. It reads as generous and is not: sign-in
-       * is Microsoft-only and `enforceTenantOnCreate` refuses any account
-       * outside the parish's Entra directory, so the set of people this admits
-       * is the set of people on the rota.
+       * `isPerson()` and nothing more. It reads as generous and is not: an
+       * account here is a Microsoft account, and `enforceTenantOnCreate` refuses
+       * any that is outside the parish's Entra directory — so the set of people
+       * this admits is the set of people on the rota.
        *
-       * That property is the whole security model of this line. **If the Entra
-       * app registration is ever switched from single-tenant to multi-tenant,
-       * this collection becomes world-readable.**
+       * That property is the whole security model of this line, and it has
+       * already been broken once. **This said `signedIn()` until 2026-09-04**,
+       * which was the same thing right up until the Anonymous provider was
+       * enabled for gallery uploads — and anyone can mint an anonymous uid with
+       * the web API key out of the public bundle. For as long as those two
+       * facts coexisted, this collection was world-readable: the rota, with
+       * every servant's name and every date they are down for, to anybody who
+       * opened a console. The switch and this rule have to move together, and
+       * the rule has to move first.
+       *
+       * The single-tenant warning still stands alongside it: **if the Entra app
+       * registration is ever switched to multi-tenant, this collection becomes
+       * readable by every Microsoft account in the world.** `isPerson()` does
+       * not help with that one — it only excludes anonymous sessions, and a
+       * multi-tenant account is a real sign-in.
        *
        * Writing it is still the `servants` grant.
        */
-      allow read: if signedIn();
+      allow read: if isPerson();
       allow write: if hasScreen('servants');
     }
 

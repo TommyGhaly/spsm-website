@@ -126,6 +126,45 @@ export const asAnon = (env: RulesTestEnvironment): RulesTestContext =>
   env.unauthenticatedContext();
 
 /**
+ * A visitor who is holding a token and is still nobody: the anonymous session
+ * a gallery upload runs under.
+ *
+ * ---------------------------------------------------------------------------
+ * **This is not `asAnon`, and the two names are the trap in this file.**
+ * `asAnon` above is a request with *no* credential at all. This one has passed
+ * `request.auth != null` since 2026-09-04, when the Anonymous provider was
+ * enabled on the project so that parishioners without accounts could send
+ * photographs to the galleries (`lib/uploadSession.ts`,
+ * docs/gallery-console-setup.md §6).
+ *
+ * Every rule that said "signed in" was written when that was impossible, and
+ * therefore meant "in the parish's Entra tenant" — sign-in was Microsoft-only,
+ * so the two were the same sentence. They are not any more, and an anonymous
+ * uid is free: anybody can mint one from a browser console with the web API
+ * key, which is in the public bundle by design.
+ *
+ * So this fixture sits *between* `asAnon` and `asSignedIn`, and it is the one
+ * that catches the rule which confuses them. `isPerson()` in both rulesets is
+ * the predicate that keeps them apart, and every `assertFails` below that uses
+ * this context is an assertion that an upload session bought nothing except
+ * the right to upload.
+ *
+ * `firebase.sign_in_provider` has to be set by hand. `createMockUserToken`
+ * defaults it to `'custom'` and spreads the caller's options *after* its own
+ * payload, so overriding it works — but a context built with `{}` looks like a
+ * real sign-in to `isPerson()` and would pass every test here for the wrong
+ * reason.
+ * ---------------------------------------------------------------------------
+ */
+export const asAnonymousSession = (
+  env: RulesTestEnvironment,
+  uid = 'anon-session-1',
+): RulesTestContext =>
+  env.authenticatedContext(uid, {
+    firebase: { sign_in_provider: 'anonymous', identities: {} },
+  });
+
+/**
  * Somebody from the parish directory, holding nothing.
  *
  * Sign-in is Microsoft-only and tenant-restricted, so this is not "a stranger

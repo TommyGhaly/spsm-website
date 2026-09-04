@@ -44,6 +44,24 @@ service firebase.storage {
       return request.auth != null && request.auth.token.get('superadmin', false) == true;
     }
 
+    /*
+     * A person in the church directory, as opposed to *any* authenticated
+     * request. The twin of `isPerson()` in firestore.rules — read that note
+     * for the reasoning; this is the same sentence for the bucket.
+     *
+     * The short version: `request.auth != null` meant "in the parish's Entra
+     * tenant" only for as long as Microsoft was the only way to sign in. The
+     * Anonymous provider was enabled on 2026-09-04 so that parishioners
+     * without accounts could upload photographs, and an anonymous uid is free
+     * for anybody to mint with the web API key out of the public bundle. Every
+     * bare `request.auth != null` in this file had to be re-read on that day
+     * and asked which of the two it meant.
+     */
+    function isPerson() {
+      return request.auth != null
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'anonymous';
+    }
+
     // "The superadmin, or the person given this area" — the same sentence
     // `hasScreen()` means in firestore.rules, proved from a lagging copy.
     function hasScreen(screen) {
@@ -152,14 +170,23 @@ service firebase.storage {
     // Member avatars: own folder only.
     //
     // The delete rule drops `isImage()` like the others, but keeps the whole
-    // ownership test — a delete that only checked `request.auth != null` would
-    // let any signed-in account remove anybody's avatar. `{uid}` is matched
-    // from the path, so it is available on a delete even though
-    // `request.resource` is not.
+    // ownership test — a delete that only checked the caller was authenticated
+    // would let any account remove anybody's avatar. `{uid}` is matched from
+    // the path, so it is available on a delete even though `request.resource`
+    // is not.
+    //
+    // `isPerson()` closes what would otherwise be the only anonymous write
+    // path left on this bucket. An anonymous session owns its own uid, so with
+    // a bare `request.auth != null` it could write to `members/<its own uid>/`
+    // all day — a free, unmetered, publicly readable upload target, since the
+    // read here is `true`. That is precisely the shape of thing the upload
+    // chokepoint was built to remove, and it must not come back through this
+    // door: a member has a member document, and an anonymous session never
+    // will.
     match /members/{uid}/{allPaths=**} {
       allow read: if true;
-      allow create, update: if request.auth != null && request.auth.uid == uid && isImage();
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if isPerson() && request.auth.uid == uid && isImage();
+      allow delete: if isPerson() && request.auth.uid == uid;
     }
 
     // ---- program galleries -------------------------------------------------
@@ -251,11 +278,19 @@ service firebase.storage {
     // services and only one of them was ever guarded.
     // ---------------------------------------------------------------------
     match /submissions/{programEventId}/{fileName} {
-      // Still any signed-in user, not just the ministry's own administrators.
-      // The reviewer needs the bytes and the queue reads them with
-      // getDownloadURL; narrowing this would need Firestore, which this file
-      // cannot reach.
-      allow read: if request.auth != null;
+      // Still any account, not just the ministry's own administrators. The
+      // reviewer needs the bytes and the queue reads them with
+      // getDownloadURL; narrowing this to the program's own leads would need
+      // Firestore, which this file cannot reach.
+      //
+      // `isPerson()` rather than `request.auth != null`, and the difference is
+      // not academic here. Every uploader holds a token from 2026-09-04 — that
+      // is what the anonymous session is *for* — so the bare check would have
+      // let the people filling this prefix read back out of it. That is the
+      // one thing a quarantine folder may not allow: the approval gate is the
+      // whole feature, and a submitter who can read the prefix has an open
+      // file host with a review queue bolted to the side.
+      allow read: if isPerson();
 
       // Create and update only. NOT `write`, and that distinction is the whole
       // reason these are two lines.
@@ -266,7 +301,12 @@ service firebase.storage {
       // browser and removes the files before the document. The upload half is
       // what had to close; deleting was never the problem.
       allow create, update: if false;
-      allow delete: if request.auth != null;
+      // `isPerson()`, for a sharper reason than the read above: with the bare
+      // check, an anonymous session — which anybody may mint — could delete
+      // any object under this prefix. Rejecting a submission is a reviewer's
+      // act (`refuseAndDelete` runs in their browser), and destroying one is
+      // not something an uploader gets to do.
+      allow delete: if isPerson();
     }
 
     // Photographs attached to a form submission, by whoever is filling it in.
