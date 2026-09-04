@@ -776,8 +776,13 @@ export interface GalleryBand {
    *
    * A separate list from `picks` because the two answer different questions, and
    * collapsing them would break the one case that matters: a page showing every
-   * one of two hundred photographs cannot express "minus one" as a list of picks,
-   * which is capped at `GALLERY_SUMMARY_MAX`. Applied after whichever set won.
+   * one of two hundred photographs cannot express "minus one" as two hundred
+   * picks written into the document. Applied after whichever set won.
+   *
+   * That case used to be argued from a cap on `picks`, which is gone — but the
+   * separation is not merely inherited. "Minus one" as a list of picks is a
+   * snapshot: it stops following the page, so a photograph approved tomorrow
+   * never appears in the block at all.
    */
   hidden: string[];
 }

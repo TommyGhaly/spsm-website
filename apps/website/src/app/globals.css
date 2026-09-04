@@ -15766,6 +15766,27 @@ button.sched-month__entry:focus-visible {
   min-width: 0;
 }
 
+/*
+ * The levels inside this one, at the foot of the page.
+ *
+ * A modifier rather than spacing changed on `.gallery-section`, exactly as the
+ * note above says to do it: that class is deliberately margin-free so the page's
+ * own rhythm rule keeps working.
+ *
+ * The rule and the extra air are what stop this reading as an afterthought. It
+ * is the last thing on a page whose photographs are now uncapped, so it can
+ * arrive after a very long scroll — and the reader needs to be told that a new
+ * part of the page has started rather than that the gallery has run out.
+ */
+.gallery-section--inside {
+  padding-top: var(--space-lg, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.gallery-section--inside > .gallery-title {
+  margin-bottom: var(--space-md, 1rem);
+}
+
 
 
 /* ---------------------------------------------------------------------------
@@ -15859,12 +15880,60 @@ button.sched-month__entry:focus-visible {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
+/*
+ * The cover is a *stack* now, not one picture.
+ *
+ * Every photograph the card cycles through is in the DOM at once and opacity
+ * decides which is seen — see the note in `LevelCard`. So the images have to be
+ * positioned rather than flowed, and the box has to be their containing block.
+ */
+.gathering-card__cover {
+  position: relative;
+}
+
 .gathering-card__cover :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gathering-card__shot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /*
+   * Two transitions on one element, with two different durations, and both are
+   * wanted: the cross-fade between pictures is slow, and the hover zoom inherited
+   * from the rule above is fast. Written out here because listing `transform`
+   * alone would drop the fade, and listing `opacity` alone would freeze the zoom.
+   */
+  transition:
+    opacity 600ms ease,
+    transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gathering-card__shot.is-current {
+  opacity: 1;
+}
+
+/*
+ * A card that is not cycling still has to show its one picture.
+ *
+ * `is-current` is on the first shot from the very first render, so this is not
+ * strictly needed — it is here for the case the class is ever computed wrongly,
+ * because the failure mode without it is a card that is silently, entirely
+ * blank, which looks exactly like a level with no photographs in it.
+ */
+.gathering-card__cover > .gathering-card__shot:only-child {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gathering-card__shot {
+    transition: none;
+  }
 }
 
 .gathering-card:hover .gathering-card__cover :is(img, video) {

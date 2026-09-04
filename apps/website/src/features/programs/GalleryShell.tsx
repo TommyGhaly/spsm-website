@@ -118,7 +118,6 @@ import {
   setProgramEventParent,
   setProgramFeatured,
   setSectionLayout,
-  MAX_FEATURED,
   type SectionTarget,
 } from './adminData';
 import { LevelDetails, ProgramDetails } from './Editors';
@@ -691,7 +690,6 @@ function LevelView({
               page's read and in no pool it draws from. See `nodeSummary`.
             */
             rootId: program.id,
-            max: MAX_FEATURED,
           }),
     [tree, nodeId, media, chosen, showAll, hidden, picturesOff, program.id],
   );
@@ -820,7 +818,6 @@ function LevelView({
             showAll: showAll === true,
             hidden: bandHidden,
             rootId: program.id,
-            max: MAX_FEATURED,
           }),
         };
       }),
@@ -1181,10 +1178,7 @@ function LevelView({
          */
         setFeatured(
           (wasPicks) =>
-            change({ picks: wasPicks ?? [...seed], hidden: [] }).picks?.slice(
-              0,
-              MAX_FEATURED,
-            ) ?? [],
+            change({ picks: wasPicks ?? [...seed], hidden: [] }).picks ?? [],
         );
         setPageHidden(
           (wasHidden) => change({ picks: [], hidden: wasHidden ?? [...hidden] }).hidden,
@@ -1207,7 +1201,7 @@ function LevelView({
         return {
           ...was,
           [key]: {
-            picks: next.picks?.slice(0, MAX_FEATURED) ?? null,
+            picks: next.picks ?? null,
             hidden: next.hidden,
           },
         };
@@ -1271,7 +1265,7 @@ function LevelView({
       changeBlock(
         key,
         (was) => ({
-          picks: togglePick([...was.picks], mediaId, 'many', MAX_FEATURED),
+          picks: togglePick([...was.picks], mediaId, 'many', Number.POSITIVE_INFINITY),
           /*
             The × list is cleared by any pick, and that is not tidying:
             `pagePictures` applies it *after* the picks, so a photograph on both
@@ -1346,7 +1340,7 @@ function LevelView({
       ticked. Passed to `togglePicked` as well as shown, so the first click starts
       from exactly the set on screen rather than from an empty list.
     */
-    const seed = shown.slice(0, MAX_FEATURED).map((one) => one.id);
+    const seed = shown.map((one) => one.id);
     /*
       What the *other* blocks on this page are showing — this one excluded, or every
       picture already ticked would also be marked as being somewhere else, which is
@@ -1363,7 +1357,6 @@ function LevelView({
       <MediaPicker
         title={title}
         mode="many"
-        max={MAX_FEATURED}
         media={media}
         tree={tree}
         selected={picks ?? seed}
@@ -2735,30 +2728,44 @@ function LevelView({
         {/* ---- what is inside ---------------------------------------------- */}
 
         {/*
-          Hidden from a visitor when there is nothing inside, shown to an
-          administrator always — the same rule an empty subgroup followed before
-          every level became a page.
+          Everybody sees these now. **This is the second reversal of the same
+          decision, so the history is worth having in one place.**
 
-          Hidden, because a heading with nothing under it is not content, and the
-          deepest level of any branch is a leaf: on the old fixed three levels
-          only the last one could be childless, and now every trail ends in one.
-          An empty "Inside The hike" under every leaf in the parish is a lot of
-          nothing.
+          They were the visitor's route in. Then the side shelf arrived — Tommy:
+          *"the subgroups for the regular user is still on the bottom, what
+          happened to leaving them in a menu on the side"* — and the cards became
+          editing furniture, the thing a level is *selected* from to put it in the
+          properties panel. That left a public gallery page with no visible sign
+          that anything was inside it at all: the shelf is a handle in the corner,
+          and the pictures above it are drawn from levels the page never names.
 
-          Shown while editing, because otherwise adding the first level inside
-          something appears to do nothing at all.
+          Restored Sep 4 2026 at Tommy's direction — *"I want the children pages
+          to be visible by default"* — and the shelf stays as well, deliberately.
+          They are not duplicates: the shelf can reach a level with **no
+          photographs in it**, which draws no meaningful card, and it does not
+          need the page scrolled.
+
+          Still hidden for a visitor when there is nothing inside, because a
+          heading with nothing under it is not content and every trail in the
+          parish ends in a leaf — an empty "Inside The hike" under each one is a
+          lot of nothing. Shown to an administrator regardless, or adding the
+          first level inside something appears to do nothing at all.
         */}
-        {/*
-          Editing only, now that a visitor has the shelf.
+        {(edit.on || children.length > 0) && (
+          <section className="gallery-section gallery-section--inside" aria-labelledby="level-inside">
+            {/*
+              A full-weight heading with a rule over it, not the small one the
+              picture blocks use.
 
-          Tommy: *"the subgroups for the regular user is still on the bottom."*
-          They were the visitor's route in and are now the administrator's — the
-          cards are what a level is *selected* from, and there is nowhere else to
-          click to put one in the properties panel.
-        */}
-        {edit.on && (
-          <section className="gallery-section" aria-labelledby="level-inside">
-            <h2 id="level-inside" className="gallery-title gallery-title--small">
+              It has to announce itself, because of where it is. Tommy chose to
+              leave these at the foot of the page rather than above the
+              photographs — and the photographs above them are uncapped now, so
+              on a ministry with years behind it this heading arrives after a very
+              long scroll. A small grey line at the end of that reads as the page
+              trailing off; a rule and a real heading read as a second part of it
+              beginning.
+            */}
+            <h2 id="level-inside" className="gallery-title">
               {insideTitle}
             </h2>
 
@@ -3063,6 +3070,54 @@ function BandEditor({
  * "4 parts · 214 photographs" is the fact somebody wants before they click.
  */
 /**
+ * How long each picture holds on a level card.
+ *
+ * The same 3.2s as the side shelf, and deliberately the same rather than tuned:
+ * a card and a shelf tile can be showing the same level a few hundred pixels
+ * apart, and two cycles at different speeds drifting in and out of step is the
+ * kind of thing that is noticed without being identified.
+ *
+ * Slower than the 1.4s on `/events`, which is right there for the opposite
+ * reason — those plates drift past on a moving rail and have a few seconds of
+ * attention, so a slow cycle never happens at all.
+ */
+const CARD_CYCLE_MS = 3200;
+
+/**
+ * Which picture a cycling tile is on, or 0 for one that does not cycle.
+ *
+ * One timer per card rather than one for the grid, which is the trade the shelf
+ * makes the other way — it has a handful of tiles in a column and drives them
+ * from a single counter, and a ministry with twelve weeks would have twelve
+ * timers here. Worth it, because these cards are of *different* levels with
+ * different numbers of pictures: driven from one counter they all turn over on
+ * the same beat, which reads as the page refreshing rather than as twelve
+ * separate places each showing themselves.
+ *
+ * Stopped for `prefers-reduced-motion`, and for anything with fewer than two
+ * pictures — a `setInterval` re-rendering a card to show it the same photograph
+ * is pure cost.
+ */
+function useCycle(length: number): number {
+  const [shot, setShot] = useState(0);
+
+  useEffect(() => {
+    if (length < 2) return;
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setShot((n) => (n + 1) % length), CARD_CYCLE_MS);
+    return () => window.clearInterval(timer);
+  }, [length]);
+
+  /*
+   * Guarded rather than trusted. `length` can fall — a photograph is refused, or
+   * a refresh returns a shorter summary — between the interval's last tick and
+   * this render, which would index past the end and draw nothing.
+   */
+  return length > 0 ? shot % length : 0;
+}
+
+/**
  * One card for a level inside this one — an album, a year, a week, a day.
  *
  * ## Two shapes, the same argument as `ProgramTile`
@@ -3110,6 +3165,26 @@ function LevelCard({
   const clip = cover?.kind === 'video' ? cover.renditionPath : null;
   const path =
     cover?.kind === 'video' ? cover.posterPath : (cover?.renditionPath ?? null);
+
+  /*
+   * The rest of the level's pictures, so the card cycles rather than sitting on
+   * one.
+   *
+   * This is what makes a card read as a *place* instead of a label with a
+   * decoration, and it is the same construction the ministry plates on `/events`
+   * and the tiles in the side shelf already use — the borrowing is the point, not
+   * a coincidence of taste. Tommy: *"make the child nodes a little more
+   * obvious."* A grid of still covers at the foot of a long page is furniture; a
+   * grid of moving ones is the only thing on that part of the screen doing
+   * anything.
+   *
+   * `shelfCover` rather than a second opinion about which path a summary item
+   * draws from, so a card and a shelf tile can never disagree about the same
+   * level. Never used for a clip cover: `summariseChildren` will not make a video
+   * the cover, so `clip` and this are exclusive by construction.
+   */
+  const shots = clip ? [] : shelfCovers(summary?.covers);
+  const shot = useCycle(shots.length);
   const when = formatDateSpan(node.startAt, node.endAt, node.timeZone);
   const photos = summary?.photos ?? 0;
   const clips = summary?.videos ?? 0;
@@ -3118,7 +3193,7 @@ function LevelCard({
   const cardInner = (
     <>
       <span
-        className={`gathering-card__cover${path || clip ? '' : ' gathering-card__cover--empty'}`}
+        className={`gathering-card__cover${shots.length > 0 || clip ? '' : ' gathering-card__cover--empty'}`}
         aria-hidden="true"
       >
         {clip ? (
@@ -3127,9 +3202,24 @@ function LevelCard({
             poster={path ? galleryPathUrl(path) : null}
           />
         ) : (
-          path && (
-            <img src={galleryPathUrl(path)} alt="" loading="lazy" decoding="async" />
-          )
+          /*
+            All of them in the DOM at once, stacked, with opacity choosing which
+            is seen. Swapping one element's `src` shows the ground for however
+            long the new file takes to decode, which reads as a flash — the same
+            note is on `Tile` in SubgroupShelf and on `ProgramTile`.
+          */
+          shots.map((one, index) => (
+            <img
+              key={one}
+              className={`gathering-card__shot${index === shot ? ' is-current' : ''}`}
+              src={galleryPathUrl(one)}
+              alt=""
+              // The first is the card's cover and is what it shows before any
+              // cycling; the rest can arrive at their leisure.
+              loading={index === 0 ? 'eager' : 'lazy'}
+              decoding="async"
+            />
+          ))
         )}
       </span>
 
