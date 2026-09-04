@@ -56,7 +56,6 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { createHash, randomUUID } from 'node:crypto';
 import {
   COLLECTIONS,
   DEFAULT_FOCAL,
@@ -71,6 +70,7 @@ import {
   type Program,
 } from '@spsm/shared';
 import { BUDGETS, CAPS, callerIp, throttled } from '../rateLimit.js';
+import { addressKey, countAgainst } from '../uploadQuota.js';
 
 /**
  * How long a signed URL is good for.
@@ -85,58 +85,6 @@ const URL_TTL_MS = 5 * 60 * 1000;
 /** The bucket, resolved once. */
 function bucket() {
   return getStorage().bucket();
-}
-
-/**
- * The submitter's address, hashed.
- *
- * Stored rather than the address itself because a quota document would
- * otherwise be a log of who visited which gallery and when — personal data the
- * site does not otherwise keep, and `/privacy` names the file behind every
- * claim it makes, so keeping it would mean changing that page. A hash counts
- * just as well and answers no question about anybody.
- *
- * Not salted, and it does not need to be: this is not protecting the address
- * from us, it is avoiding storing it. Anyone with the database already has the
- * request logs.
- */
-function addressKey(ip: string): string {
-  return `ip:${createHash('sha256').update(ip).digest('hex').slice(0, 32)}`;
-}
-
-/** The day a quota resets on, in UTC. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/**
- * Count one upload against a key, or refuse.
- *
- * A transaction because two photographs from the same batch land within
- * milliseconds of each other and a read-then-write would lose one of the
- * increments — which sounds harmless until it is the mechanism a flood uses to
- * stay under the cap. Resets by comparing the stored day rather than by any
- * scheduled job; a document nobody touches for a year simply reads as stale on
- * the next attempt.
- */
-async function countAgainst(key: string, limit: number): Promise<boolean> {
-  const reference = getFirestore().collection(COLLECTIONS.submissionQuota).doc(key);
-  const day = today();
-
-  return getFirestore().runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(reference);
-    const stored = snapshot.exists ? snapshot.data() : null;
-    const count = stored?.['day'] === day ? Number(stored['count'] ?? 0) : 0;
-
-    if (count >= limit) return false;
-
-    transaction.set(
-      reference,
-      { day, count: count + 1, updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
-    return true;
-  });
 }
 
 export const galleryUploadUrl = onRequest(

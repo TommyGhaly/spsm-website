@@ -38,17 +38,46 @@ person with a loop uploads until the Storage bill is a problem.
 2. Find the web app, choose **reCAPTCHA Enterprise**, paste the site key, save.
 3. Leave the TTL at the default (1 day).
 
-### 1c. Enforce it — on Cloud Storage only
+### 1c. Do not enforce it on any API
 
 App Check → **APIs** tab:
 
 | API | Setting | Why |
 |---|---|---|
-| **Cloud Storage** | **Enforce** | this is the one that matters — it is where the bytes and the bill are |
-| Cloud Firestore | **leave Unenforced** | see the warning below |
+| Cloud Storage | **Unenforced** | it broke every image on the site — see below |
+| Cloud Firestore | **Unenforced** | `next build` reads it from Node — see below |
 | Authentication | Unenforced | sign-in is already tenant-restricted |
 
-> **Do not enforce App Check on Cloud Firestore.** `next build` reads Firestore
+**This table was the other way round until 2026-09-03**, and the reversal is
+the important part of this section rather than a correction to skim.
+
+> **Do not enforce App Check on Cloud Storage.** It was enforced on 2026-09-02
+> and turned off on 2026-09-03, because enforcement is per *service* and cannot
+> distinguish an upload from an `<img>`. Every public image on the site is a
+> plain `<img src="https://firebasestorage.googleapis.com/…?alt=media">` built
+> by `lib/storage.ts` — and an image tag cannot send an `X-Firebase-AppCheck`
+> header, because nothing in HTML can. So enforcement returned
+>
+>     401 {"error":{"code":401,"message":"Firebase App Check token is invalid."}}
+>
+> for every gallery photograph, clergy portrait, event picture and product cover
+> on the public site. The staff screens kept working, which is what made it hard
+> to see: they resolve images with `getDownloadURL`, and the `&token=` form
+> bypasses App Check entirely.
+>
+> Enforcement changes take up to ~15 minutes and roll out unevenly — a URL will
+> flap between 200 and 401 while it lands. Sample it twenty times rather than
+> once before concluding anything.
+
+**What replaced it, so that turning it off did not simply remove the wall.**
+Both anonymous upload paths now verify an App Check token *in their own code*:
+`galleryUploadUrl` and `formUploadUrl`. Both are `onRequest`, so the
+`enforceAppCheck` option never applied to them and this setting never reached
+them — which is exactly why the wall survives the setting being off. The
+storage rules behind them are `create: if false`, so there is no anonymous
+client write path left on the bucket for enforcement to have been protecting.
+
+> **Do not enforce App Check on Cloud Firestore either.** `next build` reads Firestore
 > as an anonymous client from Node to bake the static pages, and Node has no
 > reCAPTCHA token to present. Enforcing it there does not fail loudly at deploy
 > — it makes every public read return permission-denied, so the build produces
@@ -84,8 +113,10 @@ that same screen when a laptop is replaced.
 > entirely under the emulators, and every failure inside it is swallowed — an
 > unregistered app must not take the parish website down.
 >
-> Enforcement in 1c still has to come **after** 1b, not before: enforcing
-> against an app that is not registered blocks the site's own uploads.
+> If 1c is ever enforced again for any reason, it still has to come **after**
+> 1b, not before: enforcing against an app that is not registered blocks the
+> site's own uploads. Read 1c first — the answer to "should we enforce this?"
+> is now no.
 
 ---
 
@@ -153,34 +184,85 @@ decision — ask and I will lay out the trade.
 
 ---
 
-## 4. Storage CORS — only if uploads fail
+## 4. Storage CORS — required
 
-Probably unnecessary. The Firebase JS SDK uploads and `getDownloadURL()` images
-in `<img>` tags both work without a CORS policy, which covers everything the
-galleries do today.
+**Set on 2026-09-03.** This section used to say "probably unnecessary", and the
+reason it gave was true at the time: the Firebase JS SDK uploaded the bytes, and
+`firebasestorage.googleapis.com` sends permissive CORS headers of its own.
 
-You would need it if a browser console shows a CORS error on upload, or once
-anything reads bytes directly (`getBytes`, a canvas crop, a client-side
-thumbnailer). Save as `cors.json`:
+The upload chokepoint changed the host. The browser now `PUT`s to a v4 signed
+URL, which addresses `storage.googleapis.com` directly — and raw GCS sends **no**
+CORS headers at all unless the bucket carries a policy. Worse, the `PUT` sends
+`x-goog-content-length-range`, which is not a safelisted header, so the browser
+must send a preflight `OPTIONS` first. That preflight came back without an
+`Access-Control-Allow-Origin`, the browser refused to send the real request, and
+`fetch` rejected with the bare `TypeError: Failed to fetch`.
+
+That error is worth recognising on sight, because it names nothing and looks like
+a network fault. **Nothing reaches the Function**, so its logs are empty and the
+endpoint answers `curl` perfectly — the request the browser never sent cannot
+appear anywhere. If uploads fail and Cloud Logging shows no entry for
+`galleryUploadUrl`, check here before anything else.
 
 ```json
-[
-  {
-    "origin": [
-      "https://www.spsmwayland.org",
-      "https://spsmwayland.org",
-      "http://localhost:3000"
-    ],
-    "method": ["GET", "HEAD", "PUT", "POST"],
-    "responseHeader": ["Content-Type", "Content-Range", "x-goog-resumable"],
-    "maxAgeSeconds": 3600
-  }
-]
+{
+  "cors": [
+    {
+      "origin": [
+        "https://spsm-database.web.app",
+        "https://spsm-database.firebaseapp.com",
+        "http://localhost:3000"
+      ],
+      "method": ["PUT", "GET", "HEAD", "OPTIONS"],
+      "responseHeader": [
+        "Content-Type",
+        "Content-Length",
+        "x-goog-content-length-range",
+        "x-goog-resumable",
+        "ETag"
+      ],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
 ```
+
+`x-goog-content-length-range` in `responseHeader` is the load-bearing entry —
+it is what populates `Access-Control-Allow-Headers`, and the preflight names
+that header because `submitOne` sends it. Drop it and the policy looks correct
+and still fails. The live policy also lists every `PORT=` in
+`apps/website/package.json`, because a `dev:real` server talks to this bucket
+too; `gcloud storage buckets describe gs://spsm-database.firebasestorage.app
+--format='value(cors_config)'` is the current list.
 
 ```bash
 gcloud storage buckets update gs://spsm-database.firebasestorage.app --cors-file=cors.json
 ```
+
+Verify it without a browser — a preflight is just a request:
+
+```bash
+curl -s -i -X OPTIONS \
+  -H "Origin: https://spsm-database.web.app" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: content-type,x-goog-content-length-range" \
+  https://storage.googleapis.com/spsm-database.firebasestorage.app/submissions/probe/probe.jpg \
+  | grep -i "^access-control"
+```
+
+An origin that is not on the list also gets a `200`, with no
+`Access-Control-Allow-Origin` header — so check for the header, never the status.
+
+### This is the third domain allowlist, and it is the one nobody remembers
+
+The other two are Firebase Auth's authorized domains and the reCAPTCHA
+Enterprise key's own list. **A custom domain has to be added to all three.**
+There is no Hosting custom domain today — `spsm-database.web.app` is the only
+origin the site is served from — so when the parish cuts over to
+`www.spsmwayland.org`, this file is one of the three places that will not
+notice on its own. CORS is not what authorises the upload; the signed URL is,
+and it is pinned to one object, one content type and one exact length. This
+list only decides which origins a *browser* will let make the request.
 
 ---
 
@@ -220,17 +302,27 @@ of a developer — it is a page that spins in front of a visitor.
       healthy answer — the app is registered and rejected a fake token.
 - [ ] 1d debug token created and put in `.env` (needed for `npm run dev`
       against the real project; irrelevant under the emulators)
-- [x] 1c **enforce on Cloud Storage**, leave Firestore unenforced. Done
-      2026-09-02 — before 1b, see above.
-      Note the upload endpoint verifies its own App Check token in code rather
-      than relying on enforcement — it is an `onRequest`, so `enforceAppCheck`
-      does not apply to it — which means the *upload* path is attested the
-      moment 1b is done, whether or not 1c is. 1c still matters for everything
-      else that reads the bucket.
+- [x] 1c **enforcement is OFF on every API** — reversed 2026-09-03. It was
+      enforced on Cloud Storage on 2026-09-02 and that broke every `<img>` on
+      the public site; an image tag cannot present an App Check token. Both
+      upload endpoints verify their own token in code, so the wall does not
+      depend on this setting. **Do not turn it back on for Storage.**
 - [ ] 2 lifecycle rule applied and verified
 - [ ] 3 budget alert at $25
-- [ ] 4 CORS — only if a CORS error appears
-- [ ] **5 `roles/iam.serviceAccountTokenCreator`** ← blocks every upload until done
+- [x] 4 **bucket CORS** — done 2026-09-03. Not optional any more: the browser
+      now PUTs to `storage.googleapis.com`, not through the SDK. Until it was
+      set, every upload died in the preflight as `TypeError: Failed to fetch`
+      with nothing in the Function's logs.
+- [x] **5 `roles/iam.serviceAccountTokenCreator`** — done 2026-09-03, on
+      `778458603931-compute@developer.gserviceaccount.com` (the Compute Engine
+      default, *not* the appspot account this file used to name).
+
+4 and 5 fail identically from the outside — the upload stops and the site says
+something vague — and they fail in opposite places. 5 throws *inside* the
+Function, so Cloud Logging has a stack trace and the browser sees a 500. 4 stops
+the browser *before* it sends anything, so the browser sees `Failed to fetch`
+and Cloud Logging has nothing at all. **Empty logs point at 4; a 500 points at
+5.**
 
 ---
 

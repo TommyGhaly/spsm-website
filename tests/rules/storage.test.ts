@@ -506,37 +506,63 @@ describe('clergy/, products/, content/ and members/ — taking a photograph down
 /**
  * `formUploads/` — photographs attached by whoever fills in a form.
  *
- * The second anonymous write path on this site, and it inherits every property
- * that makes the first one acceptable. The read test is the load-bearing one:
- * these are photographs members of the public send the parish, and if they were
- * world-readable this would be an anonymous file host on the parish's domain
- * with the submissions queue as decoration.
+ * -------------------------------------------------------------------------
+ * No client writes here either, as of 2026-09-03. This was the last anonymous
+ * write path on the site and it closed for the same reason `submissions/` did,
+ * with one extra push: the rule was only ever survivable because App Check
+ * enforcement on the Cloud Storage service stood in front of it, and that
+ * enforcement had to come off — it was refusing every `<img>` on the public
+ * site, since an image tag cannot present an App Check token.
+ *
+ * `POST /api/forms/upload-url` hands back a v4 signed URL, which addresses the
+ * GCS API directly and is never evaluated against storage.rules.
+ *
+ * The tests that used to live here — accepts a photograph from somebody with no
+ * account, refuses an overwrite, refuses anything that is not an image — were
+ * assertions about `isImage()` and `resource == null`, and both are gone with
+ * the write rule. The endpoint makes those checks *before* the URL exists, and
+ * pins the content type and the exact byte length into the signature, so a
+ * caller cannot declare one thing and upload another.
+ *
+ * Note what did not change: the read rule, and the delete rule. Both still
+ * belong to the `forms` grant, and the read one is the load-bearing test in
+ * this file — these are photographs members of the public send the parish, and
+ * if they were world-readable this would be an anonymous file host on the
+ * parish's domain with the submissions queue as decoration.
+ * -------------------------------------------------------------------------
  */
 describe('formUploads/ — photographs attached to a submission', () => {
-  it('accepts a photograph from somebody with no account', async () => {
-    await assertSucceeds(
+  it('refuses an upload from somebody with no account', async () => {
+    await assertFails(
       uploadBytes(ref(asAnon(env).storage(), `formUploads/van-request/${RUN}-a.png`), png, meta),
     );
   });
 
-  it('does NOT let the person who uploaded it read it back', async () => {
-    const path = `formUploads/van-request/${RUN}-b.png`;
-    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
-    await assertFails(getBytes(ref(asAnon(env).storage(), path)));
-  });
-
-  it('refuses an overwrite, so one submitter cannot replace another’s photo', async () => {
-    const path = `formUploads/van-request/${RUN}-c.png`;
-    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
-    await assertFails(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
-  });
-
-  it('refuses anything that is not an image', async () => {
+  /*
+   * The one that would otherwise be missed, and the reason this is not the old
+   * test with `assertSucceeds` swapped out.
+   *
+   * Everybody attaching a photograph now has a uid — the upload path signs them
+   * in anonymously to get a key to count the day against — so a rule that asked
+   * for `signedIn()` here would be no defence whatsoever. A servant is refused,
+   * and so is somebody holding the `forms` grant itself: nobody writes these
+   * bytes from a browser, whoever they are.
+   */
+  it('refuses an upload from a signed-in account, and from the forms grant', async () => {
     await assertFails(
-      uploadBytes(ref(asAnon(env).storage(), `formUploads/van-request/${RUN}-d.exe`), png, {
-        contentType: 'application/x-msdownload',
-      }),
+      uploadBytes(ref(asServant(env).storage(), `formUploads/van-request/${RUN}-b.png`), png, meta),
     );
+    await assertFails(
+      uploadBytes(ref(asForms(env).storage(), `formUploads/van-request/${RUN}-c.png`), png, meta),
+    );
+  });
+
+  it('does not let the public read one back', async () => {
+    const path = `formUploads/van-request/${RUN}-d.png`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
+    await assertFails(getBytes(ref(asAnon(env).storage(), path)));
   });
 
   /*
@@ -546,13 +572,33 @@ describe('formUploads/ — photographs attached to a submission', () => {
    */
   it('lets the forms grant read one, which is what the review panel does', async () => {
     const path = `formUploads/van-request/${RUN}-e.png`;
-    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
     await assertSucceeds(getBytes(ref(asForms(env).storage(), path)));
   });
 
   it('refuses a signed-in member with no forms grant', async () => {
     const path = `formUploads/van-request/${RUN}-f.png`;
-    await assertSucceeds(uploadBytes(ref(asAnon(env).storage(), path), png, meta));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
     await assertFails(getBytes(ref(asServant(env).storage(), path)));
+  });
+
+  /*
+   * `create, update: if false` and `delete: if hasScreen('forms')` are two
+   * lines rather than one `write` for exactly the reason `submissions/` learned
+   * the hard way: `write` covers delete, so a blanket refusal here would take
+   * the staff panel's own tidying away with it and nothing would compile any
+   * differently.
+   */
+  it('still lets the forms grant delete one', async () => {
+    const path = `formUploads/van-request/${RUN}-g.png`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), png, meta);
+    });
+    await assertFails(deleteObject(ref(asAnon(env).storage(), path)));
+    await assertSucceeds(deleteObject(ref(asForms(env).storage(), path)));
   });
 });

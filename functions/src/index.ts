@@ -76,6 +76,19 @@ export { squareRefund } from './refunds.js';
 export { formSubmit } from './forms/submit.js';
 
 /*
+ * The one door into `formUploads/`, and the sibling of `galleryUploadUrl`.
+ *
+ * A photograph attached to a form used to be written straight to Storage by the
+ * browser, under an anonymous `allow create` rule whose only real protection
+ * was App Check enforcement on the Storage service. That enforcement had to be
+ * turned off on 2026-09-03 — it was refusing every `<img>` on the public site,
+ * because an image tag cannot present an App Check token — so the rule was left
+ * standing on nothing. This endpoint verifies attestation in its own code,
+ * which is why it is unaffected by that setting either way.
+ */
+export { formUploadUrl } from './forms/uploadUrl.js';
+
+/*
  * A servant signing themselves up for camp.
  *
  * The one other endpoint anybody may post to without an account, and it is a

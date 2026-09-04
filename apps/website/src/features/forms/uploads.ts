@@ -1,11 +1,21 @@
 'use client';
 
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { FORM_UPLOAD_PREFIX, toFormSlug } from '@spsm/shared';
+import { toFormSlug } from '@spsm/shared';
 import { firebaseApp } from '@/lib/firebase';
 import { getStorage } from 'firebase/storage';
 import { explainUploadFailure } from '@/lib/storageErrors';
 import { checkImageFile, safeName, type UploadResult } from '@/lib/uploadNaming';
+import { uploadHeaders } from '@/lib/uploadSession';
+import { UNATTESTED } from '@/features/programs/submit';
+
+/**
+ * The endpoint, through the Hosting rewrite. Same origin, so no CORS.
+ *
+ * In local development this is a Next proxy rather than a Hosting rewrite, the
+ * same arrangement `/api/gallery/upload-url` needs; see docs/local-dev.md.
+ */
+const UPLOAD_URL_ENDPOINT = '/api/forms/upload-url';
 
 /**
  * Putting pictures into Storage — two paths, with opposite permissions.
@@ -88,12 +98,25 @@ export async function uploadFormPicture(formId: string, file: File): Promise<Upl
  * A photograph attached by whoever is filling in a form.
  *
  * ---------------------------------------------------------------------------
- * Returns a path, and deliberately never a URL.
+ * This no longer writes to Storage, and cannot: `storage.rules` refuses every
+ * client create under `formUploads/`. `POST /api/forms/upload-url` is what it
+ * is refused in favour of.
  *
- * `formUploads/` is unreadable to the person who just wrote to it — that is the
- * point of the quarantine — so `getDownloadURL` would fail here, and a URL is
- * not what should be stored anyway. The submission records the path; the staff
- * panel resolves it to a URL with a staff token when somebody reviews it.
+ * The rule it replaced was `allow create: if isImage() && size < 250MB &&
+ * resource == null` — anonymous, uncounted, and correct only for as long as
+ * App Check enforcement on the Storage service stood in front of it. That
+ * enforcement came off on 2026-09-03 because it was also refusing every `<img>`
+ * on the public site: an image tag cannot send an `X-Firebase-AppCheck` header,
+ * so enforcing the service meant no photograph on the site could load at all.
+ * The endpoint verifies attestation in its own code instead, which is why it is
+ * unaffected by that setting either way — and it can additionally count the
+ * day's uploads and check that the form is open, neither of which a storage
+ * rule is able to ask.
+ *
+ * Returns a path, and deliberately never a URL. `formUploads/` is unreadable to
+ * the person who just wrote to it — that is the point of the quarantine — so a
+ * URL is not what should be stored anyway. The submission records the path; the
+ * staff panel resolves it with a staff token when somebody reviews it.
  *
  * The thumbnail the person sees before submitting is a local `blob:` URL made
  * from the file they picked, never a round trip.
@@ -109,20 +132,60 @@ export async function uploadFormPhoto(
   const slug = toFormSlug(formSlug);
   if (!slug) return { ok: false, reason: 'This form cannot accept photographs.' };
 
-  const path = `${FORM_UPLOAD_PREFIX}/${slug}/${safeName(file.name)}`;
-
   try {
-    await uploadBytes(ref(getStorage(firebaseApp()), path), file, { contentType: file.type });
+    const response = await fetch(UPLOAD_URL_ENDPOINT, {
+      method: 'POST',
+      headers: await uploadHeaders(),
+      body: JSON.stringify({
+        formSlug: slug,
+        fileName: file.name,
+        contentType: file.type,
+        byteSize: file.size,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      /*
+       * The one refusal with no self-service remedy, so it gets the one message
+       * that names a way out. Shared verbatim with the gallery path, because it
+       * is the same fault with the same cause and the same answer.
+       */
+      if (body.error === 'unattested') return { ok: false, reason: UNATTESTED };
+      return { ok: false, reason: body.error ?? 'That photograph could not be sent.' };
+    }
+
+    const { uploadUrl, path, downloadToken } = (await response.json()) as {
+      uploadUrl: string;
+      path: string;
+      downloadToken: string;
+    };
+
+    /*
+     * Straight to the bucket. All three headers are part of what was signed —
+     * the content type, the exact length, and the download token the staff
+     * panel needs to be able to see this at all. A mismatch on any of them is
+     * refused by Cloud Storage rather than quietly accepted, so none of them is
+     * decoration.
+     */
+    const upload = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type,
+        'x-goog-content-length-range': `${file.size},${file.size}`,
+        'x-goog-meta-firebaseStorageDownloadTokens': downloadToken,
+      },
+      body: file,
+    });
+
+    if (!upload.ok) {
+      console.error('[forms] photo upload failed', upload.status, await upload.text());
+      return { ok: false, reason: 'That photograph could not be sent. Please try again.' };
+    }
+
     return { ok: true, path };
   } catch (error) {
     console.error('[forms] photo upload failed', error);
-    /*
-     * This is the *anonymous* path, and it is subject to App Check enforcement
-     * exactly like the staff one — a parishioner attaching a photograph to a
-     * form is refused by the same 401 when attestation is down. "Please try
-     * again" is useless advice for a fault no amount of trying fixes, so the
-     * real reason goes through here too.
-     */
     return { ok: false, reason: (await explainUploadFailure(error)).message };
   }
 }

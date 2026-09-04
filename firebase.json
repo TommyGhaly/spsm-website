@@ -16,6 +16,11 @@
         "function": "formSubmit"
       },
       {
+        "//forms-upload": "Issues a signed URL for one photograph attached to a form, and is the ONLY way bytes reach formUploads/ now: storage.rules refuses every client create there. It replaced an anonymous `allow create: if isImage()` rule whose only real wall was App Check enforcement on the Storage service — which had to come off on 2026-09-03 because it also refused every <img> on the public site. This endpoint verifies an App Check token in its own code, so that setting does not reach it. Above the /forms/** glob below for the same first-match reason as the entries around it.",
+        "source": "/api/forms/upload-url",
+        "function": "formUploadUrl"
+      },
+      {
         "//camp": "A servant signing themselves up. Unauthenticated like /api/forms/submit, and above the /forms/** glob for the same first-match reason \u2014 the page it is posted from is /forms/summer-camp.",
         "source": "/api/camp/servant-request",
         "function": "campServantRequest"
