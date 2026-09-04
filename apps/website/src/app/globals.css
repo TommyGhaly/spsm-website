@@ -15602,13 +15602,16 @@ button.sched-month__entry:focus-visible {
  * the other. Reserving the width here moves the button left rather than moving
  * the menu somewhere it was not asked to be.
  *
- * Only from 60rem up: below that the menu is a narrow strip and the row has
- * already wrapped to two lines, so there is nothing to collide with.
+ * 3.25rem is the tab's 40px and a little air, and it is reserved at **every
+ * width the tab is fixed at** — the reservation used to start at 60rem, on the
+ * argument that below that the row had already wrapped and had nothing in that
+ * corner. It had not: at 900px the row still fits on one line, and the tab —
+ * wider since it became a control rather than a hairline — took the last 9px of
+ * "Upload your photos" with it. Undone in the phone block below, where the shelf
+ * is back in the flow and there is nothing overhead to clear.
  */
-@media (min-width: 60rem) {
-  .gallery--side-menu .gallery-head__row {
-    padding-right: 3rem;
-  }
+.gallery--side-menu .gallery-head__row {
+  padding-right: 3.25rem;
 }
 
 .gallery-head__titles {
@@ -15775,8 +15778,9 @@ button.sched-month__entry:focus-visible {
  *
  * The rule and the extra air are what stop this reading as an afterthought. It
  * is the last thing on a page whose photographs are now uncapped, so it can
- * arrive after a very long scroll — and the reader needs to be told that a new
- * part of the page has started rather than that the gallery has run out.
+ * arrive after a very long scroll — and whoever gets there needs to be told that
+ * a new part of the page has started rather than that the gallery has run out.
+ * The section is editing-only again; the scroll is the same length either way.
  */
 .gallery-section--inside {
   padding-top: var(--space-lg, 1.5rem);
@@ -21825,35 +21829,106 @@ body.is-editing:has(.inspector-col.is-dragging) {
 /*
  * The tab, reading downwards.
  *
- * Vertical so it costs about 26px of the window's width instead of 13rem of it.
+ * Vertical so it costs about 34px of the window's width instead of 13rem of it.
  * `vertical-rl` puts the text top-to-bottom on the right-hand edge, which is the
  * direction that reads naturally on that side.
+ *
+ * ## Oxblood, not paper
+ *
+ * It was paper with a hairline and faint grey small caps, which at 26px wide on
+ * the edge of a page of photographs is indistinguishable from a scrollbar. The
+ * cards at the foot of the page were what carried the navigation while it looked
+ * like that, and they are gone again — Tommy: *"I'd rather just keep the side bar
+ * … maybe make the button for showing the side bar more noticeable."* This is now
+ * the only route into a level, so it is drawn like a control: the parish's
+ * oxblood, the gold hairline the masthead uses, cream small caps, and a shadow
+ * so it sits over the page rather than in it.
+ *
+ * `background-color` rather than the shorthand throughout this block — the phone
+ * rule below takes the ground back off, and a shorthand there would also silently
+ * reset geometry it says nothing about.
+ *
+ * The width is deliberate as well as cosmetic: the tab is the whole hover
+ * trigger, so a wider one is an easier thing to reach on the way from the middle
+ * of the page.
  */
 .subshelf--reading .subshelf__legend {
   writing-mode: vertical-rl;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: var(--space-sm, 0.6rem) 0.35rem;
-  background: var(--color-paper-raised, #fdf7f4);
-  border: 1px solid var(--color-rule, #e0cac3);
+  gap: 0.45rem;
+  padding: var(--space-md, 0.9rem) 0.55rem;
+  background-color: var(--color-accent, #992a21);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, var(--color-accent, #992a21));
   border-right: 0;
   border-radius: var(--radius-sm, 4px) 0 0 var(--radius-sm, 4px);
-  cursor: default;
-  transition: color 150ms ease, border-color 150ms ease;
+  box-shadow: -3px 0 18px color-mix(in srgb, var(--color-deep, #3a1310) 26%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: var(--type-micro, 0.75rem);
+  letter-spacing: 0.11em;
+  /* The hover is the action, so the cursor may as well say so. */
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 200ms ease,
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/*
+ * The arrow, pointing at the page the albums come out over.
+ *
+ * Not rotated by the writing mode — an inline SVG keeps the direction it was
+ * drawn in whatever the text around it is doing, which is why `prev` is the right
+ * glyph here and a `chevron` turned by CSS would have to be re-tuned every time
+ * the tab's size changed.
+ */
+.subshelf__pull {
+  flex: none;
+  opacity: 0.85;
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease;
+}
+
+/*
+ * Reached. The tab does not change colour — it is already at full strength — so
+ * what answers is movement: it leans a little out of the edge, the gold comes up
+ * to full, and the arrow leads.
+ */
 .subshelf--reading:hover .subshelf__legend,
 .subshelf--reading:focus-within .subshelf__legend {
-  color: var(--color-ink, #1c1614);
-  border-color: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-rule, #e0cac3));
+  border-color: var(--color-gold, #b08d43);
+  box-shadow: -4px 0 24px color-mix(in srgb, var(--color-deep, #3a1310) 34%, transparent);
+  transform: translateX(-2px);
 }
 
+.subshelf--reading:hover .subshelf__pull,
+.subshelf--reading:focus-within .subshelf__pull {
+  opacity: 1;
+  transform: translateX(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subshelf--reading .subshelf__legend,
+  .subshelf__pull {
+    transition: none;
+  }
+
+  .subshelf--reading:hover .subshelf__legend,
+  .subshelf--reading:focus-within .subshelf__legend,
+  .subshelf--reading:hover .subshelf__pull,
+  .subshelf--reading:focus-within .subshelf__pull {
+    transform: none;
+  }
+}
+
+/* Cream on oxblood, since the ground under it changed. The shared rule's sunken
+   paper ground would be a pale blob on a dark tab. */
 .subshelf--reading .subshelf__count {
   writing-mode: horizontal-tb;
-  min-width: 1.1rem;
-  height: 1.1rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
   font-size: 0.625rem;
+  background-color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 24%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
 }
 
 /*
@@ -22006,18 +22081,57 @@ body.is-editing:has(.inspector-col.is-dragging) {
   }
 
   /* Back to a plain heading: there is no right edge to hide against in the
-     flow, and a vertical tab in a document is just sideways text. */
+     flow, and a vertical tab in a document is just sideways text.
+
+     Every part of the oxblood tab comes off here, and the colour is the one that
+     matters — cream small caps are what the tab wanted against oxblood and are
+     invisible the moment the ground goes. The albums are already on screen at
+     this width, so nothing is being announced: this is a label again. */
   .subshelf--reading .subshelf__legend {
     writing-mode: horizontal-tb;
     padding: 0;
-    background: none;
+    background-color: transparent;
     border: 0;
+    box-shadow: none;
+    color: var(--color-ink-faint, #6f5f5a);
+    letter-spacing: var(--tracking-wide, 0.07em);
+    cursor: default;
+    transform: none;
+  }
+
+  /*
+   * And nothing answers a hover, because there is nothing to reach: the reveal
+   * rules are more specific than the reset above, so without this a mouse — or
+   * a tap, on the browsers that leave `:hover` stuck after one — would nudge a
+   * heading sideways and put a shadow under it.
+   */
+  .subshelf--reading:hover .subshelf__legend,
+  .subshelf--reading:focus-within .subshelf__legend {
+    border-color: transparent;
+    box-shadow: none;
+    transform: none;
+  }
+
+  /* Nothing to open, so nothing to point at. */
+  .subshelf__pull {
+    display: none;
+  }
+
+  .subshelf--reading .subshelf__count {
+    background-color: var(--color-paper-sunken, #eeddd7);
+    color: var(--color-ink-soft, #4b413e);
   }
 
   /* No tab to walk from, so nothing to bridge and no corridor to lie over the
      page — both would be positioned against a shelf that is no longer fixed. */
   .subshelf--reading::before {
     content: none;
+  }
+
+  /* And nothing overhead for the head's actions to clear. See the reservation
+     on `.gallery--side-menu .gallery-head__row`. */
+  .gallery--side-menu .gallery-head__row {
+    padding-right: 0;
   }
 
   /* Always open, and back in the flow. */

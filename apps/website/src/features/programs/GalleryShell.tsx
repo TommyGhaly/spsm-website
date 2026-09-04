@@ -2728,42 +2728,41 @@ function LevelView({
         {/* ---- what is inside ---------------------------------------------- */}
 
         {/*
-          Everybody sees these now. **This is the second reversal of the same
-          decision, so the history is worth having in one place.**
+          Editing only. **This decision has now been reversed three times, so the
+          whole of it lives here rather than in three commit messages.**
 
-          They were the visitor's route in. Then the side shelf arrived — Tommy:
+          The cards were the visitor's route in. The side shelf arrived — Tommy:
           *"the subgroups for the regular user is still on the bottom, what
-          happened to leaving them in a menu on the side"* — and the cards became
+          happened to leaving them in a menu on the side"* — and they became
           editing furniture, the thing a level is *selected* from to put it in the
-          properties panel. That left a public gallery page with no visible sign
-          that anything was inside it at all: the shelf is a handle in the corner,
-          and the pictures above it are drawn from levels the page never names.
+          properties panel. They came back for everybody on Sep 4 2026 on the
+          argument that a closed shelf is a handle in a corner and left a public
+          page with no visible sign of what was inside it, and went again the same
+          day: *"I don't like the subgroups on the bottom, that's not how I want
+          it. I'd rather just keep the side bar."*
 
-          Restored Sep 4 2026 at Tommy's direction — *"I want the children pages
-          to be visible by default"* — and the shelf stays as well, deliberately.
-          They are not duplicates: the shelf can reach a level with **no
-          photographs in it**, which draws no meaningful card, and it does not
-          need the page scrolled.
+          So the argument that brought them back was answered on the **shelf**
+          instead of with a second copy of the same list — the tab is loud now
+          rather than a faint line of small caps in the corner. See
+          `.subshelf--reading .subshelf__legend`. That is the standing resolution:
+          if the way into a level is hard to find, the fix is the tab, not a grid
+          at the foot of the page.
 
-          Still hidden for a visitor when there is nothing inside, because a
-          heading with nothing under it is not content and every trail in the
-          parish ends in a leaf — an empty "Inside The hike" under each one is a
-          lot of nothing. Shown to an administrator regardless, or adding the
-          first level inside something appears to do nothing at all.
+          Still shown to an administrator with nothing inside, or adding the first
+          level inside something appears to do nothing at all.
         */}
-        {(edit.on || children.length > 0) && (
+        {edit.on && (
           <section className="gallery-section gallery-section--inside" aria-labelledby="level-inside">
             {/*
               A full-weight heading with a rule over it, not the small one the
               picture blocks use.
 
-              It has to announce itself, because of where it is. Tommy chose to
-              leave these at the foot of the page rather than above the
-              photographs — and the photographs above them are uncapped now, so
-              on a ministry with years behind it this heading arrives after a very
-              long scroll. A small grey line at the end of that reads as the page
-              trailing off; a rule and a real heading read as a second part of it
-              beginning.
+              It has to announce itself, because of where it is: the blocks above
+              it are uncapped, so on a ministry with years behind it this arrives
+              after a very long scroll. A small grey line at the end of that reads
+              as the page trailing off; a rule and a real heading read as a second
+              part of it beginning. Kept when the section became editing-only,
+              because the scroll is the same length for whoever is editing.
             */}
             <h2 id="level-inside" className="gallery-title">
               {insideTitle}
@@ -3182,6 +3181,11 @@ function LevelCard({
    * draws from, so a card and a shelf tile can never disagree about the same
    * level. Never used for a clip cover: `summariseChildren` will not make a video
    * the cover, so `clip` and this are exclusive by construction.
+   *
+   * Only an administrator sees this now — the cards are editing-only again, see
+   * the "what is inside" section. Kept anyway: a level's covers are what tells
+   * twelve identically named weeks apart, which is as true of somebody filing
+   * photographs into them as of somebody looking at them.
    */
   const shots = clip ? [] : shelfCovers(summary?.covers);
   const shot = useCycle(shots.length);

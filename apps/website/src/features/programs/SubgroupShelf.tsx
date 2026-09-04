@@ -363,23 +363,39 @@ export function SubgroupShelf({
         A visitor gets no toggle at all.
 
         Tommy: *"the subgroups is getting in the way very much I want it to be an
-        untoggled menu more subtle."* A handle is a control, and a control in the
-        corner of a page of photographs is one more thing to look at than a quiet
-        list of where to go next. The count goes with it — it was there to make a
-        *closed* shelf informative, and nothing is closed any more.
+        untoggled menu more subtle."* A handle is a control with two states, and
+        the state a visitor would leave it in is whichever one they last pressed
+        — so the menu is `:hover` and nothing else, and there is nothing to press.
 
-        The label stays, as a line of small caps rather than a button. Without it
-        two tiles in a corner are two pictures with no explanation.
+        Subtle is about the *page*, though, not about the tab. It is loud; what it
+        does not do is sit open over the photographs. The two are not in conflict,
+        and reading them as one is what made this a faint grey line for a day.
       */}
       {readOnly || inline ? (
         /*
           The tab. What is visible when the cursor is anywhere else.
-          
+
           It carries the count as well as the word, because it is the only thing
           on screen saying the albums exist — "Albums 3" is an invitation and
           "Albums" alone is a heading over nothing.
+
+          **And it is the only thing, again.** The cards at the foot of the page
+          were restored and removed inside a day — Tommy: *"I'd rather just keep
+          the side bar … maybe make the button for showing the side bar more
+          noticeable."* So the tab is loud now: an oxblood ground with the
+          parish's gold hairline, not a line of faint small caps. See
+          `.subshelf--reading .subshelf__legend`, and the history in
+          `GalleryShell`'s "what is inside" section.
+
+          The arrow is why it is loud rather than merely coloured. A coloured
+          strip at the edge of the window is a decoration; a coloured strip with
+          a glyph pointing at the page it opens onto says which way the thing
+          comes out. Only for a visitor — the inline shelf in the editing column
+          is a heading over a list that is already open, and an arrow there would
+          point at nothing.
         */
         <p className="subshelf__legend">
+          {readOnly && <Icon name="prev" className="subshelf__pull" size={13} />}
           {legend}
           <span className="subshelf__count">{items.length}</span>
         </p>
