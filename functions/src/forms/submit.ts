@@ -21,6 +21,7 @@ import {
 } from '../square.js';
 import { TAKSIS_SERVICE_ACCOUNT, pushVehicleRegistration } from './taksis.js';
 import { buildFormEmails } from './email.js';
+import { loadForm } from './loadForm.js';
 import { BUDGETS, CAPS, throttled } from '../rateLimit.js';
 
 /**
@@ -310,33 +311,6 @@ export const formSubmit = onRequest(
     }
   },
 );
-
-/**
- * A form by slug: the exact document first, then a query.
- *
- * The id *is* the slug for everything the builder creates, so the `get` almost
- * always answers. The query catches the forms whose slug was edited after
- * creation, which keep their original id.
- */
-async function loadForm(
-  db: FirebaseFirestore.Firestore,
-  slug: string,
-): Promise<{ id: string; form: FormDefinition } | null> {
-  const direct = await db.collection(COLLECTIONS.forms).doc(slug).get();
-  if (direct.exists) {
-    const form = parseFormDefinition(direct.id, direct.data());
-    if (form.slug === slug) return { id: direct.id, form };
-  }
-
-  const matches = await db
-    .collection(COLLECTIONS.forms)
-    .where('slug', '==', slug)
-    .limit(1)
-    .get();
-
-  const first = matches.docs[0];
-  return first ? { id: first.id, form: parseFormDefinition(first.id, first.data()) } : null;
-}
 
 type Charged =
   | { ok: true; paymentId: string }

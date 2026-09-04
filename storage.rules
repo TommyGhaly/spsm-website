@@ -272,23 +272,51 @@ service firebase.storage {
     // Photographs attached to a form submission, by whoever is filling it in.
     //
     // ---------------------------------------------------------------------
-    // The second anonymous write path on this site, and it is modelled on the
-    // first — `submissions/` above — deliberately rather than by coincidence.
+    // There is no anonymous write path on this site any more. This was the last
+    // one, and it closed on 2026-09-03 for the same reason `submissions/` did.
     //
-    //   - **create only, never overwrite.** `resource == null` is what makes
-    //     that true. Without it, anyone who learned a path could replace the
-    //     photograph a parishioner attached with one of their own, and the
-    //     form's record would still point at the same file.
-    //   - **no anonymous read, and no list.** A person can put a file here and
-    //     cannot get it back, or discover anybody else's. These are photographs
-    //     the public sends the parish; a world-readable quarantine would make
-    //     every one of them findable by anyone who guessed a path.
-    //   - **images only, and bounded.** `isImage()` no longer carries a size —
-    //     see the note on it — so the bound is written here instead, and here
-    //     is the one place it is doing real work: this is the only path on the
-    //     site where an *unauthenticated* caller can write to a billed bucket.
-    //     250MB matches what `submissions/` already allows a stranger, so no
-    //     anonymous door on this site is tighter or looser than the other.
+    // It used to read:
+    //
+    //     allow create: if isImage()
+    //       && request.resource.size < 250 * 1024 * 1024
+    //       && resource == null;
+    //
+    // which is the correct shape for the feature — somebody attaching a
+    // photograph to a form has no account and must never be asked for one — and
+    // it was survivable only because App Check enforcement on the Cloud Storage
+    // service stood in front of it. That enforcement had to be turned off,
+    // because it was also refusing every `<img>` on the public site: an image
+    // tag cannot present an `X-Firebase-AppCheck` header, so enforcing the
+    // service meant no gallery photograph or clergy portrait could load for
+    // anybody. The rule was left standing on nothing.
+    //
+    // `formUploadUrl` is what it is closed in favour of. It verifies an App
+    // Check token in its own code — it is an `onRequest`, so the service-level
+    // setting never applied to it and turning that off did not turn this off —
+    // and then hands back a v4 signed URL, which addresses the GCS API directly
+    // and is never evaluated against this file. That is what makes shutting the
+    // door here possible without shutting the feature.
+    //
+    // What moved where, so a future reader does not restore a rule believing a
+    // check was lost:
+    //
+    //   - **images only, and bounded.** Now the endpoint's, checked against the
+    //     declared content type and byte length — *and pinned into the signed
+    //     URL*, so a caller cannot declare one thing and upload another. The
+    //     rule could only ever check the request in front of it.
+    //   - **create only, never overwrite.** `resource == null` cannot survive
+    //     the move, because a signed URL is not evaluated here. The endpoint
+    //     mints the object name from a uuid instead, so a caller cannot propose
+    //     a path and therefore cannot propose to overwrite one.
+    //   - **counted, and only for an open form.** Neither was ever expressible
+    //     here: a rule cannot count, and it cannot read Firestore. These are
+    //     new, and they are the reason this is stronger than what it replaced
+    //     rather than merely differently shaped.
+    //
+    // Read stays exactly as it was. `delete` still belongs to staff, and is a
+    // separate line from `update` for the reason `submissions/` gives at
+    // length — `write` covers delete, and a blanket refusal takes the staff
+    // panel's own tidying away with it.
     //
     // Nothing sweeps abandoned files. Someone can attach a photograph and never
     // press submit, and that upload stays. Worth a lifecycle rule on the bucket
@@ -302,10 +330,8 @@ service firebase.storage {
     // be defeated by a path.
     match /formUploads/{formSlug}/{fileName} {
       allow read: if hasScreen('forms');
-      allow create: if isImage()
-        && request.resource.size < 250 * 1024 * 1024
-        && resource == null;
-      allow update, delete: if hasScreen('forms');
+      allow create, update: if false;
+      allow delete: if hasScreen('forms');
     }
 
     // Web-ready renditions, written only by the transcode Function — which uses

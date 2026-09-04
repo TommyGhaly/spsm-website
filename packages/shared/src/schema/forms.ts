@@ -97,6 +97,36 @@ export type FormFieldType =
 export const FORM_UPLOAD_PREFIX = 'formUploads';
 
 /**
+ * The largest photograph a stranger may attach to a form.
+ *
+ * Unchanged from the number `storage.rules` used to carry, and deliberately so:
+ * closing the anonymous write path was about *who may write and how often*, not
+ * about making the parish refuse a picture it accepted last week. A phone
+ * photograph is nowhere near this; the ceiling exists so that a single request
+ * cannot cost an unbounded amount, and the daily counts below are what actually
+ * bound the total.
+ */
+export const FORM_PHOTO_MAX_BYTES = 250 * 1024 * 1024;
+
+/**
+ * Photographs per day, per anonymous session, on the form path.
+ *
+ * Far tighter than the gallery's 300. A gallery submitter is emptying a camp's
+ * camera roll and sixty in one go is the normal case; somebody filling in a
+ * vehicle registration attaches one or two pictures and is done. A number that
+ * fits the gallery would leave this path effectively unbounded.
+ */
+export const FORM_UPLOAD_DAILY_PER_UID = 25;
+
+/**
+ * Per address, and looser for the reason `submissionLimits.ts` gives at length:
+ * the parish shares a building and therefore an address, and the church wifi
+ * puts the whole congregation behind it. This has to survive a hall of people
+ * filling in the same form on the same router after a liturgy.
+ */
+export const FORM_UPLOAD_DAILY_PER_IP = 200;
+
+/**
  * Whether a stored answer is a photograph path we are willing to trust.
  *
  * Checked in the browser to draw a thumbnail and again in `formSubmit` before

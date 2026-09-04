@@ -175,6 +175,12 @@ if (process.env.NODE_ENV === 'development') {
         source: '/api/gallery/upload-url',
         destination: `${origin}/${project}/${region}/galleryUploadUrl`,
       },
+      /* The same thing for a photograph attached to a form, and the same
+       * debug-token caveat applies — it verifies attestation in code. */
+      {
+        source: '/api/forms/upload-url',
+        destination: `${origin}/${project}/${region}/formUploadUrl`,
+      },
       {
         source: '/api/square/checkout',
         destination: `${origin}/${project}/${region}/squareCheckout`,

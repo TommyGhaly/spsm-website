@@ -98,6 +98,14 @@ export const BUDGETS = {
    * stops a single instance being asked faster than a person could ask.
    */
   galleryUpload: 60,
+  /**
+   * The same thing for a photograph attached to a form, and a twentieth of the
+   * allowance. Nothing about a form is a batch: the field takes one picture at
+   * a time and a person filling one in sends two or three, so a minute's worth
+   * of legitimate use is nowhere near this. The gallery's sixty exists only
+   * because emptying a camp's camera roll must not trip halfway through.
+   */
+  formUpload: 12,
 
   // ── The address gate on authenticated endpoints ───────────────────────────
   /**
@@ -175,6 +183,8 @@ export const CAPS = {
    * busy afternoon rather than a refusal.
    */
   galleryUpload: 10,
+  /** The form path's equivalent, and quieter — nobody sends a batch to a form. */
+  formUpload: 5,
   /** Must not shed during a rush; a refused checkout is a lost sale. */
   squareCheckout: 20,
   squareWebhook: 10,
