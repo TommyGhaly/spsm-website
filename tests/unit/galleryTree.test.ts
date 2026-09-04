@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  GALLERY_SUMMARY_MAX,
   pageMode,
   pagePictures,
   subtreeMedia,
@@ -656,21 +655,53 @@ describe('pagePictures', () => {
   });
 
   /**
-   * "All of them" is the mode the old per-block `source` existed for, moved onto
-   * the page where it belongs — every block draws the same set, so it has to be
-   * one decision.
+   * **Neither mode has a ceiling any more.**
    *
-   * The property that matters is that it is **uncapped** where the summary is not.
-   * That is the whole reason the mode exists: a summary cannot express "everything
-   * from every day of this camp" at any setting.
+   * `GALLERY_SUMMARY_MAX` was 24 and this test used to assert that the automatic
+   * summary stopped there while "all of them" did not. It came off on 4 Sep 2026
+   * at Tommy's direction — *"there should be no cap altogether"* — so what is
+   * asserted here is the reverse, and the distinction between the two modes is
+   * now their **order** rather than how much they show.
+   *
+   * The spread is the part worth protecting. Removing a cap is one line and the
+   * plausible way to get it wrong is to flatten the round-robin into "everything
+   * from the first child, then everything from the second" — which is exactly the
+   * failure the spread exists to prevent, and which no length assertion catches.
    */
-  it('is uncapped in "all of them" where the summary is capped', () => {
-    const many = Array.from({ length: GALLERY_SUMMARY_MAX * 3 }, (_, at) =>
+  it('draws the whole subtree, still spread across the children', () => {
+    const many = Array.from({ length: 72 }, (_, at) =>
       shot(`m${at}`, at % 2 === 0 ? 'day-1' : 'the-hike'),
     );
 
-    expect(pagePictures(tree, 'week-1', many, {})).toHaveLength(GALLERY_SUMMARY_MAX);
+    const summary = pagePictures(tree, 'week-1', many, {});
+    expect(summary).toHaveLength(many.length);
     expect(pagePictures(tree, 'week-1', many, { showAll: true })).toHaveLength(many.length);
+
+    /*
+     * Alternating, because the two children have equal numbers and the rotation
+     * takes one from each per round. In filing order these would be m0, m2, m4 —
+     * every picture of Day 1 before any of the hike.
+     */
+    const where = summary.map((one) => one.programEventId);
+    expect(where.slice(0, 6)).toEqual([
+      'day-1',
+      'the-hike',
+      'day-1',
+      'the-hike',
+      'day-1',
+      'the-hike',
+    ]);
+  });
+
+  /**
+   * A hand-picked list of more than two dozen is the other half of the same
+   * instruction: it used to be truncated to the summary's ceiling.
+   */
+  it('shows every picture of a long curated list', () => {
+    const many = Array.from({ length: 40 }, (_, at) => shot(`m${at}`, 'day-1'));
+    const curated = many.map((one) => one.id);
+
+    expect(pagePictures(tree, 'week-1', many, { curated })).toHaveLength(40);
   });
 
   /**
