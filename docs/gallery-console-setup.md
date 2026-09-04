@@ -243,15 +243,28 @@ v4 signing requires the runtime service account to be able to sign **as
 itself**. Without the grant that call throws at runtime, every upload returns a
 500, and nothing in the console says why.
 
+**Granted on 2026-09-03**, and on the service account rather than the project:
+
 ```bash
-gcloud projects add-iam-policy-binding spsm-database \
-  --member="serviceAccount:spsm-database@appspot.gserviceaccount.com" \
-  --role="roles/iam.serviceAccountTokenCreator"
+gcloud iam service-accounts add-iam-policy-binding \
+  778458603931-compute@developer.gserviceaccount.com \
+  --member="serviceAccount:778458603931-compute@developer.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --project=spsm-database
 ```
 
-Check the member name against the account the Functions actually run as before
-running it — Firebase projects created after 2023 often use the Compute Engine
-default (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`) instead.
+The member is the Compute Engine default account, **not**
+`spsm-database@appspot.gserviceaccount.com`, which is what this section used to
+name and what every Firebase document suggests. Read the account off a function
+that is already running rather than assuming either — `gcloud functions
+describe bulletin --gen2 --region=us-central1 --format='value(serviceConfig.serviceAccountEmail)'`
+— because a grant on the wrong account fails in exactly the same silent way as
+no grant at all.
+
+Scoped to the one account signing as itself, which is all v4 signing needs. The
+project-level form works too and is what most instructions show; it also lets
+that account impersonate every other service account in the project, which is a
+larger thing than this feature is asking for.
 
 **This creates no key file.** `docs/integrations.md` is right that a service
 account key is a bearer credential and that this project should not be minting
