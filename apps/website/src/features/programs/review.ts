@@ -61,11 +61,13 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref } from 'firebase/storage';
 import {
@@ -104,7 +106,12 @@ export async function myProgramAdmin(uid: string): Promise<ProgramAdmin> {
 }
 
 /**
- * Everything awaiting a decision in one ministry, oldest first.
+ * The queue's query. One definition, because the constraints are not a detail.
+ *
+ * `programId ==` and `status ==` are what make this readable by a program lead
+ * rather than only by a superadmin — see the note at the top of this file — and
+ * an ordering or a filter that drifted between a read and a listen would be a
+ * queue that works until somebody watches it.
  *
  * Oldest first because a queue worked newest-first strands the earliest
  * submissions forever — and the parishioner who sent photographs the night the
@@ -114,18 +121,62 @@ export async function myProgramAdmin(uid: string): Promise<ProgramAdmin> {
  * firestore.indexes.json. A missing index here is not a failed build somebody
  * sees; it is a queue that spins forever on a live page.
  */
-export async function listPendingForProgram(programId: string): Promise<ReviewItem[]> {
-  const snapshot = await getDocs(
-    query(
-      collection(db(), COLLECTIONS.galleryMedia),
-      where('programId', '==', programId),
-      where('status', '==', 'pending'),
-      orderBy('submittedAt'),
-      limit(QUEUE_LIMIT),
-    ),
+function pendingQuery(programId: string) {
+  return query(
+    collection(db(), COLLECTIONS.galleryMedia),
+    where('programId', '==', programId),
+    where('status', '==', 'pending'),
+    orderBy('submittedAt'),
+    limit(QUEUE_LIMIT),
+  );
+}
+
+/**
+ * The same queue, watched.
+ *
+ * A listener rather than a read because two people work this screen at once
+ * during a camp: somebody is uploading an evening's photographs on a phone while
+ * somebody else clears the queue on a laptop, and a queue that only tells the
+ * truth when reloaded makes the second person work from a list that is wrong in
+ * both directions — rows that are already decided, and rows they cannot see.
+ *
+ * Returns its own unsubscribe. **Call it.** A Firestore listener left running
+ * bills for what it delivers, and this one is mounted on a public page.
+ *
+ * ## The titles arrive after the rows do
+ *
+ * `withEventTitles` is a second round trip, so each snapshot resolves
+ * asynchronously and two snapshots in flight can finish out of order — which
+ * would show a queue that flickers backwards. The generation counter is what
+ * stops that: a resolution older than the newest snapshot is dropped, not
+ * merged. A `Map` keyed by id would not do instead, because the thing being
+ * raced is the whole list, including which rows are in it.
+ */
+export function watchPendingForProgram(
+  programId: string,
+  onItems: (items: ReviewItem[]) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  let generation = 0;
+  let live = true;
+
+  const stop = onSnapshot(
+    pendingQuery(programId),
+    (snapshot) => {
+      const mine = ++generation;
+      void withEventTitles(snapshot.docs.map(docOf<GalleryMedia>))
+        .then((items) => {
+          if (live && mine === generation) onItems(items);
+        })
+        .catch(onError);
+    },
+    onError,
   );
 
-  return withEventTitles(snapshot.docs.map(docOf<GalleryMedia>));
+  return () => {
+    live = false;
+    stop();
+  };
 }
 
 /**
@@ -233,6 +284,96 @@ export async function approveInto(
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   });
+}
+
+/**
+ * Approve a whole selection at once, each into wherever its own row says.
+ *
+ * One `writeBatch` rather than a loop of `approveInto`, which matters at the
+ * size this is for: clearing forty photographs one at a time is forty round
+ * trips, and on parish wifi that is most of a minute with the screen half
+ * decided.
+ *
+ * ## All or nothing, deliberately
+ *
+ * A batch that any rule refuses fails whole, and nothing is written. That is the
+ * behaviour worth having here: the realistic refusal is "this person does not
+ * administer this ministry", which is true of every row at once, and a partial
+ * success would leave somebody looking at a queue where some of what they ticked
+ * went and some did not, with nothing on screen saying which.
+ *
+ * Chunked at 400 because Firestore's limit is 500 writes per batch and
+ * `QUEUE_LIMIT` is 100 — so today this is always one batch, and the chunking is
+ * there so that raising the queue's cap does not quietly break approving.
+ *
+ * @param filings The id of each item and the level to file it under. The caller
+ *   holds those destinations in memory until this moment; see the note on
+ *   `approveInto` for why the filing and the decision go out together.
+ */
+export async function approveMany(
+  filings: readonly { mediaId: string; programEventId: string }[],
+  uid: string,
+): Promise<void> {
+  for (let i = 0; i < filings.length; i += APPROVE_BATCH_SIZE) {
+    const batch = writeBatch(db());
+    for (const { mediaId, programEventId } of filings.slice(i, i + APPROVE_BATCH_SIZE)) {
+      batch.update(doc(db(), COLLECTIONS.galleryMedia, mediaId), {
+        programEventId,
+        status: 'approved',
+        placement: { onPage: true, slideshow: true, homepage: false },
+        reviewedAt: serverTimestamp(),
+        reviewedBy: uid,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+}
+
+/** Firestore's ceiling is 500 writes to a batch. Left short of it on purpose. */
+const APPROVE_BATCH_SIZE = 400;
+
+/**
+ * How many refusals run at once.
+ *
+ * Refusing cannot be batched the way approving is, because each one deletes
+ * files from Cloud Storage before its document — see `deleteMediaForever` — and
+ * a `writeBatch` cannot carry a bucket call. So they run concurrently instead,
+ * and this is the width.
+ *
+ * Four rather than all of them: each refusal is one or three Storage deletes
+ * plus a document delete, and forty of those started at once is a burst of a
+ * hundred and sixty requests from one browser, which is the shape of traffic
+ * that gets throttled. Four keeps a batch of forty under about ten seconds
+ * without ever looking like an attack.
+ */
+const REFUSE_CONCURRENCY = 4;
+
+/**
+ * Refuse a whole selection, permanently.
+ *
+ * Every one of these is the same irreversible act as refusing a single row —
+ * files first under a budget, then the document, nothing kept — and the caller
+ * is responsible for having asked first.
+ *
+ * Unlike `approveMany` this is **not** all-or-nothing, and cannot be: the
+ * deletes are to two different services and there is no transaction across
+ * them. A failure part-way leaves the rest of the selection deleted and the
+ * failures still in the queue, which is the honest outcome and also the useful
+ * one — the queue is what shows which they were.
+ */
+export async function refuseMany(items: readonly DocOf<GalleryMedia>[]): Promise<void> {
+  const remaining = [...items];
+  const workers = Array.from(
+    { length: Math.min(REFUSE_CONCURRENCY, remaining.length) },
+    async () => {
+      for (let next = remaining.shift(); next; next = remaining.shift()) {
+        await deleteMediaForever(next);
+      }
+    },
+  );
+  await Promise.all(workers);
 }
 
 /**

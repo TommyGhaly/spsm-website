@@ -46,7 +46,7 @@ import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { CAPS } from './rateLimit.js';
 import { getStorage } from 'firebase-admin/storage';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, type DocumentReference } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import {
@@ -224,7 +224,10 @@ export const onGalleryMediaCreated = onObjectFinalized(
     await reference.update({ sourceUploaded: true, updatedAt: FieldValue.serverTimestamp() });
 
     // A clip is published as it arrived. See the note above.
-    if (media.kind !== 'photo') return;
+    if (media.kind !== 'photo') {
+      await publishWithoutReview(reference, media);
+      return;
+    }
 
     try {
       const [original] = await bucket.file(media.sourcePath).download();
@@ -293,8 +296,65 @@ export const onGalleryMediaCreated = onObjectFinalized(
         error,
       );
     }
+
+    /*
+     * After the transcode either way, and that placement is the point.
+     *
+     * On success the preview exists, so `onGalleryMediaReviewed` copies *that*
+     * into the public bucket rather than the original — which for an
+     * administrator is the untouched file off their camera, since `prepare`
+     * deliberately skips condensing for them.
+     *
+     * On failure it still runs, and publishes the original. That is the same
+     * fallback the manual queue offers for a photograph the transcoder could
+     * not read, taken here without asking because the person who uploaded it is
+     * the person who would have been asked.
+     */
+    await publishWithoutReview(reference, media);
   },
 );
+
+/**
+ * Approve an administrator's own upload, without anybody pressing anything.
+ *
+ * A no-op for everything else — `autoApproveBy` is null on every submission
+ * that came from a stranger, which is nearly all of them, so this costs one
+ * field read on the document already in hand.
+ *
+ * ## Why this is a second write rather than part of the first
+ *
+ * It has to be an *update*, because `onGalleryMediaReviewed` is the thing that
+ * copies bytes into the public bucket and it is an `onDocumentUpdated` that
+ * returns early unless `status` actually changed. Writing `approved` at create
+ * time in `galleryUploadUrl` would produce a document that is approved, has no
+ * rendition, and never will have one.
+ *
+ * Note what this does *not* do: it does not copy anything itself, and it must
+ * not. The asymmetry that makes the whole model safe is that `galleries/` is
+ * `allow write: if false` for every client and one Function moves bytes there.
+ * Adding a second would mean two places to get it wrong.
+ *
+ * The placement matches `approveInto` in the browser exactly — on the page, in
+ * the slideshow, not on the homepage. A photograph waved through must land in
+ * the same state as one approved by hand, or the shortcut becomes a different
+ * feature with its own defaults to remember.
+ */
+async function publishWithoutReview(
+  reference: DocumentReference,
+  media: GalleryMedia,
+): Promise<void> {
+  const uid = media.autoApproveBy;
+  if (!uid) return;
+
+  await reference.update({
+    status: 'approved',
+    placement: { onPage: true, slideshow: true, homepage: false },
+    reviewedAt: FieldValue.serverTimestamp(),
+    reviewedBy: uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: uid,
+  });
+}
 
 /**
  * Act on an administrator's decision: publish it, or take it down.

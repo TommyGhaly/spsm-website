@@ -508,18 +508,32 @@ function showcaseFirst<M extends SummaryMedia>(items: readonly M[]): M[] {
 }
 
 /**
- * How many pictures an automatic summary of a level may run to.
+ * There is no ceiling on what a page shows. This is a deliberate reversal.
  *
- * A page summary rather than a gallery: past two dozen it stops summarising and
- * starts being the archive, which is what the levels beneath it are for. A
- * *curated* set is held to the same ceiling — see `MAX_FEATURED` in the website's
- * adminData — because it is the same page.
+ * ---------------------------------------------------------------------------
+ * `GALLERY_SUMMARY_MAX = 24` used to live here, and the argument for it was
+ * that a branch page is a *summary* rather than an archive — past two dozen it
+ * stops summarising, and the levels beneath it are what the archive is for. A
+ * curated set was held to the same number, through `MAX_FEATURED`.
  *
- * Does not apply to a leaf, which shows everything filed on it. That is the
- * gallery, and capping it would hide the parish's photographs on the one page
- * whose whole job is showing them.
+ * Removed Sep 4 2026 at Tommy's direction: *"there should be no cap
+ * altogether"*. A branch now draws everything under it, still spread across its
+ * children by `nodeSummary` so that every child is represented before any child
+ * repeats, and a hand-picked list of forty shows forty.
+ *
+ * **The cost is real and was stated before the choice was made.** A ministry
+ * page with years of camps behind it draws every photograph it read, which is
+ * slower on a phone and pushes the child cards a long way down the page. The
+ * thing that keeps that bounded is no longer here: it is the *read*. A level
+ * whose subtree is thirty nodes or fewer is queried exactly and uncapped, and a
+ * ministry page falls back to `PROGRAM_PAGE_WINDOW` — 300 — in the website's
+ * data.ts. That number is now the only ceiling in the feature, so if the
+ * ministry page ever needs to be genuinely complete, it is the one to raise.
+ *
+ * Kept as a note rather than deleted silently because "surely this should be
+ * capped" is a thought somebody will have again while reading `nodeSummary`.
+ * ---------------------------------------------------------------------------
  */
-export const GALLERY_SUMMARY_MAX = 24;
 
 /**
  * The photographs one level of a program shows, in the order it shows them.
@@ -578,7 +592,9 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
     max?: number | undefined;
   } = {},
 ): M[] {
-  const max = options.max ?? GALLERY_SUMMARY_MAX;
+  // No ceiling unless a caller asks for one. See the note above `nodeSummary`
+  // on why the number that used to be here is gone.
+  const max = options.max ?? Number.POSITIVE_INFINITY;
 
   // `Array.isArray` rather than `?? []`: the field is new, so a document written
   // before it exists has no such key at all, and the cast that produced this
@@ -789,10 +805,19 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
  *  1. **Picked** — `curated` names them, in that order. Somebody chose these while
  *     looking at this block. Capped, and ids that no longer resolve are dropped
  *     rather than drawn as a gap.
- *  2. **All of them** — `showAll`, uncapped: every approved picture in the
- *     subtree, in `order`. Wants a wheel; see `subtreeMedia`.
+ *  2. **All of them** — `showAll`: every approved picture in the subtree, in
+ *     `order`. Wants a wheel; see `subtreeMedia`.
  *  3. **Chosen for you** — the automatic summary, which spreads across the
- *     children rather than taking the newest twenty. See `nodeSummary`.
+ *     children so that every child is represented before any child repeats. See
+ *     `nodeSummary`.
+ *
+ * **What separates 2 from 3 is now the order, not the quantity.** Mode 2 was the
+ * uncapped one and mode 3 stopped at twenty-four; since the ceiling came off
+ * (see the note above `nodeSummary`) both can run to the whole subtree, and the
+ * difference is that one is in filing order and the other is a round-robin. They
+ * are still not the same set: `subtreeMedia` requires `placement.onPage`, where
+ * the summary also admits a photograph flagged only for the homepage, and a leaf
+ * summary keeps an item that is still transcoding so the page can say so.
  *
  * The order matters where the states overlap: a block somebody has picked for
  * ignores `showAll`, because a list of pictures chosen by hand is a statement made

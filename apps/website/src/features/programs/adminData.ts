@@ -48,7 +48,6 @@ import {
 import {
   COLLECTIONS,
   CONFIG_DOC_EVENTS,
-  GALLERY_SUMMARY_MAX,
   UNFILED_PROGRAM_ID,
   buildGalleryTree,
   defaultBand,
@@ -704,16 +703,18 @@ export async function reorderPrograms(
  * documents cannot hold an order. It is also one write instead of fifteen, so a
  * half-finished arrangement is not a state the page can be left in.
  *
- * Capped, and the number is `GALLERY_SUMMARY_MAX` rather than a second opinion:
- * a curated summary and an automatic one appear in the same block of the same
- * page, and letting one run to forty while the other stops at twenty-four would
- * make the page change shape depending on whether anybody had touched it.
+ * **Uncapped since Sep 4 2026.** `MAX_FEATURED` used to live here, equal to the
+ * automatic summary's ceiling so that a curated page and an untouched one could
+ * not run to different lengths. Both ceilings are gone at Tommy's direction —
+ * *"there should be no cap altogether"* — and they went together for the same
+ * reason they were once equal: they are the same block of the same page. See the
+ * note where `GALLERY_SUMMARY_MAX` used to be, in the shared package's tree.ts.
  *
- * The cap does not reach the *deepest* level, because a leaf shows everything
- * filed on it and needs no curation to do so — see `nodeSummary`. It applies
- * wherever somebody has actually chosen.
+ * What is left bounding this is the write itself. `featuredMediaIds` is a
+ * Firestore array in a document with a 1MiB ceiling; at roughly twenty bytes an
+ * id that is tens of thousands of pictures, which is not a limit the parish will
+ * meet. De-duplication below is what actually matters.
  */
-export const MAX_FEATURED = GALLERY_SUMMARY_MAX;
 
 export async function setProgramFeatured(
   programId: string,
@@ -723,7 +724,7 @@ export async function setProgramFeatured(
   // De-duplicated: the picker can be clicked twice on the same photograph
   // faster than it re-renders, and the same picture twice in a row on a page is
   // a bug that looks like a data-entry mistake.
-  const unique = [...new Set(mediaIds)].slice(0, MAX_FEATURED);
+  const unique = [...new Set(mediaIds)];
   await updateProgram(programId, { featuredMediaIds: unique }, uid);
 }
 
@@ -741,7 +742,7 @@ export async function setNodeFeatured(
   mediaIds: readonly string[],
   uid: string | null,
 ): Promise<void> {
-  const unique = [...new Set(mediaIds)].slice(0, MAX_FEATURED);
+  const unique = [...new Set(mediaIds)];
   await updateDoc(doc(db(), COLLECTIONS.programEvents, programEventId), {
     featuredMediaIds: unique,
     updatedAt: serverTimestamp(),

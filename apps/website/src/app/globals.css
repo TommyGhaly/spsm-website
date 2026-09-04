@@ -13435,6 +13435,65 @@ button.sched-month__entry:focus-visible {
   color: var(--color-gold, #b08d43);
 }
 
+/* ---- deciding several at once --------------------------------------------- */
+
+/*
+ * The selection bar: what is ticked, and the two things that can be done to it.
+ *
+ * Above the rows, not floating over them. A bar pinned to the foot of the
+ * window is the reflex and is wrong on this page — the queue sits at the bottom
+ * of a long public page, so a fixed bar would hang over the gallery the whole
+ * time somebody scrolled it.
+ *
+ * Quieter than `.review-panel__settings` directly above it, deliberately: two
+ * panels of equal weight stacked on each other read as one confusing block, and
+ * this one is a state of the queue rather than a setting of the ministry.
+ */
+.review-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  margin: 0 0 var(--space-md, 1rem);
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.review-bar__all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+  min-width: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+.review-bar__all input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--color-accent, #992a21);
+  cursor: pointer;
+}
+
+/*
+ * The actions, kept together at the right of the bar and allowed to wrap as a
+ * pair. Splitting Approve from Decline across two lines would put the
+ * destructive one alone under the count, which is the one arrangement that
+ * makes it look like the primary action.
+ */
+.review-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+}
+
 /* ---- the queue itself ----------------------------------------------------- */
 
 /*
@@ -13615,6 +13674,66 @@ button.sched-month__entry:focus-visible {
     background: color-mix(in srgb, var(--color-deep, #3a1310) 52%, transparent);
     backdrop-filter: blur(8px) saturate(140%);
   }
+}
+
+/*
+ * The tick, in the opposite corner from the chip that says where it came from.
+ *
+ * A control on a photograph, so it carries its own ground for the same reason
+ * `.review-queue__from` does — the corner of a picture is white sky as often as
+ * not, and a bare checkbox there is invisible half the time. Unlike that chip
+ * this one *is* a control, so it keeps its pointer events.
+ *
+ * It is a label with words rather than a bare box: "Choose" on a card is what
+ * tells somebody who has never used this screen that deciding several at once is
+ * possible at all, and it doubles the target on a phone.
+ */
+.review-queue__pick {
+  grid-area: 1 / 1;
+  z-index: 3;
+  place-self: start end;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: var(--space-sm, 0.6rem);
+  padding: 0.2rem 0.55rem 0.2rem 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-deep, #3a1310) 72%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+  cursor: pointer;
+}
+
+@supports (backdrop-filter: blur(6px)) {
+  .review-queue__pick {
+    background: color-mix(in srgb, var(--color-deep, #3a1310) 52%, transparent);
+    backdrop-filter: blur(8px) saturate(140%);
+  }
+}
+
+.review-queue__pick input {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--color-gold, #b08d43);
+  cursor: pointer;
+}
+
+/*
+ * A chosen card, marked on the card itself and not only by its tick.
+ *
+ * Gold rather than the accent, because the accent on this screen means "cannot
+ * be undone" — it is the armed delete — and a selection is the most undoable
+ * thing here. The ring is drawn with `box-shadow` rather than a wider border so
+ * that choosing something does not move it by a pixel, which across a grid of
+ * forty is a visible lurch.
+ */
+.review-queue__item.is-picked {
+  border-color: var(--color-gold, #b08d43);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-gold, #b08d43) 55%, transparent);
 }
 
 /* Said when the reviewer has changed the level, so the sentence above it is not
@@ -15647,6 +15766,27 @@ button.sched-month__entry:focus-visible {
   min-width: 0;
 }
 
+/*
+ * The levels inside this one, at the foot of the page.
+ *
+ * A modifier rather than spacing changed on `.gallery-section`, exactly as the
+ * note above says to do it: that class is deliberately margin-free so the page's
+ * own rhythm rule keeps working.
+ *
+ * The rule and the extra air are what stop this reading as an afterthought. It
+ * is the last thing on a page whose photographs are now uncapped, so it can
+ * arrive after a very long scroll — and the reader needs to be told that a new
+ * part of the page has started rather than that the gallery has run out.
+ */
+.gallery-section--inside {
+  padding-top: var(--space-lg, 1.5rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.gallery-section--inside > .gallery-title {
+  margin-bottom: var(--space-md, 1rem);
+}
+
 
 
 /* ---------------------------------------------------------------------------
@@ -15740,12 +15880,60 @@ button.sched-month__entry:focus-visible {
   background: var(--color-paper-sunken, #eeddd7);
 }
 
+/*
+ * The cover is a *stack* now, not one picture.
+ *
+ * Every photograph the card cycles through is in the DOM at once and opacity
+ * decides which is seen — see the note in `LevelCard`. So the images have to be
+ * positioned rather than flowed, and the box has to be their containing block.
+ */
+.gathering-card__cover {
+  position: relative;
+}
+
 .gathering-card__cover :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gathering-card__shot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /*
+   * Two transitions on one element, with two different durations, and both are
+   * wanted: the cross-fade between pictures is slow, and the hover zoom inherited
+   * from the rule above is fast. Written out here because listing `transform`
+   * alone would drop the fade, and listing `opacity` alone would freeze the zoom.
+   */
+  transition:
+    opacity 600ms ease,
+    transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gathering-card__shot.is-current {
+  opacity: 1;
+}
+
+/*
+ * A card that is not cycling still has to show its one picture.
+ *
+ * `is-current` is on the first shot from the very first render, so this is not
+ * strictly needed — it is here for the case the class is ever computed wrongly,
+ * because the failure mode without it is a card that is silently, entirely
+ * blank, which looks exactly like a level with no photographs in it.
+ */
+.gathering-card__cover > .gathering-card__shot:only-child {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gathering-card__shot {
+    transition: none;
+  }
 }
 
 .gathering-card:hover .gathering-card__cover :is(img, video) {
