@@ -626,6 +626,34 @@ export interface GalleryMedia extends AuditFields {
   reviewedAt: Timestamped | null;
   /** uid of the approving administrator. Null while pending. */
   reviewedBy: string | null;
+
+  /**
+   * uid of the administrator whose own upload this is, or null for everybody
+   * else. Set by `POST /api/gallery/upload-url` from a *verified* token — never
+   * from anything the request said about itself — and it is the whole of the
+   * "an administrator's own photographs do not queue" feature.
+   *
+   * ## Why this is a marker and not simply `status: 'approved'`
+   *
+   * The endpoint cannot create an approved document, and the reason is the
+   * shape of the pipeline rather than the rules. `onGalleryMediaCreated` bails
+   * on anything that is not `pending`, so an approved-at-birth document is
+   * never transcoded, never has `sourceUploaded` flipped true — and is
+   * therefore deleted an hour later by the orphan sweep, which is looking for
+   * exactly that. `onGalleryMediaReviewed`, which copies the bytes into the
+   * public bucket, is an `onDocumentUpdated` and does not fire on a create at
+   * all, so there would be no rendition either.
+   *
+   * So an administrator's upload takes the ordinary road and is waved through
+   * at the end of it: created `pending`, transcoded like any other, then
+   * flipped to `approved` by the same Function once the preview exists. That
+   * flip is an update, so the publish trigger fires normally and the rendition
+   * is copied from the preview rather than from a 12MB original.
+   *
+   * It stays on the document afterwards because it is the only record of why a
+   * photograph was never in anybody's queue.
+   */
+  autoApproveBy: string | null;
 }
 
 export const MEDIA_KINDS = ['photo', 'video'] as const;
