@@ -7,7 +7,9 @@
  * registration editor, the groups board and the register into `FormsHub` and
  * `sections.ts`, which import this file only to ask a yes/no question.
  *
- * The hook is here because that question is what it answers: whether to show
- * the camp at all, and to whom.
+ * The hooks are here because that question is what they answer: whether to show
+ * the camp at all, and to whom. `useCampSignUpOpen` is the cheap half of it for
+ * a page that only wants to know whether the sign-up form is open.
  */
 export { useCampAdmin, type CampAdminSession } from './useCampAdmin';
+export { useCampSignUpOpen } from './useCampSignUp';

@@ -3,6 +3,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { builtInForms, type FormDefinition } from '@spsm/shared';
 import { Icon, isIconName } from '@/components/Icon';
+import { useCampSignUpOpen } from '@/features/camp';
 import { watchPublishedForms } from './data';
 import { useFormsAdmin } from './useFormsAdmin';
 
@@ -59,11 +60,30 @@ const FormsAdmin = lazy(() =>
  * Its removal also takes a Firestore read off this page: the card needed the
  * camp grant to decide whether to draw itself, and nothing else here does.
  *
- * The public card is not hidden when sign-ups are closed. `config/camp` is a
- * read this page has no other reason to make, and a card that leads to "the
- * camp is not taking sign-ups at the moment" is a better answer than one that
- * silently is not there — somebody sent a link by a friend needs to be told the
- * list is shut, not left wondering.
+ * ---------------------------------------------------------------------------
+ * The card goes when sign-ups close. **Reversed 5 Sep 2026, at Tommy's
+ * request**, and the argument it replaces was this one:
+ *
+ *   "The public card is not hidden when sign-ups are closed. `config/camp` is a
+ *   read this page has no other reason to make, and a card that leads to 'the
+ *   camp is not taking sign-ups at the moment' is a better answer than one that
+ *   silently is not there — somebody sent a link by a friend needs to be told
+ *   the list is shut, not left wondering."
+ *
+ * Both halves of that still hold; they were just answering a smaller question.
+ * This is the parish's list of the forms it is *taking*, and an advertised card
+ * is an invitation — a hub inviting people to fill in a form that will refuse
+ * them is worse than one that does not mention it, because the disappointment
+ * costs a click and the card costs nothing. Somebody following a link still
+ * lands on /forms/summer-camp and is still told the list is shut in words, so
+ * nobody is left wondering: that page has not changed, and it is the only thing
+ * the old note was actually protecting.
+ *
+ * What it costs is the read it names, which is now made — one world-readable
+ * document, live, and no permission. `useCampSignUpOpen` is that read and
+ * nothing else, and it answers "open" until a stored `servantSignUp: false`
+ * says otherwise, so neither a slow connection nor a failed one can take the
+ * card away.
  * ---------------------------------------------------------------------------
  */
 const CAMP_CARD: HubCard = {
@@ -203,8 +223,16 @@ export function FormsHub() {
    * Firestore read cannot take it away: `cards` falls back to the built-in list
    * when the subscription errors, and somebody signing up to serve should still
    * find the form on a page that could not reach the database.
+   *
+   * Two switches decide whether it is appended at all, and they are different
+   * questions. `SHOW_CAMP` is the blunt one in this file — is the camp a thing
+   * the parish is advertising this year — and `campSignUpsOpen` is the camp's
+   * own settings panel saying whether the form behind the card will take
+   * anybody. Its failure and its loading state both read as open, for the
+   * reason above.
    */
-  const visible = SHOW_CAMP ? [...cards, CAMP_CARD] : cards;
+  const campSignUpsOpen = useCampSignUpOpen();
+  const visible = SHOW_CAMP && campSignUpsOpen ? [...cards, CAMP_CARD] : cards;
 
   return (
     <>
