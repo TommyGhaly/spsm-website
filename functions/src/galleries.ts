@@ -42,7 +42,7 @@
  * loud — the reverse mistake, moving the others here, would be silent and
  * pointless. The bucket is US-EAST1 too, so the bytes never leave the region.
  */
-import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { CAPS } from './rateLimit.js';
 import { getStorage } from 'firebase-admin/storage';
@@ -422,6 +422,102 @@ async function publishWithoutReview(
     updatedBy: uid,
   });
 }
+
+/**
+ * A deleted photograph takes its files with it.
+ *
+ * ---------------------------------------------------------------------------
+ * ## The bug this is the fix for
+ *
+ * Deleting a picture in the gallery's picture manager removed the document and
+ * left the file. Tommy: *"when i delete a photo it no longer shows on the app
+ * but it stays in the storage it should delete it even if its the only image."*
+ *
+ * `deleteMediaForever` in the browser tried to delete all three paths itself,
+ * and its own comment admitted the hole: **`galleries/` is
+ * `allow write: if false` for every client**, so the attempt on `renditionPath`
+ * — the copy in the world-readable prefix, the only one a stranger can actually
+ * fetch — was refused every single time, logged, and carried on past. An
+ * approved photograph deleted from the gallery therefore vanished from the site
+ * and stayed on the internet at the URL it had been shared under, indefinitely:
+ * `galleries/` has no lifecycle rule, only `submissions/` does.
+ *
+ * That refusal is not a mistake to be relaxed. A client that could write
+ * `galleries/` could publish any object into the parish's public bucket without
+ * anybody approving it, which is the entire moderation model. The asymmetry is
+ * the design; what was missing was the other half of it — something on this side
+ * of the wall that deletes when the document does.
+ *
+ * ## Why a delete trigger rather than a status change
+ *
+ * The old comment guessed the fix would be "a status change that lets the
+ * Function do it": write `status: 'rejected'`, let `onGalleryMediaReviewed`
+ * remove the files, then delete the document. That is two round trips racing
+ * each other, it leaves a rejected document behind if the second one fails, and
+ * `onGalleryMediaReviewed` finishes by *updating* the document — which is a
+ * `NOT_FOUND` once the browser has deleted it.
+ *
+ * Keying on the deletion itself has none of that. The deleted snapshot still
+ * carries every path the document held, so this knows exactly what to remove;
+ * there is one write from the browser; and a Firestore trigger that fails is
+ * retried by the platform, which a browser that has been closed is not.
+ *
+ * It also covers every other way a document can disappear — a console delete, a
+ * script, a future screen — none of which would have remembered to delete files.
+ *
+ * ## What it does not cover, deliberately
+ *
+ * Deleting a *level* or a *ministry* does not delete photographs; they are
+ * re-pointed at the ministry or at `UNFILED_PROGRAM_ID`. Those are updates, not
+ * deletes, so this never sees them, and that is correct — see the note on
+ * `deleteProgram` in the website's adminData.ts. Only deleting the photograph
+ * itself destroys the photograph.
+ * ---------------------------------------------------------------------------
+ */
+export const onGalleryMediaDeleted = onDocumentDeleted(
+  { ...RUNTIME, document: `${COLLECTIONS.galleryMedia}/{mediaId}` },
+  async (event) => {
+    const gone = event.data?.data() as GalleryMedia | undefined;
+    if (!gone) return;
+
+    const mediaId = event.params['mediaId'] as string;
+    const bucket = getStorage().bucket();
+
+    /*
+     * The rendition first, because it is the one that is publicly reachable. If
+     * this dies halfway, the file left behind should be the one that was never
+     * public — and unlike the other two, nothing else will ever come for it:
+     * the 120-day lifecycle rule in docs/gallery-console-setup.md §2 covers
+     * `submissions/` and does not touch `galleries/`.
+     *
+     * `posterPath` is in the list too. A clip's poster frame lives beside it in
+     * the public prefix and is as much a photograph of somebody as the clip is.
+     */
+    const paths = [gone.renditionPath, gone.posterPath, gone.previewPath, gone.sourcePath].filter(
+      (path): path is string => typeof path === 'string' && path.length > 0,
+    );
+
+    /*
+     * In sequence rather than in parallel, and thrown on rather than swallowed.
+     *
+     * This is the opposite of what the browser version did, and both reversals
+     * are the point. A browser had to give up quickly — the person is waiting,
+     * and the Storage SDK retries for two minutes before it rejects — so it
+     * raced the deletes against a six-second budget and carried on regardless.
+     * Nobody is waiting here. A failure should make the whole invocation fail,
+     * because a failed Firestore trigger is retried, and a retry is exactly what
+     * a transient bucket error deserves.
+     *
+     * `ignoreNotFound` is what keeps that safe: a retry re-runs every path,
+     * including the ones that already went, and those must not be what fails it.
+     */
+    for (const path of paths) {
+      await bucket.file(path).delete({ ignoreNotFound: true });
+    }
+
+    console.log(`[galleries] deleted ${mediaId}, and ${paths.length} file(s) with it.`);
+  },
+);
 
 /**
  * Act on an administrator's decision: publish it, or take it down.

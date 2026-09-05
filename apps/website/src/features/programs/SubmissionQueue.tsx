@@ -78,8 +78,9 @@ import { Icon } from '@/components/Icon';
  * copied into the public bucket by `onGalleryMediaReviewed`, never from here — a
  * client that could write `renditionPath` could publish any object in the bucket.
  *
- * Refusing deletes: the files, then the document, with nothing kept. It cannot
- * be undone and the button says so. See `refuseAndDelete`.
+ * Refusing deletes the document, and `onGalleryMediaDeleted` takes the files with
+ * it — including the ones under `galleries/`, which no browser may delete. It
+ * cannot be undone and the button says so. See `refuseAndDelete`.
  *
  * Neither is done to a selection without the same protections: "Decline" in the
  * bar arms exactly as a row's does, and says how many it is about to destroy.

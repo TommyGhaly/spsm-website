@@ -145,7 +145,11 @@ export { calendar } from './calendar.js';
 // rejection. Deployed to us-east1 rather than us-central1 like everything else
 // here — a v2 Firestore trigger must sit in the database's own region, and
 // spsm-database is us-east1. See the note at the top of galleries.ts.
-export { onGalleryMediaCreated, onGalleryMediaReviewed } from './galleries.js';
+export {
+  onGalleryMediaCreated,
+  onGalleryMediaDeleted,
+  onGalleryMediaReviewed,
+} from './galleries.js';
 
 /*
  * The one door into a gallery submission, and the sweep that tidies up after

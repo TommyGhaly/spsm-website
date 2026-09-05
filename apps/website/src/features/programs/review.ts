@@ -69,7 +69,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref } from 'firebase/storage';
+import { getDownloadURL, ref } from 'firebase/storage';
 import {
   COLLECTIONS,
   parseProgramAdmin,
@@ -335,64 +335,39 @@ export async function approveMany(
 const APPROVE_BATCH_SIZE = 400;
 
 /**
- * How many refusals run at once.
- *
- * Refusing cannot be batched the way approving is, because each one deletes
- * files from Cloud Storage before its document — see `deleteMediaForever` — and
- * a `writeBatch` cannot carry a bucket call. So they run concurrently instead,
- * and this is the width.
- *
- * Four rather than all of them: each refusal is one or three Storage deletes
- * plus a document delete, and forty of those started at once is a burst of a
- * hundred and sixty requests from one browser, which is the shape of traffic
- * that gets throttled. Four keeps a batch of forty under about ten seconds
- * without ever looking like an attack.
- */
-const REFUSE_CONCURRENCY = 4;
-
-/**
  * Refuse a whole selection, permanently.
  *
- * Every one of these is the same irreversible act as refusing a single row —
- * files first under a budget, then the document, nothing kept — and the caller
- * is responsible for having asked first.
+ * Every one of these is the same irreversible act as refusing a single row, and
+ * the caller is responsible for having asked first.
  *
- * Unlike `approveMany` this is **not** all-or-nothing, and cannot be: the
- * deletes are to two different services and there is no transaction across
- * them. A failure part-way leaves the rest of the selection deleted and the
- * failures still in the queue, which is the honest outcome and also the useful
- * one — the queue is what shows which they were.
+ * ## It is a batch now, and it could not be before
+ *
+ * This used to run four at a time through a hand-written worker pool, with a
+ * note explaining that refusing "cannot be batched the way approving is, because
+ * each one deletes files from Cloud Storage before its document, and a
+ * `writeBatch` cannot carry a bucket call". That was true of the old
+ * `deleteMediaForever` and is not true of this one: refusing is a single
+ * document delete, the files are `onGalleryMediaDeleted`'s job, and forty
+ * document deletes is exactly what a batch is for. A camp's worth of refusals is
+ * now one round trip instead of forty at a width of four.
+ *
+ * Unlike `approveMany` a partial failure is still possible across chunks — there
+ * is no transaction spanning two batches — and that stays the honest outcome:
+ * whatever is still in the queue was not touched, and the queue is what shows
+ * which they were.
  */
 export async function refuseMany(items: readonly DocOf<GalleryMedia>[]): Promise<void> {
-  const remaining = [...items];
-  const workers = Array.from(
-    { length: Math.min(REFUSE_CONCURRENCY, remaining.length) },
-    async () => {
-      for (let next = remaining.shift(); next; next = remaining.shift()) {
-        await deleteMediaForever(next);
-      }
-    },
-  );
-  await Promise.all(workers);
+  for (let from = 0; from < items.length; from += APPROVE_BATCH_SIZE) {
+    const batch = writeBatch(db());
+    for (const item of items.slice(from, from + APPROVE_BATCH_SIZE)) {
+      batch.delete(doc(db(), COLLECTIONS.galleryMedia, item.id));
+    }
+    await batch.commit();
+  }
 }
 
 /**
- * How long refusing will wait for Cloud Storage before going ahead regardless.
- *
- * Long enough that a working bucket always finishes inside it — a delete is a
- * single small request — and short enough that a broken one does not read as a
- * frozen button. The Storage SDK's own retry window is two minutes, which is the
- * number this exists to avoid waiting for.
- */
-const FILE_DELETE_BUDGET_MS = 6000;
-
-/** Resolves after `ms`. Used only to bound a wait, never to sequence anything. */
-function afterMillis(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Refuse an item: the files, then the document, and nothing is kept.
+ * Delete a photograph and everything it is made of.
  *
  * ## Why this deletes rather than marking
  *
@@ -402,90 +377,39 @@ function afterMillis(ms: number): Promise<void> {
  * every photograph the parish turned down is a list of judgements about
  * parishioners' families that nobody asked to keep.
  *
- * ## The order, which is the whole subtlety
+ * ## One write, and the files follow
  *
- * Deleting the document is what somebody clicked, and it is also what stops
- * `onGalleryMediaReviewed` from ever running — a delete is not an update, so the
- * Function that would otherwise have removed the files never fires. Deleting the
- * document first therefore strands the upload in the bucket until the 120-day
- * lifecycle rule sweeps it (docs/gallery-console-setup.md §2), which is litter
- * that nothing in the database points at any more.
+ * ---------------------------------------------------------------------------
+ * This function used to delete the three Storage objects itself, before the
+ * document, and it carried a long note explaining the ordering, a six-second
+ * budget to stop a slow bucket freezing the button, and a tolerance for
+ * failures. All of that is gone, because underneath it the function did not
+ * work.
  *
- * So: files first, document last. If the whole thing fails halfway the item is
- * still in the queue, still refusable, and the only cost is a second attempt at
- * a delete that has already happened — which `deleteObject` reports as
- * `storage/object-not-found` and this tolerates.
+ * **`galleries/` is `allow write: if false` for every client.** The rendition —
+ * the copy in the world-readable prefix, the only one a stranger can actually
+ * fetch — was therefore refused every time, logged, and passed over. Deleting an
+ * approved photograph took it off the site and left it on the internet at the
+ * URL it had been shared under, with no lifecycle rule to catch it: only
+ * `submissions/` has one. Tommy: *"when i delete a photo it no longer shows on
+ * the app but it stays in the storage it should delete it even if its the only
+ * image."*
  *
- * ## Why a failed file delete does not stop the refusal
+ * The refusal is right and stays. A client that could write `galleries/` could
+ * publish anything into the parish's public bucket with nobody approving it,
+ * which is the whole moderation model. What was missing was something on the
+ * other side of that wall, and it exists now: `onGalleryMediaDeleted` fires on
+ * this delete, reads the paths out of the deleted document, and removes every
+ * one of them with the Admin SDK.
  *
- * `storage.rules` gates `delete` under `submissions/` on `signedIn()`, which
- * every reviewer satisfies — so the case this tolerance was written for (a
- * program-scoped volunteer whose role was `member`, refusing a photograph they
- * could not delete the bytes of) no longer arises. It is kept because the
- * general shape does: a bucket delete is a network call that can fail on its
- * own, and failing the whole refusal would leave an unwanted photograph in the
- * queue with no way to clear it. Carrying on leaves the file for the lifecycle
- * rule, which is exactly the backstop that rule is for. The failure is logged,
- * not hidden.
- *
- * ## And why it does not stall it either
- *
- * The file deletes are given a **budget**, and the document is deleted when they
- * finish or when the budget runs out, whichever comes first.
- *
- * That is not defensive decoration. A permission refusal comes back
- * immediately, but an unreachable or slow bucket does not: the Storage SDK
- * retries with exponential backoff for two minutes before it rejects, and
- * `deleteObject` is not cancellable. Awaited plainly, "Delete it permanently"
- * then does nothing visible for two minutes per file with the button stuck on
- * "Saving…", and the one part of this that matters — removing the document,
- * which is what makes the photograph gone from the parish's data — waits on the
- * one part that has a backstop. Measured, not theorised: refusing against a
- * stopped Storage emulator left the document in place for over thirty seconds.
- *
- * So the budget inverts the dependency. Files first still, because a document
- * deleted first is a file nothing points at — but only for as long as that is
- * cheap.
+ * So the browser does the one thing it is allowed to do, and it is also the
+ * thing that matters to the person clicking: the document is what the site
+ * reads, so the photograph is gone the moment this returns. The bytes follow a
+ * second later, and if the bucket is briefly unreachable the platform retries
+ * the trigger — which a browser that has since been closed cannot.
+ * ---------------------------------------------------------------------------
  */
 export async function deleteMediaForever(media: DocOf<GalleryMedia>): Promise<void> {
-  /*
-   * `renditionPath` is included even though a pending item has none. An item
-   * approved by mistake and refused a minute later has one, it is the copy in
-   * the world-readable `galleries/` prefix, and it goes first for that reason —
-   * if this dies halfway, the file left behind should be the one that was never
-   * public.
-   *
-   * Nothing here can delete it, as it happens: `galleries/` is
-   * `allow write: if false` for every client, so this attempt fails and is
-   * logged. It is left in rather than dropped because the alternative is a
-   * silent hole — and because the honest fix is a status change that lets the
-   * Function do it, which is not what refusing does any more.
-   */
-  const paths = [media.renditionPath, media.previewPath, media.sourcePath].filter(
-    (path): path is string => typeof path === 'string' && path.length > 0,
-  );
-
-  /*
-   * In parallel, not in sequence. A pending item has exactly one path — the
-   * other two are written by the Function on approval — so this changes nothing
-   * in the ordinary case, and turns the approved-then-refused case from three
-   * round trips into one.
-   */
-  const deletions = Promise.allSettled(
-    paths.map(async (path) => {
-      try {
-        await deleteObject(ref(storage(), path));
-      } catch (error) {
-        console.warn(
-          `[galleries] refused ${media.id} but could not delete ${path}. The lifecycle ` +
-            `rule on submissions/ will sweep it.`,
-          error,
-        );
-      }
-    }),
-  );
-
-  await Promise.race([deletions, afterMillis(FILE_DELETE_BUDGET_MS)]);
   await deleteDoc(doc(db(), COLLECTIONS.galleryMedia, media.id));
 }
 
@@ -503,9 +427,15 @@ export async function setCaption(mediaId: string, caption: string, uid: string):
  *
  * Kept as its own name because the two callers mean different things by the same
  * act. The queue refuses a photograph nobody has approved; the picture manager on
- * a ministry's own page deletes one that has been on the website for a year. The
- * mechanism is identical — files first under a budget, then the document, see
- * above — and one implementation is the point, but a manager calling
- * `refuseAndDelete` would read as though it were rejecting a submission.
+ * a ministry's own page deletes one that has been on the website for a year. One
+ * implementation is the point, but a manager calling `refuseAndDelete` would read
+ * as though it were rejecting a submission.
+ *
+ * The second caller is why the file deletion had to move to a Function. A pending
+ * submission's bytes are all under `submissions/`, which a signed-in reviewer may
+ * delete — so refusing from the queue *appeared* to work. The picture manager's
+ * photograph has a `renditionPath` under `galleries/`, which no client may touch
+ * at all, and that one silently left the file on the internet. Same code, same
+ * bug, visible in only one of the two places.
  */
 export const refuseAndDelete = deleteMediaForever;
