@@ -369,5 +369,5 @@ export const UNOFFERED_LABELS: Readonly<Partial<Record<AdminScreen, string>>> = 
   bulletin: 'Bulletin and announcements',
   servants: 'Servants’ rota',
   parking: 'Car park register',
-  theme: 'Colours and type',
+  theme: 'Colors and type',
 };

@@ -5,6 +5,7 @@ import {
   blankRegistration,
   campBill,
   campAge,
+  campGenderLabel,
   campGradeShort,
   campSectionLabel,
   campWeekRoleKey,
@@ -143,6 +144,7 @@ export function RegistrationsScreen() {
                 id={editing.id}
                 registration={editing.draft}
                 config={config}
+                canSeeMoney={canSeeMoney}
                 onDone={() => setEditing(null)}
                 onError={setError}
               />
@@ -237,6 +239,7 @@ export function RegistrationsScreen() {
               queue={queue}
               weeks={config.weeks}
               waiverInForce={config.waiverText.trim().length > 0}
+              canSeeMoney={canSeeMoney}
               uid={uid}
               onError={setError}
             />
@@ -400,12 +403,14 @@ function ServantSheet({
   id,
   registration,
   config,
+  canSeeMoney,
   onDone,
   onError,
 }: {
   id: string;
   registration: CampRegistrationDraft;
   config: CampConfig;
+  canSeeMoney: boolean;
   onDone: () => void;
   onError: (message: string) => void;
 }) {
@@ -480,6 +485,7 @@ function ServantSheet({
             ? `${campAge(servant.dateOfBirth) ?? '—'} years old`
             : 'Not given'}
         </Line>
+        <Line term="Male or female">{campGenderLabel(servant?.gender ?? '', 'servant')}</Line>
         <Line term="Shirt">
           {servant?.shirtSize ? shirtSizeLabel(servant.shirtSize) : 'Not given'}
         </Line>
@@ -503,9 +509,34 @@ function ServantSheet({
         </Line>
         <Line term="Waiver">
           {registration.waiver.agreed
-            ? `Agreed${registration.waiver.signedName ? ` — ${registration.waiver.signedName}` : ''}`
+            ? `Agreed${registration.waiver.signedName ? ` — ${registration.waiver.signedName}` : ''}` +
+              /* Whose name that is. An under-18's waiver is signed by a parent
+                 or guardian — see `campNeedsGuardian` — and a name on its own
+                 does not say that the person who agreed was not the servant. */
+              (registration.waiver.signedRelationship.trim()
+                ? ` (${registration.waiver.signedRelationship.trim()})`
+                : '')
             : 'Not signed'}
         </Line>
+        {/*
+          Whether the shirt has been paid for, and the figure only behind the
+          money grant.
+
+          The fact is operational — somebody hands out shirts and needs to know
+          — and the *amount* is the parish's takings, which is `finance:camp`
+          and lives on /admin/finance. So a registrar sees that it was paid and
+          a treasurer sees what for. Absent altogether when the camp charges
+          nothing, which is most camps.
+        */}
+        {registration.billing.chargeCents > 0 ? (
+          <Line term={registration.billing.chargeLabel.trim() || 'Servant charge'}>
+            {paidFor(registration)
+              ? canSeeMoney
+                ? `Paid — ${money(registration.billing.chargeCents)}`
+                : 'Paid'
+              : 'Not paid'}
+          </Line>
+        ) : null}
         {registration.note.trim() ? (
           <Line term="What they wrote">{registration.note.trim()}</Line>
         ) : null}
@@ -545,6 +576,18 @@ function ServantSheet({
       </footer>
     </div>
   );
+}
+
+/**
+ * Whether a servant's charge has been settled.
+ *
+ * `campBill` is the arithmetic — the charge, less any discount, against what
+ * has been paid — and asking it rather than checking for the presence of a
+ * payment is what makes a part payment, a refund or a discount read correctly
+ * here instead of showing "Paid" because a row exists.
+ */
+function paidFor(registration: CampRegistrationDraft): boolean {
+  return campBill(registration).balanceCents <= 0;
 }
 
 /** One read-only line on a servant's sheet. */
@@ -611,12 +654,14 @@ function Queue({
   queue,
   weeks,
   waiverInForce,
+  canSeeMoney,
   uid,
   onError,
 }: {
   queue: readonly WithId<CampServantRequest>[];
   weeks: number;
   waiverInForce: boolean;
+  canSeeMoney: boolean;
   uid: string | null;
   onError: (message: string) => void;
 }) {
@@ -663,6 +708,31 @@ function Queue({
                   <dt>Would like to</dt>
                   <dd>{describeCampDesiredRoles(servant, weeks) || '—'}</dd>
                 </div>
+                {/*
+                  What they paid, when the camp charges for the shirt.
+
+                  Shown on the card and not left for the sheet afterwards,
+                  because it is a fact about the sign-up in front of the person
+                  deciding whether to accept it: the money is already taken —
+                  the endpoint charges before it stores anything — so dismissing
+                  one is dismissing somebody who has paid, and that should not
+                  be a surprise found later. No figure without the money grant,
+                  the same line the sheet draws.
+                */}
+                {request.registration.billing.chargeCents > 0 ? (
+                  <div>
+                    <dt>
+                      {request.registration.billing.chargeLabel.trim() || 'Servant charge'}
+                    </dt>
+                    <dd>
+                      {campBill(request.registration).balanceCents <= 0
+                        ? canSeeMoney
+                          ? `Paid — ${money(request.registration.billing.chargeCents)}`
+                          : 'Paid'
+                        : 'Not paid'}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
               {servant?.availability ? (
                 <p className="note">{servant.availability}</p>

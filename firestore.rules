@@ -372,7 +372,8 @@ service cloud.firestore {
       allow read: if true;
       allow update: if runsCamp()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'season', 'baseCents', 'weeks', 'weekStarts', 'weekRoles',
+             'season', 'baseCents', 'servantChargeCents', 'servantChargeLabel',
+             'weeks', 'weekStarts', 'weekRoles',
              'waiverVersion', 'waiverText', 'note',
              'servantSignUp', 'familyRegistration',
              'updatedAt', 'updatedBy',
@@ -391,6 +392,17 @@ service cloud.firestore {
              || (request.resource.data.baseCents is int
                  && request.resource.data.baseCents >= 0
                  && request.resource.data.baseCents <= 200000))
+        // The servants' flat charge — the shirt money. Bounded for the same
+        // reason `baseCents` is, and harder: this one is taken from a stranger
+        // by an unauthenticated endpoint the moment they press send, so a
+        // mistyped figure is money off somebody's card rather than a wrong
+        // number read aloud at a desk.
+        && (!('servantChargeCents' in request.resource.data)
+             || (request.resource.data.servantChargeCents is int
+                 && request.resource.data.servantChargeCents >= 0
+                 && request.resource.data.servantChargeCents <= 200000))
+        && (!('servantChargeLabel' in request.resource.data)
+             || request.resource.data.servantChargeLabel is string)
         && (!('weeks' in request.resource.data)
              || (request.resource.data.weeks is int
                  && request.resource.data.weeks >= 1

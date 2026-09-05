@@ -133,7 +133,7 @@ export function validateVehicleRegistration(input: VehicleRegistrationInput): st
   if (plate.length > 12) errors.push('That plate looks too long — please check it.');
 
   if (input.color && !COLOR_VALUES.has(input.color)) {
-    errors.push('Choose a colour from the list.');
+    errors.push('Choose a color from the list.');
   }
 
   const drivers = input.drivers ?? [];

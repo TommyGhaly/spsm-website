@@ -3,12 +3,28 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
   CONFIG_DOC_CAMP,
+  campLineId,
+  dayKey,
   parseCampConfig,
   parseCampRegistration,
   validateServantSignUp,
+  type CampPaymentRecord,
   type CampRegistrationDraft,
 } from '@spsm/shared';
 import { BUDGETS, CAPS, throttled } from '../rateLimit.js';
+
+/**
+ * The zone every date on this endpoint is read in, as it is in `stats.ts` and
+ * `calendar.ts`. A payment taken at nine on a Saturday evening in Wayland is a
+ * Sunday in UTC, and a treasurer reconciling a month by `receivedOn` should
+ * never have to know that.
+ */
+const PARISH_TIME_ZONE = 'America/New_York';
+import {
+  SQUARE_ACCESS_TOKEN,
+  SQUARE_SANDBOX_ACCESS_TOKEN,
+  chargeCard,
+} from '../square.js';
 
 /**
  * A servant signing themselves up for camp.
@@ -45,6 +61,16 @@ import { BUDGETS, CAPS, throttled } from '../rateLimit.js';
  * registration under their own uid. That is the whole shape of the feature: the
  * open door leads to a waiting room, not to the register.
  *
+ * ## What it does do, that it did not before
+ *
+ * It takes money. A camp can set a flat charge for its servants — the shirt —
+ * in `config/camp.servantChargeCents`, and when it is set this endpoint charges
+ * the card token that came with the sign-up before it stores anything. The
+ * amount is read from the settings and never from the request, for the same
+ * reason the season is: a figure the browser can name is a figure the browser
+ * can set to zero. When the setting is zero there is no card, no Square call
+ * and no change to what this endpoint was.
+ *
  * It also sends no confirmation email. There is nowhere to send one from — the
  * parish's mail is Breeze's and this project holds no credential for it — and a
  * form that claims a confirmation is coming is worse than one that says plainly
@@ -52,7 +78,17 @@ import { BUDGETS, CAPS, throttled } from '../rateLimit.js';
  * ---------------------------------------------------------------------------
  */
 export const campServantRequest = onRequest(
-  { cors: false, maxInstances: CAPS.campServantRequest },
+  {
+    cors: false,
+    maxInstances: CAPS.campServantRequest,
+    /*
+     * Declared because a camp that charges its servants takes a card here, and
+     * `chargeCard` cannot read a secret this Function did not ask for. Both are
+     * listed for the reason `square.ts` gives: the environment and the token
+     * are a pair, and the pairing is decided there rather than here.
+     */
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+  },
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ errors: ['Method not allowed.'] });
@@ -77,8 +113,13 @@ export const campServantRequest = onRequest(
       return;
     }
 
-    const body = (req.body ?? {}) as { registration?: unknown; message?: unknown };
+    const body = (req.body ?? {}) as {
+      registration?: unknown;
+      message?: unknown;
+      cardToken?: unknown;
+    };
     const message = typeof body.message === 'string' ? body.message.slice(0, 2_000) : '';
+    const cardToken = typeof body.cardToken === 'string' ? body.cardToken : '';
 
     const db = getFirestore();
 
@@ -166,7 +207,23 @@ export const campServantRequest = onRequest(
             uid: null,
           }
         : null,
-      billing: { baseCents: 0, discounts: [], payments: [] },
+      /*
+       * The charge is read from the settings, never from the request.
+       *
+       * `baseCents` stays zero because a servant is not billed for weeks — see
+       * `campBill` — and `chargeCents` is the flat shirt money the camp set. A
+       * charge the browser could name is a charge the browser could set to
+       * nothing, so whatever arrived in `registration.billing` is discarded
+       * here along with any payments a hand-made request tried to claim it had
+       * already made.
+       */
+      billing: {
+        baseCents: 0,
+        chargeCents: config.servantChargeCents,
+        chargeLabel: config.servantChargeLabel,
+        discounts: [],
+        payments: [],
+      },
     };
 
     const problems = validateServantSignUp(registration, {
@@ -177,6 +234,61 @@ export const campServantRequest = onRequest(
       return;
     }
 
+    /*
+     * ── The money ────────────────────────────────────────────────────────────
+     *
+     * Charged before anything is written, and the ordering is the same choice
+     * `forms/submit.ts` makes for the same reason: recording first would leave
+     * a declined card as a junk sign-up in the queue that an administrator has
+     * to recognise and dismiss, and the cleanup write can fail in its own
+     * right. This way the queue only holds sign-ups that actually happened.
+     *
+     * The failure it accepts is the narrow one below — the card is charged and
+     * the write then fails — and that is answered rather than ignored.
+     */
+    let payment: CampPaymentRecord | null = null;
+    if (config.servantChargeCents > 0) {
+      if (!cardToken) {
+        res.status(400).json({ errors: ['This sign-up needs to be paid for.'] });
+        return;
+      }
+
+      const charged = await chargeCard({
+        cardToken,
+        totalCents: config.servantChargeCents,
+        note: config.servantChargeLabel || `Summer camp ${config.season} — servant`,
+        buyerEmail: registration.contact.email || null,
+        tag: 'camp',
+      });
+
+      if (!charged.ok) {
+        res.status(charged.status).json({ errors: [charged.reason] });
+        return;
+      }
+
+      /*
+       * Recorded as a payment on the registration, so it is one thing and not
+       * two: the camp's ledger, the finance rollup and the balance on the
+       * roster all read `billing.payments[]`, and a Square id kept anywhere
+       * else would be money the church's own books cannot see.
+       *
+       * `recordedByUid` is null because nobody was signed in — the same honesty
+       * `takenByUid` keeps above. `receivedOn` is today in the parish's own
+       * zone, which is what the finance screen buckets a month by.
+       */
+      payment = {
+        id: campLineId('payment'),
+        amountCents: config.servantChargeCents,
+        method: 'square',
+        reference: charged.paymentId,
+        receivedOn: dayKey(new Date(), PARISH_TIME_ZONE),
+        note: config.servantChargeLabel || 'Paid at sign-up',
+        recordedByUid: null,
+        recordedAt: null,
+      };
+      registration.billing.payments = [payment];
+    }
+
     try {
       const written = await db.collection(COLLECTIONS.campServantRequests).add({
         programId: config.programId,
@@ -185,9 +297,34 @@ export const campServantRequest = onRequest(
         message,
         submittedAt: FieldValue.serverTimestamp(),
       });
-      res.json({ requestId: written.id });
+      res.json({ requestId: written.id, paymentId: payment?.reference ?? null });
     } catch (cause) {
       console.error('[camp] could not store a servant sign-up', cause);
+
+      /*
+       * Paid, and not recorded. The one outcome worth its own message.
+       *
+       * Telling somebody whose card has just been charged to "try again" is
+       * inviting them to pay twice, so this says plainly what happened and asks
+       * them to ring the office. The sign-up itself goes to the log, because it
+       * is now the only copy of what they answered.
+       */
+      if (payment) {
+        console.error(
+          `[camp] PAID BUT NOT RECORDED — payment=${payment.reference} ` +
+            `signup=${JSON.stringify(registration)}`,
+        );
+        res.status(200).json({
+          requestId: '',
+          paymentId: payment.reference,
+          errors: [
+            'Your payment went through, but the sign-up did not save. ' +
+              'Please ring the church office — do not pay again.',
+          ],
+        });
+        return;
+      }
+
       res.status(500).json({ errors: ['That did not send. Please try again shortly.'] });
     }
   },

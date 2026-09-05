@@ -23,6 +23,11 @@ serviceAccountKey.json
 
 # Emulator secret values. Committing this is how a real token leaks by accident.
 .secret.local
+# The same file for an extension, which is named after the instance rather than
+# being a bare dotfile: `extensions/firestore-send-email.secret.local` holds the
+# Resend API key for `firebase ext:dev` and does NOT match the rule above, since
+# gitignore matches the whole name and not a suffix.
+*.secret.local
 # Legacy Cloud Functions runtime config; can contain tokens.
 .runtimeconfig.json
 

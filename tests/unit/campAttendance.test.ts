@@ -72,6 +72,10 @@ function family(
       lastName: 'Test',
       dateOfBirth: '',
       grade: child.grade,
+      // Neither of these suites reads it; it is here because `CampChild`
+      // requires it, and a fixture that quietly diverges from the type is how
+      // one of these starts testing a shape nothing writes.
+      gender: '' as const,
       shirtSize: 'YM' as const,
       days: child.days,
       allergies: '',

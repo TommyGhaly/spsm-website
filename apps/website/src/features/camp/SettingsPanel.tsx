@@ -187,7 +187,34 @@ export function SettingsPanel({ config, uid }: SettingsPanelProps) {
           >
             <MoneySetting
               cents={config.baseCents}
+              unit="per child, per week"
               onSave={(baseCents) => save({ baseCents })}
+            />
+          </Field>
+
+          <Field
+            label="Servant charge"
+            hint={
+              config.servantChargeCents > 0
+                ? 'Charged once — the same for one week or both — and paid by card before the sign-up form will send. Set it to nothing and the card step disappears.'
+                : 'Nothing, so servants sign up without paying. Put an amount here for the shirt and the sign-up form asks for a card before it will send.'
+            }
+          >
+            <MoneySetting
+              cents={config.servantChargeCents}
+              unit="once, per servant"
+              onSave={(servantChargeCents) => save({ servantChargeCents })}
+            />
+          </Field>
+
+          <Field
+            label="What the servant charge is for"
+            hint="Shown beside the amount on the form, and written on the Square receipt. Empty reads as “Servant charge”."
+          >
+            <TextSetting
+              value={config.servantChargeLabel}
+              onSave={(servantChargeLabel) => save({ servantChargeLabel })}
+              placeholder="Servant shirt"
             />
           </Field>
         </Group>
@@ -603,7 +630,24 @@ function TextSetting({
  * Anything unparseable leaves the stored figure alone rather than saving zero:
  * a fee silently becoming free is the worst failure this field has.
  */
-function MoneySetting({ cents, onSave }: { cents: number; onSave: (cents: number) => void }) {
+function MoneySetting({
+  cents,
+  unit,
+  onSave,
+}: {
+  cents: number;
+  /**
+   * What the figure is *per*: "per child, per week", "once".
+   *
+   * A prop and not a constant, because this field is used twice and the two
+   * amounts are not the same kind of number. It read "per child, per week"
+   * beside the servants' charge, which is one flat amount for one shirt — a
+   * label that is simply untrue is worse than none, and worst of all on a
+   * field whose whole job is to say what somebody will be charged.
+   */
+  unit: string;
+  onSave: (cents: number) => void;
+}) {
   const asText = (value: number) => (value > 0 ? (value / 100).toFixed(2) : '');
   const [draft, setDraft] = useState(asText(cents));
 
@@ -618,7 +662,7 @@ function MoneySetting({ cents, onSave }: { cents: number; onSave: (cents: number
         className="input input--narrow"
         value={draft}
         placeholder="0.00"
-        aria-label="Fee per child per week, in dollars"
+        aria-label={`Amount in dollars, ${unit}`}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
           const trimmed = draft.trim();
@@ -635,7 +679,7 @@ function MoneySetting({ cents, onSave }: { cents: number; onSave: (cents: number
           if (next !== cents) onSave(next);
         }}
       />
-      <span className="camp-money__unit">per child, per week</span>
+      <span className="camp-money__unit">{unit}</span>
     </span>
   );
 }

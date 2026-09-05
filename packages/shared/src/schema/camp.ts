@@ -168,6 +168,98 @@ export function isShirtSize(value: unknown): value is ShirtSize {
   return typeof value === 'string' && (SHIRT_SIZES as readonly string[]).includes(value);
 }
 
+/* ---------------------------------------------------------------------------
+ * Male or female
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Recorded on every child and every servant, for one reason: the groups board.
+ *
+ * ---------------------------------------------------------------------------
+ * A camp splits its crews by it and staffs them accordingly, and the question
+ * being asked on that board is arithmetic — *"nine children in this crew and
+ * every servant on it is male"* is a thing somebody has to see before the week
+ * starts, not discover on the Monday. That is why this is a stored field rather
+ * than something read off a name: a roster cannot be balanced against a guess,
+ * and half the parish's names do not tell an American volunteer anything.
+ *
+ * Two values and no more. This is not a question about identity — it is the
+ * camp's own operational split, the one the building's two halls and the two
+ * lists of servants are already organised around — and inventing a third option
+ * would produce a number the board could not act on.
+ * ---------------------------------------------------------------------------
+ */
+export const CAMP_GENDERS = ['male', 'female'] as const;
+export type CampGender = (typeof CAMP_GENDERS)[number];
+
+/**
+ * What is actually stored: one of the two, or empty.
+ *
+ * Empty is a real and expected state rather than a defect. Every registration
+ * taken before this field existed has it, and a parser that guessed one would
+ * put a wrong number on a ratio that is read as fact. The board draws the
+ * missing ones as missing and counts them separately — see `CampGenderSplit`.
+ */
+export type CampGenderField = CampGender | '';
+
+export function isCampGender(value: unknown): value is CampGender {
+  return typeof value === 'string' && (CAMP_GENDERS as readonly string[]).includes(value);
+}
+
+/** Anything out of Firestore, as a stored value. Unreadable reads as unasked. */
+export function readCampGender(value: unknown): CampGenderField {
+  return isCampGender(value) ? value : '';
+}
+
+/**
+ * The word for it, which is not the same word for a nine-year-old and a
+ * sixteen-year-old servant.
+ *
+ * "Boy" and "Girl" are what a camp calls its children and what the registration
+ * desk says out loud; "Male" and "Female" is what a servant's own form should
+ * ask them, because calling a servant a boy on the form they fill in about
+ * themselves reads as a mistake. One field, two vocabularies, chosen by who is
+ * being described.
+ */
+export function campGenderLabel(gender: CampGenderField, kind: 'child' | 'servant'): string {
+  if (gender === 'male') return kind === 'child' ? 'Boy' : 'Male';
+  if (gender === 'female') return kind === 'child' ? 'Girl' : 'Female';
+  return 'Not given';
+}
+
+/**
+ * The same word, counted: "5 boys", "1 boy", "2 female".
+ *
+ * `count` is what makes it a sentence rather than a label. These strings end up
+ * in hover text on a tally, and "1 boys in this crew" is the kind of thing that
+ * makes somebody stop trusting the numbers beside it. A servant's word does not
+ * inflect — "1 female", "3 female" — which is why this takes the kind too.
+ */
+export function campGenderPlural(
+  gender: CampGender,
+  kind: 'child' | 'servant',
+  count = 2,
+): string {
+  if (kind !== 'child') return gender === 'male' ? 'male' : 'female';
+  if (gender === 'male') return count === 1 ? 'boy' : 'boys';
+  return count === 1 ? 'girl' : 'girls';
+}
+
+/**
+ * One letter, for a chip.
+ *
+ * `B`/`G` on a child and `M`/`F` on a servant. The two alphabets are not a
+ * slip: children and servants are never in the same list on this board — two
+ * rails, and two named sections inside every crew card — so the letter is read
+ * with its kind already known, and "B" beside a grade badge says boy where "M"
+ * would have to be decoded.
+ */
+export function campGenderShort(gender: CampGenderField, kind: 'child' | 'servant'): string {
+  if (gender === 'male') return kind === 'child' ? 'B' : 'M';
+  if (gender === 'female') return kind === 'child' ? 'G' : 'F';
+  return '?';
+}
+
 /**
  * The two halves the camp runs as.
  *
@@ -245,6 +337,36 @@ export function campAge(dateOfBirth: string, on: Date = new Date()): number | nu
   if (monthNow < month || (monthNow === month && on.getDate() < day)) age -= 1;
 
   return age >= 0 && age < 130 ? age : null;
+}
+
+/** Nobody under this signs their own waiver. */
+export const CAMP_ADULT_AGE = 18;
+
+/**
+ * Whether this servant's waiver has to be signed by somebody else.
+ *
+ * ---------------------------------------------------------------------------
+ * Half the camp's servants are teenagers, and a fifteen-year-old cannot agree
+ * to a waiver on their own behalf.
+ *
+ * The form is public and filled in by the servant themselves — that is the
+ * whole design of the sign-up, and it is not changing. What changes for an
+ * under-18 is *who signs the last box*: the tick and the typed name become the
+ * guardian's, along with how they are related, and the form says so in those
+ * words. Whether the guardian was in fact sitting beside them is not something
+ * a web form can know; `CampWaiver` is honest about what a typed name is
+ * evidence of, and this does not claim more.
+ *
+ * **An unreadable or missing date of birth counts as under-18.** The sign-up
+ * demands one, so the only way to arrive here without a date is a record from
+ * before it was asked for or a hand-made request — and of the two possible
+ * mistakes, asking an adult for a guardian's name is a sentence they can argue
+ * with, while letting a child sign for themselves is the one that matters.
+ * ---------------------------------------------------------------------------
+ */
+export function campNeedsGuardian(dateOfBirth: string, on: Date = new Date()): boolean {
+  const age = campAge(dateOfBirth, on);
+  return age === null || age < CAMP_ADULT_AGE;
 }
 
 /* ---------------------------------------------------------------------------
@@ -892,6 +1014,16 @@ export interface CampChild {
   dateOfBirth: string;
   /** The grade being *entered* in the autumn. See `CAMP_GRADES`. */
   grade: CampGrade;
+
+  /**
+   * Boy or girl, or empty on a registration taken before it was asked for.
+   *
+   * The crews are built and staffed on it — see `CAMP_GENDERS`. Beside the
+   * grade because that is how it is read: "how many 3rd grade girls" is one
+   * question, and the two fields that answer it should sit together.
+   */
+  gender: CampGenderField;
+
   shirtSize: ShirtSize;
 
   /**
@@ -966,6 +1098,16 @@ export interface CampServantDetails {
    * is only true for a year, and this document is read again next summer.
    */
   dateOfBirth: string;
+
+  /**
+   * Male or female, or empty on a sign-up taken before it was asked for.
+   *
+   * Beside the birth date for the same reason it is there: both answer "can
+   * this person be left with this crew", and a crew of eight-year-old girls
+   * with nobody female on it is as visible a problem as a crew with nobody over
+   * fifteen. The board counts it — see `CampGenderSplit`.
+   */
+  gender: CampGenderField;
 
   /**
    * Which half of the camp they want to serve.
@@ -1118,11 +1260,52 @@ export interface CampPaymentRecord {
 export interface CampBilling {
   /** The per-registrant fee in force when this was taken. Integer cents. */
   baseCents: number;
+
+  /**
+   * A one-off charge on this registration, whatever it is for. Integer cents.
+   *
+   * -------------------------------------------------------------------------
+   * The servants' shirt money, and why it is not `baseCents`.
+   *
+   * `baseCents` is a *weekly rate* — `campBill` multiplies it by the weeks each
+   * child is coming, and the finance rollup gathers every family's copy of it
+   * into a set to report the season's rate. A servant's charge is neither of
+   * those things: it is one flat amount, paid once, whether they serve one week
+   * or both, and putting it in `baseCents` would both bill it per week and make
+   * every season report two different weekly rates.
+   *
+   * So it is its own field, charged once, and it is copied onto the
+   * registration from `config/camp.servantChargeCents` at the moment the
+   * sign-up is taken — the same rule the family fee follows. Changing the
+   * setting afterwards never re-bills anybody who has already paid.
+   *
+   * Zero on every family registration today. Nothing stops a future desk
+   * charging one, and `campBill` bills it the same way if it ever does.
+   * -------------------------------------------------------------------------
+   */
+  chargeCents: number;
+
+  /**
+   * What the charge above is for, in the camp's own words: "Servant shirt".
+   *
+   * Copied rather than read live, for the reason `waiver.version` is: the
+   * setting is edited between seasons, and a receipt that renames what somebody
+   * paid for is a receipt that cannot be reconciled. Empty when there is no
+   * charge, and read as "Camp charge" by anything that has to name it.
+   */
+  chargeLabel: string;
+
   discounts: CampDiscount[];
   payments: CampPaymentRecord[];
 }
 
-export const NO_BILLING: CampBilling = { baseCents: 0, discounts: [], payments: [] };
+export const NO_BILLING: CampBilling = {
+  baseCents: 0,
+  chargeCents: 0,
+  chargeLabel: '',
+  discounts: [],
+  payments: [],
+};
 
 /* ---------------------------------------------------------------------------
  * The document
@@ -1197,6 +1380,7 @@ export function blankChild(): CampChild {
     lastName: '',
     dateOfBirth: '',
     grade: '1',
+    gender: '',
     shirtSize: 'YM',
     days: [],
     allergies: '',
@@ -1210,6 +1394,7 @@ export function blankServant(): CampServantDetails {
   return {
     uid: null,
     dateOfBirth: '',
+    gender: '',
     sections: [],
     desiredRolesByWeek: {},
     shirtSize: 'AM',
@@ -1230,6 +1415,9 @@ export function blankRegistration(input: {
   season: string;
   kind: CampRegistrantKind;
   baseCents: number;
+  /** A one-off charge, if the camp levies one. See `CampBilling.chargeCents`. */
+  chargeCents?: number;
+  chargeLabel?: string;
   takenByUid: string | null;
 }): CampRegistrationDraft {
   return {
@@ -1253,7 +1441,13 @@ export function blankRegistration(input: {
     children: input.kind === 'family' ? [blankChild()] : [],
     servant: input.kind === 'servant' ? blankServant() : null,
     waiver: { ...NO_WAIVER },
-    billing: { baseCents: input.baseCents, discounts: [], payments: [] },
+    billing: {
+      baseCents: input.baseCents,
+      chargeCents: Math.max(0, Math.round(input.chargeCents ?? 0)),
+      chargeLabel: input.chargeLabel ?? '',
+      discounts: [],
+      payments: [],
+    },
     note: '',
     takenByUid: input.takenByUid,
   };
@@ -1286,7 +1480,16 @@ export interface CampBill {
   lines: CampBillLine[];
   /** Total billable child-weeks. `lines` summed. */
   billableWeeks: number;
-  /** `baseCents × billableWeeks`, before anything comes off. */
+  /**
+   * The one-off charge on this registration — the servants' shirt money today.
+   *
+   * Kept beside the lines rather than made one of them, because a `CampBillLine`
+   * is one *child's* share and this belongs to nobody's child: the money screen
+   * reads the lines against the children it can see, and a line with no child
+   * behind it would render as an unnamed one. See `CampBilling.chargeCents`.
+   */
+  chargeCents: number;
+  /** The child-weeks plus the one-off charge, before anything comes off. */
   subtotalCents: number;
   discountCents: number;
   /** What is owed: subtotal less discounts, never below zero. */
@@ -1353,11 +1556,16 @@ export function campBill(registration: {
   const rate = Math.max(0, Math.round(registration.billing.baseCents));
 
   /*
-   * Servants are billed for nothing, so they get no lines at all.
+   * Servants are billed for no *weeks*, so they get no lines at all.
    *
    * Not "one line at zero": the alternative — billing them and relying on a
    * 100% discount — would put a fee on every servant's screen that somebody has
    * to remember to cancel.
+   *
+   * A servant can still owe something. The camp charges them once for a shirt,
+   * and that is `billing.chargeCents` below — one flat amount, outside the
+   * per-child-per-week arithmetic these lines are, and paid by card before the
+   * sign-up form will send.
    */
   const lines: CampBillLine[] =
     registration.kind === 'family'
@@ -1373,7 +1581,17 @@ export function campBill(registration: {
       : [];
 
   const billableWeeks = lines.reduce((sum, line) => sum + line.weeks, 0);
-  const subtotalCents = lines.reduce((sum, line) => sum + line.cents, 0);
+  /*
+   * Charged once, to whoever carries it, and not multiplied by anything.
+   *
+   * It is read off the registration and not off `config/camp`, so a camp that
+   * raises the shirt money in July does not silently raise it on the servant
+   * who paid in May — the same rule `baseCents` follows, and the reason both
+   * are copied onto the document when it is taken.
+   */
+  const rawCharge = registration.billing.chargeCents;
+  const chargeCents = Number.isFinite(rawCharge) ? Math.max(0, Math.round(rawCharge)) : 0;
+  const subtotalCents = lines.reduce((sum, line) => sum + line.cents, 0) + chargeCents;
 
   let off = 0;
   for (const discount of registration.billing.discounts) {
@@ -1403,6 +1621,7 @@ export function campBill(registration: {
   return {
     lines,
     billableWeeks,
+    chargeCents,
     subtotalCents,
     discountCents,
     dueCents,
@@ -1471,6 +1690,14 @@ export interface CampValidationContext {
    * caller that forgets it gets the stricter answer rather than the laxer one.
    */
   waiverInForce?: boolean;
+
+  /**
+   * The day the ages are worked out against. Defaults to today.
+   *
+   * Only here so a test can be written that does not stop passing on somebody's
+   * eighteenth birthday. Nothing in the app passes it.
+   */
+  today?: Date;
 }
 
 /**
@@ -1510,6 +1737,11 @@ export function validateCampRegistration(
       if (!isCampGrade(child.grade)) {
         errors.push(`${who} needs the grade they are entering.`);
       }
+      // Not cosmetic and not optional: the crews are split on it, and a child
+      // with no answer here is a child the groups board cannot count.
+      if (!isCampGender(child.gender)) {
+        errors.push(`Say whether ${who} is a boy or a girl — the crews are built on it.`);
+      }
       if (!isShirtSize(child.shirtSize)) {
         errors.push(`${who} needs a shirt size.`);
       }
@@ -1522,6 +1754,9 @@ export function validateCampRegistration(
     if (!servant) {
       errors.push('This servant registration is missing its details.');
     } else {
+      if (!isCampGender(servant.gender)) {
+        errors.push('Say whether the servant is male or female — the crews are staffed on it.');
+      }
       if (servant.sections.length === 0) {
         errors.push('Choose which group the servant will serve — elementary, middle school, or both.');
       }
@@ -1551,8 +1786,28 @@ export function validateCampRegistration(
   }
 
   // See `CampValidationContext`: only demanded when there is a waiver to sign.
-  if (context.waiverInForce !== false && (!draft.waiver.agreed || !draft.waiver.signedName.trim())) {
-    errors.push('The waiver has not been signed.');
+  if (context.waiverInForce !== false) {
+    if (!draft.waiver.agreed || !draft.waiver.signedName.trim()) {
+      errors.push('The waiver has not been signed.');
+    } else if (
+      draft.kind === 'servant' &&
+      draft.servant &&
+      campNeedsGuardian(draft.servant.dateOfBirth, context.today) &&
+      !draft.waiver.signedRelationship.trim()
+    ) {
+      /*
+       * An under-18 servant's waiver is their guardian's to sign, and the
+       * relationship is what says a guardian signed it rather than the servant
+       * typing their own name in a box labelled for somebody else. See
+       * `campNeedsGuardian`.
+       *
+       * Only asked for once there is a signature at all, so a blank waiver
+       * reports one fault rather than two.
+       */
+      errors.push(
+        'A servant under 18 needs a parent or guardian to sign — say how they are related.',
+      );
+    }
   }
 
   return errors;
@@ -1644,6 +1899,7 @@ function parseChild(raw: unknown): CampChild {
     lastName: str(doc['lastName']),
     dateOfBirth: str(doc['dateOfBirth']),
     grade: isCampGrade(doc['grade']) ? doc['grade'] : '1',
+    gender: readCampGender(doc['gender']),
     shirtSize: isShirtSize(doc['shirtSize']) ? doc['shirtSize'] : 'YM',
     days: dayList(doc['days']),
     allergies: text(doc['allergies']),
@@ -1660,6 +1916,7 @@ function parseServant(raw: unknown): CampServantDetails {
   return {
     uid: nullableStr(doc['uid']),
     dateOfBirth: str(doc['dateOfBirth']),
+    gender: readCampGender(doc['gender']),
     sections,
     desiredRolesByWeek: weekRoleMap(
       doc['desiredRolesByWeek'],
@@ -1689,6 +1946,8 @@ function parseBilling(raw: unknown): CampBilling {
   const doc = asRecord(raw);
   return {
     baseCents: cents(doc['baseCents']),
+    chargeCents: cents(doc['chargeCents']),
+    chargeLabel: str(doc['chargeLabel']),
     discounts: list(doc['discounts']).map(parseDiscount).slice(0, MAX_DISCOUNTS),
     payments: list(doc['payments']).map(parsePayment).slice(0, MAX_PAYMENTS),
   };
@@ -2007,16 +2266,26 @@ export interface CampServantRequest {
  * registration, so a servant's bill is zero however the fee moves. Copying a
  * fee onto a document that can never be billed by it would put a number on the
  * screen that means nothing.
+ *
+ * The charge is the other half of that, and it *is* copied: it is a flat amount
+ * a servant genuinely owes, `campBill` bills it, and the form cannot send until
+ * it has been paid. What the browser puts here is a display — the endpoint
+ * overwrites both from `config/camp` before anything is stored, for the reason
+ * the season and the ministry are overwritten there.
  */
 export function blankServantSignUp(input: {
   programId: string;
   season: string;
+  chargeCents?: number;
+  chargeLabel?: string;
 }): CampRegistrationDraft {
   return blankRegistration({
     programId: input.programId,
     season: input.season,
     kind: 'servant',
     baseCents: 0,
+    ...(input.chargeCents === undefined ? {} : { chargeCents: input.chargeCents }),
+    ...(input.chargeLabel === undefined ? {} : { chargeLabel: input.chargeLabel }),
     // Nobody took this at a desk. `takenByUid` is the administrator who did,
     // and claiming one here would credit somebody with work they did not do.
     takenByUid: null,
@@ -2064,6 +2333,13 @@ export function validateServantSignUp(
     if (!servant.dateOfBirth.trim()) {
       errors.push('Enter your date of birth — the camp needs it to build the groups.');
     }
+    // The first person of the check in `validateCampRegistration`. Asked for
+    // the same reason: the crews are split male and female, and a sign-up that
+    // does not say leaves somebody unplaceable until an administrator rings
+    // them to ask.
+    if (!isCampGender(servant.gender)) {
+      errors.push('Choose male or female — the camp splits its groups by it.');
+    }
     if (servant.sections.length === 0) {
       errors.push('Choose which group you would like to serve — elementary, middle school, or both.');
     }
@@ -2082,8 +2358,46 @@ export function validateServantSignUp(
     if (!isShirtSize(servant.shirtSize)) errors.push('Choose a shirt size.');
   }
 
-  if (context.waiverInForce !== false && (!draft.waiver.agreed || !draft.waiver.signedName.trim())) {
-    errors.push('The waiver has not been signed.');
+  if (context.waiverInForce !== false) {
+    /*
+     * Whose signature this panel is asking for — and *only* once an age is
+     * known.
+     *
+     * `campNeedsGuardian` calls a missing date of birth under-18, which is the
+     * right default for a record being read. It is the wrong thing to say to
+     * somebody still filling the form in: an adult who has typed nothing yet
+     * would be told their parent has to sign. The date is demanded two checks
+     * above this one, so nothing is let through — the wording simply waits
+     * until the answer is there, which is also when the form itself swaps the
+     * guardian's fields in.
+     */
+    const born = servant?.dateOfBirth.trim() ?? '';
+    const guardian = born !== '' && campNeedsGuardian(born, context.today);
+
+    /*
+     * One message for the whole panel, worded for whoever has to act on it.
+     *
+     * Not one per empty field: the tick and the name are a single act — signing
+     * — and a form that answers an unsigned waiver with three bullet points
+     * reads as three faults. Under 18 it is somebody else's act, and saying so
+     * is the difference between a teenager typing their own name in and
+     * fetching their mother.
+     */
+    if (!draft.waiver.agreed || !draft.waiver.signedName.trim()) {
+      errors.push(
+        guardian
+          ? 'Your parent or guardian has to agree to the waiver and sign it with their name.'
+          : 'The waiver has not been signed.',
+      );
+    }
+    /*
+     * What distinguishes a guardian signing from a teenager typing their own
+     * name into a box labelled for somebody else. Asked only of the under-18
+     * form, and only once it knows it is one — see the note on `guardian`.
+     */
+    if (guardian && !draft.waiver.signedRelationship.trim()) {
+      errors.push('Say how the person signing is related to you — mother, father, guardian.');
+    }
   }
 
   return errors;

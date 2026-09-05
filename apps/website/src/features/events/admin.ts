@@ -52,7 +52,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { deleteObject, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, listAll, ref, uploadBytes } from 'firebase/storage';
 import { explainUploadFailure } from '@/lib/storageErrors';
 import {
   COLLECTIONS,
@@ -355,19 +355,70 @@ export async function uploadEventHero(file: File, slug: string): Promise<string>
 }
 
 /**
- * Remove a photograph that is no longer referenced.
+ * Remove a photograph from the bucket.
  *
- * Failures are swallowed, and that is deliberate. This is called when somebody
- * replaces or clears an image, *after* the document has stopped pointing at the
- * old object — so the visible outcome has already happened. A leftover file in
- * the bucket costs pennies; an error dialog saying the event did not save, when
- * it did, costs a support call.
+ * Called once the document has stopped pointing at the object — the editor
+ * waits for that write to land before calling this, so a failure here can never
+ * leave the event referencing a file that is gone.
+ *
+ * ## It used to swallow every failure, and that was wrong
+ *
+ * The note here said a leftover file costs pennies and an error dialog costs a
+ * support call. What it missed is that `events/` is `allow read: if true`: an
+ * object nothing references is still served, forever, at the URL it always had.
+ * "Remove photograph" that only clears a field is not a removal — the picture is
+ * off the page and still on the internet, which is the opposite of what the
+ * person pressing it was told. Tommy: *"when the pictures are deleted in the
+ * events admin page it should delete from the entire database not just what is
+ * seen."*
+ *
+ * So a real failure is thrown now and the editor says so. `object-not-found` is
+ * not a failure: the file is not there, which is the outcome being asked for —
+ * it happens when two people remove the same photograph, or when a replacement
+ * is undone and re-done.
  */
 export async function deleteEventHero(path: string): Promise<void> {
   try {
     await deleteObject(ref(storage(), path));
   } catch (error) {
-    console.warn('[events] could not delete the old hero image:', error);
+    if ((error as { code?: string })?.code === 'storage/object-not-found') return;
+    throw error;
+  }
+}
+
+/**
+ * Every file filed under an event, deleted with it.
+ *
+ * The document is what the site reads, so deleting it takes the event off the
+ * calendar — but the photographs stay in a world-readable bucket at the URLs
+ * they were shared under. Deleting the event has to mean deleting them too.
+ *
+ * A `listAll` of the prefix rather than the one path the document holds, because
+ * the document only ever holds the *current* photograph. Every replacement made
+ * before this existed left its predecessor behind under the same slug, and those
+ * are exactly the files nobody has any other way to find: no screen lists them
+ * and no document names them. Listing is allowed to anyone (`allow read: if
+ * true` covers `list`); deleting needs the parish calendar grant, which whoever
+ * just deleted the event has.
+ *
+ * Best-effort, and it has to be: it runs after the event is already gone, so
+ * there is nothing to roll back and nothing useful to say to somebody who has
+ * moved on. What it cannot do is run *before* the undo window closes — an undone
+ * delete has to find its photograph still there.
+ */
+export async function deleteEventFiles(slug: string): Promise<void> {
+  if (!slug) return;
+  try {
+    const listed = await listAll(ref(storage(), `events/${slug}`));
+    await Promise.all(
+      listed.items.map((item) =>
+        deleteObject(item).catch((error) => {
+          console.warn('[events] could not delete', item.fullPath, error);
+        }),
+      ),
+    );
+  } catch (error) {
+    console.warn('[events] could not list the files for', slug, error);
   }
 }
 

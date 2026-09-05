@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   BUILT_IN_FORM_IDS,
@@ -489,6 +490,70 @@ describe('the address of a form we do not host', () => {
     // The builder lints against this; the page must still render something
     // rather than throwing inside an `src` attribute.
     expect(embedFormUrl('  nonsense  ')).toBe('nonsense');
+  });
+
+  /*
+   * The other half of the same allowlist, in another file and another language.
+   *
+   * `isKnownFormHost` decides what the importer *accepts*; `frame-src` in
+   * firebase.json decides what a browser will actually *load*. Staff only ever
+   * see the first one, so when the second is narrower the importer says the
+   * address is fine, writes the form, and the page draws an empty rectangle —
+   * which is exactly what happened to all three imported forms between 1 and 5
+   * Sep 2026, when `frame-src` named give.tithe.ly and nothing else while every
+   * real form was on breezechms.com.
+   *
+   * Nothing else catches it. `next dev` serves none of these headers, so a
+   * laptop is always green; the build does not read firebase.json; and the only
+   * report is a console line in production. Hence a test, and hence it reads
+   * the deployed policy rather than a copy of it.
+   */
+  it('is framed by a policy that allows every host the importer accepts', () => {
+    const hosting = JSON.parse(
+      readFileSync(new URL('../../firebase.json', import.meta.url), 'utf8'),
+    ) as { hosting: { headers: { headers: { key: string; value: string }[] }[] } };
+
+    const csp = hosting.hosting.headers
+      .flatMap((entry) => entry.headers)
+      .find((header) => header.key === 'Content-Security-Policy');
+    expect(csp, 'firebase.json serves no Content-Security-Policy').toBeDefined();
+
+    const frameSrc = (csp!.value.split(';').find((part) => part.trim().startsWith('frame-src')) ?? '')
+      .trim()
+      .split(/\s+/)
+      .slice(1);
+    expect(frameSrc.length, 'the policy has no frame-src to check').toBeGreaterThan(0);
+
+    const allows = (address: string) => {
+      const { hostname } = new URL(address);
+      return frameSrc.some((source) => {
+        const host = source.replace(/^https:\/\//, '');
+        return host.startsWith('*.')
+          ? hostname === host.slice(2) || hostname.endsWith(host.slice(1))
+          : hostname === host;
+      });
+    };
+
+    /*
+     * The three forms that are live today, plus the two shapes the importer
+     * tells staff are acceptable but nobody has pasted yet. All five are
+     * `isKnownFormHost`, so all five must be loadable.
+     */
+    for (const address of [
+      'https://stphilopaterstmina.breezechms.com/form/013034',
+      'https://stphilopaterstmina.breezechms.com/form/NewServicesandEvents',
+      'https://give.tithe.ly/?formId=abc',
+      'https://tithe.ly/event-registration/123',
+      'https://get.tithely.com/forms/abc',
+    ]) {
+      expect(isKnownFormHost(address), `${address} is not a known host`).toBe(true);
+      expect(allows(address), `frame-src refuses ${address}`).toBe(true);
+    }
+
+    // And the wildcards are still wildcards on a vendor, not on the world.
+    expect(allows('https://tithe.ly.example.com/forms/abc')).toBe(false);
+    expect(frameSrc).not.toContain('https:');
+    expect(frameSrc).not.toContain('*');
   });
 });
 

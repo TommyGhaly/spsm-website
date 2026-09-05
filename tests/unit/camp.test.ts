@@ -24,6 +24,10 @@ import {
   blankServant,
   blankServantSignUp,
   campBill,
+  campNeedsGuardian,
+  campGenderLabel,
+  campGenderPlural,
+  campGenderShort,
   campPaymentMethodLabel,
   campWeeksAttended,
   readCampPaymentMethod,
@@ -147,6 +151,69 @@ describe('campBill', () => {
     // The point of this one: a servant must not sit in the "owes money" list
     // forever because a fee was copied onto their document.
     expect(bill.paid).toBe(true);
+  });
+
+  /**
+   * The servants' shirt money: one flat amount, however many weeks they serve.
+   *
+   * It is not `baseCents` and must never become it — see
+   * `CampBilling.chargeCents`. A weekly rate would charge a servant twice for
+   * doing both weeks, which is the opposite of what was asked for, and it would
+   * put a second "weekly rate" into every season's finance rollup.
+   */
+  it('charges a servant a flat amount, once, whatever weeks they serve', () => {
+    const servant = blankRegistration({
+      programId: 'summercamp',
+      season: '2027',
+      kind: 'servant',
+      baseCents: 175_00,
+      chargeCents: 20_00,
+      chargeLabel: 'Servant shirt',
+      takenByUid: null,
+    });
+    servant.servant = { ...servant.servant!, days: [...campWeekKeys(1), ...campWeekKeys(2)] };
+
+    const bill = campBill(servant);
+    // No lines: a servant is billed for no weeks, and the charge is not one.
+    expect(bill.lines).toEqual([]);
+    expect(bill.chargeCents).toBe(20_00);
+    expect(bill.subtotalCents).toBe(20_00);
+    expect(bill.dueCents).toBe(20_00);
+    expect(bill.balanceCents).toBe(20_00);
+    expect(bill.paid).toBe(false);
+  });
+
+  it('calls a servant settled once the charge is paid', () => {
+    const servant = blankRegistration({
+      programId: 'summercamp',
+      season: '2027',
+      kind: 'servant',
+      baseCents: 0,
+      chargeCents: 20_00,
+      chargeLabel: 'Servant shirt',
+      takenByUid: null,
+    });
+    servant.billing.payments = [
+      { id: 'p1', amountCents: 20_00, method: 'square', reference: 'sq-1', receivedOn: '2027-05-01', note: 'Servant shirt', recordedByUid: null, recordedAt: null },
+    ];
+    const bill = campBill(servant);
+    expect(bill.paidCents).toBe(20_00);
+    expect(bill.balanceCents).toBe(0);
+    expect(bill.paid).toBe(true);
+  });
+
+  /**
+   * A registration written before the charge existed has no such field, and
+   * `Math.round(undefined)` is `NaN` — which does not throw, does not show, and
+   * turns a season's outstanding total into nothing. The rollup's fixtures found
+   * this before a parish did.
+   */
+  it('reads a registration written before the charge existed as no charge', () => {
+    const draft = family(1, 100_00);
+    delete (draft.billing as { chargeCents?: number }).chargeCents;
+    const bill = campBill(draft);
+    expect(bill.chargeCents).toBe(0);
+    expect(bill.dueCents).toBe(100_00);
   });
 
   it('takes a flat amount off the subtotal', () => {
@@ -293,6 +360,7 @@ describe('validation', () => {
     const child = draft.children[0] as CampChild;
     child.firstName = 'Mariam';
     child.lastName = 'Guirguis';
+    child.gender = 'female';
     child.days = campWeekKeys(1);
     draft.waiver = {
       version: '2027-1',
@@ -330,7 +398,7 @@ describe('validation', () => {
     // days has no week to be asked about.
     expect(problems.some((p) => p.includes('days'))).toBe(true);
 
-    draft.servant = { ...draft.servant!, sections: ['middle-school'] };
+    draft.servant = { ...draft.servant!, gender: 'male', sections: ['middle-school'] };
     draft.servant = { ...draft.servant, days: campWeekKeys(2) };
     // Now there is a week, so the week is asked about — and named, along with
     // the half of the camp, because a servant coming to both weeks or serving
@@ -375,6 +443,7 @@ describe('validation', () => {
     const child = draft.children[0] as CampChild;
     child.firstName = 'Mariam';
     child.lastName = 'Guirguis';
+    child.gender = 'female';
     child.days = campWeekKeys(1);
 
     expect(validateCampRegistration(draft, { waiverInForce: false })).toEqual([]);
@@ -385,6 +454,135 @@ describe('validation', () => {
       'The waiver has not been signed.',
     ]);
     expect(validateCampRegistration(draft)).toEqual(['The waiver has not been signed.']);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Male and female
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The field the groups board is balanced on.
+ *
+ * Two things are worth pinning here and nowhere else. The first is that
+ * **nothing recorded stays nothing recorded** — a parser that defaulted it
+ * would put a number on a ratio somebody staffs a crew against, and the wrong
+ * number would be indistinguishable from a right one. The second is that both
+ * validators ask for it: the register's, which lists it as still to fill in,
+ * and the sign-up's, which refuses to send without it. See `CAMP_GENDERS`.
+ */
+describe('male and female', () => {
+  it('reads a child’s and a servant’s answer off a stored document', () => {
+    const child = parseCampRegistration({
+      kind: 'family',
+      children: [{ id: 'c1', firstName: 'Mariam', gender: 'female' }],
+    }).children[0]!;
+    expect(child.gender).toBe('female');
+
+    const servant = parseCampRegistration({ kind: 'servant', servant: { gender: 'male' } }).servant;
+    expect(servant?.gender).toBe('male');
+  });
+
+  it('never guesses one', () => {
+    // Absent, misspelled, and a value from somebody else's vocabulary. All
+    // three are "not asked", because a default here is a wrong ratio nobody
+    // can see is wrong.
+    for (const stored of [undefined, '', 'Male', 'boy', 'm', 'unknown', 42, null]) {
+      expect(
+        parseCampRegistration({ kind: 'family', children: [{ id: 'c1', gender: stored }] })
+          .children[0]!.gender,
+      ).toBe('');
+    }
+  });
+
+  it('survives a registration written before the field existed', () => {
+    // The whole legacy corpus: no key at all. It must parse, and it must read
+    // as unanswered rather than throw or default.
+    const old = parseCampRegistration({
+      kind: 'family',
+      children: [{ id: 'c1', firstName: 'Mariam', grade: '3', shirtSize: 'YM' }],
+    });
+    expect(old.children[0]!.gender).toBe('');
+    expect(old.children[0]!.grade).toBe('3');
+  });
+
+  it('starts blank on a new child and a new servant', () => {
+    expect(blankChild().gender).toBe('');
+    expect(blankServant().gender).toBe('');
+  });
+
+  it('says it in the vocabulary of whoever is being described', () => {
+    expect(campGenderLabel('female', 'child')).toBe('Girl');
+    expect(campGenderLabel('female', 'servant')).toBe('Female');
+    expect(campGenderLabel('', 'child')).toBe('Not given');
+
+    // The chip's one letter follows the same split — see `campGenderShort`.
+    expect(campGenderShort('male', 'child')).toBe('B');
+    expect(campGenderShort('male', 'servant')).toBe('M');
+    expect(campGenderShort('', 'servant')).toBe('?');
+
+    expect(campGenderPlural('female', 'child')).toBe('girls');
+    expect(campGenderPlural('female', 'servant')).toBe('female');
+    // The count is what stops a tally's hover text reading "1 boys". A
+    // servant's word does not inflect either way.
+    expect(campGenderPlural('male', 'child', 1)).toBe('boy');
+    expect(campGenderPlural('female', 'child', 1)).toBe('girl');
+    expect(campGenderPlural('female', 'child', 0)).toBe('girls');
+    expect(campGenderPlural('female', 'servant', 1)).toBe('female');
+  });
+
+  it('is asked for on the register, by name, and stops being asked once given', () => {
+    const draft = family(1, 100_00);
+    draft.contact.name = 'Mina Guirguis';
+    const child = draft.children[0] as CampChild;
+    child.firstName = 'Mariam';
+
+    // Named, because a registration with four children on it has to say which.
+    expect(validateCampRegistration(draft).some((p) => p.includes('Mariam is a boy or a girl'))).toBe(
+      true,
+    );
+
+    child.gender = 'female';
+    expect(validateCampRegistration(draft).some((p) => p.includes('boy or a girl'))).toBe(false);
+  });
+
+  it('is asked of a servant on the register too', () => {
+    const draft = blankRegistration({
+      programId: 'summercamp',
+      season: '2027',
+      kind: 'servant',
+      baseCents: 0,
+      takenByUid: null,
+    });
+    expect(validateCampRegistration(draft).some((p) => p.includes('male or female'))).toBe(true);
+
+    draft.servant = { ...draft.servant!, gender: 'male' };
+    expect(validateCampRegistration(draft).some((p) => p.includes('male or female'))).toBe(false);
+  });
+
+  it('stops a public sign-up that does not say', () => {
+    // `validateServantSignUp` is the gate on the endpoint as well as the form,
+    // so this is what a stranger's POST is refused by. See `campServantRequest`.
+    const draft = signUpDraft();
+    draft.servant = { ...draft.servant!, gender: '' };
+    expect(validateServantSignUp(draft, { waiverInForce: false })).toEqual([
+      'Choose male or female — the camp splits its groups by it.',
+    ]);
+  });
+
+  it('carries a sign-up’s answer through acceptance unchanged', () => {
+    const request: CampServantRequest = {
+      programId: 'summercamp',
+      season: '2027',
+      registration: signUpDraft(),
+      message: '',
+      submittedAt: null,
+    };
+    const accepted = acceptedServantRegistration(request, {
+      takenByUid: 'lead-1',
+      waiverInForce: false,
+    });
+    expect(accepted.servant?.gender).toBe('female');
   });
 });
 
@@ -546,6 +744,28 @@ describe('parseCampConfig', () => {
     expect(parseCampConfig({ baseCents: -100 }, now).baseCents).toBe(0);
     expect(parseCampConfig({ baseCents: 9_999_999 }, now).baseCents).toBe(0);
     expect(parseCampConfig({ baseCents: 175_00 }, now).baseCents).toBe(175_00);
+  });
+
+  /**
+   * The servants' charge, which is the one setting on this document that takes
+   * money off a stranger's card the moment they press send on a public form.
+   *
+   * Zero is not "unset" here — it is "no charge", which switches the card step
+   * off entirely. That is the default and the state most camps stay in.
+   */
+  it('reads a missing servant charge as no charge, and no card step', () => {
+    expect(parseCampConfig({}, now).servantChargeCents).toBe(0);
+    expect(parseCampConfig({}, now).servantChargeLabel).toBe('');
+    expect(parseCampConfig({ servantChargeCents: 20_00 }, now).servantChargeCents).toBe(20_00);
+  });
+
+  it('falls back rather than clamping a servant charge out of range', () => {
+    // The same rule the fee follows: a clamped figure is money nobody chose,
+    // and zero reads on the settings screen as "servants are not charged".
+    expect(parseCampConfig({ servantChargeCents: -100 }, now).servantChargeCents).toBe(0);
+    expect(parseCampConfig({ servantChargeCents: 9_999_999 }, now).servantChargeCents).toBe(0);
+    expect(parseCampConfig({ servantChargeCents: 20.5 }, now).servantChargeCents).toBe(0);
+    expect(parseCampConfig({ servantChargeCents: '2000' }, now).servantChargeCents).toBe(0);
   });
 
   it('reads a missing servant sign-up switch as open', () => {
@@ -957,6 +1177,7 @@ function signUpDraft(over: Partial<CampRegistrationDraft> = {}): CampRegistratio
     servant: {
       ...(base.servant ?? blankServant()),
       dateOfBirth: '2009-06-01',
+      gender: 'female',
       sections: ['elementary'],
       desiredRolesByWeek: { w1_elementary: ['Sports'] },
       days: ['w1-mon', 'w1-tue'],
@@ -1019,14 +1240,133 @@ describe('validating a servant’s own sign-up', () => {
   });
 
   it('demands the waiver only when there is one', () => {
+    // Pinned to a day the fixture is an adult on. The sign-up fixture was born
+    // in 2009 and turns 18 in June 2027 — without a fixed day this assertion
+    // silently becomes the guardian's one, on a morning nobody is looking.
+    const grown = { today: new Date(2030, 0, 1) };
+
     const draft = signUpDraft();
-    expect(validateServantSignUp(draft, { waiverInForce: true })).toEqual([
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...grown })).toEqual([
       'The waiver has not been signed.',
     ]);
-    expect(validateServantSignUp(draft, { waiverInForce: false })).toEqual([]);
+    expect(validateServantSignUp(draft, { waiverInForce: false, ...grown })).toEqual([]);
     // Defaults to the stricter answer, so a caller that forgets the context
     // asks for a signature rather than skipping it.
-    expect(validateServantSignUp(draft)).toHaveLength(1);
+    expect(validateServantSignUp(draft, grown)).toHaveLength(1);
+  });
+});
+
+/**
+ * Who signs an under-18 servant's waiver.
+ *
+ * ---------------------------------------------------------------------------
+ * Half the camp's servants are teenagers, and a fifteen-year-old cannot agree
+ * to a waiver on their own behalf. The form is still theirs to fill in — that
+ * is the whole design of a public sign-up — but the last box is their parent's,
+ * and these are the assertions that keep it so.
+ *
+ * Every one of them pins the day. An age test written against `new Date()` is a
+ * test that changes its mind on somebody's birthday.
+ * ---------------------------------------------------------------------------
+ */
+describe('a servant under 18', () => {
+  /*
+   * Local midnight, not `Date('…Z')`.
+   *
+   * `campAge` reads the day with `getMonth`/`getDate`, which are local — so a
+   * UTC midnight is the day before in every American timezone, and a birthday
+   * test written that way is off by one for half the planet and passes in
+   * London.
+   */
+  const TEEN = { today: new Date(2026, 8, 5) };   // the fixture is 17
+  const GROWN = { today: new Date(2030, 0, 1) };  // and 20
+
+  it('is anybody under eighteen, and anybody with no date of birth', () => {
+    expect(campNeedsGuardian('2009-06-01', TEEN.today)).toBe(true);
+    expect(campNeedsGuardian('2009-06-01', GROWN.today)).toBe(false);
+    // Eighteen on the day, and not a day before.
+    expect(campNeedsGuardian('2008-09-05', TEEN.today)).toBe(false);
+    expect(campNeedsGuardian('2008-09-06', TEEN.today)).toBe(true);
+    /*
+     * The defensive half. A sign-up with no date of birth is refused on that
+     * line anyway, so nothing rests on this in practice — but of the two
+     * possible mistakes, asking an adult for a guardian is a sentence they can
+     * argue with and letting a child sign for themselves is not.
+     */
+    expect(campNeedsGuardian('')).toBe(true);
+    expect(campNeedsGuardian('not a date')).toBe(true);
+  });
+
+  it('needs the guardian’s name and how they are related', () => {
+    const draft = signUpDraft();
+    draft.waiver = { ...draft.waiver, agreed: true, signedName: 'Nabil Rizk' };
+
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...TEEN })).toEqual([
+      'Say how the person signing is related to you — mother, father, guardian.',
+    ]);
+
+    draft.waiver = { ...draft.waiver, signedRelationship: 'Father' };
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...TEEN })).toEqual([]);
+  });
+
+  it('says whose signature is missing, rather than that one is', () => {
+    const draft = signUpDraft();
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...TEEN })).toContain(
+      'Your parent or guardian has to agree to the waiver and sign it with their name.',
+    );
+  });
+
+  it('asks an adult for no relationship at all', () => {
+    const draft = signUpDraft();
+    draft.waiver = { ...draft.waiver, agreed: true, signedName: 'Marina Rizk' };
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...GROWN })).toEqual([]);
+  });
+
+  /**
+   * The one that keeps the error list honest.
+   *
+   * A sign-up with no date of birth is under-18 by the rule above, but the form
+   * has not shown the guardian's fields yet — it only knows to once an age is
+   * given. Demanding a relationship there is a message about a field that is
+   * not on the screen.
+   */
+  it('does not ask a form with no age yet for a guardian at all', () => {
+    /*
+     * The wording waits for the answer. An adult who has typed nothing into
+     * this form yet must not be told their parent has to sign it — and nothing
+     * is let through by waiting, because the date of birth is demanded on its
+     * own line.
+     */
+    const draft = signUpDraft();
+    draft.servant = { ...draft.servant!, dateOfBirth: '' };
+    expect(validateServantSignUp(draft, { waiverInForce: true, ...TEEN })).toContain(
+      'The waiver has not been signed.',
+    );
+  });
+
+  it('does not ask for a relationship before it knows an age', () => {
+    const draft = signUpDraft();
+    draft.servant = { ...draft.servant!, dateOfBirth: '' };
+    draft.waiver = { ...draft.waiver, agreed: true, signedName: 'Nabil Rizk' };
+
+    const problems = validateServantSignUp(draft, { waiverInForce: true, ...TEEN });
+    expect(problems).toContain(
+      'Enter your date of birth — the camp needs it to build the groups.',
+    );
+    expect(problems.some((problem) => problem.includes('related to you'))).toBe(false);
+  });
+
+  /**
+   * The desk's copy of the same rule, in the third person. The two validators
+   * are deliberately separate — one is read by the servant and one about them —
+   * and the cost of that is that they drift unless something says so.
+   */
+  it('is refused at the desk too, in the third person', () => {
+    const draft = signUpDraft();
+    draft.waiver = { ...draft.waiver, agreed: true, signedName: 'Nabil Rizk' };
+    expect(validateCampRegistration(draft, { waiverInForce: true, ...TEEN })).toEqual([
+      'A servant under 18 needs a parent or guardian to sign — say how they are related.',
+    ]);
   });
 });
 

@@ -430,6 +430,12 @@ await put('config/camp', {
   programId: 'summercamp',
   season: '2027',
   baseCents: 17500,
+  // The servants' shirt money, and the reason the sign-up form's card step is
+  // reachable locally at all. Zero is the production default and it switches
+  // the whole step off — which is a state worth being able to see, but not the
+  // one to develop the form against. See `CampConfig.servantChargeCents`.
+  servantChargeCents: 2000,
+  servantChargeLabel: 'Servant shirt',
   weeks: 2,
   // Real dates, because every camp screen now shows a day as a date and the
   // fallback wording ("Week 1 · Mon") is what you get with these blank — which
@@ -498,7 +504,22 @@ await put('config/camp', {
  * called Zaki in different groups is exactly the case a roster has to handle.
  */
 {
-  const FIRST = ['Mariam','Peter','Anne','Youssef','Sara','Mina','Marina','George','Veronica','Kirollos','Monica','Abanoub','Christine','Philopater','Nardine','Bishoy','Verena','Mark','Sandra','Karas','Angela','Antonious','Marianne','David','Nourhan','Fady','Rita','Joseph','Demiana','Simon','Martha','Andrew','Salma','Michael','Hana','Daniel','Yostina','Samuel','Irene','Paul'];
+  /*
+   * Split by sex, and the split is not decoration.
+   *
+   * The groups board's balance reading is arithmetic over a stored `gender`
+   * field, and a seed that picked the name and the sex independently produced a
+   * board full of "Angela · B" and "Paul · G" — which reads as the feature
+   * being broken, every time, to anybody looking at it. So the name is drawn
+   * from whichever list the sex chose. See `nameFor`.
+   */
+  const FIRST_MALE = ['Peter','Youssef','Mina','George','Kirollos','Abanoub','Philopater','Bishoy','Mark','Karas','Antonious','David','Fady','Joseph','Simon','Andrew','Michael','Daniel','Samuel','Paul'];
+  const FIRST_FEMALE = ['Mariam','Anne','Sara','Marina','Veronica','Monica','Christine','Nardine','Verena','Sandra','Angela','Marianne','Nourhan','Rita','Demiana','Martha','Salma','Hana','Yostina','Irene'];
+  const FIRST = [...FIRST_MALE, ...FIRST_FEMALE];
+
+  /** A first name that agrees with the sex. Unrecorded draws from the lot. */
+  const nameFor = (gender) =>
+    pick(gender === 'male' ? FIRST_MALE : gender === 'female' ? FIRST_FEMALE : FIRST);
   const LAST = ['Guirguis','Awadalla','Hanna','Basilious','Ibrahim','Shenouda','Zaki','Malak','Rizk','Tadros'];
   // K to 8th, which is the camp. Pre-K was dropped on 30 Aug 2026 and seeding
   // it would keep producing children no panel is eligible to hold.
@@ -593,12 +614,24 @@ await put('config/camp', {
     const surname = LAST[f % LAST.length];
     const children = [];
     for (let c = 0, kids = 1 + Math.floor(rand() * 2.6); c < kids; c += 1) {
+      const gender = rand() < 0.12 ? '' : rand() < 0.5 ? 'male' : 'female';
       children.push({
         id: `child-${f}-${c}`,
-        firstName: pick(FIRST),
+        firstName: nameFor(gender),
         lastName: surname,
         dateOfBirth: '',
         grade: pick(GRADES),
+        /*
+         * Boys and girls, and a few with nothing recorded.
+         *
+         * The same argument as the allergies below: the groups board's whole
+         * balance reading is arithmetic over this field, and a seed where
+         * everybody is a boy makes the tally look right while proving nothing.
+         * The one-in-eight blank is the state of every registration taken
+         * before the field existed, which is what the loud `?` on a chip is
+         * there for.
+         */
+        gender,
         shirtSize: pick(CHILD_SIZES),
         days: WEEK_ONE,
         // Roughly one child in six, which is about right for a parish camp and
@@ -645,13 +678,18 @@ await put('config/camp', {
   }
 
   for (let n = 0; n < 14; n += 1) {
+    // Alternating rather than random, so the half's servant balance is a number
+    // a test can be written against. Two of the fourteen are left unrecorded,
+    // for the same reason a few of the children are.
+    const gender = n % 7 === 3 ? '' : n % 2 ? 'female' : 'male';
     await put(`campRegistrations/reg-seed-s${n}`, {
       programId: 'summercamp',
       season: '2027',
       kind: 'servant',
       status: 'registered',
       contact: {
-        name: `${pick(FIRST)} ${pick(LAST)}`,
+        // Agreeing with the sex below — see `nameFor`.
+        name: `${nameFor(gender)} ${pick(LAST)}`,
         email: `servant${n}@example.org`,
         phone: `508-555-03${String(n).padStart(2, '0')}`,
         altName: '', altPhone: '', address: '',
@@ -661,6 +699,7 @@ await put('config/camp', {
       servant: {
         uid: null,
         dateOfBirth: `${SERVANT_BIRTH_YEARS[n % SERVANT_BIRTH_YEARS.length]}-0${1 + (n % 9)}-1${n % 10}`,
+        gender,
         sections: n % 3 === 0 ? ['elementary', 'middle-school'] : n % 2 ? ['elementary'] : ['middle-school'],
         // Per week and per half of the camp, as the form now asks it — see
         // `campWeekRoleKey`. Only the halves in `sections` above get a key,

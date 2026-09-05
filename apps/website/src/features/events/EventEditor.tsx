@@ -115,6 +115,23 @@ export function EventEditor({ baked, onSaved }: {
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [removal, setRemoval] = useState<Removal>({ kind: 'no' });
+  /*
+   * A photograph the form has stopped pointing at, waiting to be deleted from
+   * the bucket.
+   *
+   * It cannot be deleted the moment Remove is pressed. The form is not the
+   * document — autosave writes it about a second later — and deleting the object
+   * first would leave a window in which the event still names a file that no
+   * longer exists, which is a broken picture on the live page and on the mobile
+   * app. So the path is parked here and the effect below deletes it once a save
+   * has actually landed.
+   *
+   * `since` is what makes "a save has landed" mean *this* save. Autosave's state
+   * is `saved` for as long as nothing else is typed, so a bare `kind === 'saved'`
+   * would match the previous save — the one still describing the old photograph
+   * — and delete a file the document was pointing at.
+   */
+  const [orphan, setOrphan] = useState<{ path: string; since: number } | null>(null);
 
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -319,22 +336,29 @@ export function EventEditor({ baked, onSaved }: {
 
   /* ---- the photograph ------------------------------------------------- */
 
+  /** Queue a file for deletion once the document has stopped naming it. */
+  const dropFile = useCallback((path: string) => {
+    setOrphan({ path, since: Date.now() });
+  }, []);
+
   async function pickHero(file: File) {
     setHero({ kind: 'uploading' });
     const previous = form.heroImagePath;
     try {
-      const { uploadEventHero, deleteEventHero } = await import('./admin');
+      const { uploadEventHero } = await import('./admin');
       const path = await uploadEventHero(file, form.slug);
       set('heroImagePath', path);
       setHero({ kind: 'idle' });
       /*
-       * The old object is deleted as soon as the form stops pointing at it,
-       * which is *before* anything is published. That is a real trade and the
-       * wrong one here: discarding the change would leave the event pointing at
-       * a file that no longer exists. So the old one is left alone and the
-       * bucket keeps it — see `deleteEventHero`'s note on cost.
+       * Replacing is a removal too. The note that used to be here kept the old
+       * object on the grounds that discarding the change would leave the event
+       * pointing at a deleted file — but there is nothing to discard any more,
+       * because there is no publish step and no discard: the form *is* on its way
+       * to the document. So the predecessor is queued for deletion, and the
+       * window that note was worried about is closed by waiting for the write
+       * instead of by keeping the file. See `orphan`.
        */
-      void previous;
+      if (previous && previous !== path) dropFile(previous);
     } catch (error) {
       setHero({
         kind: 'error',
@@ -342,6 +366,77 @@ export function EventEditor({ baked, onSaved }: {
       });
     }
   }
+
+  /*
+   * Deleting the orphan, once the write that unreferenced it has landed.
+   *
+   * Nothing happens while autosave is `pending`, `saving`, `held` or `error` —
+   * in every one of those the document still names the file, so deleting it
+   * would break the live page. `held` and `error` can last indefinitely (an
+   * emptied date field, a lost connection), and the file simply stays until the
+   * save goes through. That is the right way round: a photograph that outlives
+   * its removal by a minute is untidy, one deleted while still referenced is a
+   * broken page.
+   */
+  useEffect(() => {
+    if (!orphan) return;
+
+    // The form points at it again — a re-upload of the same path, or the fresh
+    // read landing over an unsaved change. It is not an orphan, so let it be.
+    if (form.heroImagePath === orphan.path) {
+      setOrphan(null);
+      return;
+    }
+
+    if (autosave.state.kind !== 'saved' || autosave.state.at < orphan.since) return;
+
+    let alive = true;
+    void (async () => {
+      try {
+        const { deleteEventHero } = await import('./admin');
+        await deleteEventHero(orphan.path);
+        if (alive) setOrphan(null);
+      } catch (error) {
+        if (!alive) return;
+        setOrphan(null);
+        /*
+         * Said out loud rather than logged. "Remove" that quietly leaves the
+         * picture served at its old URL is the bug being fixed here, so a
+         * removal that only half happened has to be visible to the person who
+         * asked for it — the event is saved either way, which is what the
+         * sentence has to make clear.
+         */
+        setHero({
+          kind: 'error',
+          message:
+            error instanceof Error
+              ? `The event is saved, but the old photograph is still in storage: ${error.message}`
+              : 'The event is saved, but the old photograph could not be deleted from storage.',
+        });
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [orphan, autosave.state, form.heroImagePath]);
+
+  /*
+   * A deleted event takes its photographs with it.
+   *
+   * At `final`, never at `undoable`: undo restores the document, and a document
+   * restored without its picture is not the event that was deleted. The whole
+   * `events/{slug}/` prefix rather than the one path the document held — see
+   * `deleteEventFiles` for why the ones it did not hold are the ones that matter.
+   */
+  useEffect(() => {
+    if (removal.kind !== 'final') return;
+    const slug = live.slug;
+    void (async () => {
+      const { deleteEventFiles } = await import('./admin');
+      await deleteEventFiles(slug);
+    })();
+  }, [removal.kind, live.slug]);
 
   /* ---- keyboard ------------------------------------------------------- */
 
@@ -434,6 +529,7 @@ export function EventEditor({ baked, onSaved }: {
         status={hero}
         onPick={(file) => void pickHero(file)}
         onClear={() => {
+          if (form.heroImagePath) dropFile(form.heroImagePath);
           set('heroImagePath', null);
           setHero({ kind: 'idle' });
         }}

@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import type { FormDefinition } from '@spsm/shared';
 import { money } from '@/features/bookstore/money';
-import { squarePublicConfig } from '@/features/bookstore/squareConfig';
-import { loadSquareSdk, type SquareCard } from '@/features/bookstore/squareSdk';
+import { useSquareCard } from '@/features/bookstore/useSquareCard';
 
 /**
  * The card step of a paid form.
@@ -24,13 +22,10 @@ import { loadSquareSdk, type SquareCard } from '@/features/bookstore/squareSdk';
  * no record of. One request, one Function, one place that decides both.
  * ---------------------------------------------------------------------------
  *
- * Card details never reach this origin. `card.attach()` renders an iframe served
- * by Square, the fields inside belong to Square, and `tokenize()` returns the
- * only thing that leaves.
+ * Card details never reach this origin. `useSquareCard` attaches an iframe
+ * served by Square, the fields inside belong to Square, and the token it
+ * returns is the only thing that leaves.
  */
-
-type Status = 'loading' | 'ready' | 'working' | 'unavailable';
-
 export function FormPaymentStep({
   form,
   totalCents,
@@ -42,69 +37,14 @@ export function FormPaymentStep({
   onBack: () => void;
   onToken: (cardToken: string, verificationToken: string | null) => void;
 }) {
-  const { applicationId, locationId, sandbox } = squarePublicConfig();
-  const holder = useRef<HTMLDivElement>(null);
-  const card = useRef<SquareCard | null>(null);
-  const [status, setStatus] = useState<Status>('loading');
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!applicationId || !locationId) {
-      setStatus('unavailable');
-      setError('Card payments are not configured for this site yet.');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function start() {
-      try {
-        await loadSquareSdk(sandbox);
-        if (cancelled || !window.Square || !holder.current) return;
-
-        const payments = window.Square.payments(applicationId, locationId);
-        const instance = await payments.card();
-        if (cancelled) return;
-        await instance.attach(holder.current);
-        card.current = instance;
-        setStatus('ready');
-      } catch (cause) {
-        if (cancelled) return;
-        setStatus('unavailable');
-        // Usually an application id from the other environment. Square's own
-        // message names the application id, which is more specific than
-        // anything invented here — even though the real fault is the pairing.
-        setError(cause instanceof Error ? cause.message : 'The card form could not be loaded.');
-      }
-    }
-
-    void start();
-    return () => {
-      cancelled = true;
-      void card.current?.destroy?.();
-    };
-  }, [applicationId, locationId, sandbox]);
+  const { holder, status, error, tokenize, sandbox } = useSquareCard();
 
   async function pay() {
-    if (!card.current) return;
-    setError(null);
-    setStatus('working');
-
-    try {
-      const result = await card.current.tokenize();
-      if (result.status !== 'OK' || !result.token) {
-        setStatus('ready');
-        setError(result.errors?.[0]?.message ?? 'Please check the card details.');
-        return;
-      }
-      // Handing off. The parent takes it from here and this component stays
-      // disabled — re-enabling it would let a second tap mint a second token
-      // against a submission that is already in flight.
-      onToken(result.token, null);
-    } catch {
-      setStatus('ready');
-      setError('The card could not be read. Please try again.');
-    }
+    const token = await tokenize();
+    // Handing off. The parent takes it from here and the field stays disabled —
+    // re-enabling it would let a second tap mint a second token against a
+    // submission that is already in flight.
+    if (token) onToken(token, null);
   }
 
   return (

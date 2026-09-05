@@ -150,9 +150,9 @@ describe('validation before the push', () => {
     expect(validateVehicleRegistration(base({ plate: 'A'.repeat(13) }))).not.toEqual([]);
   });
 
-  it('rejects a colour outside the list', () => {
+  it('rejects a color outside the list', () => {
     const errors = validateVehicleRegistration(base({ color: 'chartreuse' }));
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('colour');
+    expect(errors[0]).toContain('color');
   });
 });

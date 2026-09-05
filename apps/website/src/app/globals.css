@@ -8265,6 +8265,31 @@ main {
   color: var(--color-ink, #1c1614);
 }
 
+/*
+ * On the narrowest phones the stepper does not fit on one line, so it takes two.
+ *
+ * Measured at 320px: two 40px arrows, a 15ch heading and the Today button come
+ * to 324px inside 284px of page, and the whole document scrolled sideways —
+ * which on this page reads as the *calendar* being too wide, because the grid
+ * is the thing under it. The heading gives up its `min-width` here (there is no
+ * room for the anti-shuffle padding it buys) and Today drops onto its own line.
+ */
+@media (max-width: 30rem) {
+  .schedule__nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .schedule__range {
+    min-width: 0;
+  }
+
+  .schedule__today {
+    margin-left: 0;
+  }
+}
+
 /* ---- the servants band -------------------------------------------------- */
 
 /*
@@ -9404,7 +9429,16 @@ main {
  */
 .sched-month__pick {
   min-height: 3.25rem;
-  justify-content: center;
+  /*
+   * The date sits at the top of the cell, not in the middle of it.
+   *
+   * Centred, the whole stack moves whenever the dots wrap — and on a phone the
+   * column is about 40px of usable width, which is four dots, so every day with
+   * five things on it took a second row and pulled its date up four pixels
+   * while its neighbours stayed put. Seven dates at three different heights is
+   * what made the grid look broken on a narrow screen; the dots were fine.
+   */
+  justify-content: flex-start;
 }
 
 .sched-month tr.is-open .sched-month__pick {
@@ -9521,6 +9555,126 @@ main {
   overflow-wrap: normal;
 }
 
+/* ---- the day, under the grid, on a narrow screen ------------------------
+ *
+ * The cells cannot hold an entry below about 64rem — see the note at the top of
+ * MonthView.tsx, which has the measurements — so there the grid keeps its dots
+ * and the day opens as a list beneath the table. Everything here is invisible
+ * above that width; the panel is not rendered at all.
+ */
+
+.sched-month__day {
+  margin-top: var(--space-sm, 0.75rem);
+  padding: var(--space-sm, 0.75rem);
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
+}
+
+.sched-month__day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs, 0.35rem);
+  margin-bottom: var(--space-xs, 0.35rem);
+  padding-bottom: var(--space-xs, 0.35rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+}
+
+.sched-month__day-date {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-body, 1rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.sched-month__day-badge {
+  margin-left: var(--space-xs, 0.35rem);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+}
+
+/* A real 44px target, not a 16px glyph — this is the control a thumb reaches
+   for, on the only screens the panel exists on. */
+.sched-month__day-shut {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  /* Pulled back out of the header's padding so the button's box can be big
+     without the × drifting away from the corner it belongs in. */
+  margin: -0.6rem -0.6rem -0.6rem 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-ink-soft, #4b413e);
+  font: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sched-month__day-shut:hover {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 14%, transparent);
+  color: var(--color-ink, #1c1614);
+}
+
+.sched-month__day-list {
+  display: grid;
+  gap: var(--space-xs, 0.35rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sched-month__day-none {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/*
+ * The day the panel is about, marked on the grid.
+ *
+ * Outlined rather than filled: today is already a filled disc on this grid, and
+ * a second filled thing would read as a second today. The ring is on the cell's
+ * own box, so it lands the same way on a day with entries and on one without.
+ */
+.sched-month__cell--picked .sched-month__pick {
+  border-color: var(--color-gold, #b08d43);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
+}
+
+/*
+ * A phone's columns are a seventh of the screen and every pixel of that is
+ * spent on dots. The cell padding and the dot gap both come down, which is the
+ * difference between four dots to a row and five.
+ */
+@media (max-width: 30rem) {
+  .sched-month__cell {
+    padding: 1px;
+  }
+
+  .sched-month__pick {
+    padding-inline: 1px;
+    min-height: 3rem;
+  }
+
+  .sched-month__dots {
+    gap: 2px;
+  }
+}
+
 /* ---- the calendar waiting for its schedule ------------------------------
  *
  * The two loading states, drawn as the grid they are about to become. See
@@ -9543,6 +9697,8 @@ main {
  */
 
 .sched-skel {
+  /* The line and the sentence are both pinned to this box. */
+  position: relative;
   /*
    * One clock for the whole skeleton.
    *
@@ -9551,7 +9707,7 @@ main {
    * other option and they make forty-two cells look like forty-two independent
    * things loading, which is the opposite of what the picture is claiming.
    */
-  --skel-beat: 1.6s;
+  --skel-beat: 1.25s;
   /*
    * Mixed from `--color-rule`, not from the papers.
    *
@@ -9567,7 +9723,95 @@ main {
    * the week card, which is raised, and on the month grid, which is not.
    */
   --skel-fill: color-mix(in srgb, var(--color-rule, #e0cac3) 75%, var(--color-paper-raised, #fdf7f4));
-  --skel-lit: color-mix(in srgb, var(--color-rule, #e0cac3) 28%, var(--color-paper-raised, #fdf7f4));
+  /*
+   * The lit half of the sweep carries a little gold now.
+   *
+   * It was a paler mix of the same `--color-rule`, so the highlight and the bar
+   * differed only in lightness and the travel was easy to miss at 6px tall —
+   * which is most of the month grid. A warm band against a neutral bar is the
+   * same amount of motion and far easier to catch out of the corner of an eye.
+   */
+  --skel-lit: color-mix(in srgb, var(--color-gold, #b08d43) 26%, var(--color-paper-raised, #fdf7f4));
+}
+
+/* ---- saying it, rather than implying it --------------------------------- */
+
+/*
+ * The indeterminate line across the top of the calendar.
+ *
+ * A track with one travelling segment, the browser-chrome convention. Both
+ * halves are needed: the track alone is a rule, and the segment alone on a
+ * transparent ground reads as a stray mark rather than as progress along
+ * something.
+ */
+.sched-skel__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 20%, transparent);
+}
+
+.sched-skel__line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 38%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-accent, #992a21) 45%,
+    var(--color-accent, #992a21) 55%,
+    transparent
+  );
+  animation: skel-run 1.5s ease-in-out infinite;
+}
+
+/*
+ * The sentence, in a raised pill over the middle of the grid.
+ *
+ * `pointer-events: none` because it is a caption and not a control — the grid
+ * under it is inert anyway, but a phone reports a tap on this as a tap on
+ * nothing, and the moment the schedule lands the finger is over a real day.
+ */
+.sched-skel__say {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-paper-raised, #fdf7f4);
+  /* Enough of a shadow to read as floating above the grid rather than as a
+     forty-third cell. */
+  box-shadow: 0 2px 16px color-mix(in srgb, var(--color-ink, #1c1614) 14%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sched-skel__spin {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+  border-top-color: var(--color-accent, #992a21);
+  border-radius: var(--radius-full, 999px);
+  animation: skel-spin 0.85s linear infinite;
 }
 
 /*
@@ -9777,6 +10021,21 @@ main {
   }
 }
 
+@keyframes skel-run {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(263%);
+  }
+}
+
+@keyframes skel-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 /*
  * Somebody who has asked not to be moved gets the same picture, standing still.
  *
@@ -9787,7 +10046,9 @@ main {
 @media (prefers-reduced-motion: reduce) {
   .sched-skel__bar,
   .sched-skel__num,
-  .sched-skel__pip {
+  .sched-skel__pip,
+  .sched-skel__line::after,
+  .sched-skel__spin {
     animation: none;
   }
 
@@ -9795,6 +10056,16 @@ main {
   .sched-skel__num {
     background-image: none;
     background-color: var(--skel-fill);
+  }
+
+  /*
+   * The line's segment parks at the left rather than vanishing, and the ring
+   * keeps its one accent quadrant. Both are then *marks* that say "in
+   * progress", which is what a standing-still loading indicator has to be — and
+   * the sentence beside them is doing the real work anyway.
+   */
+  .sched-skel__line::after {
+    width: 30%;
   }
 }
 
@@ -32854,8 +33125,166 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
  * separating, which is also the one thing on the page that has to carry across
  * to a wristband.
  */
+/* ---------------------------------------------------------------------------
+ * The map across the top of the board
+ *
+ * Nine grades tall and no way to see the shape of it. Each chip wears its
+ * grade's own wristband colour and says the one number that decides whether you
+ * have to go there — how many of its children are still in the rail. Sticky at
+ * the same offset as the rail beside it, which is the offset this page already
+ * uses: the masthead hides itself on the way down, so nothing here has to know
+ * how tall it is. See the note on `--masthead-h` under `.camp-editor`.
+ * ------------------------------------------------------------------------ */
+
+.camp-map {
+  position: sticky;
+  top: var(--space-md, 1rem);
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  /* Opaque, not tinted: the grade cards scroll underneath it. */
+  background: var(--color-paper-raised, #fdf7f4);
+  box-shadow: 0 6px 16px -14px rgb(0 0 0 / 0.5);
+}
+
+.camp-map__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/*
+ * One grade. Squared like every other control on this board — see the note on
+ * shape under `.camp-person__flag` — and washed in the grade's colour so the
+ * strip is the same legend the cards below it use.
+ */
+.camp-map__grade {
+  display: inline-flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  gap: 0.45ch;
+  /* In the phone's scroller the row does not wrap, but a chip still could —
+     "K 1 to place" broke over two lines inside its own border. */
+  white-space: nowrap;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--camp-colour, #8a7f7b) 45%, var(--color-rule, #e0cac3));
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--camp-colour, #8a7f7b) 14%, var(--color-paper-raised, #fdf7f4));
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: color-mix(in srgb, var(--camp-colour, #6f5f5a) 72%, #241b18);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.camp-map__grade:hover,
+.camp-map__grade:focus-visible {
+  background: color-mix(in srgb, var(--camp-colour, #8a7f7b) 26%, var(--color-paper-raised, #fdf7f4));
+}
+
+.camp-map__grades {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.camp-map__state {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+/* Finished, and said in green rather than in the accent: the accent is this
+   site's colour for everything, so "done" and "3 left" in the same red is two
+   states that look identical from a metre away. */
+.camp-map__grade.is-done .camp-map__state {
+  color: #1f7a4d;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.camp-map__grade.is-left .camp-map__state {
+  color: var(--color-accent, #992a21);
+  font-weight: 700;
+  opacity: 1;
+}
+
+/* A grade with nobody registered for this week at all is not a job — it is
+   fainter than either. */
+.camp-map__grade.is-empty {
+  opacity: 0.5;
+}
+
+/* Folded shut. A dashed edge rather than a different fill, so the chip keeps
+   saying which grade it is. */
+.camp-map__grade.is-folded {
+  border-style: dashed;
+}
+
+.camp-map__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.camp-map__fold,
+.camp-map__paint {
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.24rem 0.6rem;
+  background: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-xsmall, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+  cursor: pointer;
+}
+
+.camp-map__fold:hover,
+.camp-map__paint:hover {
+  border-color: var(--color-accent, #992a21);
+  color: var(--color-accent, #992a21);
+}
+
+/*
+ * The offer to colour the board.
+ *
+ * Loud on purpose and only while it applies: a grade starts with no colour and
+ * nothing guesses one, so a grey board is the correct default and the press
+ * that changes it was at the very foot of the page. Once every grade has a
+ * colour this button is gone for the season.
+ */
+.camp-map__paint {
+  border-color: var(--color-accent, #992a21);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 10%, transparent);
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+@media (max-width: 44rem) {
+  /* On a phone the strip is a scroller rather than four rows of chips —
+     `.camp-map` itself stays put so the tools do not scroll away. */
+  .camp-map__row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .camp-map__row::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .camp-panel {
   position: relative;
+  /* A grid item's `min-width` is `auto`, i.e. min-content — so without this a
+     wide track inside the card pushes the card past its own column instead of
+     the track shrinking. */
+  min-width: 0;
   padding: var(--space-md, 1rem);
   padding-inline-start: calc(var(--space-md, 1rem) + 2px);
   border: 1px solid color-mix(in srgb, var(--camp-colour, #6f5f5a) 30%, var(--color-rule, #e0cac3));
@@ -32896,7 +33325,9 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-sm, 0.75rem);
+  /* Tighter between the chevron and the name than between the name and the
+     actions — the first pair is one thing, the second is two. */
+  gap: 0.15rem var(--space-sm, 0.75rem);
   margin-bottom: var(--space-md, 1rem);
 }
 
@@ -32919,6 +33350,125 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * Folded shut: the header, and nothing else.
+ *
+ * The margin under the header goes with the crews it used to separate, so a
+ * folded grade really is one strip — which is the point. Nine of them fit on a
+ * screen, and dragging one onto another is two inches instead of four thousand
+ * pixels of scrolling.
+ */
+.camp-panel.is-folded {
+  padding-block: 0.5rem;
+}
+
+.camp-panel.is-folded .camp-panel__head {
+  margin-bottom: 0;
+}
+
+/*
+ * Folded, the card's three stacked lines — name, grades, counts — lie down into
+ * one row. Stacked, nine folded grades were still most of a screen, which
+ * defeats the point: the reason to fold is to get two grades next to each other
+ * so one can be dragged onto the other.
+ */
+.camp-panel.is-folded .camp-panel__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.7rem;
+}
+
+.camp-panel.is-folded .camp-panel__title h3,
+.camp-panel.is-folded .camp-panel__grades,
+.camp-panel.is-folded .camp-panel__count {
+  margin: 0;
+}
+
+/* The wash is sized for a card with crews under it; on a strip it would run off
+   the bottom, so it is squared up to the strip's own height. */
+.camp-panel.is-folded {
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--camp-colour, #6f5f5a) 13%, transparent),
+      color-mix(in srgb, var(--camp-colour, #6f5f5a) 5%, transparent)
+    ),
+    var(--color-paper-raised, #fdf7f4);
+}
+
+/*
+ * The panel's own disclosure: first in the header, before the name.
+ *
+ * Full height and flush to the card's leading edge, so it reads as part of the
+ * panel rather than as a fourth action sitting in it. The chevron turns to
+ * point at what pressing it will do.
+ */
+.camp-panel__fold {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: grid;
+  justify-items: center;
+  /* Top, not centre: the header is three lines tall on a phone, and a centred
+     chevron landed beside the middle one, pointing at the counts rather than at
+     the name it opens. */
+  align-items: start;
+  padding-top: 0.1rem;
+  width: 1.9rem;
+  margin-inline-start: calc(var(--space-md, 1rem) * -0.6);
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: none;
+  color: color-mix(in srgb, var(--camp-colour, #6f5f5a) 70%, #241b18);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.camp-panel__fold:hover,
+.camp-panel__fold:focus-visible {
+  background: color-mix(in srgb, var(--camp-colour, #6f5f5a) 16%, transparent);
+}
+
+.camp-panel__fold .icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  transition: transform 140ms ease;
+}
+
+.camp-panel__fold.is-on .icon {
+  transform: rotate(-90deg);
+}
+
+/* Where this grade stands, on the card as well as on the strip: the strip is
+   the map and the card is the place, and somebody scrolling past should not
+   have to look back up to know. */
+.camp-panel__state {
+  margin-inline-start: 0.6ch;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3ch;
+  font-weight: 700;
+}
+
+.camp-panel__state .icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.camp-panel__state--done {
+  color: #1f7a4d;
+}
+
+.camp-panel__state--left {
+  color: var(--color-accent, #992a21);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camp-panel__fold .icon {
+    transition: none;
+  }
 }
 
 .camp-panel__actions {
@@ -33350,6 +33900,35 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
  * pinned to the right of its destinations is a page you read in reverse. They
  * are also first in the DOM, so a keyboard meets them in the same order.
  */
+/*
+ * The board's second colour language, defined once.
+ *
+ * ---------------------------------------------------------------------------
+ * There are two on this screen and they must never be confusable, so they are
+ * separated by **form**, not by hue — hue alone could not do it, because the
+ * twelve wristband colours cover the whole wheel:
+ *
+ *   a filled or washed shape is always a **grade** — the wristband a child is
+ *   handed at the gate, `CAMP_COLOURS`;
+ *   coloured *text* is always a **sex**.
+ *
+ * Nothing on this board is both. A blue `B` beside an amber grade badge is
+ * therefore two facts, not a clash.
+ *
+ * The hues are chosen against the parish's own: `#992a21` is a red-orange and
+ * `#b08d43` a gold, so the female plum sits at about 320° where neither is, and
+ * the male steel blue at 210° where nothing on the site is at all. All three
+ * clear 4.5:1 on both `--color-paper` and `--color-paper-raised`.
+ * ------------------------------------------------------------------------ */
+.camp-board,
+.camp-sheet {
+  --camp-male: #2e5f8f;
+  --camp-female: #9b3a73;
+  /* Not the accent: the accent is this site's colour for everything, so an
+     unanswered `?` in oxblood read as decoration rather than as a job. */
+  --camp-unsaid: #8a5d0f;
+}
+
 .camp-board {
   display: grid;
   grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
@@ -33360,6 +33939,17 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
 /* Every grade of the half, and the stations, stacked. */
 .camp-column {
   display: grid;
+  /*
+   * `minmax(0, 1fr)`, not the implicit `auto` track.
+   *
+   * With no template the implicit column is `auto`, which resolves to
+   * *max-content* — so a card is free to be wider than the column that holds
+   * it, and the widest thing in a crew card is a bare `<input>` carrying its
+   * own ~20-character intrinsic width. That is the same bug that once pushed
+   * the whole admin off a phone; `min-width: 0` on the column does not fix it,
+   * because the column was never the thing refusing to shrink.
+   */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-lg, 1.5rem);
   min-width: 0;
 }
@@ -33413,14 +34003,83 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   gap: var(--space-sm, 0.75rem);
 }
 
-/* The children's list gets the larger share: there are five times as many of
-   them, and the servants' list is the one that has to stay whole. */
+/*
+ * The rail may never be taller than the window.
+ *
+ * ---------------------------------------------------------------------------
+ * This is a `position: sticky` column, and a sticky box taller than the
+ * viewport pins its *top* and leaves its bottom permanently out of reach:
+ * scrolling the page does not move it, so whatever is at the foot of it can
+ * never be brought on screen. The foot of this one is the **servants**, which
+ * is why the symptom was always "the servants cannot be dragged" — several of
+ * them were below the fold with no way to scroll to them, and the panel's own
+ * bottom edge was cut off.
+ *
+ * The two lists carried fixed slices of the viewport (38vh + 26vh) and the rest
+ * of the rail — two headings, a find box, the colour key — was on top of that,
+ * so the total quietly exceeded 100vh on any laptop under about 700px of
+ * content height. Adding one line to each heading was enough to tip it.
+ *
+ * So the rail is capped and the two lists *share* what is left, each scrolling
+ * inside itself. `minmax(7rem, …)` keeps both usable rather than letting one
+ * collapse; the children's list gets the larger share because there are five
+ * times as many of them.
+ * ---------------------------------------------------------------------------
+ */
+@media (min-width: 68rem) {
+  /*
+   * A backstop, so the rail can never outgrow the window whatever else
+   * changes. The lists below are sized so that it does not come to this.
+   */
+  .camp-panels {
+    max-height: calc(100vh - var(--space-md, 1rem) * 2);
+    max-height: calc(100dvh - var(--space-md, 1rem) * 2);
+  }
+}
+
+/*
+ * The two lists share what the window has left, and never more than it has.
+ *
+ * ---------------------------------------------------------------------------
+ * These were fixed slices of the viewport — 38vh and 26vh — with the rail's own
+ * chrome stacked on top: two headings, a find box, the colour key, the gap.
+ * 64vh of lists plus ~19rem of everything else quietly exceeds 100vh on any
+ * laptop under about 700px of content height, and `.camp-panels` is
+ * `position: sticky`. **A sticky box taller than the viewport pins its top and
+ * leaves its bottom permanently out of reach** — and the bottom of this one is
+ * the servants, which is why the symptom was "the servants cannot be dragged":
+ * several of them sat below the fold with no way to scroll to them.
+ *
+ * Adding one line to each heading was all it took to tip it over.
+ *
+ * So the slice is taken from *what is left* rather than from the whole: the
+ * chrome allowance comes off first, and the two lists split the remainder 3:2 —
+ * the children's is larger because there are five times as many of them. The
+ * arithmetic lands on the viewport height at every size, so the rail fills a
+ * tall window and still fits a short one.
+ *
+ * `dvh`, not `vh`, because a mobile browser's collapsing toolbar makes `vh`
+ * larger than what is actually on screen. The `vh` line before it is the
+ * fallback and is deliberately first.
+ * ---------------------------------------------------------------------------
+ */
+.camp-side__list {
+  /* Two headings with their counts and their split line, two find boxes, the
+     colour key, the gap, and room for the "registered for no day this week"
+     note when it appears. Generous on purpose: under-guessing it is what put
+     the servants below the fold, and the cost of over-guessing is a few rows of
+     list on a short window. */
+  --camp-rail-chrome: 21rem;
+  --camp-rail-free: calc(100vh - var(--camp-rail-chrome));
+  --camp-rail-free: calc(100dvh - var(--camp-rail-chrome));
+}
+
 .camp-side--child .camp-side__list {
-  max-height: 38vh;
+  max-height: calc(var(--camp-rail-free) * 0.6);
 }
 
 .camp-side--servant .camp-side__list {
-  max-height: 26vh;
+  max-height: calc(var(--camp-rail-free) * 0.4);
 }
 
 /*
@@ -33641,14 +34300,53 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   }
 }
 
+/*
+ * The crews of one grade.
+ *
+ * ---------------------------------------------------------------------------
+ * The track was 17rem, which packed three or four crews across the column and
+ * made each of them a narrow strip: a servant's row had about six characters
+ * for a name, and the two halves of the crew could only ever be stacked, so a
+ * full crew was a column thirteen rows long with its two ends never on screen
+ * together.
+ *
+ * At 30rem a crew is wide enough for `.camp-group__parts` to put "who is
+ * running this" and "who is in it" side by side — see the container query
+ * there, which is what actually decides it. On a normal laptop that means one
+ * crew per row and each one half as tall; on a wide screen, two. The card is
+ * the unit being read, so it is the thing that gets the width.
+ * ------------------------------------------------------------------------ */
 .camp-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+  /*
+   * One crew per row by default.
+   *
+   * `repeat(auto-fill, minmax(min(30rem, 100%), 1fr))` cannot be the base:
+   * inside `minmax()` a percentage resolves against the grid container's inline
+   * size, and while that size is still being worked out the percentage behaves
+   * as `auto` — so `min(30rem, 100%)` falls back to a hard 480px floor and the
+   * card runs 125px past the edge of a phone. The old 17rem floor hid that by
+   * being narrower than a phone; 30rem does not.
+   */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-md, 1rem);
   align-items: start;
 }
 
+/* Two crews across only where the column is certainly wide enough for them —
+   the same breakpoint at which `.camp-board` becomes two columns at all. */
+@media (min-width: 68rem) {
+  .camp-groups {
+    grid-template-columns: repeat(auto-fill, minmax(30rem, 1fr));
+  }
+}
+
 .camp-group {
+  /* The query container for `.camp-group__parts`, which splits into two columns
+     once the card is wide enough. It has to be declared on an *ancestor*: an
+     element cannot be its own container, and a rule that tries silently never
+     matches. */
+  container-type: inline-size;
   position: relative;
   display: grid;
   gap: 0.4rem;
@@ -33773,6 +34471,119 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   font-size: var(--type-xsmall, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
+
+/* ---------------------------------------------------------------------------
+ * Male and female, counted
+ *
+ * Type, not boxes. This screen was already made of small tinted rectangles —
+ * a grade badge, a day count, an allergy flag, a reliability reading, a row of
+ * preference tags — and three more per crew and three per rail turned every
+ * card into a wall of beige corners with no hierarchy left in it.
+ *
+ * So: tabular figures with the letter set lighter than the number it labels,
+ * sitting inside the sentence that already says how many people there are. No
+ * fill, no outline, no hue — which is also the honest answer on a board where
+ * all twelve colours are wristbands. The unanswered count is the one exception
+ * and wears the accent, because it is the only part anybody can act on.
+ *
+ * Named `camp-split`, not `camp-tally`: `.camp-tally` is already the
+ * attendance register's class next door, and there is one stylesheet for the
+ * whole site — see `.camp-tally__miss`. A generic name here would have set
+ * this in the register's type size and nobody would have known why.
+ * ------------------------------------------------------------------------ */
+
+.camp-split {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55ch;
+  margin-inline-start: 0.7ch;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * The same counts, said in words: "6 boys, 3 girls".
+ *
+ * Anywhere with a line to itself gets these. `6B` is four characters and a
+ * puzzle; the initials only earn their keep on a chip, where a word cannot fit
+ * beside a name — and the words are what teach the letters, which is why both
+ * use the same three colours.
+ */
+.camp-split--words {
+  gap: 0;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+.camp-split--words .camp-split__part + .camp-split__part::before {
+  content: '·';
+  margin: 0 0.5ch;
+  color: var(--color-ink-faint, #6f5f5a);
+  font-weight: 400;
+}
+
+/* In a rail it is a line of its own under the heading, not a tail on it. */
+.camp-side__head .camp-split--words {
+  display: flex;
+  margin-inline-start: 0;
+  font-size: var(--type-xsmall, 0.8125rem);
+}
+
+.camp-split__part {
+  font-weight: 700;
+}
+
+/* The letter labels the number; it should not compete with it. */
+.camp-split__part em {
+  font-style: normal;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* The same two hues the chips wear, so "6B 3G" on a card and the six blue B's
+   under it are read as the same fact counted. */
+.camp-split__part--male {
+  color: var(--camp-male, #2e5f8f);
+}
+
+.camp-split__part--female {
+  color: var(--camp-female, #9b3a73);
+}
+
+.camp-split__part--unknown {
+  color: var(--camp-unsaid, #8a5d0f);
+}
+
+/*
+ * A crew's two halves on one line: "5 children 4B 1G · 3 serving 1M 2F".
+ *
+ * The dot is drawn by the second `.camp-group__side` rather than typed, so a
+ * card with only one half — a station, which has no children — does not print a
+ * leading separator.
+ */
+.camp-group__side {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.camp-group__side + .camp-group__side::before {
+  content: '·';
+  margin: 0 0.6ch;
+  opacity: 0.55;
+}
+
+/* The rail's heading and its balance travel together; the counter stays pinned
+   to the far end by the `space-between` on the `h3`. */
+.camp-side__what {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+}
+
+/* No rail override any more: the counts carry the sex colours, which is the
+   point of them, and tinting them with the rail's own hue took that away. */
 
 .camp-group__empty {
   margin: 0;
@@ -34367,6 +35178,52 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
 
 .camp-person--graded .camp-person__days {
   opacity: 0.75;
+}
+
+/*
+ * Boy or girl, as a coloured letter — never a badge.
+ *
+ * It was a tinted rectangle of its own, which put three in a row on every child
+ * (grade, sex, days) and made the rail a wall of small beige corners. Then it
+ * lived inside the grade badge, which decluttered it but left it the same ink
+ * as everything else on a 17px line.
+ *
+ * Now it is bare text in the sex's own colour — no fill, no outline, no box.
+ * That is the rule the board runs on: fills are wristbands, coloured text is
+ * sex. See the note on `.camp-board`.
+ */
+.camp-person__sex {
+  font-weight: 700;
+  font-size: var(--type-xsmall, 0.8125rem);
+  opacity: 1;
+}
+
+.camp-person__sex--male {
+  color: var(--camp-male, #2e5f8f);
+}
+
+.camp-person__sex--female {
+  color: var(--camp-female, #9b3a73);
+}
+
+.camp-person__sex--unsaid {
+  color: var(--camp-unsaid, #8a5d0f);
+}
+
+/*
+ * A held or lifted chip inverts to a solid accent, where all three of these
+ * disappear. They go to the chip's own paper instead — the letter is still the
+ * letter, and a chip in the air only has to say who is in the air.
+ */
+.camp-person.is-held .camp-person__sex,
+.camp-person.is-lifted .camp-person__sex {
+  color: var(--color-paper-raised, #fdf7f4);
+}
+
+/* A withdrawn row is struck through and faded; the letter should fade with it
+   rather than staying the one bright thing on a person who is not coming. */
+.camp-person.is-out .camp-person__sex {
+  opacity: 0.6;
 }
 
 .camp-person__days {
@@ -35643,6 +36500,56 @@ button.camp-half__auto {
   max-width: 58ch;
 }
 
+/* ---- the card, when the camp charges its servants ------------------------ */
+
+/*
+ * The send panel with a price and a card field in it.
+ *
+ * Still `.camp-public__send` and not a panel of its own: it is the same end of
+ * the same form, doing the same thing, and giving the paid version its own
+ * ground would make a camp that charges look like a different website from one
+ * that does not. What it adds is a heading, a line saying what is being paid
+ * for, and room for Square's iframe.
+ */
+.camp-public__pay > h3 {
+  margin: 0 0 var(--space-sm, 0.75rem);
+  font-size: var(--type-h4, 1.125rem);
+}
+
+/*
+ * What it is, and what it costs, on one line.
+ *
+ * The amount is the thing being agreed to, so it is the heavier of the two and
+ * it is at the end of the line where a total belongs. A hairline under it
+ * separates the figure from the card field without drawing a second box: the
+ * panel is already a box, and boxes inside boxes is how this page stopped being
+ * readable the last time.
+ */
+.camp-pay__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+  padding-bottom: var(--space-xs, 0.5rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 25%, var(--color-rule, #e0cac3));
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+
+.camp-pay__total strong {
+  font-size: var(--type-h4, 1.125rem);
+  white-space: nowrap;
+}
+
+/* The iframe's host, given air on both sides. `.pay__card` carries its own
+   frame and minimum height — see the note there — so this is spacing only. */
+.camp-public__pay .pay__card {
+  margin: var(--space-md, 1.25rem) 0;
+}
+
+.camp-public__pay .notice {
+  margin: var(--space-sm, 0.75rem) 0 0;
+}
+
 /* ---------------------------------------------------------------------------
    Merging by dragging, and what a drag looks like while it is happening
    ---------------------------------------------------------------------------
@@ -35681,9 +36588,30 @@ button.camp-half__auto {
   cursor: grab;
 }
 
-.camp-grip:disabled {
+/*
+ * `.is-disabled`, not `:disabled` — these grips are `<div role="button">` now,
+ * because Chrome will not start a drag from a `<button>`. See `pressed()` in
+ * `GroupsScreen.tsx`. A div has no `disabled` attribute, so the state is a
+ * class and `aria-disabled` carries it to a screen reader.
+ */
+.camp-grip:disabled,
+.camp-grip.is-disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* A div is not focusable-looking by default; these carry `tabIndex`, so they
+   need the same focus ring every other control on the board has. */
+.camp-grip:focus-visible,
+.camp-person__grab:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 2px;
+}
+
+/* The pointer says what the gesture is, and says it changed once it starts. */
+.camp-person__grab:active,
+.camp-grip:active {
+  cursor: grabbing;
 }
 
 /* The six dots that say "this is a handle" — the site's own `grip`, not a
@@ -35823,6 +36751,59 @@ button.camp-half__auto {
  * "look at where you started".
  * ---------------------------------------------------------------------------
  */
+/* ---------------------------------------------------------------------------
+   The thing in your hand
+   ---------------------------------------------------------------------------
+
+   The board's drag is pointer events, not HTML5 drag and drop — see
+   `useBoardDrag` for why — so there is no drag image and the board has to draw
+   one.
+
+   It is the row itself, cloned: `copyOf` lifts the whole `.camp-person` out
+   with its colour, its reliability edge and its badges, and this is only the
+   box it travels in. So this rule carries almost nothing — a shadow to say the
+   row is off the page, and the hairline the list around it was drawing. Every
+   other pixel of it is the same CSS the original is still being drawn with,
+   which is the point: what is under your hand is the chip, not a token for it.
+
+   Above `.camp-carry` at the foot of the window, because the cursor can be over
+   it — and `pointer-events: none`, because the hit test that finds the card
+   underneath must never find this instead.
+   ------------------------------------------------------------------------ */
+.camp-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+  /* The page's own stacking rule gives every sibling in `.page-body` a top
+     margin, and this is a sibling of the board. A `fixed` box still takes its
+     margin, so the copy hung 40px below the cursor — the transform was right
+     the whole time and the box was not where it said. */
+  margin: 0;
+  /* The copy sets its own width, off the original's measured box. */
+  border: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 80%, transparent);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 14px 30px -14px rgb(0 0 0 / 0.55);
+  /* A row is one line and must stay one line while it is in the air: a copy
+     that wraps as it crosses the board is a copy that changes shape. */
+  overflow: hidden;
+}
+
+/*
+ * While a drag is in flight.
+ *
+ * The cursor says the gesture is still happening wherever it has got to, and
+ * the selection is held off: a pointer drag is an ordinary press as far as the
+ * browser is concerned, so without this, dragging a chip across a grade card
+ * selects the grade card's text behind it.
+ */
+body.is-camp-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .camp-carry {
   position: fixed;
   z-index: 40;
@@ -36238,30 +37219,74 @@ button.camp-half__auto {
  * using for something else. A crew is read as two questions in that order, so
  * the card asks them in words.
  */
+/*
+ * A crew's two halves, side by side once there is room for them.
+ *
+ * ---------------------------------------------------------------------------
+ * A crew is read as one question — *who is running this, and who is in it* —
+ * and stacked, the answer was a column: three servants, then a heading, then
+ * ten children, and the two ends of it were never on screen together on a card
+ * with a full crew in it.
+ *
+ * A **container** query, not a media query, and that is the whole reason this
+ * works: these cards sit in an `auto-fill` grid, so how wide one is depends on
+ * how many crews the grade has, not on how wide the window is. A grade with one
+ * crew gets a card the full width of the column and splits; a grade with four
+ * gets four narrow ones and each stays stacked. The viewport cannot tell them
+ * apart.
+ * ------------------------------------------------------------------------ */
 .camp-group__parts {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
+@container (min-width: 30rem) {
+  .camp-group__parts {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 0.9rem;
+    align-items: start;
+  }
+
+  /* A hairline between the two, so they read as one card divided rather than
+     two cards abutting. */
+  .camp-group__part--children {
+    padding-inline-start: 0.9rem;
+    border-inline-start: 1px solid var(--color-rule, #e0cac3);
+  }
+}
+
+/*
+ * The heading of a half: a word, its count, and a rule running out to the edge.
+ *
+ * It was `SERVING` in letterspaced uppercase with the count in a filled grey
+ * box — two devices shouting on a 13px line, on a card that had four other grey
+ * boxes on it. Sentence case and a hairline say "this is a section" without
+ * either.
+ */
 .camp-group__part > h5 {
   display: flex;
-  align-items: baseline;
-  gap: 0.5ch;
-  margin: 0 0 0.15rem;
+  align-items: center;
+  gap: 0.6ch;
+  margin: 0 0 0.3rem;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-xsmall, 0.8125rem);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/* The rule is the heading's own trailing edge — it takes whatever width is
+   left, so the two halves line up however long their words are. */
+.camp-group__part > h5::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--color-rule, #e0cac3);
+}
+
 .camp-group__part > h5 span {
-  padding: 0 0.35rem;
-  border-radius: var(--radius-sm, 4px);
-  background: color-mix(in srgb, var(--color-ink-faint, #6f5f5a) 14%, transparent);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  font-weight: 600;
+  opacity: 0.75;
 }
 
 /* The servants' half wears the crew's colour, so the eye can find "who is
@@ -36271,8 +37296,8 @@ button.camp-half__auto {
   color: color-mix(in srgb, var(--camp-colour, #6f5f5a) 78%, #241b18);
 }
 
-.camp-group__part--servants > h5 span {
-  background: color-mix(in srgb, var(--camp-colour, #6f5f5a) 18%, transparent);
+.camp-group__part--servants > h5::after {
+  background: color-mix(in srgb, var(--camp-colour, #6f5f5a) 32%, var(--color-rule, #e0cac3));
 }
 
 .camp-group__none {

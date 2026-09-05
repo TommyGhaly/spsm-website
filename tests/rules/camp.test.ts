@@ -584,6 +584,16 @@ describe('the camp’s own settings', () => {
       updateDoc(doc(db, 'config', 'camp'), { weeks: 2, weekStarts: ['2028-06-19', '2028-06-26'] }),
     );
     await assertSucceeds(updateDoc(doc(db, 'config', 'camp'), { baseCents: 12500 }));
+    // The servants' shirt money, and what it is called on the receipt. New
+    // keys, so this is also the assertion that the `hasOnly` list above was
+    // widened for them — without it every save of these two is refused and the
+    // settings panel reports a permission error nobody can explain.
+    await assertSucceeds(
+      updateDoc(doc(db, 'config', 'camp'), {
+        servantChargeCents: 2000,
+        servantChargeLabel: 'Servant shirt',
+      }),
+    );
     await assertSucceeds(updateDoc(doc(db, 'config', 'camp'), { familyRegistration: false }));
     await assertSucceeds(
       updateDoc(doc(db, 'config', 'camp'), { waiverText: 'Please sign.', waiverVersion: 'v2' }),
@@ -647,6 +657,17 @@ describe('the camp’s own settings', () => {
     // A fee nobody would set, and more weeks than a camp can run.
     await assertFails(updateDoc(doc(db, 'config', 'camp'), { baseCents: 500000 }));
     await assertFails(updateDoc(doc(db, 'config', 'camp'), { baseCents: -1 }));
+    /*
+     * The same bounds on the servants' charge, and they matter more here.
+     *
+     * This figure is charged by an unauthenticated endpoint to whoever fills in
+     * the public sign-up form, at the moment they press send — a mistyped one
+     * is money off a stranger's card rather than a wrong number read aloud at a
+     * desk.
+     */
+    await assertFails(updateDoc(doc(db, 'config', 'camp'), { servantChargeCents: 500000 }));
+    await assertFails(updateDoc(doc(db, 'config', 'camp'), { servantChargeCents: -1 }));
+    await assertFails(updateDoc(doc(db, 'config', 'camp'), { servantChargeCents: '2000' }));
     await assertFails(updateDoc(doc(db, 'config', 'camp'), { weeks: 7 }));
     // A key nothing on the camp's settings has ever had.
     await assertFails(updateDoc(doc(db, 'config', 'camp'), { squareToken: 'x' }));

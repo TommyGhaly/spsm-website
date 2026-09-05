@@ -65,6 +65,27 @@ describe('buildOrderEmail', () => {
   });
 
   /*
+   * These are sent from no-reply@mail.spsmwayland.org — a send-only subdomain
+   * with no mailbox — so a reply bounces into nothing. The copy is the only
+   * thing standing between that arrangement and a buyer who believes they have
+   * reported a wrong order.
+   *
+   * Asserted on both parts, because they are built separately and the HTML one
+   * is where a future edit is most likely to drop the sentence: it interpolates
+   * `question` into a <p> three quarters of the way down a wall of table markup.
+   */
+  it('never invites a reply, in either part', () => {
+    for (const parishEmail of [undefined, 'office@spsmwayland.org']) {
+      const mail = buildOrderEmail({ ...base, shipping: false, parishEmail });
+
+      for (const part of [mail.message.text, mail.message.html]) {
+        expect(part).toContain('This address is not monitored.');
+        expect(part).not.toMatch(/reply/i);
+      }
+    }
+  });
+
+  /*
    * Titles are typed by hand into Square. An ampersand is ordinary in a book
    * title and would otherwise produce invalid markup; an angle bracket must
    * never become an element in a message that cannot be re-issued.

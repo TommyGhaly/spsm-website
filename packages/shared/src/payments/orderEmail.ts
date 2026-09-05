@@ -98,9 +98,28 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
   const filedUnder =
     !input.shipping && input.buyerName ? `It is put aside under ${input.buyerName}.` : '';
 
+  /*
+   * "Write to", never "reply to" — and the difference is not pedantry.
+   *
+   * These go out from `no-reply@mail.spsmwayland.org`: a send-only subdomain
+   * with no mailbox behind it, chosen because the root domain's SPF record ends
+   * in `-all` and names Microsoft 365 alone, so nothing else may send as
+   * `@spsmwayland.org`. See extensions/firestore-send-email.env.
+   *
+   * A reply to that address bounces. So an email that says "reply to us" has
+   * arranged for the one thing it asks the reader to do to fail silently — the
+   * buyer thinks they have reported a wrong order and the church never hears
+   * it. Naming the address and the verb separately is what makes the sentence
+   * survive the no-reply arrangement.
+   *
+   * `unmonitored` leads rather than trails, because a reader who has already
+   * hit reply has stopped reading the paragraph.
+   */
+  const unmonitored = 'This address is not monitored.';
+
   const question = input.parishEmail
-    ? `If anything is wrong with this order, reply to ${input.parishEmail} and quote the reference above.`
-    : 'If anything is wrong with this order, contact the church office and quote the reference above.';
+    ? `${unmonitored} If anything is wrong with this order, write to ${input.parishEmail} and quote the reference above.`
+    : `${unmonitored} If anything is wrong with this order, contact the church office and quote the reference above.`;
 
   const text = [
     'Your order from the church bookstore is placed.',

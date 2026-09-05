@@ -2,19 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import {
+  CAMP_GENDERS,
   CAMP_SECTIONS,
   SHIRT_SIZES,
   blankServantSignUp,
   campAge,
+  campGenderLabel,
   campGradeLabel,
   campGradesForSection,
+  campNeedsGuardian,
   campSectionLabel,
   campWeeksOf,
   clearDesiredRolesForSection,
   shirtSizeLabel,
+  validateServantSignUp,
   type CampRegistrationDraft,
   type CampSection,
 } from '@spsm/shared';
+import { money } from '@/features/bookstore/money';
+import { useSquareCard } from '@/features/bookstore/useSquareCard';
 import { PageBody } from '@/components/PageBody';
 import { PageHeader } from '@/components/PageHeader';
 import { BackLink } from '@/components/BackLink';
@@ -56,11 +62,44 @@ export function ServantSignUpScreen() {
   const [errors, setErrors] = useState<string[]>([]);
   const [sent, setSent] = useState(false);
 
-  // Built once the season is known, so nobody is signed up for last summer.
+  /*
+   * Take somebody to the list of what is missing.
+   *
+   * The list is at the top of the form and both buttons are at the bottom of
+   * it — on a phone that is several screens apart, and an error nobody scrolls
+   * back up to see is a button that appears to do nothing. In an effect rather
+   * than beside `setErrors`, because the notice does not exist in the document
+   * until React has rendered the state that draws it.
+   */
+  useEffect(() => {
+    if (errors.length === 0) return;
+    document.querySelector('.camp-public .notice--warn')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }, [errors]);
+
+  // Built once the season is known, so nobody is signed up for last summer —
+  // and once the charge is known, so the form can say what it will cost before
+  // anybody fills it in.
   useEffect(() => {
     if (!ready || draft) return;
-    setDraft(blankServantSignUp({ programId: config.programId, season: config.season }));
-  }, [ready, draft, config.programId, config.season]);
+    setDraft(
+      blankServantSignUp({
+        programId: config.programId,
+        season: config.season,
+        chargeCents: config.servantChargeCents,
+        chargeLabel: config.servantChargeLabel,
+      }),
+    );
+  }, [
+    ready,
+    draft,
+    config.programId,
+    config.season,
+    config.servantChargeCents,
+    config.servantChargeLabel,
+  ]);
 
   if (!ready || !draft) {
     return (
@@ -130,15 +169,66 @@ export function ServantSignUpScreen() {
 
   const age = campAge(servant.dateOfBirth);
 
-  async function send() {
+  /*
+   * Whose signature the last panel asks for.
+   *
+   * Only once an age is known. `campNeedsGuardian` calls a missing date of
+   * birth under-18 — the safer of the two mistakes on a public form — but this
+   * is a form somebody is still filling in, and opening it by asking a
+   * thirty-year-old for their guardian's name is a form that reads as though it
+   * were written for children. The date of birth is asked for two panels above
+   * this one, and the panel changes under them as soon as they answer it.
+   */
+  const needsGuardian = servant.dateOfBirth.trim() !== '' && campNeedsGuardian(servant.dateOfBirth);
+
+  /** What the camp charges every servant, once. Zero means there is no card step. */
+  const chargeCents = config.servantChargeCents;
+  const chargeLabel = config.servantChargeLabel.trim() || 'Servant charge';
+
+  /**
+   * Sends, and says whether it went.
+   *
+   * The boolean is for the card panel: a rejection has to put the card field
+   * back so the same person can correct something and press again, and only the
+   * panel that owns the field can do that. A free sign-up ignores it.
+   */
+  /**
+   * Whether the form is complete, checked here before it is checked there.
+   *
+   * The endpoint runs this same function against the stored settings and *that*
+   * run is the one that decides — anything a page checks can be skipped by
+   * anybody willing to open a console. This run is a courtesy on a free
+   * sign-up, and more than that on a paid one: without it somebody types their
+   * card details, presses the button, and is told their emergency contact is
+   * missing, after a token has been minted for a form that was never going to
+   * be accepted. Same function, same waiver context, so the two cannot
+   * disagree about what is missing.
+   */
+  function complete(): boolean {
+    const problems = validateServantSignUp(draft!, {
+      waiverInForce: config.waiverText.trim().length > 0,
+    });
+    setErrors(problems);
+    return problems.length === 0;
+  }
+
+  async function send(cardToken?: string): Promise<boolean> {
+    if (!complete()) return false;
+
     setSending(true);
     setErrors([]);
-    const result = await sendServantSignUp({ registration: draft!, message: '' });
-    if (result.ok) setSent(true);
-    else {
-      setErrors(result.errors);
-      setSending(false);
+    const result = await sendServantSignUp({
+      registration: draft!,
+      message: '',
+      ...(cardToken ? { cardToken } : {}),
+    });
+    if (result.ok) {
+      setSent(true);
+      return true;
     }
+    setErrors(result.errors);
+    setSending(false);
+    return false;
   }
 
   return (
@@ -167,13 +257,23 @@ export function ServantSignUpScreen() {
               matters more here, where the point of the page is the first field.
 
               The photograph is `stock-camp`, an Unsplash frame under a recorded
-              licence (`assets/README.md`): children with a parachute in a field,
-              seen mostly from behind. It replaced `stock-gathering` on 2 Sep
-              2026 — an evening social under string lights, which was also the
-              events request form's picture, so one photograph was standing in
-              for two different things and looked like neither. It is
-              deliberately not one of the parish's own photographs: we have none
-              of a camp, and the sanctuary shot is the wrong room for this
+              licence (`assets/README.md`): a line of older children and teenagers
+              linked arm to arm across a mown field, all of them facing away.
+
+              Two photographs have stood here. `stock-gathering` — an evening
+              social under string lights — went on 2 Sep 2026, because it was
+              also the events request form's picture and looked like neither
+              thing. What replaced it was a rainbow parachute held up in a field:
+              correct in subject, but a lit stock frame, and every small child in
+              it under the heading of a page that asks *adults and teenagers* to
+              serve. The frame here is a phone photograph of a real camp game,
+              which is nearer the age this form is addressed to and nearer what a
+              week of it actually looks like. Backs to the camera in both, which
+              is the property to keep: nobody in the picture is identifiable, and
+              nobody can be mistaken for one of ours.
+
+              It is deliberately not one of the parish's own photographs: we have
+              none of a camp, and the sanctuary shot is the wrong room for this
               question.
             */}
             <div className="fx__banner camp-public__picture">
@@ -192,6 +292,15 @@ export function ServantSignUpScreen() {
               Tell the camp who you are and which days you can be there. Somebody will be in
               touch — this is a sign-up, not a place on the roster.
             </p>
+            {chargeCents > 0 ? (
+              /* Said at the top, not sprung at the bottom. Somebody who cannot
+                 pay today should find that out before filling in six panels. */
+              <p className="camp-public__intro">
+                There is a {money(chargeCents)} charge for your {chargeLabel.toLowerCase()},
+                paid by card at the end of this form. It is the same whether you serve one
+                week or both.
+              </p>
+            ) : null}
 
             {errors.length > 0 ? (
               <div className="notice notice--warn">
@@ -250,6 +359,33 @@ export function ServantSignUpScreen() {
                   />
                   <span className="camp-field__hint">
                     {age === null ? 'The camp places under-18s differently.' : `${age} years old`}
+                  </span>
+                </label>
+                {/*
+                  Male or female, next to the birth date, because the camp uses
+                  the two together: a crew of eight-year-old girls needs at
+                  least one woman on it, and a servant who does not say leaves
+                  somebody ringing them the week before to ask. The hint says
+                  what it is for rather than leaving it to be guessed at.
+                */}
+                <label className="camp-field">
+                  <span className="camp-field__label">Male or female</span>
+                  <select
+                    className="input"
+                    value={servant.gender}
+                    onChange={(event) =>
+                      set({ gender: event.target.value as typeof servant.gender })
+                    }
+                  >
+                    <option value="">Choose one</option>
+                    {CAMP_GENDERS.map((gender) => (
+                      <option key={gender} value={gender}>
+                        {campGenderLabel(gender, 'servant')}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="camp-field__hint">
+                    The camp splits its groups by it, so it needs to know before it can place you.
                   </span>
                 </label>
                 <label className="camp-field">
@@ -476,6 +612,23 @@ export function ServantSignUpScreen() {
                     <p key={index}>{paragraph}</p>
                   ))}
                 </div>
+                {/*
+                  Under 18, and the last box is somebody else's to tick.
+
+                  A fifteen-year-old cannot agree to a waiver on their own
+                  behalf, and half the people who fill this form in are
+                  teenagers — see `campNeedsGuardian`. So the tick, the name and
+                  the relationship all become the guardian's the moment a date
+                  of birth says under-18, and the wording says whose they are
+                  rather than leaving somebody to work it out. Everything above
+                  this panel stays the servant's own answers: it is their
+                  sign-up, signed for by their parent.
+
+                  What this is evidence of is exactly what `CampWaiver` says it
+                  is — a typed name, not a signature — and nothing here claims
+                  the guardian was in the room. Whether they were is a question
+                  a web form cannot answer honestly.
+                */}
                 <label className="camp-tick">
                   <input
                     type="checkbox"
@@ -491,45 +644,208 @@ export function ServantSignUpScreen() {
                       })
                     }
                   />
-                  <span>I have read this and agree to it.</span>
+                  <span>
+                    {needsGuardian
+                      ? 'I am this servant’s parent or guardian, I have read this and I agree to it.'
+                      : 'I have read this and agree to it.'}
+                  </span>
                 </label>
-                <label className="camp-field">
-                  <span className="camp-field__label">Type your name to sign</span>
-                  <input
-                    className="input"
-                    value={draft.waiver.signedName}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        waiver: { ...draft.waiver, signedName: event.target.value },
-                      })
-                    }
-                  />
-                </label>
+                <div className={needsGuardian ? 'camp-grid' : undefined}>
+                  <label className="camp-field">
+                    <span className="camp-field__label">
+                      {needsGuardian
+                        ? 'Parent or guardian’s name'
+                        : 'Type your name to sign'}
+                    </span>
+                    <input
+                      className="input"
+                      value={draft.waiver.signedName}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          waiver: { ...draft.waiver, signedName: event.target.value },
+                        })
+                      }
+                    />
+                    {needsGuardian ? (
+                      <span className="camp-field__hint">
+                        You are under 18, so a parent or guardian signs this — their name, not
+                        yours.
+                      </span>
+                    ) : null}
+                  </label>
+                  {needsGuardian ? (
+                    <label className="camp-field">
+                      <span className="camp-field__label">How they are related to you</span>
+                      <input
+                        className="input"
+                        value={draft.waiver.signedRelationship}
+                        placeholder="Mother, father, guardian"
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            waiver: {
+                              ...draft.waiver,
+                              signedRelationship: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </div>
               </section>
             ) : null}
 
             {/* Not a step, and not numbered — the panel is the end of the form
                 rather than another question. */}
-            <div className="camp-public__send">
-              <p>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={sending}
-                  onClick={() => void send()}
-                >
-                  {sending ? 'Sending…' : 'Send my sign-up'}
-                </button>
-              </p>
-              <p className="note">
-                You will not be able to read this back or change it — it goes straight to the
-                people running the camp.
-              </p>
-            </div>
+            {chargeCents > 0 ? (
+              <PayAndSend
+                label={chargeLabel}
+                cents={chargeCents}
+                sending={sending}
+                complete={complete}
+                onSend={send}
+              />
+            ) : (
+              <div className="camp-public__send">
+                <p>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={sending}
+                    onClick={() => void send()}
+                  >
+                    {sending ? 'Sending…' : 'Send my sign-up'}
+                  </button>
+                </p>
+                <p className="note">
+                  You will not be able to read this back or change it — it goes straight to the
+                  people running the camp.
+                </p>
+              </div>
+            )}
           </div>
         </section>
       </PageBody>
     </>
+  );
+}
+
+/**
+ * The card, and the button that sends the form.
+ *
+ * ---------------------------------------------------------------------------
+ * One panel, one press, one request — and a separate component only so that the
+ * Square SDK is never loaded on a form that does not charge.
+ *
+ * `useSquareCard` fetches Square's payments bundle in an effect and attaches an
+ * iframe. Calling it in `ServantSignUpScreen` would run that on every visit to
+ * this page, including the eight months of the year when the camp charges
+ * nothing and the ordinary case of a camp that never charges at all — a
+ * third-party payments bundle downloaded by everyone for the benefit of nobody.
+ * Mounting this only when there is an amount to take is what keeps that honest,
+ * and it is also what lets the hook be called unconditionally, which is the
+ * rule hooks are subject to.
+ *
+ * There is deliberately no separate "pay" step and no way to skip to one. The
+ * charge is not a second transaction: the answers and the card token travel in
+ * the same request, so a card that declines sends nothing and a sign-up that
+ * fails to store charges nothing. See `functions/src/camp/servantRequest.ts`,
+ * which is the half that decides both.
+ * ---------------------------------------------------------------------------
+ */
+function PayAndSend({
+  label,
+  cents,
+  sending,
+  complete,
+  onSend,
+}: {
+  label: string;
+  cents: number;
+  sending: boolean;
+  /** The form's own check, run before a token is minted. See `complete`. */
+  complete: () => boolean;
+  onSend: (cardToken: string) => Promise<boolean>;
+}) {
+  const { holder, status, error, tokenize, release, sandbox } = useSquareCard();
+
+  async function payAndSend() {
+    // Before the card, not after it. A form that is going to be refused for a
+    // missing answer should be refused while the card field is still untouched.
+    if (!complete()) return;
+
+    const token = await tokenize();
+    if (!token) return;
+
+    const ok = await onSend(token);
+    /*
+     * Put the field back when the church's own server said no.
+     *
+     * The token is spent either way, so the field has to mint a fresh one; the
+     * card details are still in Square's iframe, so pressing again is all that
+     * is asked of them. Left disabled, somebody whose sign-up was refused for a
+     * missing emergency contact would fix it and find the button dead.
+     *
+     * Nothing is released on success: the screen has already been replaced by
+     * the thank-you, and re-enabling a button on a form that has been sent is
+     * how one sign-up becomes two payments.
+     */
+    if (!ok) release();
+  }
+
+  return (
+    <div className="camp-public__send camp-public__pay">
+      <h3>Payment</h3>
+      <p className="camp-pay__total">
+        <span>{label}</span>
+        <strong>{money(cents)}</strong>
+      </p>
+      <p className="note">
+        Paid once, whether you serve one week or both.
+      </p>
+
+      {error ? (
+        <div className="notice notice--alarm" role="alert">
+          <p>{error}</p>
+        </div>
+      ) : null}
+
+      {/* The iframe's host. Kept mounted even while the SDK is still loading,
+          because `attach()` needs a node already in the document to render
+          into — a holder swapped in afterwards has nothing to attach to. */}
+      <div className="pay__card" ref={holder} />
+
+      <p>
+        <button
+          type="button"
+          className="button"
+          disabled={status !== 'ready' || sending}
+          onClick={() => void payAndSend()}
+        >
+          {sending
+            ? 'Sending…'
+            : status === 'loading'
+              ? 'Loading the card form…'
+              : status === 'unavailable'
+                ? 'Payment is unavailable'
+                : `Pay ${money(cents)} and send my sign-up`}
+        </button>
+      </p>
+
+      <p className="note">
+        Your answers are sent with the payment, in one step. If the card is declined, nothing
+        is sent and nothing is charged. You will not be able to read this back or change it
+        afterwards.
+      </p>
+
+      {sandbox ? (
+        <p className="pay__sandbox">
+          <strong>Test mode</strong> — no real money moves. Card{' '}
+          <code>4111 1111 1111 1111</code>, any future expiry, any CVV.
+        </p>
+      ) : null}
+    </div>
   );
 }

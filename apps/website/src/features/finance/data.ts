@@ -187,8 +187,10 @@ export interface CampRoster {
    * They are counted rather than dropped silently, and the count is on screen:
    * a treasurer who knows the season has 38 registrations must be able to see
    * why 24 are listed. And a servant who *has* a payment against them — a refund
-   * of something, a correction — stays in the table, because a figure nobody can
-   * see is the one failure a money screen cannot have.
+   * of something, a correction, or the shirt money taken with their sign-up —
+   * stays in the table, because a figure nobody can see is the one failure a
+   * money screen cannot have. So does one who has been charged and has not
+   * paid: a camp that charges its servants has none of them omitted.
    * ---------------------------------------------------------------------------
    */
   servantsOmitted: number;
@@ -263,9 +265,20 @@ export async function readCampRoster(programId: string, season: string): Promise
    */
   const live = all.filter((row) => row.status === 'registered' && row.balanceCents > 0);
 
-  // See `servantsOmitted`: a servant with nothing billed and nothing paid has no
-  // figure in any column of this table.
-  const rows = all.filter((row) => row.kind === 'family' || row.payments.length > 0);
+  /*
+   * See `servantsOmitted`: a servant with nothing billed and nothing paid has
+   * no figure in any column of this table.
+   *
+   * `dueCents > 0` is the third clause and it is not redundant. A servant who
+   * has been charged for a shirt and has not paid for it has no payment line
+   * and is not a family — the first two clauses drop them — and they are
+   * exactly the row this table exists to show: somebody who owes money. It can
+   * happen whenever a sign-up is taken outside the public form, or a charge is
+   * added to a registration by hand.
+   */
+  const rows = all.filter(
+    (row) => row.kind === 'family' || row.payments.length > 0 || row.dueCents > 0,
+  );
 
   return {
     rows,

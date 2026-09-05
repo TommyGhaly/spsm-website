@@ -183,6 +183,145 @@ describe('a camp season', () => {
     expect(out.settled).toBe(1);
   });
 
+  /**
+   * The servants' shirt money, which is the one figure on the season a
+   * treasurer cannot derive from the others.
+   *
+   * It is charged once per servant, by card, at the moment the sign-up is sent
+   * — before any administrator has seen it. Folded into `subtotalCents` it is
+   * invisible: the header says "N child-weeks at $150" and the billed total no
+   * longer matches it. See `CampServantCharges`.
+   */
+  describe('servant charges', () => {
+    function servant(over: Partial<CampFinanceInput> = {}): CampFinanceInput {
+      return {
+        kind: 'servant',
+        status: 'registered',
+        children: [],
+        billing: {
+          baseCents: 0,
+          chargeCents: 2_000,
+          chargeLabel: 'Servant shirt',
+          discounts: [],
+          payments: [payment({ amountCents: 2_000, method: 'square', reference: 'sq-1' })],
+        },
+        ...over,
+      };
+    }
+
+    it('counts them, and what came in for them', () => {
+      const out = season([family(), servant(), servant()]);
+
+      expect(out.servantCharges).toEqual({
+        count: 2,
+        chargeCents: 2_000,
+        billedCents: 4_000,
+        paidCents: 4_000,
+        unpaid: 0,
+      });
+      // And they are in the season's own totals as well, not instead of them.
+      expect(out.money.subtotalCents).toBe(RATE + 4_000);
+      expect(out.money.receivedCents).toBe(4_000);
+      expect(out.byMethod.square).toEqual({ count: 2, cents: 4_000 });
+    });
+
+    it('names a servant who has not paid', () => {
+      const unpaid = servant({
+        billing: { baseCents: 0, chargeCents: 2_000, chargeLabel: 'Servant shirt', discounts: [], payments: [] },
+      });
+      const out = season([servant(), unpaid]);
+
+      expect(out.servantCharges.unpaid).toBe(1);
+      expect(out.servantCharges.paidCents).toBe(2_000);
+      // The season's own arrears agree with it: a charged servant who has not
+      // paid is owing, where an uncharged one is settled.
+      expect(out.owing).toBe(1);
+      expect(out.money.outstandingCents).toBe(2_000);
+    });
+
+    it('reports two amounts in one season rather than picking one', () => {
+      // The charge is copied onto a sign-up when it is taken, so a camp that
+      // raised it in June genuinely has both. Same rule as `weeklyRateCents`.
+      const out = season([
+        servant(),
+        servant({
+          billing: { baseCents: 0, chargeCents: 2_500, chargeLabel: 'Servant shirt', discounts: [], payments: [] },
+        }),
+      ]);
+      expect(out.servantCharges.chargeCents).toBeNull();
+      expect(out.servantCharges.count).toBe(2);
+    });
+
+    it('is silent on a camp that charges its servants nothing', () => {
+      const out = season([
+        family(),
+        { kind: 'servant', status: 'registered', children: [], billing: { baseCents: 0, chargeCents: 0, chargeLabel: '', discounts: [], payments: [] } },
+      ]);
+      // Count zero is what the screen draws nothing on, and a null amount
+      // beside it is "none", not "several". The season is otherwise untouched.
+      expect(out.servantCharges).toEqual({
+        count: 0,
+        chargeCents: null,
+        billedCents: 0,
+        paidCents: 0,
+        unpaid: 0,
+      });
+      expect(out.money.subtotalCents).toBe(RATE);
+      expect(out.weeklyRateCents).toBe(RATE);
+    });
+
+    it('does not count a charge on a withdrawn servant as billed', () => {
+      /*
+       * Their bill is cancelled and their payment is not — the same split the
+       * season makes for a withdrawn family. The money still has to appear
+       * somewhere a bank statement can be matched against, and that is
+       * `withdrawnCents`.
+       */
+      const out = season([servant({ status: 'withdrawn' })]);
+      expect(out.servantCharges.count).toBe(0);
+      expect(out.money.dueCents).toBe(0);
+      expect(out.money.withdrawnCents).toBe(2_000);
+      expect(out.money.receivedCents).toBe(2_000);
+    });
+
+    it('takes a discount against a servant off what they were billed', () => {
+      const out = season([
+        servant({
+          billing: {
+            baseCents: 0,
+            chargeCents: 2_000,
+            chargeLabel: 'Servant shirt',
+            discounts: [{ id: 'd1', kind: 'amount', value: 2_000, reason: 'Second year', childId: null, appliedByUid: 'admin-1', appliedAt: null }],
+            payments: [],
+          },
+        }),
+      ]);
+      expect(out.servantCharges.count).toBe(1);
+      expect(out.servantCharges.billedCents).toBe(0);
+      expect(out.servantCharges.unpaid).toBe(0);
+    });
+  });
+
+  it('reads a rollup written before servant charges existed as none', () => {
+    /*
+     * Every stored document in the parish predates this field, and the screen
+     * reads `servantCharges.count` before it draws anything. An undefined there
+     * is a blank finance page for an hour until the scheduled run catches up.
+     */
+    const stored = { ...season([family()]), computedAt: null } as Record<string, unknown>;
+    delete stored['servantCharges'];
+
+    const read = parseFinanceRollup(stored);
+    expect(read?.kind).toBe('camp');
+    expect(read && read.kind === 'camp' ? read.servantCharges : null).toEqual({
+      count: 0,
+      chargeCents: null,
+      billedCents: 0,
+      paidCents: 0,
+      unpaid: 0,
+    });
+  });
+
   it('carries no name, no address and no check number', () => {
     /*
      * The property the whole feature rests on. `finance` may read this document

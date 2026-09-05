@@ -19,8 +19,10 @@ import {
   campCoverage,
   campMisplacedChildren,
   campDaysInWeek,
+  campGenderSplit,
   campGroupMetrics,
   campReliability,
+  campSplitEmpty,
   campSectionBaseline,
   campStationRoles,
   campStationMetrics,
@@ -59,6 +61,7 @@ import {
   suggestBandName,
   suggestGroupName,
   type CampAllocationDraft,
+  type CampGenderField,
   type CampGrade,
   type CampPerson,
   type CampWeekBoard,
@@ -92,7 +95,7 @@ function id(prefix: string): string {
 
 function family(
   registrationId: string,
-  children: { id: string; name: string; grade: CampGrade }[],
+  children: { id: string; name: string; grade: CampGrade; gender?: CampGenderField }[],
 ): CampRegistration & { id: string } {
   const draft = blankRegistration({
     programId: 'summercamp',
@@ -112,6 +115,9 @@ function family(
       lastName: 'Test',
       dateOfBirth: '',
       grade: child.grade,
+      // Unset unless a test says otherwise, which is the state most of the
+      // season's real documents are in.
+      gender: child.gender ?? '',
       shirtSize: 'YM' as const,
       days: [],
       allergies: '',
@@ -1108,6 +1114,132 @@ describe('campGroupMetrics', () => {
         'elementary',
       ),
     ).toMatchObject({ servants: 2, satisfied: 1, wishing: 2 });
+  });
+});
+
+/* ---- male and female ----------------------------------------------------- */
+
+/** A child of a given sex, coming for the whole of `week`. */
+function sexed(childId: string, gender: CampGenderField, week = 1) {
+  const person = campPeople([
+    family(`reg-${childId}`, [{ id: childId, name: childId, grade: '3', gender }]),
+  ])[0]!;
+  return { ...person, days: campWeekKeys(week) };
+}
+
+/**
+ * The split the whole feature exists for.
+ *
+ * The invariant worth holding onto is that `male + female + unknown` always
+ * equals the headcount taken in the same pass — the card prints both, and two
+ * numbers beside each other that do not add up is the failure that would send
+ * somebody looking for a child who is not missing.
+ */
+describe('counting a crew male and female', () => {
+  it('splits the children and the servants separately', () => {
+    const boy = sexed('b1', 'male');
+    const girl = sexed('g1', 'female');
+    const girl2 = sexed('g2', 'female');
+    const servant = { ...wisher('reg-s1', 1, 'elementary', [CAMP_CREW_ROLE]), gender: 'female' as const };
+    const byKey = index([boy, girl, girl2, servant]);
+
+    const metrics = campGroupMetrics(
+      { childKeys: [boy.key, girl.key, girl2.key], servantKeys: [servant.key] },
+      byKey,
+      1,
+      'elementary',
+    );
+
+    expect(metrics.childGender).toEqual({ male: 1, female: 2, unknown: 0 });
+    expect(metrics.servantGender).toEqual({ male: 0, female: 1, unknown: 0 });
+    // …and both add up to the counts printed beside them.
+    expect(metrics.childGender.male + metrics.childGender.female + metrics.childGender.unknown).toBe(
+      metrics.children,
+    );
+    expect(
+      metrics.servantGender.male + metrics.servantGender.female + metrics.servantGender.unknown,
+    ).toBe(metrics.servants);
+  });
+
+  it('keeps the unanswered apart rather than folding them into either side', () => {
+    // A crew registered before the field existed. "3 boys" would be a lie; "1
+    // boy, 2 not given" is the balance *and* the reason to go and ask.
+    const known = sexed('b1', 'male');
+    const older = [sexed('x1', ''), sexed('x2', '')];
+    const byKey = index([known, ...older]);
+
+    const metrics = campGroupMetrics(
+      { childKeys: [known.key, ...older.map((person) => person.key)], servantKeys: [] },
+      byKey,
+      1,
+      'elementary',
+    );
+    expect(metrics.childGender).toEqual({ male: 1, female: 0, unknown: 2 });
+    expect(metrics.children).toBe(3);
+  });
+
+  it('counts the same people the headcount counts — this week, withdrawals out', () => {
+    const here = sexed('g1', 'female', 1);
+    const nextWeek = sexed('g2', 'female', 2);
+    const gone = { ...sexed('b1', 'male', 1), withdrawn: true };
+    const byKey = index([here, nextWeek, gone]);
+    const group = { childKeys: [here.key, nextWeek.key, gone.key], servantKeys: [] };
+
+    // Week one: only the girl who is actually at camp and not withdrawn.
+    expect(campGroupMetrics(group, byKey, 1, 'elementary').childGender).toEqual({
+      male: 0,
+      female: 1,
+      unknown: 0,
+    });
+    // Week two: the other girl, and nobody else.
+    expect(campGroupMetrics(group, byKey, 2, 'elementary').childGender).toEqual({
+      male: 0,
+      female: 1,
+      unknown: 0,
+    });
+  });
+
+  it('reads a station the same way, servants only', () => {
+    const sporty = { ...wisher('reg-s1', 1, 'elementary', ['Sports']), gender: 'male' as const };
+    const cook = { ...wisher('reg-s2', 1, 'elementary', ['Kitchen']), gender: 'female' as const };
+    const metrics = campStationMetrics(
+      { name: 'Sports', servantKeys: [sporty.key, cook.key] },
+      index([sporty, cook]),
+      1,
+      'elementary',
+    );
+    expect(metrics.servantGender).toEqual({ male: 1, female: 1, unknown: 0 });
+    // No child is ever on a station, so its children's split is always empty.
+    expect(campSplitEmpty(metrics.childGender)).toBe(true);
+  });
+
+  it('splits a waiting list the same way a crew is split', () => {
+    // What the two rails show. Same rules as `measure`: this week, and nobody
+    // withdrawn, so the tally under a rail and the tallies on the cards below
+    // it are taken on the same terms.
+    const people = [
+      sexed('b1', 'male'),
+      sexed('g1', 'female'),
+      sexed('x1', ''),
+      { ...sexed('b2', 'male'), withdrawn: true },
+      sexed('g2', 'female', 2),
+    ];
+    expect(campGenderSplit(people, 1)).toEqual({ male: 1, female: 1, unknown: 1 });
+    expect(campGenderSplit(people, 2)).toEqual({ male: 0, female: 1, unknown: 0 });
+    expect(campSplitEmpty(campGenderSplit(people, 3))).toBe(true);
+  });
+
+  it('carries the answer off both kinds of registration', () => {
+    const [child] = campPeople([
+      family('reg-1', [{ id: 'c1', name: 'Mariam', grade: '3', gender: 'female' }]),
+    ]);
+    expect(child!.gender).toBe('female');
+
+    const row = servantRow('reg-s1', 'Peter');
+    const [servant] = campPeople([
+      { ...row, servant: { ...row.servant!, gender: 'male' } },
+    ]);
+    expect(servant!.gender).toBe('male');
   });
 });
 

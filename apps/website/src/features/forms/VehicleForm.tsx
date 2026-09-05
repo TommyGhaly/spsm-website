@@ -196,7 +196,7 @@ export function VehicleForm({ slug, confirmation }: { slug: string; confirmation
 
         <fieldset className="fx__group">
           <legend>
-            <span>Colour</span>
+            <span>Color</span>
           </legend>
           {/*
             Twelve fixed swatches rather than a text box, because Taksis matches

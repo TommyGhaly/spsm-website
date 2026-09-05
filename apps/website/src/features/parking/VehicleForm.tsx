@@ -181,7 +181,7 @@ export function VehicleForm() {
             <input value={input.model ?? ''} onChange={(e) => set('model', e.target.value)} />
           </label>
           <label className="field">
-            <span>Colour</span>
+            <span>Color</span>
             <input value={input.color ?? ''} onChange={(e) => set('color', e.target.value)} />
           </label>
         </div>

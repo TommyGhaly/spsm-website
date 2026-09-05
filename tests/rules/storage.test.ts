@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it } from 'vitest';
 import { assertSucceeds, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { ref, uploadBytes, getBytes, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getBytes, deleteObject, listAll } from 'firebase/storage';
 import {
   createTestEnv,
   asAnon,
@@ -287,6 +287,25 @@ describe('events/ — hero images for the parish calendar', () => {
     });
     await assertFails(deleteObject(ref(asAnon(env).storage(), 'events/festival/hero-keep.png')));
     await assertFails(deleteObject(ref(asServant(env).storage(), 'events/festival/hero-keep.png')));
+  });
+
+  /**
+   * Deleting an event sweeps its whole prefix, and the sweep is a `listAll`.
+   *
+   * The document only ever names the current photograph, so every photograph
+   * replaced before that sweep existed is a file nothing points at — listing is
+   * the only way to find them. `allow read: if true` is what permits it: `read`
+   * covers `list` as well as `get`, which is easy to assume and worth proving,
+   * because a refusal here would not error visibly — `deleteEventFiles` swallows
+   * it and the files would quietly stay in a world-readable bucket, which is the
+   * exact fault the sweep was written for.
+   */
+  it('lets the events grant list a slug, so deleting an event can sweep it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${RUN}-sweep/hero-1.png`), png, meta);
+      await uploadBytes(ref(ctx.storage(), `events/${RUN}-sweep/hero-2.png`), png, meta);
+    });
+    await assertSucceeds(listAll(ref(asEvents(env).storage(), `events/${RUN}-sweep`)));
   });
 });
 

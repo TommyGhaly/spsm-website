@@ -1,4 +1,3 @@
-import { createHash, randomUUID } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
@@ -17,7 +16,7 @@ import {
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_SANDBOX_ACCESS_TOKEN,
-  squareClient,
+  chargeCard,
 } from '../square.js';
 import { TAKSIS_SERVICE_ACCOUNT, pushVehicleRegistration } from './taksis.js';
 import { buildFormEmails } from './email.js';
@@ -218,11 +217,12 @@ export const formSubmit = onRequest(
         return;
       }
 
-      const charged = await charge({
+      const charged = await chargeCard({
         cardToken,
         totalCents,
         note: form.payment.label || form.title,
         buyerEmail: identifySubmitter(form, answers).email,
+        tag: 'forms',
       });
 
       if (!charged.ok) {
@@ -311,87 +311,3 @@ export const formSubmit = onRequest(
     }
   },
 );
-
-type Charged =
-  | { ok: true; paymentId: string }
-  | { ok: false; status: number; reason: string };
-
-/**
- * Charge a card for an amount this Function worked out.
- *
- * ---------------------------------------------------------------------------
- * A bare payment, not an order — unlike the bookstore.
- *
- * `checkout.ts` builds a Square *order* out of catalog ids and lets Square price
- * it, which is what makes the bookstore's totals untamperable: the browser has
- * nowhere to put a price because it never sends one.
- *
- * A form has no Square catalog behind it. Nothing in the parish's Square account
- * corresponds to "summer camp, two children, family tier", and inventing catalog
- * objects per form would put the prices in a second system that the builder
- * would then have to keep in step. So the guarantee is rebuilt on our side
- * instead: `computeTotalCents` runs against the definition stored in Firestore,
- * and the browser's copy of that number is a display, not an input.
- * ---------------------------------------------------------------------------
- *
- * The idempotency key is derived from the card token rather than random. A
- * single-use token can only be charged once anyway, but deriving the key means a
- * retried request carrying the same token maps to the same key, and Square
- * returns the original payment instead of an error about a spent token.
- */
-async function charge(input: {
-  cardToken: string;
-  totalCents: number;
-  note: string;
-  buyerEmail: string | null;
-}): Promise<Charged> {
-  const square = squareClient();
-  if (!square) {
-    return { ok: false, status: 503, reason: 'Payments are not set up on this site yet.' };
-  }
-
-  const idempotencyKey = createHash('sha256')
-    .update(input.cardToken)
-    .digest('hex')
-    .slice(0, 45);
-
-  let response: Response;
-  try {
-    response = await fetch(`${square.host}/v2/payments`, {
-      method: 'POST',
-      headers: square.headers,
-      body: JSON.stringify({
-        idempotency_key: idempotencyKey,
-        source_id: input.cardToken,
-        location_id: square.locationId,
-        amount_money: { amount: input.totalCents, currency: 'USD' },
-        note: input.note.slice(0, 500),
-        ...(input.buyerEmail ? { buyer_email_address: input.buyerEmail } : {}),
-        // Square's own reference for the parish's records; a random id is fine
-        // because nothing on our side looks a payment up by it.
-        reference_id: randomUUID().slice(0, 40),
-      }),
-    });
-  } catch (error) {
-    console.error('[forms] could not reach Square', error);
-    return { ok: false, status: 502, reason: 'The payment service could not be reached.' };
-  }
-
-  const json = (await response.json().catch(() => ({}))) as {
-    payment?: { id?: string };
-    errors?: { detail?: string }[];
-  };
-
-  if (!response.ok || !json.payment?.id) {
-    console.error('[forms] payment failed', JSON.stringify(json.errors));
-    // Square's decline messages are written for buyers, so pass one through
-    // rather than replacing it with something vaguer.
-    return {
-      ok: false,
-      status: 402,
-      reason: json.errors?.[0]?.detail ?? 'The card was declined.',
-    };
-  }
-
-  return { ok: true, paymentId: json.payment.id };
-}

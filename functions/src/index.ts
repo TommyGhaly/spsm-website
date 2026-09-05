@@ -2,7 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, type DocumentSnapshot } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
   interpretSquareWebhook,
@@ -344,13 +344,55 @@ export const squareWebhook = onRequest(
  */
 async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
   const db = getFirestore();
-  const ref = db.collection(COLLECTIONS.orders).doc(update.squareOrderId);
+  const orders = db.collection(COLLECTIONS.orders);
 
   return db.runTransaction(async (tx) => {
-    const snapshot = await tx.get(ref);
+    let ref = orders.doc(update.squareOrderId);
+    let snapshot: DocumentSnapshot = await tx.get(ref);
+
+    /*
+     * A refund does not carry the id of the order that was bought.
+     *
+     * -----------------------------------------------------------------------
+     * Square books a refund against a *return order* of its own making, so
+     * `refund.order_id` is an id we have never seen — not the order id we used
+     * as this document's name at checkout. Looked up by that alone, every
+     * refund of a website order missed, and the miss was indistinguishable
+     * from a genuine over-the-counter sale: the log below said "probably an
+     * in-person sale" and the order stayed `paid` with the money already gone.
+     *
+     * The consequence was worse than a stale badge. `rollupDay` reads
+     * `order.status`, so a refunded order kept counting as revenue with
+     * `refunded: 0` beside it, and the takings on /bookstore disagreed with
+     * Square's own report by the value of every refund ever issued.
+     *
+     * `payment_id` is the one identifier both events carry: a refund names the
+     * payment it reverses, and that payment id is on the order from the moment
+     * the checkout wrote it. So the id lookup stays the fast path — it is what
+     * every `payment.*` event hits — and this is the fallback behind it.
+     *
+     * One equality filter, served by the automatic single-field index; there is
+     * nothing to add to firestore.indexes.json.
+     * -----------------------------------------------------------------------
+     */
+    if (!snapshot.exists && update.squarePaymentId) {
+      const byPayment = await tx.get(
+        orders.where('squarePaymentId', '==', update.squarePaymentId).limit(1),
+      );
+      const found = byPayment.docs[0];
+      if (found) {
+        ref = found.ref;
+        snapshot = found;
+      }
+    }
+
     if (!snapshot.exists) {
+      // Both identifiers, because "no order" against only one of them is what
+      // made a missed refund read as an in-person sale for a fortnight.
       console.info(
-        `[square] no order ${update.squareOrderId} — probably an in-person sale. Ignored.`,
+        `[square] no order for ${update.squareOrderId}` +
+          (update.squarePaymentId ? ` / payment ${update.squarePaymentId}` : '') +
+          ' — probably an in-person sale. Ignored.',
       );
       return false;
     }
@@ -360,7 +402,11 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
 
     tx.update(ref, {
       status: update.status,
-      squarePaymentId: update.squarePaymentId,
+      // Only when the event carried one. `interpretSquareWebhook` returns null
+      // for a payment with no id, and writing that null over a good value would
+      // erase the field the refund lookup above depends on — the failure would
+      // then be permanent for that order and invisible until somebody refunded.
+      ...(update.squarePaymentId ? { squarePaymentId: update.squarePaymentId } : {}),
       // Capped so a long-lived order cannot grow this array without bound; the
       // recent ids are the only ones a replay could plausibly repeat.
       appliedEventIds: [...applied, update.eventId].slice(-50),

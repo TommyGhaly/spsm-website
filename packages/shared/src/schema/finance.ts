@@ -131,6 +131,26 @@ export interface CampFinanceMoney {
   refundedCents: number;
 }
 
+export interface CampServantCharges {
+  /** Live servants carrying a charge at all. Zero on a camp that charges none. */
+  count: number;
+  /**
+   * The amount each was charged, when every charged servant carries the same.
+   *
+   * `null` when they do not, for the same reason `weeklyRateCents` is null in
+   * that case: the charge is copied onto a sign-up when it is taken, so a camp
+   * that raised it mid-season genuinely has two figures in it, and showing one
+   * of them would be a lie.
+   */
+  chargeCents: number | null;
+  /** What those charges come to, after any discount against them. */
+  billedCents: number;
+  /** Of that, what has actually been received. */
+  paidCents: number;
+  /** Charged servants whose balance is still positive. */
+  unpaid: number;
+}
+
 export interface CampPaymentTally {
   count: number;
   cents: number;
@@ -162,6 +182,30 @@ export interface CampFinanceRollup {
    * and averaging them would be a worse one.
    */
   weeklyRateCents: number | null;
+
+  /**
+   * The servants' flat charge, on its own.
+   *
+   * ---------------------------------------------------------------------------
+   * Broken out because it is the one figure on this screen that nobody can
+   * derive from the others.
+   *
+   * Everything else here divides by *family*: child-weeks times a weekly rate.
+   * A servant's charge is one flat amount for a shirt — see
+   * `CampBilling.chargeCents` — and folded into `money.subtotalCents` it is
+   * invisible: a treasurer reading "billed $8,400" against "48 child-weeks at
+   * $175" finds the arithmetic does not come out, and has nowhere on the screen
+   * to look for the missing $140.
+   *
+   * It is also the only part of the camp's money that is taken **before** a
+   * human being has seen the sign-up. The card is charged by the endpoint; an
+   * administrator accepting the sign-up afterwards is what turns it into a
+   * registration. So "how much shirt money has come in, and from how many
+   * people" is a question with an answer the parish's bank statement can be
+   * matched against, and it should not have to be reconstructed.
+   * ---------------------------------------------------------------------------
+   */
+  servantCharges: CampServantCharges;
 
   money: CampFinanceMoney;
   /** How the money came in. Every method has a key, most of them zero. */
@@ -213,6 +257,7 @@ export function emptyCampFinance(programId: string, season: string): Omit<CampFi
     children: 0,
     billableWeeks: 0,
     weeklyRateCents: null,
+    servantCharges: { count: 0, chargeCents: null, billedCents: 0, paidCents: 0, unpaid: 0 },
     money: {
       subtotalCents: 0,
       discountCents: 0,
@@ -260,6 +305,8 @@ export function rollupCampFinance(input: {
 }): Omit<CampFinanceRollup, 'computedAt'> {
   const out = emptyCampFinance(input.programId, input.season);
   const rates = new Set<number>();
+  /* The servants' side of the same question — see `CampServantCharges`. */
+  const charges = new Set<number>();
 
   for (const registration of input.registrations) {
     const status: CampStatus = registration.status;
@@ -285,6 +332,23 @@ export function rollupCampFinance(input: {
         rates.add(Math.max(0, Math.round(registration.billing.baseCents)));
       } else {
         out.servants += 1;
+
+        /*
+         * The shirt money, counted apart from everything above.
+         *
+         * Only servants who actually carry one: a camp that charges nothing
+         * leaves every one of these at zero and the screen draws no line for
+         * it, which is the state most camps are in. `bill.dueCents` rather
+         * than the raw charge, because a discount against a servant is as real
+         * as a discount against a family.
+         */
+        if (bill.chargeCents > 0) {
+          out.servantCharges.count += 1;
+          out.servantCharges.billedCents += bill.dueCents;
+          out.servantCharges.paidCents += bill.paidCents;
+          if (bill.balanceCents > 0) out.servantCharges.unpaid += 1;
+          charges.add(bill.chargeCents);
+        }
       }
 
       out.money.subtotalCents += bill.subtotalCents;
@@ -340,6 +404,9 @@ export function rollupCampFinance(input: {
   }
 
   out.weeklyRateCents = rates.size === 1 ? [...rates][0]! : null;
+  // Null when a season carries two different charges, and null when it carries
+  // none — the count beside it is what tells those two apart.
+  out.servantCharges.chargeCents = charges.size === 1 ? [...charges][0]! : null;
   return out;
 }
 
@@ -496,6 +563,15 @@ function parseCampFinance(doc: Record<string, unknown>): CampFinanceRollup {
 
   const money = asRecord(doc['money']);
 
+  /*
+   * Absent on every document written before the charge existed, which is every
+   * document in the parish today until the next hourly run. `base` supplies the
+   * zeroes, and a zero count is exactly what "this camp charges its servants
+   * nothing" looks like — so a stale rollup reads as a season with no shirt
+   * money rather than crashing the screen on an undefined.
+   */
+  const charges = asRecord(doc['servantCharges']);
+
   return {
     ...base,
     key: str(doc['key']) || base.key,
@@ -506,6 +582,13 @@ function parseCampFinance(doc: Record<string, unknown>): CampFinanceRollup {
     children: num(doc['children']),
     billableWeeks: num(doc['billableWeeks']),
     weeklyRateCents: typeof doc['weeklyRateCents'] === 'number' ? doc['weeklyRateCents'] : null,
+    servantCharges: {
+      count: num(charges['count']),
+      chargeCents: typeof charges['chargeCents'] === 'number' ? charges['chargeCents'] : null,
+      billedCents: num(charges['billedCents']),
+      paidCents: num(charges['paidCents']),
+      unpaid: num(charges['unpaid']),
+    },
     money: {
       subtotalCents: num(money['subtotalCents']),
       discountCents: num(money['discountCents']),

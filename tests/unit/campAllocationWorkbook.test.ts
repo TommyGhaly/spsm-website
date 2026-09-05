@@ -80,6 +80,10 @@ function family(
       lastName: 'Test',
       dateOfBirth: '',
       grade: child.grade,
+      // Neither of these suites reads it; it is here because `CampChild`
+      // requires it, and a fixture that quietly diverges from the type is how
+      // one of these starts testing a shape nothing writes.
+      gender: '' as const,
       shirtSize: 'YM' as const,
       // Registered for week one only, so the `Weeks` column has something true
       // to say — it is what replaced the old per-week duplicate rows.

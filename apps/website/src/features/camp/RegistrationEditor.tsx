@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import {
+  CAMP_GENDERS,
   CAMP_GRADES,
   CAMP_PAYMENT_METHODS,
   MAX_CHILDREN,
@@ -9,6 +10,7 @@ import {
   blankChild,
   campAge,
   campBill,
+  campGenderLabel,
   campGradeLabel,
   campLineId,
   campPaymentMethodLabel,
@@ -479,6 +481,32 @@ function ChildCard({
             {CAMP_GRADES.map((grade) => (
               <option key={grade} value={grade}>
                 {campGradeLabel(grade)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {/*
+          Boy or girl, beside the grade rather than anywhere else on this form.
+          --------------------------------------------------------------------
+          The two fields are read together — "how many 3rd grade girls" is one
+          question — and they are the two the groups board is built on. It opens
+          on nothing chosen, and the panel of things still to fill in says so:
+          a default of either would put a wrong child in a crew and nobody would
+          ever see the moment it was decided.
+        */}
+        <label className="camp-field">
+          <span className="camp-field__label">Boy or girl</span>
+          <select
+            className="input"
+            value={child.gender}
+            onChange={(event) =>
+              onChange({ ...child, gender: event.target.value as CampChild['gender'] })
+            }
+          >
+            <option value="">Not said yet</option>
+            {CAMP_GENDERS.map((gender) => (
+              <option key={gender} value={gender}>
+                {campGenderLabel(gender, 'child')}
               </option>
             ))}
           </select>

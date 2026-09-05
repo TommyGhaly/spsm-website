@@ -184,7 +184,21 @@ function Report({
   const nameOf = (slug: string) => names.get(slug) ?? slug;
 
   const bought = topProducts(stats, 'unitsSold', 8);
-  const viewed = topProducts(stats, 'details', 8);
+  /*
+   * Ranked by covers seen, not by pages opened.
+   *
+   * This asked for `details` and so listed only the books somebody had opened —
+   * three of twelve in September, and the table went empty on any period where
+   * nobody clicked through, while every one of those books had been put in
+   * front of thirty-odd people. `topProducts` drops rows whose value is zero,
+   * so ranking by the sparser number does not merely reorder the table, it
+   * deletes most of it.
+   *
+   * `views` has the resolution to sort by; `details` is carried in the note
+   * beside it, where "34 seen, 0 opened" is the sentence a shop volunteer can
+   * actually act on — that cover is not working.
+   */
+  const viewed = topProducts(stats, 'views', 8);
   const abandoned = useMemo(
     () =>
       Object.entries(stats.products)
@@ -226,18 +240,50 @@ function Report({
             note={`${t.refundedOrders} of them · net ${money(t.revenue - t.refunded)}`}
           />
         )}
-        <Tile
-          label="Collect / deliver"
-          value={`${t.pickupOrders} / ${t.shippedOrders}`}
-          note="picked up / delivered"
-        />
+        {/* Only once there is an order to collect. Before that it is "0 / 0"
+            under a label about fulfilment, which is furniture for the same
+            reason the refund tile above is. */}
+        {t.orders > 0 && (
+          <Tile
+            label="Collect / deliver"
+            value={`${t.pickupOrders} / ${t.shippedOrders}`}
+            note="picked up / delivered"
+          />
+        )}
         <Tile
           label="Visitors"
           value={String(t.visitors)}
           note={
             period.kind === 'month'
               ? 'busiest single day (daily figures cannot be added up)'
-              : `${t.views} covers seen, ${t.details} opened`
+              : 'people in the shop'
+          }
+        />
+        {/*
+          Browsing, as tiles rather than as a footnote on the visitor count.
+
+          These two numbers used to live in the Visitors note and only on a day
+          — so a month that had 238 covers seen and 7 books opened rendered as
+          five tiles of nought and a visitor count of 2, and read as a screen
+          that was broken rather than a shop that was quiet. Opening a book is
+          the most common thing anybody does here and it was the one thing the
+          dashboard would not say.
+
+          `views` is a cover on the shelf, counted once per visitor per period;
+          `details` is that book's own page opened. They are an order of
+          magnitude apart on purpose, so the opened count leads and the covers
+          sit under it as the denominator it is.
+        */}
+        <Tile
+          label="Books opened"
+          value={String(t.details)}
+          note={`${t.views} ${t.views === 1 ? 'cover' : 'covers'} seen`}
+        />
+        <Tile
+          label="Added to basket"
+          value={String(t.cartAdds)}
+          note={
+            t.cartRemoves > 0 ? `${t.cartRemoves} taken back out` : 'none taken back out'
           }
         />
         <Tile
@@ -268,12 +314,28 @@ function Report({
 
         <Table
           title="Most looked at"
-          empty="No one has opened a book yet."
+          hint="Covers seen on the shelf, and how many went on to open the book."
+          empty="No one has been in the shop yet."
           rows={viewed.map((row) => ({
             key: row.slug,
             name: nameOf(row.slug),
             value: `${row.value}`,
-            note: describeConversion(row.stats),
+            /*
+             * The rate is dropped entirely when nobody opened the book.
+             *
+             * `conversionRate` falls back to `views` when `details` is zero, so
+             * a cover seen thirty times and never opened clears the sample
+             * threshold and prints "0% bought" — the confident verdict on no
+             * evidence that the note on MIN_CONVERSION_SAMPLE exists to
+             * prevent. It says nothing "0 opened" has not already said, and it
+             * says it about the book rather than about the cover.
+             */
+            note: [
+              `${row.stats.details} opened`,
+              row.stats.details > 0 ? describeConversion(row.stats) : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
           }))}
         />
 

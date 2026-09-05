@@ -901,6 +901,46 @@ export interface CampConfig {
   baseCents: number;
 
   /**
+   * What a servant is charged, once, in integer minor units. Zero means free.
+   *
+   * ---------------------------------------------------------------------------
+   * The shirt money, and the one thing on the public form that takes a card.
+   *
+   * Servants are not billed for weeks — `campBill` gives them no lines at all —
+   * but the camp does buy them a shirt, and asking two hundred teenagers for
+   * twenty dollars in cash at a door is how a camp ends up with an envelope and
+   * an argument. So: a flat amount the camp sets here, charged **once** however
+   * many weeks somebody serves, and taken by card at the bottom of
+   * `/forms/summer-camp` before the sign-up will send.
+   *
+   * Flat rather than per week, because it is not a rate: one servant, one
+   * shirt. And required rather than optional to the servant, because a form
+   * with a "would you like a shirt" tick is a shirt order the camp then has to
+   * reconcile against a roster — Tommy chose the flat, required reading.
+   *
+   * **Zero switches the whole thing off.** No charge is shown, no card field is
+   * rendered, Square is never loaded, and the form sends exactly as it did
+   * before this existed. That is the default and it is what a camp that has not
+   * thought about this gets.
+   *
+   * Copied onto each sign-up as `billing.chargeCents` when it is taken, so
+   * raising it in July never re-bills a servant who paid in May.
+   * ---------------------------------------------------------------------------
+   */
+  servantChargeCents: number;
+
+  /**
+   * What the charge is for, in the camp's words: "Servant shirt".
+   *
+   * Shown beside the amount on the form and used as the note on the Square
+   * payment, which is what a treasurer reading the parish's Square dashboard
+   * sees. Empty reads as "Servant charge" rather than as nothing — a card
+   * screen asking for twenty dollars for an unnamed reason is one nobody
+   * completes.
+   */
+  servantChargeLabel: string;
+
+  /**
    * How many weeks the camp runs this year. Normally two.
    *
    * Read by the day grid on the registration form, which draws Monday to Friday
@@ -1075,6 +1115,10 @@ export function defaultCampConfig(now: Date = new Date()): CampConfig {
     programId: 'summercamp',
     season: String(now.getFullYear()),
     baseCents: 0,
+    // Zero, which is "no charge and no card step". A default charge is money
+    // taken from a stranger that nobody at this parish decided to ask for.
+    servantChargeCents: 0,
+    servantChargeLabel: '',
     weeks: DEFAULT_CAMP_WEEKS,
     // Blank, not a guess. A camp whose dates default to some Monday in June is
     // a camp that shows the wrong dates on a register until somebody notices;
@@ -1111,6 +1155,13 @@ export function parseCampConfig(raw: unknown, now: Date = new Date()): CampConfi
   const usableBase =
     typeof base === 'number' && Number.isInteger(base) && base >= 0 && base <= MAX_CAMP_FEE_CENTS;
 
+  const charge = doc?.['servantChargeCents'];
+  const usableCharge =
+    typeof charge === 'number' &&
+    Number.isInteger(charge) &&
+    charge >= 0 &&
+    charge <= MAX_CAMP_FEE_CENTS;
+
   const weeks = doc?.['weeks'];
   const usableWeeks =
     typeof weeks === 'number' && Number.isInteger(weeks) && weeks >= 1 && weeks <= MAX_CAMP_WEEKS;
@@ -1121,6 +1172,11 @@ export function parseCampConfig(raw: unknown, now: Date = new Date()): CampConfi
     programId: str(doc?.['programId']) || fallback.programId,
     season: str(doc?.['season']) || fallback.season,
     baseCents: usableBase ? (base as number) : fallback.baseCents,
+    // Falls back to zero rather than clamping, exactly as `baseCents` does: a
+    // clamped charge is a figure nobody chose, and zero reads on the settings
+    // screen as "servants are not charged".
+    servantChargeCents: usableCharge ? (charge as number) : fallback.servantChargeCents,
+    servantChargeLabel: str(doc?.['servantChargeLabel']) ?? fallback.servantChargeLabel,
     weeks: weekCount,
     weekStarts: weekStartList(doc?.['weekStarts'], weekCount),
     weekRoles: weekRoleMap(doc?.['weekRoles']),

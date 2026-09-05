@@ -577,6 +577,86 @@ preference in a browser, and every place it is implemented says so.
 scoping above), or wants the desk to see a balance without seeing the history —
 which is a rollup per registration, not a widened grant.
 
+### 16. The servants' charge, and who signs for a servant under 18
+
+*"The servants selection form should have a setting for the admin to add an
+optional charge which admins can attach a number for shirts or anything else,
+and if they are under 18 they should have their guardian sign the waiver — they
+cannot submit the form unless they pay through Square."*
+
+**The charge is flat, required, and switched off by being zero.** A camp sets
+`servantChargeCents` and `servantChargeLabel` on `config/camp`, from the
+settings panel on /admin/camp. When it is above zero the public sign-up form
+shows the amount at the top, renders a Square card field at the bottom, and will
+not send without a card token; when it is zero nothing changes — no charge, no
+card field, and Square's SDK is never even fetched. It is charged **once**,
+whether somebody serves one week or both, because it buys one shirt and is not a
+rate. The alternatives were considered and rejected: per week would charge a
+two-week servant twice for one shirt, and an opt-in tick would make it a shirt
+order to reconcile against a roster.
+
+It is deliberately **not** `billing.baseCents`. That field is a *weekly* rate —
+`campBill` multiplies it by each child's weeks, and `rollupCampFinance` gathers
+every family's copy of it to report the season's rate — so reusing it would both
+bill the shirt per week and make every season report two different weekly rates.
+`billing.chargeCents` is its own field, added to the subtotal once, and copied
+onto the sign-up when it is taken so that raising the setting in July never
+re-bills a servant who paid in May.
+
+**The money and the answers travel in one request.** `campServantRequest` reads
+the amount from `config/camp` — never from the request body, for the reason it
+already read the season from there — validates the sign-up, charges the card,
+and only then writes the queue document, with the Square payment recorded as a
+`square` entry in `billing.payments[]` so the camp's ledger and the finance
+rollup see it like any other payment. A declined card writes nothing. The one
+bad outcome left — charged, then the write fails — answers 200 with a sentence
+saying the payment went through and to ring the office, because the one wrong
+thing to tell somebody whose card has just been debited is "try again".
+
+**An under-18 servant's waiver is signed by their guardian.** `campNeedsGuardian`
+is the rule, and a missing or unreadable date of birth counts as under-18: of the
+two possible mistakes, asking an adult for a guardian's name is a sentence they
+can argue with. The form swaps the last panel's wording, the name field and a
+"how they are related" field in as soon as an age is known, and both validators
+demand the relationship — it is what distinguishes a guardian signing from a
+teenager typing their own name into a box labelled for somebody else. What this
+is evidence of is what `CampWaiver` has always said it is: a typed name, not a
+signature. Nothing claims the guardian was in the room.
+
+**The charge is broken out on /admin/finance rather than folded in.**
+`CampServantCharges` on the season rollup carries the count, the amount (null
+when a season holds two, exactly as `weeklyRateCents` does), what was billed,
+what came in and how many are unpaid. The season's ledger then splits "Billed"
+into child weeks and servant charges so the three numbers add up against the
+header — folded into one total it was a figure a treasurer could not check, and
+the shirt money is the only part of the camp's income that arrives *before* a
+human being has seen the sign-up. The family-by-family roster used to omit every
+servant as "billed nothing"; it now keeps any servant who was charged, paid, or
+owes.
+
+**A tested bug, in code that was already shipped.** `chargeCard`'s idempotency
+key is derived from the request so that a retry maps to the same key and Square
+returns the original payment — but the body also carried
+`reference_id: randomUUID()`, so the second attempt sent that key with different
+parameters, which Square refuses with `Different request parameters used for the
+same idempotency_key`. That arrived as a 402 and was shown to the payer as a
+declined card: the retry the key exists to make safe was the one thing it broke.
+Both fields come off one hash of token + amount + note now. This was true of
+paid parish forms before the camp existed, and it is not visible from a single
+attempt — it took charging Square's sandbox twice with its own test nonce.
+
+*What it costs:* a camp that sets a charge without Square configured has a
+sign-up form nobody can send — the card panel says so in words, and the amount
+being zero is the way out. And the charge is taken before an administrator has
+accepted anybody, so dismissing a sign-up is dismissing somebody who has already
+paid; the queue card says whether they have, so that is a decision rather than a
+discovery.
+
+**Revisit if:** the camp wants to charge families through the same door (the
+field is on `CampBilling`, not on the servant, so it already bills), or wants a
+servant to be able to choose between a shirt and no shirt — which is an opt-in
+tick and a different reconciliation problem.
+
 ---
 
 ## Out of scope

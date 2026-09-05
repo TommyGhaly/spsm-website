@@ -645,13 +645,24 @@ function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp
 function Season({ season, runsCamp }: { season: CampFinanceRollup; runsCamp: boolean }) {
   const methods = CAMP_PAYMENT_METHODS.filter((method) => season.byMethod[method].count > 0);
 
+  /*
+   * The servants' shirt money. Absent entirely on a camp that charges none,
+   * which is the default and most camps' state — see `CampServantCharges`.
+   */
+  const charges = season.servantCharges;
+  const childCents = season.money.subtotalCents - charges.billedCents;
+
   return (
     <article className="fin__season">
       <header className="fin__seasonHead">
         <h3>{season.season}</h3>
         <p>
           {season.billable} registration{season.billable === 1 ? '' : 's'} · {season.children}{' '}
-          child{season.children === 1 ? '' : 'ren'} · {season.billableWeeks} child-week
+          child{season.children === 1 ? '' : 'ren'}
+          {/* Named on the header only once they cost something. A servant count
+              beside a fee line is a number a treasurer would try to multiply. */}
+          {charges.count > 0 && <> · {season.servants} servants</>} ·{' '}
+          {season.billableWeeks} child-week
           {season.billableWeeks === 1 ? '' : 's'}
           {season.weeklyRateCents !== null && season.weeklyRateCents > 0 && (
             <> at {money(season.weeklyRateCents)} a week</>
@@ -668,7 +679,23 @@ function Season({ season, runsCamp }: { season: CampFinanceRollup; runsCamp: boo
       </header>
 
       <dl className="fin__ledger">
-        <Line label="Billed" cents={season.money.subtotalCents} />
+        {charges.count > 0 ? (
+          /*
+           * Split, so the arithmetic comes out.
+           *
+           * A single "Billed" line against a header reading "48 child-weeks at
+           * $175" is a figure a treasurer cannot check: the shirt money is in
+           * it and nothing on the screen says so. Two lines and a total are
+           * three numbers that add up.
+           */
+          <>
+            <Line label="Billed — child weeks" cents={childCents} />
+            <Line label="Billed — servant charges" cents={charges.billedCents} />
+            <Line label="Billed" cents={season.money.subtotalCents} />
+          </>
+        ) : (
+          <Line label="Billed" cents={season.money.subtotalCents} />
+        )}
         <Line label="Discounts" cents={-season.money.discountCents} />
         <Line label="Due" cents={season.money.dueCents} strong />
         <Line label="Received" cents={season.money.receivedCents} />
@@ -680,6 +707,30 @@ function Season({ season, runsCamp }: { season: CampFinanceRollup; runsCamp: boo
         {season.money.creditCents > 0 && <>, {money(season.money.creditCents)} overpaid</>}
         {season.money.refundedCents > 0 && <>, {money(season.money.refundedCents)} refunded</>}.
       </p>
+
+      {charges.count > 0 && (
+        <p className="fin__seasonNote">
+          {charges.count} servant charge{charges.count === 1 ? '' : 's'}
+          {charges.chargeCents !== null ? (
+            <> at {money(charges.chargeCents)} each</>
+          ) : (
+            /* Two figures in one season is not an error: the charge is copied
+               onto a sign-up when it is taken, so raising it mid-season leaves
+               both in the data. Naming it beats showing one of them. */
+            <> at more than one amount</>
+          )}
+          {' — '}
+          {money(charges.paidCents)} in
+          {charges.unpaid > 0 ? (
+            <>
+              , <strong>{charges.unpaid} unpaid</strong>
+            </>
+          ) : (
+            <>, all paid</>
+          )}
+          . Taken by card as each sign-up was sent.
+        </p>
+      )}
 
       {(season.money.draftCents > 0 || season.money.withdrawnCents > 0) && (
         <p className="fin__seasonNote">
@@ -899,8 +950,9 @@ function Roster({ programId, season }: { programId: string; season: string }) {
           <>
             {' '}
             {servantsOmitted} servant{servantsOmitted === 1 ? ' is' : 's are'} registered and not
-            listed here: a servant is billed nothing, so every column of this table would be a
-            dash. One with a payment recorded against them is listed.
+            listed here: a servant is billed for no weeks, so every column of this table would
+            be a dash. One who was charged for a shirt, or has any payment recorded against
+            them, is listed.
           </>
         )}
       </p>

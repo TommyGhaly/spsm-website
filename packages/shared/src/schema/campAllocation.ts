@@ -15,6 +15,7 @@ import {
   isCampSection,
   MAX_CAMP_WEEKS,
   type CampChild,
+  type CampGenderField,
   type CampGrade,
   type CampRegistration,
   type CampSection,
@@ -221,7 +222,7 @@ export function campColour(value: CampColour): CampColourOption {
  * ---------------------------------------------------------------------------
  */
 export const CAMP_UNCOLOURED = {
-  label: 'No colour yet',
+  label: 'No color yet',
   hex: '#8A7F7B',
   ink: '#FFFFFF',
 } as const satisfies { label: string; hex: string; ink: string };
@@ -1138,6 +1139,17 @@ export interface CampPerson {
   /** Children only. Null on a servant. */
   grade: CampGrade | null;
   /**
+   * Male or female, on a child and on a servant alike, or empty when the
+   * registration never said.
+   *
+   * The one fact on this type that both kinds carry and both kinds are counted
+   * on. A crew's balance is two numbers — the children in it and the servants
+   * on it — and asking the question of only one of them would answer half of
+   * it. Read the empty case as unanswered, never as a default: see
+   * `CampGenderSplit`.
+   */
+  gender: CampGenderField;
+  /**
    * Whole years old, or null when no birth date was recorded.
    *
    * Computed here rather than on the chip so that the board, the export and any
@@ -1211,6 +1223,7 @@ export function campPeople(
         registrationId: registration.id,
         name: registration.contact.name || 'Unnamed servant',
         grade: null,
+        gender: servant?.gender ?? '',
         age: campAge(servant?.dateOfBirth ?? '', on),
         shirtSize: servant?.shirtSize ?? '',
         days: servant?.days ?? [],
@@ -1241,6 +1254,7 @@ export function campPeople(
         registrationId: registration.id,
         name: fullName(child),
         grade: child.grade,
+        gender: child.gender,
         age: campAge(child.dateOfBirth, on),
         shirtSize: child.shirtSize,
         days: child.days,
@@ -1796,12 +1810,55 @@ function normaliseRole(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * A count of people, split male and female, with the unanswered kept apart.
+ *
+ * ---------------------------------------------------------------------------
+ * Three numbers rather than two, and `unknown` is the one that earns its place.
+ *
+ * Folding the unanswered into either side would produce a ratio that is wrong
+ * by exactly as much as the camp does not know, and it would be wrong silently
+ * — a crew reading "6 boys · 2 girls" when four of those eight were never asked
+ * is worse than no reading at all, because somebody will staff against it.
+ * Counted separately, the same crew says "3 boys · 1 girl · 4 not given", which
+ * is both the balance *and* the reason to go and find out.
+ *
+ * `male + female + unknown` always equals the headcount it was taken from, so a
+ * screen can print any of the four numbers without reconciling them.
+ * ---------------------------------------------------------------------------
+ */
+export interface CampGenderSplit {
+  male: number;
+  female: number;
+  /** Registered before the question existed, or left blank. */
+  unknown: number;
+}
+
+export const NO_GENDER_SPLIT: CampGenderSplit = { male: 0, female: 0, unknown: 0 };
+
+/** True when there is nobody at all to say anything about. */
+export function campSplitEmpty(split: CampGenderSplit): boolean {
+  return split.male + split.female + split.unknown === 0;
+}
+
 /** How a group or a station is doing on the two questions the board asks. */
 export interface CampPlaceMetrics {
   /** Children in it who are coming that week. */
   children: number;
   /** Servants in it who are coming that week. */
   servants: number;
+  /**
+   * The same two headcounts, split male and female.
+   *
+   * Carried on the metrics rather than recounted by the card, so that the split
+   * and the total can never disagree: both are taken in one pass over the same
+   * keys, against the same week, skipping the same withdrawn people. A card
+   * that counted its own boys off `group.childKeys` would include the child who
+   * is only there in week two, and the numbers beside each other would not add
+   * up.
+   */
+  childGender: CampGenderSplit;
+  servantGender: CampGenderSplit;
   /** Servants who asked for something this week, and got it. */
   satisfied: number;
   /** Servants who asked for something this week at all — the denominator. */
@@ -1921,20 +1978,25 @@ function measure(
   where: { kind: 'group' } | { kind: 'station'; name: string },
 ): CampPlaceMetrics {
   let children = 0;
+  const childGender: CampGenderSplit = { male: 0, female: 0, unknown: 0 };
   for (const key of childKeys) {
     const person = byKey.get(key);
     // A withdrawn child still shows on the board — they have to, or nobody
     // notices — but they are not somebody who needs covering.
-    if (person && !person.withdrawn && campComesInWeek(person, week)) children += 1;
+    if (!person || person.withdrawn || !campComesInWeek(person, week)) continue;
+    children += 1;
+    tally(childGender, person.gender);
   }
 
   let servants = 0;
   let satisfied = 0;
   let wishing = 0;
+  const servantGender: CampGenderSplit = { male: 0, female: 0, unknown: 0 };
   for (const key of servantKeys) {
     const person = byKey.get(key);
     if (!person || person.withdrawn || !campComesInWeek(person, week)) continue;
     servants += 1;
+    tally(servantGender, person.gender);
     const met = campWishMet(person, where, week, section);
     if (met === null) continue;
     wishing += 1;
@@ -1944,10 +2006,40 @@ function measure(
   return {
     children,
     servants,
+    childGender,
+    servantGender,
     satisfied,
     wishing,
     ratio: servants > 0 ? children / servants : null,
   };
+}
+
+/** Add one person to a split. An unreadable or absent answer is its own bucket
+    and never a default — see `CampGenderSplit`. */
+function tally(split: CampGenderSplit, gender: CampGenderField): void {
+  if (gender === 'male') split.male += 1;
+  else if (gender === 'female') split.female += 1;
+  else split.unknown += 1;
+}
+
+/**
+ * The same split, over any list of people, for one week.
+ *
+ * What the two rails and the half's own heading count: everybody in the list
+ * who is actually at camp that week, withdrawals left out on the same terms
+ * `measure` leaves them out, so the number under a rail and the numbers on the
+ * cards below it are taken the same way.
+ */
+export function campGenderSplit(
+  people: readonly CampPerson[],
+  week: number,
+): CampGenderSplit {
+  const split: CampGenderSplit = { male: 0, female: 0, unknown: 0 };
+  for (const person of people) {
+    if (person.withdrawn || !campComesInWeek(person, week)) continue;
+    tally(split, person.gender);
+  }
+  return split;
 }
 
 /* ---------------------------------------------------------------------------

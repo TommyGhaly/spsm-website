@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CAMP_COLOURS,
+  CAMP_GENDERS,
   CAMP_GRADES,
   CAMP_SECTIONS,
   MAX_BANDS,
@@ -17,6 +18,11 @@ import {
   campCoverage,
   campDaysInWeek,
   campDesiredRolesFor,
+  campGenderLabel,
+  campGenderPlural,
+  campGenderShort,
+  campGenderSplit,
+  campSplitEmpty,
   campWeekdayLabel,
   campWeekRoleKey,
   parseCampDayKey,
@@ -58,6 +64,7 @@ import {
   type CampColour,
   type CampConfig,
   type CampCoverageReading,
+  type CampGenderSplit,
   type CampGrade,
   type CampDropTarget,
   type CampGroup,
@@ -136,18 +143,19 @@ import { useGroups, type GroupsState } from './useGroups';
  *
  * ## Saying that the drag is working
  *
- * Three things, because a drag with no feedback is a gesture somebody performs
+ * Four things, because a drag with no feedback is a gesture somebody performs
  * twice. Every card that would accept what is in the air is quietly lit
- * (`is-target`); the one card under the pointer goes loud (`is-over`, driven by
- * a depth counter in `useDropZone`, because `dragleave` also fires on crossing
- * onto a chip *inside* a card); and a bar at the foot of the window names what
- * is being carried, because on a board eight grades tall the chip you picked up
- * is off screen by the time you have scrolled to where it is going.
+ * (`is-target`); the one card under the cursor goes loud (`is-over`); a label
+ * follows the cursor saying what is in your hand (`.camp-ghost`, drawn by the
+ * board itself — see `useBoardDrag`); and a bar at the foot of the window names
+ * it too, because on a board eight grades tall the chip you picked up is off
+ * screen by the time you have scrolled to where it is going.
  *
- * Two MIME types, not one payload: a person and a grade must not be able to
- * land on each other's targets. `useDropZone` calls `preventDefault` only for
- * the kind it accepts, which is what actually makes the browser refuse a drop —
- * so what looks like a target is a target.
+ * A person and a grade must not be able to land on each other's targets, so
+ * every zone writes the cargo it takes into its own `data-camp-zone` and the
+ * hit test walks up until it finds one that matches. A card that would refuse a
+ * drop writes no attribute at all, which means the set of lit cards and the set
+ * of cards that accept a drop are one set rather than two that have to agree.
  *
  * ## Colour
  *
@@ -168,25 +176,6 @@ import { useGroups, type GroupsState } from './useGroups';
  * What the board is carrying
  * ------------------------------------------------------------------------ */
 
-/**
- * The two things a drag can carry, as two MIME types rather than one.
- *
- * ---------------------------------------------------------------------------
- * The board now has two kinds of drag on it — a **person** onto a group, and a
- * **grade** onto another grade to merge them — and they must not be able to
- * land on each other's targets. One `text/plain` payload cannot tell them
- * apart: dropping 4th grade onto a crew would have read as a person id that
- * matched nobody, silently doing nothing.
- *
- * A drop zone declares which of the two it accepts (`useDropZone`) and only
- * calls `preventDefault` for that one, which is what actually makes the browser
- * refuse the drop — and, because it also decides the "will take this" styling,
- * a card cannot look like a target for something it would throw away.
- *
- * `text/plain` is still set alongside, so a chip dragged out of the page
- * somewhere else is a name rather than nothing.
- * ---------------------------------------------------------------------------
- */
 /**
  * The card a grade nobody has arranged is drawn as.
  *
@@ -209,18 +198,96 @@ function blankGradeCard(grade: CampGrade): CampBand {
   };
 }
 
-const PERSON_MIME = 'application/x-camp-person';
-const BAND_MIME = 'application/x-camp-band';
-const GROUP_MIME = 'application/x-camp-group';
+/**
+ * Why every drag source on this board is a `<div role="button">` and not a
+ * `<button>`.
+ *
+ * ---------------------------------------------------------------------------
+ * It was because **Chrome will not start a drag from a
+ * `<button draggable="true">`** — a form control swallows the mousedown for its
+ * own activation behaviour, so the press that should have begun a drag began a
+ * click instead, and on this board a click on a chip opens that person's card.
+ *
+ * That reason is gone: the board drags on pointer events now (`useBoardDrag`)
+ * and `pointerdown` fires on a `<button>` like anything else. The divs stay
+ * because they work and because `pressed` already gives them Enter and Space,
+ * which is the only thing a real button was buying — but a new drag source has
+ * no reason to copy the shape, and anything that becomes one has to keep
+ * `pressed` if it does.
+ * ---------------------------------------------------------------------------
+ */
+function pressed(run: () => void) {
+  return (event: React.KeyboardEvent) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Space scrolls the page and Enter submits, neither of which is wanted from
+    // a control that is only pretending to be a button.
+    event.preventDefault();
+    event.stopPropagation();
+    run();
+  };
+}
+
+/** Monday to Friday. A chip only prints a day count when it is fewer than
+    this, so the ordinary case says nothing at all. */
+const CAMP_WEEKDAYS_IN_WEEK = 5;
+
+/** A grade card's element id, so the strip above can scroll to it. One place,
+    because a mismatch here is a jump that silently does nothing. */
+function bandDomId(bandId: string): string {
+  return `camp-grade-${bandId}`;
+}
 
 type CampCargo = 'person' | 'band' | 'group';
 
-/** The payload each kind of drag writes and each drop zone reads. */
-const MIME: Record<CampCargo, string> = {
-  person: PERSON_MIME,
-  band: BAND_MIME,
-  group: GROUP_MIME,
-};
+/**
+ * One drop zone, as a value: what it takes, and what it is.
+ *
+ * ---------------------------------------------------------------------------
+ * Stringified into `data-camp-zone` on the element, because a pointer drag has
+ * no `dataTransfer` and no `dragover` to ask a card whether it would take
+ * something — the only thing under the cursor is a DOM node, so the DOM node
+ * has to say. `cargo` is written first in every one of these so the reading is
+ * "would this take what is in the air", which is the question
+ * `zoneAt` walks the tree asking.
+ *
+ * A station is addressed by its **role**, not by an id: most of the stations on
+ * this board have never been stored, and the one you are dropping on may not
+ * exist until the drop creates it. See `StationCard`.
+ * ---------------------------------------------------------------------------
+ */
+type CampDropZone =
+  | { cargo: 'person'; kind: 'group'; bandId: string; groupId: string }
+  | { cargo: 'person'; kind: 'station'; role: string; section: CampSection }
+  | { cargo: 'person'; kind: 'pool'; of: 'child' | 'servant'; section: CampSection }
+  | { cargo: 'band'; bandId: string }
+  | { cargo: 'group'; groupId: string };
+
+const ZONE_ATTR = 'data-camp-zone';
+
+/** A zone's address as one string: its DOM attribute and its identity in
+    `carry.over` are the same value, so the lit card and the card that takes the
+    drop cannot be two different cards. */
+function zoneKey(zone: CampDropZone): string {
+  return JSON.stringify(zone);
+}
+
+/**
+ * Every drop zone on screen that would take what is in the air, by key.
+ *
+ * ---------------------------------------------------------------------------
+ * A pointer drag ends on the *source* element — that is what pointer capture
+ * means — so the card under the cursor never sees the release and cannot run
+ * its own drop handler. `useDropZone` leaves the handler here on the way past
+ * and `useBoardDrag` looks it up once, at the release.
+ *
+ * A module-level map rather than a context, because there is exactly one of
+ * this board on screen and every key in it is unique across both halves — a
+ * band id, a group id, or a role and a half. The entry is a **ref**, not the
+ * function, so a card whose handler closes over a fresh render is not a card
+ * that has to re-register on every one.
+ * ---------------------------------------------------------------------------
+ */
+const ZONES = new Map<string, { current: (id: string) => void }>();
 
 /**
  * Everything the board is holding, by either means, in one object.
@@ -238,13 +305,24 @@ interface Carry {
   band: string | null;
   /** A crew tapped and not yet run together with another. */
   group: string | null;
-  /** What a native HTML5 drag is carrying right now. */
+  /** What a pointer drag is carrying right now. */
   dragging: CampCargo | null;
   /** The id in the air, by either means. */
   id: string | null;
+  /** The `zoneKey` under the cursor, or null. One value for the whole board:
+      there is one pointer, so exactly one card can be the one being dropped on,
+      and holding that per card is how two cards come to be lit at once. */
+  over: string | null;
 }
 
-const NOTHING: Carry = { person: null, band: null, group: null, dragging: null, id: null };
+const NOTHING: Carry = {
+  person: null,
+  band: null,
+  group: null,
+  dragging: null,
+  id: null,
+  over: null,
+};
 
 /** True while a person is in the air — by tap or by drag. */
 function carryingPerson(carry: Carry): boolean {
@@ -262,96 +340,513 @@ function carryingGroup(carry: Carry): boolean {
 }
 
 /**
- * One drop zone: whether it is lit, whether the pointer is inside it, and the
- * four handlers that make it work.
+ * One drop zone: whether it is lit, and how it says so to the pointer.
  *
  * ---------------------------------------------------------------------------
- * `dragenter` and `dragleave` both fire when the pointer crosses a *child*
- * boundary, so a naive `onDragLeave={() => setOver(false)}` turns off the
- * highlight the moment the pointer reaches a chip inside the card — which is
- * most of the card. The depth counter is the fix, and it is why this is a hook
- * rather than two lines on each card.
+ * `enabled` is the whole of it. A zone that would take what is in the air
+ * writes its key into the DOM, and one that would not writes nothing — so
+ * `zoneAt` cannot find a card that is not lit, and the "will take this"
+ * styling and the set of cards that actually accept a drop are the same set by
+ * construction rather than by agreement.
  *
- * `enabled` gates `preventDefault`, and that single call is the whole of
- * whether the browser will allow a drop. So a card that does not accept what is
- * being dragged is not merely unstyled, it is genuinely not a target.
+ * That is the part the old HTML5 version had to work for: there, `enabled` was
+ * React state read inside `dragover`, and the first `dragenter` could arrive
+ * before the render that set it. Here the lift and the first reading of what is
+ * under the cursor are two different pointer moves, so the attribute is always
+ * already there.
  * ---------------------------------------------------------------------------
  */
 function useDropZone({
+  zone,
   enabled,
   readOnly,
-  accept,
+  carry,
   onDropped,
 }: {
+  zone: CampDropZone;
   enabled: boolean;
   /** The season is frozen. Nothing lands, whatever is in the air. */
   readOnly?: boolean;
-  accept: CampCargo;
+  carry: Carry;
   onDropped: (id: string) => void;
 }) {
-  const depth = useRef(0);
-  const [over, setOver] = useState(false);
+  const key = zoneKey(zone);
 
-  const clear = useCallback(() => {
-    depth.current = 0;
-    setOver(false);
-  }, []);
+  /* The handler is left in `ZONES` behind a ref, so a card re-rendering forty
+     times during a drag re-registers nothing — see `ZONES`. Assigning during
+     render is safe here because it is the same value the next commit would
+     write, and nothing reads it until a pointer is released. */
+  const handler = useRef(onDropped);
+  handler.current = onDropped;
+
+  useEffect(() => {
+    if (readOnly) return undefined;
+    ZONES.set(key, handler);
+    return () => {
+      // Only if it is still ours: two cards briefly sharing a key across a
+      // re-key would otherwise have the survivor delete itself.
+      if (ZONES.get(key) === handler) ZONES.delete(key);
+    };
+  }, [key, readOnly]);
 
   return {
-    over: over && enabled,
-    dropProps: {
-      /*
-       * The counter is kept whether or not this zone accepts what is in the
-       * air, and `enabled` is applied to the *reading* instead. Gating the
-       * counter looked equivalent and was not: `dragstart` sets the state that
-       * decides `enabled`, and the first `dragenter` can arrive before React
-       * has re-rendered — so the opening enter was dropped, the counter started
-       * one short, and the highlight then turned itself off the first time the
-       * pointer left a chip inside the card.
-       */
-      onDragEnter: () => {
-        depth.current += 1;
-        setOver(true);
-      },
-      onDragLeave: () => {
-        depth.current -= 1;
-        if (depth.current <= 0) clear();
-      },
-      onDragOver: (event: React.DragEvent) => {
-        if (!enabled) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-      },
-      /*
-       * Gated on the **payload**, not on `enabled`.
-       *
-       * `enabled` is React state set by `dragstart`, and a drop that arrives
-       * before that render has committed would be thrown away — which is the
-       * same class of bug as the depth counter above. The MIME type is the
-       * honest test and it needs no render: a grade drag carries no
-       * `PERSON_MIME`, so a group card asking for one gets an empty string and
-       * does nothing. `readOnly` is checked directly for the same reason.
-       */
-      onDrop: (event: React.DragEvent) => {
-        clear();
-        if (readOnly) return;
-        const id = event.dataTransfer.getData(MIME[accept]);
-        if (!id) return;
-        event.preventDefault();
-        // A group card sits inside a grade panel, and both are drop zones. The
-        // inner one has to win, or every placement would also try to merge.
-        event.stopPropagation();
-        onDropped(id);
-      },
-    },
+    over: enabled && carry.over === key,
+    dropProps: enabled ? { [ZONE_ATTR]: key } : {},
   };
 }
 
-/** The two payloads a drag start writes. Kept here so the two ends agree. */
-function startDrag(event: React.DragEvent, accept: CampCargo, id: string, label: string) {
-  event.dataTransfer.setData(MIME[accept], id);
-  event.dataTransfer.setData('text/plain', label);
-  event.dataTransfer.effectAllowed = 'move';
+/** How far the pointer travels before a press becomes a drag. Small, because
+    the gesture is deliberate; not zero, because a click must survive a hand
+    that is not perfectly still. */
+const DRAG_THRESHOLD = 4;
+
+/**
+ * How near an edge the pointer has to be for the board to start moving under
+ * it, and how fast it then moves. A native drag did this for nothing.
+ *
+ * Narrow on purpose. At 90px the band swallowed a crew card sitting at the foot
+ * of the window: aiming at it started the page creeping instead, and the drop
+ * landed on whatever had slid under the cursor by then. A card's last two rows
+ * have to be droppable.
+ */
+const DRAG_EDGE = 56;
+const DRAG_EDGE_STEP = 18;
+
+/** What a drag source hands back: the one handler that starts a drag. */
+type CampGrab = (
+  cargo: CampCargo,
+  id: string,
+) => { onPointerDown: (event: React.PointerEvent) => void };
+
+/**
+ * The custom properties a copied chip or grip reads out of the air around it.
+ *
+ * A clone is lifted out of the tree that was giving it these — a crew card
+ * hands its grade's colour down to the chips inside it, and the reliability
+ * ramp is set on the row itself — so they are read off the source once and
+ * written onto the copy. Named rather than enumerated: `getComputedStyle` only
+ * lists custom properties in recent Chrome, and a list that silently works in
+ * one browser is worse than a short one that works everywhere.
+ */
+const CARRIED_VARS = ['--camp-colour', '--camp-ink', '--camp-rel', '--camp-side'] as const;
+
+/** The first thing behind `el` that actually paints, so the copy is not a chip
+    floating on whatever it happens to be over. */
+function backdropOf(el: HTMLElement): string {
+  let node: HTMLElement | null = el;
+  while (node) {
+    const paint = getComputedStyle(node).backgroundColor;
+    // Anything but "no paint at all". `rgba(…, 0)` is the transparent default
+    // every one of these rows and cards has.
+    if (paint && paint !== 'transparent' && !/,\s*0\s*\)$/.test(paint)) return paint;
+    node = node.parentElement;
+  }
+  return 'var(--color-paper-raised, #fdf7f4)';
+}
+
+/**
+ * A copy of what has just been picked up.
+ *
+ * ---------------------------------------------------------------------------
+ * The board draws its own drag image — there is no `dataTransfer` to hand one
+ * to — and the first version drew a name on an oxblood pill. That is a label
+ * *about* the thing you are carrying rather than the thing itself: you pick up
+ * a row that says a name, an age, a sex and what they asked to do, and what
+ * follows your hand is four words in a colour the board does not otherwise use
+ * for people.
+ *
+ * So it is a clone. Of the **row**, not of the handle inside it, because a
+ * chip's look lives on the `<li>`: the reliability ramp, the grade's colour,
+ * the strikethrough on somebody withdrawn. It keeps its own width and it keeps
+ * the offset it was grabbed at, so the copy sits under the hand exactly where
+ * the original was — the row is peeled off the list rather than replaced by a
+ * token for it.
+ * ---------------------------------------------------------------------------
+ */
+function copyOf(
+  from: HTMLElement,
+  atX: number,
+  atY: number,
+): { node: HTMLElement; dx: number; dy: number } {
+  const source = (from.closest('.camp-person') as HTMLElement | null) ?? from;
+  const rect = source.getBoundingClientRect();
+  const read = getComputedStyle(source);
+
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.removeAttribute('id');
+  // The original is about to go faint; the copy is the one you are looking at.
+  clone.classList.remove('is-lifted');
+  // Nothing in here is operable. The box around it is `aria-hidden`, and a
+  // focusable node inside one of those is reachable by tab and unreachable by
+  // anything that would say what it is — so the copy gives up its tab stops.
+  // `[tabindex]` on the clone **and** inside it: a grip is the copied element
+  // itself, so a query for descendants alone would miss the only one there is.
+  clone.removeAttribute(ZONE_ATTR);
+  for (const el of [clone, ...clone.querySelectorAll('[tabindex], [id]')]) {
+    el.removeAttribute('tabindex');
+    el.removeAttribute('id');
+  }
+
+  // A chip is `.camp-people .camp-person` — a descendant selector, so the row
+  // needs its list around it or it loses its layout on the way out.
+  let node = clone;
+  if (clone.classList.contains('camp-person')) {
+    const list = document.createElement('ul');
+    list.className = 'camp-people';
+    list.appendChild(clone);
+    node = list;
+  }
+
+  node.style.width = `${rect.width}px`;
+  node.style.background = backdropOf(source);
+  for (const name of CARRIED_VARS) {
+    const value = read.getPropertyValue(name);
+    if (value) node.style.setProperty(name, value);
+  }
+
+  return { node, dx: rect.left - atX, dy: rect.top - atY };
+}
+
+/**
+ * The board's drag, on pointer events.
+ *
+ * ---------------------------------------------------------------------------
+ * **Why this is not HTML5 drag and drop any more.**
+ *
+ * It was, and the reported symptom was that a servant in the rail would not
+ * lift at all — no ghost, no faded chip, nothing — while the same servant
+ * dragged out of a crew was fine, and so was a child in the same list. Every
+ * measurable thing about the three was identical: the same markup down to the
+ * attribute, the same computed `-webkit-user-drag`, `user-select`,
+ * `pointer-events` and `touch-action`, and the same `overflow` / `position` /
+ * `mask` / `transform` on every ancestor up to `<html>`. Driven by hand the
+ * placement logic did the right thing end to end. Whatever was refusing to
+ * start that drag was inside the browser's own heuristics, where there is
+ * nothing to fix.
+ *
+ * So the gesture no longer asks the browser's permission. `pointerdown`,
+ * a threshold, `setPointerCapture`, and the board draws its own ghost. There is
+ * no `dragstart` to be declined, no `dataTransfer`, and no `dragover` whose
+ * `preventDefault` decides whether a drop is allowed — the zone under the
+ * cursor is found by hit-testing the DOM, which cannot fail to fire.
+ *
+ * **Touch is deliberately left alone.** HTML5 drag never worked there either,
+ * and claiming the gesture would mean `touch-action: none` on every chip —
+ * which would stop the two short rail lists scrolling, and scrolling them is
+ * how you reach the name you want. Tap-to-pick-up is the touch path, it is
+ * unchanged, and it goes through the same `place`.
+ *
+ * The pointer position lives in a ref and the ghost is moved by hand. Sixty
+ * renders a second of a board eight grades tall is not affordable, and none of
+ * them would change anything but one `transform`.
+ * ---------------------------------------------------------------------------
+ */
+function useBoardDrag({
+  readOnly,
+  onLift,
+  onHover,
+}: {
+  readOnly: boolean;
+  /** A drag started, or ended. Mirrors what `carry` should say. */
+  onLift: (cargo: CampCargo | null, id: string | null) => void;
+  /** The zone under the cursor changed. Only called when it actually has. */
+  onHover: (key: string | null) => void;
+}) {
+  /** The drag in flight. Never state — see the note above. */
+  const live = useRef<{
+    pointerId: number;
+    cargo: CampCargo;
+    id: string;
+    from: HTMLElement;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    /** Where the copy sits relative to the cursor: the offset the thing was
+        grabbed at, so it stays under the hand where it was picked up. */
+    dx: number;
+    dy: number;
+    /** Past the threshold. Before that this is only a press. */
+    lifted: boolean;
+    over: string | null;
+  } | null>(null);
+
+  const ghost = useRef<HTMLDivElement | null>(null);
+  /** The copy made at the moment of the lift, waiting for the box to put it
+      in. See `copyOf`. */
+  const copy = useRef<HTMLElement | null>(null);
+  /** Set once when the drag starts and cleared once when it ends: the only two
+      renders a whole drag costs. */
+  const [held, setHeld] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const edge = useRef<number | null>(null);
+
+  /* The callers, behind a ref, so the listeners below can be built once. */
+  const say = useRef({ readOnly, onLift, onHover });
+  say.current = { readOnly, onLift, onHover };
+
+  const control = useMemo(() => {
+    function moveGhost(x: number, y: number, dx: number, dy: number) {
+      const el = ghost.current;
+      if (el) el.style.transform = `translate3d(${x + dx}px, ${y + dy}px, 0)`;
+    }
+
+    /**
+     * The zone under a point that would take this cargo.
+     *
+     * Walks up from the deepest element rather than reading one attribute,
+     * because the cursor is nearly always over a chip or a heading inside a
+     * card. The walk stops at the first zone whose cargo matches, which is what
+     * makes a crew card win a person and the grade card around it win a grade —
+     * the same job `stopPropagation` used to do on `drop`.
+     */
+    function zoneAt(x: number, y: number, cargo: CampCargo): string | null {
+      let node: Element | null = document.elementFromPoint(x, y);
+      while (node) {
+        const key = node.getAttribute(ZONE_ATTR);
+        if (key !== null) {
+          try {
+            if ((JSON.parse(key) as CampDropZone).cargo === cargo) return key;
+          } catch {
+            // Not ours. Nothing else writes this attribute, but a parse that
+            // throws must not take the whole drag down with it.
+          }
+        }
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    /** The nearest thing under the pointer that scrolls, if anything does. */
+    function scrollerAt(x: number, y: number): HTMLElement | null {
+      let node: Element | null = document.elementFromPoint(x, y);
+      while (node instanceof HTMLElement) {
+        const flow = getComputedStyle(node).overflowY;
+        if ((flow === 'auto' || flow === 'scroll') && node.scrollHeight > node.clientHeight) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    /*
+     * The board moves under a pointer held near an edge.
+     *
+     * The rail's two lists first, because they are short scrollers and the name
+     * you want is usually the one just past the end of one; the window after
+     * that, because the grade you are carrying somebody to is four thousand
+     * pixels down. Re-reads the zone as it goes: the pointer can be perfectly
+     * still while the card under it changes.
+     */
+    function creep() {
+      const now = live.current;
+      if (!now || !now.lifted) return;
+      const { x, y } = now;
+
+      const box = scrollerAt(x, y);
+      let moved = false;
+      if (box) {
+        const rect = box.getBoundingClientRect();
+        if (y < rect.top + DRAG_EDGE && box.scrollTop > 0) {
+          box.scrollTop -= DRAG_EDGE_STEP;
+          moved = true;
+        } else if (
+          y > rect.bottom - DRAG_EDGE &&
+          box.scrollTop + box.clientHeight < box.scrollHeight
+        ) {
+          box.scrollTop += DRAG_EDGE_STEP;
+          moved = true;
+        }
+      }
+      if (!moved) {
+        if (y < DRAG_EDGE) window.scrollBy(0, -DRAG_EDGE_STEP);
+        else if (y > window.innerHeight - DRAG_EDGE) window.scrollBy(0, DRAG_EDGE_STEP);
+        else return;
+      }
+
+      const key = zoneAt(x, y, now.cargo);
+      if (key !== now.over) {
+        now.over = key;
+        say.current.onHover(key);
+      }
+    }
+
+    /**
+     * Eat the click that ends a drag.
+     *
+     * A pointer drag is a real press and release, so the browser follows it
+     * with a click on the source — and on this board a click on a chip opens
+     * that person's card. Capture phase and once, then taken off in a task of
+     * its own in case the release produced no click at all (dropping outside
+     * the window does not).
+     */
+    function swallowClick() {
+      const kill = (event: MouseEvent) => {
+        event.stopPropagation();
+        event.preventDefault();
+      };
+      document.addEventListener('click', kill, { capture: true, once: true });
+      window.setTimeout(() => document.removeEventListener('click', kill, true), 0);
+    }
+
+    function stop() {
+      const now = live.current;
+      live.current = null;
+      if (now) {
+        try {
+          now.from.releasePointerCapture(now.pointerId);
+        } catch {
+          // The pointer is already gone, or the element is. Nothing to release.
+        }
+      }
+      if (edge.current !== null) {
+        window.clearInterval(edge.current);
+        edge.current = null;
+      }
+      document.body.classList.remove('is-camp-dragging');
+      copy.current = null;
+      setHeld(null);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+      return now;
+    }
+
+    function onMove(event: PointerEvent) {
+      const now = live.current;
+      if (!now || event.pointerId !== now.pointerId) return;
+      now.x = event.clientX;
+      now.y = event.clientY;
+
+      if (!now.lifted) {
+        if (
+          Math.abs(now.x - now.startX) < DRAG_THRESHOLD &&
+          Math.abs(now.y - now.startY) < DRAG_THRESHOLD
+        ) {
+          return;
+        }
+        now.lifted = true;
+        try {
+          // Capture, so a drag that runs off the card — or off the window and
+          // back — is still this drag rather than being abandoned mid-air.
+          now.from.setPointerCapture(now.pointerId);
+        } catch {
+          // Not fatal: without capture the window listeners still see the move
+          // and the release, they just stop at the window's edge.
+        }
+        document.body.classList.add('is-camp-dragging');
+        // Copied from where it still sits, before the lift fades it.
+        const made = copyOf(now.from, now.startX, now.startY);
+        copy.current = made.node;
+        now.dx = made.dx;
+        now.dy = made.dy;
+        setHeld({ x: now.x, y: now.y, dx: made.dx, dy: made.dy });
+        say.current.onLift(now.cargo, now.id);
+        // An interval and not `requestAnimationFrame`: rAF never fires in the
+        // Browser pane, so the creep would be untestable there. Note that a
+        // *hidden* page throttles this to about three ticks a second — a crawl
+        // in a background tab is Chrome, not this.
+        edge.current = window.setInterval(creep, 16);
+        // The zones do not declare themselves until that lift has rendered, so
+        // the first reading of what is under the cursor waits for the next
+        // move. There is always a next move: this one crossed a threshold.
+        return;
+      }
+
+      moveGhost(now.x, now.y, now.dx, now.dy);
+      const key = zoneAt(now.x, now.y, now.cargo);
+      if (key !== now.over) {
+        now.over = key;
+        say.current.onHover(key);
+      }
+    }
+
+    function onUp(event: PointerEvent) {
+      const now = live.current;
+      if (!now || event.pointerId !== now.pointerId) return;
+      const { cargo, id, lifted } = now;
+      // Read the zone from the release rather than trusting the last move: by
+      // now the DOM is settled, and this is the position the hand chose.
+      const key = lifted ? zoneAt(event.clientX, event.clientY, cargo) : null;
+      stop();
+      // A press that never became a drag is a click. Leave it alone — somebody
+      // tapping a chip is asking for that person's card.
+      if (!lifted) return;
+      swallowClick();
+      // Put it down first, then act, so a handler that forgets to clear the
+      // board cannot leave something in the air.
+      say.current.onLift(null, null);
+      const zone = key === null ? undefined : ZONES.get(key);
+      if (zone) zone.current(id);
+    }
+
+    function onCancel() {
+      const was = live.current?.lifted ?? false;
+      stop();
+      if (was) say.current.onLift(null, null);
+    }
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      onCancel();
+    }
+
+    const grab: CampGrab = (cargo, id) => ({
+      onPointerDown: (event: React.PointerEvent) => {
+        if (say.current.readOnly) return;
+        // Touch keeps the board exactly as it was; see the note above.
+        if (event.pointerType === 'touch') return;
+        if (event.button !== 0) return;
+        // Not `preventDefault`: the press still has to focus the control and
+        // still has to be able to end as a click.
+        live.current = {
+          pointerId: event.pointerId,
+          cargo,
+          id,
+          from: event.currentTarget as HTMLElement,
+          startX: event.clientX,
+          startY: event.clientY,
+          x: event.clientX,
+          y: event.clientY,
+          dx: 0,
+          dy: 0,
+          lifted: false,
+          over: null,
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onCancel);
+        window.addEventListener('keydown', onKey);
+      },
+    });
+
+    return { grab, stop };
+  }, []);
+
+  // A board unmounted mid-drag would otherwise leave its listeners, its edge
+  // timer and `is-camp-dragging` on the document behind it.
+  useEffect(() => () => void control.stop(), [control]);
+
+  /** The box the copy goes in. A callback ref rather than an effect, because
+      the copy exists before the box does and this is the moment it appears. */
+  const fill = useCallback((node: HTMLDivElement | null) => {
+    ghost.current = node;
+    if (node && copy.current) node.replaceChildren(copy.current);
+  }, []);
+
+  return {
+    grab: control.grab,
+    ghost:
+      held === null ? null : (
+        <div
+          ref={fill}
+          className="camp-ghost"
+          aria-hidden="true"
+          style={{ transform: `translate3d(${held.x + held.dx}px, ${held.y + held.dy}px, 0)` }}
+        />
+      ),
+  };
 }
 
 export function GroupsScreen() {
@@ -397,16 +892,43 @@ export function GroupsScreen() {
     );
   }, []);
 
-  /** A native drag started or ended. A drag never clears a tap pickup on
-      start — `onDragEnd` restores it, so a drag that is abandoned mid-air
-      leaves the board exactly as it found it. */
-  const dragging = useCallback((what: CampCargo | null, id: string | null) => {
-    setCarry((current) =>
-      what === null
-        ? { ...current, dragging: null, id: current.person ?? current.band ?? current.group }
-        : { ...current, dragging: what, id },
-    );
+  /**
+   * A drag started, or ended.
+   *
+   * Dragging the very thing the board is already holding **keeps** the hold, so
+   * a drag abandoned mid-air leaves the board exactly as it found it. Dragging
+   * anything else puts the old one down: two things in the air at once is a
+   * state with no meaning — and, concretely, a crew card is a drop zone for
+   * both a person and another crew, so a tap-held child plus a dragged crew
+   * would have had one card claiming to take both.
+   */
+  const lift = useCallback((what: CampCargo | null, id: string | null) => {
+    setCarry((current) => {
+      if (what === null) {
+        return {
+          ...current,
+          dragging: null,
+          over: null,
+          id: current.person ?? current.band ?? current.group,
+        };
+      }
+      const same =
+        (what === 'person' && current.person === id) ||
+        (what === 'band' && current.band === id) ||
+        (what === 'group' && current.group === id);
+      return same
+        ? { ...current, dragging: what, over: null, id }
+        : { ...NOTHING, dragging: what, over: null, id };
+    });
   }, []);
+
+  /** The card under the cursor changed. Compared before it is written, so a
+      drag across one card is one render and not sixty. */
+  const hover = useCallback((key: string | null) => {
+    setCarry((current) => (current.over === key ? current : { ...current, over: key }));
+  }, []);
+
+  const { grab, ghost } = useBoardDrag({ readOnly, onLift: lift, onHover: hover });
 
   /*
    * ⌘Z and ⇧⌘Z, the way every other board does it.
@@ -682,7 +1204,7 @@ export function GroupsScreen() {
                 onHoldPerson={holdPerson}
                 onHoldBand={holdBand}
                 onHoldGroup={holdGroup}
-                onDragging={dragging}
+                grab={grab}
                 onPlace={place}
                 onMerge={merge}
                 onMergeCrews={mergeCrews}
@@ -732,16 +1254,16 @@ export function GroupsScreen() {
             </button>
           ) : null}
 
-          {!readOnly ? (
-            <button
-              type="button"
-              className="button button--quiet"
-              title="Give every grade of both halves a colour, in one go, skipping any that already has one"
-              onClick={() => edit((current) => paintEveryBand(current, week))}
-            >
-              Colour every grade
-            </button>
-          ) : null}
+          {/*
+            "Colour every grade" was here and is not any more.
+            ------------------------------------------------------------------
+            It is the same one press, offered from `GradeStrip` at the top of
+            the board instead — and only while there is a grade without a
+            colour, so it stops being offered once the decision is made. At the
+            foot of a page nine grades tall, under three other tools, it was a
+            control that made the board colourful and that nobody ever scrolled
+            far enough to find. `paintEveryBand` is unchanged.
+          */}
 
           {names ? <p className="note">{names}</p> : null}
         </div>
@@ -814,6 +1336,15 @@ export function GroupsScreen() {
           ) : null}
         </div>
       ) : null}
+
+      {/*
+        What is under the cursor while a drag is in flight.
+
+        The board draws this itself now — a pointer drag has no drag image, and
+        without one the only sign that the press worked is a chip going faint
+        somewhere you have already scrolled away from. See `useBoardDrag`.
+      */}
+      {ghost}
     </CampShell>
   );
 }
@@ -1081,7 +1612,12 @@ function useSwipe(section: CampSection, onSection: (section: CampSection) => voi
       const touch = event.touches[0];
       if (!touch) return;
       const from = event.target as HTMLElement | null;
-      if (from?.closest('button, input, textarea, select, a, [draggable="true"]')) {
+      // `[role="button"]` alongside `button`: the chips and the merge grips are
+      // divs, so the element-name half of this selector does not reach them.
+      // `[draggable="true"]` is gone with the HTML5 drag it was written for —
+      // nothing on this board carries the attribute any more, and the role is
+      // what every drag source has in common.
+      if (from?.closest('button, [role="button"], input, textarea, select, a')) {
         drag.current = null;
         return;
       }
@@ -1152,7 +1688,7 @@ function SectionPane({
   onHoldPerson,
   onHoldBand,
   onHoldGroup,
-  onDragging,
+  grab,
   onPlace,
   onMerge,
   onMergeCrews,
@@ -1172,7 +1708,7 @@ function SectionPane({
   onHoldPerson: (key: CampPersonKey | null) => void;
   onHoldBand: (id: string | null) => void;
   onHoldGroup: (id: string | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onPlace: (key: CampPersonKey, target: CampDropTarget) => void;
   onMerge: (fromId: string, intoId: string) => void;
   onMergeCrews: (fromId: string, intoId: string) => void;
@@ -1302,6 +1838,106 @@ function SectionPane({
     return found;
   }, [cards]);
 
+  /** Which card a grade belongs to, so a free child can be counted against it. */
+  const cardOfGrade = useMemo(() => {
+    const found = new Map<CampGrade, string>();
+    for (const band of cards) {
+      for (const grade of band.grades) found.set(grade, band.id);
+    }
+    return found;
+  }, [cards]);
+
+  /**
+   * How many children each grade still has waiting, this week.
+   *
+   * ---------------------------------------------------------------------------
+   * The number that says whether a grade is finished, which is the one thing
+   * this board could never answer about itself. It was eight cards tall with no
+   * mark on any of them: the only way to know 4th grade was done was to count
+   * its crews against the rail, and the rail is one list of the whole half.
+   *
+   * Counted off `resolved.freeChildren` — the same list the rail draws from —
+   * so "3 left" here and the three names over there are the same three
+   * children. Narrowed to this half and this week for the same reason
+   * everything else on the board is.
+   * ---------------------------------------------------------------------------
+   */
+  const waiting = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const band of cards) out.set(band.id, 0);
+    if (!resolved) return out;
+    for (const person of resolved.freeChildren) {
+      if (person.grade === null || !campComesInWeek(person, week)) continue;
+      const id = cardOfGrade.get(person.grade);
+      if (id === undefined) continue;
+      out.set(id, (out.get(id) ?? 0) + 1);
+    }
+    return out;
+  }, [cards, cardOfGrade, resolved, week]);
+
+  /**
+   * Which grades are folded shut.
+   *
+   * ---------------------------------------------------------------------------
+   * *"Add the ability to collapse grades for merging purposes."* Merging is a
+   * drag from one grade's grip onto another grade's card, and on a board nine
+   * grades tall with every crew open the two are never on screen together — you
+   * pick 2nd grade up, scroll four thousand pixels, and by then the thing in
+   * your hand is off screen. Folded, every grade of the half is a single strip
+   * and the drag is two inches.
+   *
+   * The whole `<section>` stays the merge target while it is folded, because
+   * the drop zone is on the section and not on the crews inside it. That is
+   * what makes this work at all rather than being a way to hide things.
+   *
+   * Held by band id and not by grade: folding is about the card in front of you,
+   * and a card dissolved by a merge should take its fold state with it.
+   * ---------------------------------------------------------------------------
+   */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+
+  /*
+   * Functional updates throughout — a run of clicks faster than a render
+   * otherwise collapses to one. See [[spsm-batched-clicks-need-functional-updates]].
+   */
+  const fold = useCallback((id: string, on: boolean) => {
+    setFolded((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const allFolded = cards.length > 0 && cards.every((band) => folded.has(band.id));
+
+  const foldAll = useCallback(
+    (on: boolean) => setFolded(on ? new Set(cards.map((band) => band.id)) : new Set()),
+    [cards],
+  );
+
+  /** Jump to a grade, opening it first — landing on a folded card shows nothing
+      and reads as a broken link. */
+  const jumpTo = useCallback(
+    (id: string) => {
+      fold(id, false);
+      /*
+       * After the fold has painted, or the card is still its old height and the
+       * scroll lands short of it.
+       *
+       * A timeout rather than `requestAnimationFrame`: rAF never fires in the
+       * preview pane, so a jump written that way is a jump nobody can verify.
+       * See [[preview-pane-has-no-animation-frames]].
+       */
+      window.setTimeout(() => {
+        document
+          .getElementById(bandDomId(id))
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 0);
+    },
+    [fold],
+  );
+
   /** The waiting lists: this half's people, coming this week, placed nowhere. */
   const pool = useMemo(() => {
     if (!resolved) {
@@ -1370,7 +2006,7 @@ function SectionPane({
               carry={carry}
               readOnly={readOnly}
               onHold={onHoldPerson}
-              onDragging={onDragging}
+              grab={grab}
               onDropHere={(key) => onPlace(key, null)}
               empty={
                 focused
@@ -1388,7 +2024,7 @@ function SectionPane({
               carry={carry}
               readOnly={readOnly}
               onHold={onHoldPerson}
-              onDragging={onDragging}
+              grab={grab}
               onDropHere={(key) => onPlace(key, null)}
               empty={`Every servant in this half has a place in week ${week}.`}
             />
@@ -1401,11 +2037,30 @@ function SectionPane({
           </aside>
 
           <div className="camp-column">
+            <GradeStrip
+              cards={cards}
+              waiting={waiting}
+              metrics={metrics}
+              folded={folded}
+              allFolded={allFolded}
+              onJump={jumpTo}
+              onFoldAll={foldAll}
+              uncoloured={cards.filter((band) => band.colour === null).length}
+              /* `paintEveryBand` colours both halves in one edit — see
+                 [[spsm-camp-grade-colour-is-one-press]] — which is why the
+                 label says "the grades" and not "these grades". */
+              onColour={() => onEdit((current) => paintEveryBand(current, week))}
+              readOnly={readOnly}
+            />
+
             {cards.map((band) => (
               <BandPanel
                 key={band.id}
                 band={band}
                 siblings={cards}
+                waiting={waiting.get(band.id) ?? 0}
+                folded={folded.has(band.id)}
+                onFold={(on) => fold(band.id, on)}
                 section={section}
                 week={week}
                 resolved={resolved}
@@ -1432,7 +2087,7 @@ function SectionPane({
                 onHold={onHoldPerson}
                 onHoldBand={onHoldBand}
                 onHoldGroup={onHoldGroup}
-                onDragging={onDragging}
+                grab={grab}
                 onPlace={onPlace}
                 onMerge={onMerge}
                 onMergeCrews={onMergeCrews}
@@ -1453,7 +2108,7 @@ function SectionPane({
               onOpen={onOpen}
               readOnly={readOnly}
               onHold={onHoldPerson}
-              onDragging={onDragging}
+              grab={grab}
               onPlace={onPlace}
               onEdit={onEdit}
             />
@@ -1461,6 +2116,166 @@ function SectionPane({
         </div>
       </div>
     </section>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * The map across the top
+ * ------------------------------------------------------------------------ */
+
+/** "K", "3rd", "1st–2nd", "3rd–5th". What a strip chip calls a grade card. */
+function gradeRun(grades: readonly CampGrade[]): string {
+  const say = (grade: CampGrade) => (grade === 'k' ? 'K' : `${grade}${ordinal(Number(grade))}`);
+  if (grades.length === 0) return '—';
+  const first = grades[0]!;
+  const last = grades[grades.length - 1]!;
+  return grades.length === 1 ? say(first) : `${say(first)}–${say(last)}`;
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return 'th';
+  return ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+}
+
+/**
+ * Every grade of the half as one chip: its colour, its grades, and whether it
+ * is finished.
+ *
+ * ---------------------------------------------------------------------------
+ * The board is nine grades tall and had no map. You could not tell from
+ * anywhere on it which grades were done, which had nobody serving, or where
+ * 6th grade was — you scrolled until you found it, and if you were looking for
+ * the grade with children still waiting you scrolled the lot.
+ *
+ * So: a strip that stays with you, one chip per grade, each wearing that
+ * grade's own wristband colour and saying the one thing that decides whether
+ * you need to go there — how many children of that grade are still in the
+ * rail. `done` is not a stored state and could not be: it is "nobody of this
+ * grade is waiting and this grade has crews", recomputed every render from the
+ * same list the rail draws.
+ *
+ * Clicking one opens it and scrolls to it. It deliberately does **not** filter:
+ * the grade's own name is the filter and has been since the day a separate
+ * button for it turned out to be invisible twice running — see
+ * `.camp-panel__pick`. Two controls for one job on one screen is how the second
+ * one stops being pressed.
+ * ---------------------------------------------------------------------------
+ */
+function GradeStrip({
+  cards,
+  waiting,
+  metrics,
+  folded,
+  allFolded,
+  onJump,
+  onFoldAll,
+  uncoloured,
+  onColour,
+  readOnly,
+}: {
+  cards: readonly CampBand[];
+  waiting: ReadonlyMap<string, number>;
+  metrics: ReadonlyMap<string, CampPlaceMetrics>;
+  folded: ReadonlySet<string>;
+  allFolded: boolean;
+  onJump: (bandId: string) => void;
+  onFoldAll: (on: boolean) => void;
+  /** This half has grades with no wristband colour yet. */
+  uncoloured: number;
+  onColour: () => void;
+  readOnly: boolean;
+}) {
+  return (
+    <div className="camp-map">
+      <div className="camp-map__row">
+        {cards.map((band) => {
+          const colour = campColourOf(band.colour);
+          const left = waiting.get(band.id) ?? 0;
+          const placed = band.groups.reduce(
+            (sum, group) => sum + (metrics.get(group.id)?.children ?? 0),
+            0,
+          );
+          const done = left === 0 && placed > 0;
+          const empty = left === 0 && placed === 0;
+
+          return (
+            <button
+              key={band.id}
+              type="button"
+              className={`camp-map__grade${done ? ' is-done' : ''}${
+                left > 0 ? ' is-left' : ''
+              }${empty ? ' is-empty' : ''}${folded.has(band.id) ? ' is-folded' : ''}`}
+              style={
+                {
+                  '--camp-colour': colour.hex,
+                  '--camp-ink': colour.ink,
+                } as React.CSSProperties
+              }
+              title={
+                empty
+                  ? `${band.name} — no children of this grade are at camp this week`
+                  : done
+                    ? `${band.name} — every child of this grade is in a crew`
+                    : `${band.name} — ${left} still in the waiting list`
+              }
+              onClick={() => onJump(band.id)}
+            >
+              <span className="camp-map__grades">
+                {/*
+                  Ordinals, not bare digits. `1+2` is a sum; `1st–2nd` is two
+                  grades run together, which is what it is. Only the ends are
+                  printed for a run of three or more — a chip is not the place
+                  to list them.
+                */}
+                {gradeRun(band.grades)}
+              </span>
+              <span className="camp-map__state">
+                {empty ? 'nobody' : done ? 'all placed' : `${left} to place`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="camp-map__tools">
+        {/*
+          The offer to colour the board, where the board is.
+          --------------------------------------------------------------------
+          A grade is created with no colour and nothing guesses one — the colour
+          is the wristband a child is handed at the gate, and one invented on a
+          Tuesday means two things by Friday. That rule stands. What was wrong
+          is that the one press that makes the decision sat at the very foot of
+          a page nine grades tall, under three other tools, so a board that
+          could be colourful stayed grey because nobody ever scrolled to it.
+
+          So the offer comes to the top, and only while there is something to
+          offer: once every grade has a colour this disappears for the season.
+        */}
+        {!readOnly && uncoloured > 0 ? (
+          <button
+            type="button"
+            className="camp-map__paint"
+            title="Hand every grade of the camp a wristband color. Grades that already have one keep it."
+            onClick={onColour}
+          >
+            Color the grades
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          className="camp-map__fold"
+          onClick={() => onFoldAll(!allFolded)}
+          title={
+            allFolded
+              ? 'Open every grade again'
+              : 'Fold every grade to a single strip — the quickest way to drag one onto another'
+          }
+        >
+          {allFolded ? 'Open all' : 'Fold all'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1487,6 +2302,9 @@ function sectionHeadcount(
 function BandPanel({
   band,
   siblings,
+  waiting,
+  folded,
+  onFold,
   section,
   week,
   resolved,
@@ -1504,7 +2322,7 @@ function BandPanel({
   onHold,
   onHoldBand,
   onHoldGroup,
-  onDragging,
+  grab,
   onPlace,
   onMerge,
   onMergeCrews,
@@ -1514,6 +2332,12 @@ function BandPanel({
 }: {
   band: CampBand;
   siblings: readonly CampBand[];
+  /** Children of this grade still in the rail, this week. Zero with crews on
+      the card is what "done" means — see `GradeStrip`. */
+  waiting: number;
+  /** Folded shut: the header only, still a merge target. */
+  folded: boolean;
+  onFold: (on: boolean) => void;
   section: CampSection;
   week: number;
   resolved: ResolvedAllocation | null;
@@ -1534,7 +2358,7 @@ function BandPanel({
   onHold: (key: CampPersonKey | null) => void;
   onHoldBand: (id: string | null) => void;
   onHoldGroup: (id: string | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onPlace: (key: CampPersonKey, target: CampDropTarget) => void;
   onMerge: (fromId: string, intoId: string) => void;
   onMergeCrews: (fromId: string, intoId: string) => void;
@@ -1551,9 +2375,10 @@ function BandPanel({
   const canTake = !readOnly && carryingBand(carry) && carry.id !== band.id;
 
   const zone = useDropZone({
+    zone: { cargo: 'band', bandId: band.id },
     enabled: canTake,
     readOnly,
-    accept: 'band',
+    carry,
     onDropped: (fromId) => onMerge(fromId, band.id),
   });
 
@@ -1577,6 +2402,15 @@ function BandPanel({
   const merged = band.grades.length > 1;
 
   /**
+   * Finished: this grade has crews and nobody of it is left in the rail.
+   *
+   * Not a stored flag and it must not become one. A grade is done because of
+   * where its children are, and a tick somebody set by hand would keep saying
+   * so after a new registration was taken on the Monday morning.
+   */
+  const done = waiting === 0 && total.children > 0;
+
+  /**
    * Would this grade's crews take whoever is in the air?
    *
    * A servant, always. A child, only if this band covers their grade — see
@@ -1591,9 +2425,10 @@ function BandPanel({
 
   return (
     <section
+      id={bandDomId(band.id)}
       className={`camp-panel${lifted ? ' is-lifted' : ''}${canTake ? ' is-mergeTarget' : ''}${
         zone.over ? ' is-over' : ''
-      }${only ? ' is-only' : ''}`}
+      }${only ? ' is-only' : ''}${folded ? ' is-folded' : ''}${done ? ' is-done' : ''}`}
       style={style}
       {...zone.dropProps}
       onClick={() => {
@@ -1631,6 +2466,38 @@ function BandPanel({
       ) : null}
 
       <header className="camp-panel__head">
+        {/*
+          Fold, on the panel itself and ahead of everything else on it.
+          ----------------------------------------------------------------------
+          It was a labelled button in the row of actions at the far end of the
+          header, beside Merge and Deal evenly — which made it read as a fourth
+          thing you might do *to* this grade rather than as the panel's own
+          disclosure. *"Make the folding within the panel itself."*
+
+          So it sits where a disclosure goes: first, before the name, turning to
+          point at what pressing it will do, and full height so it reads as the
+          panel's own edge rather than a control floating in it. **Fold all**
+          and **Open all** stay on the strip at the top, which is the
+          discoverable path and the one that folds the whole half in one press.
+        */}
+        <button
+          type="button"
+          className={`camp-panel__fold${folded ? ' is-on' : ''}`}
+          aria-expanded={!folded}
+          aria-label={folded ? `Open ${band.name}` : `Fold ${band.name}`}
+          title={
+            folded
+              ? `Open ${band.name} again`
+              : `Fold ${band.name} to a single strip. It still takes a grade dropped on it, which is the quick way to run two together.`
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            onFold(!folded);
+          }}
+        >
+          <Icon name="chevron" />
+        </button>
+
         <div className="camp-panel__title">
           {/*
             Renaming happens *in* the heading, not in a field under it.
@@ -1704,14 +2571,25 @@ function BandPanel({
             thing `campCanPlace` enforces, so they are the thing the card has to
             admit to.
           */}
-          <p className="camp-panel__grades">
-            {band.grades.map((grade) => (
-              <span key={grade} className="camp-panel__grade" title={campGradeLabel(grade)}>
-                {campGradeShort(grade)}
-              </span>
-            ))}
-            <em>{band.grades.length === 1 ? 'grade' : 'grades run together'}</em>
-          </p>
+          {/*
+            Only on a merged card, which is the only card it says anything on.
+            ------------------------------------------------------------------
+            It exists because a merged grade can be renamed to "Lions" and then
+            nothing on screen admits what it actually covers. On a single-grade
+            card that argument does not apply: "K grade" sat directly under a
+            heading reading "Kindergarten", so every one of the nine cards
+            carried a line that repeated its own title.
+          */}
+          {merged ? (
+            <p className="camp-panel__grades">
+              {band.grades.map((grade) => (
+                <span key={grade} className="camp-panel__grade" title={campGradeLabel(grade)}>
+                  {campGradeShort(grade)}
+                </span>
+              ))}
+              <em>grades run together</em>
+            </p>
+          ) : null}
 
           <p className="camp-panel__count">
             {band.groups.length === 0
@@ -1719,6 +2597,23 @@ function BandPanel({
               : `${band.groups.length} group${band.groups.length === 1 ? '' : 's'} · ${
                   total.children
                 } ${total.children === 1 ? 'child' : 'children'} · ${total.servants} serving`}
+
+            {/*
+              Where this grade stands, in the one number that decides whether
+              you have to come back to it. "Done" is earned, not set — see
+              `done` above.
+            */}
+            {done ? (
+              <span className="camp-panel__state camp-panel__state--done">
+                <Icon name="check" />
+                done
+              </span>
+            ) : waiting > 0 ? (
+              <span className="camp-panel__state camp-panel__state--left">
+                {waiting} still waiting
+              </span>
+            ) : null}
+
             {only ? <span className="camp-panel__showing">showing in the list</span> : null}
           </p>
         </div>
@@ -1734,7 +2629,7 @@ function BandPanel({
               held={carry.band === band.id}
               disabled={full && band.groups.length === 0}
               onHold={onHoldBand}
-              onDragging={onDragging}
+              grab={grab}
             />
 
             {merged ? (
@@ -1773,20 +2668,34 @@ function BandPanel({
               Deal evenly
             </button>
 
+            {/*
+              The button says what people come to it for.
+              ----------------------------------------------------------------
+              It said **Rename**, and renaming a grade is something almost
+              nobody ever does — the names are "Kindergarten" through "8th
+              grade" and they are already right. What is behind that button and
+              *is* wanted often is the colour: the wristband this grade wears,
+              which is the legend the whole rest of the board is drawn in.
+
+              The name is still editable, in the heading, while this is open —
+              see `.camp-panel__rename`. One press now offers the thing usually
+              wanted without hiding the thing occasionally wanted.
+            */}
             <button
               type="button"
               className="button button--quiet"
               aria-expanded={editing}
+              title="Choose this grade's wristband color. Its name can be typed over in the heading while this is open."
               onClick={() => onEditing(!editing)}
             >
-              {editing ? 'Done' : 'Rename'}
+              {editing ? 'Done' : 'Color'}
             </button>
             </>
           ) : null}
         </div>
       </header>
 
-      {editing && !readOnly ? (
+      {editing && !readOnly && !folded ? (
         <BandSettings
           band={band}
           siblings={siblings}
@@ -1803,6 +2712,22 @@ function BandPanel({
         />
       ) : null}
 
+      {/*
+        Folded, the crews are not rendered at all rather than hidden with CSS.
+        A folded grade is a strip you are dragging another grade onto, and forty
+        chips still in the tree behind it are forty more drop zones the browser
+        has to hit-test on every `dragover`.
+
+        The `<section>` around this keeps its own drop zone either way, which is
+        the point: fold everything, then drag one grade onto another without
+        scrolling. See `folded` in `SectionPane`.
+      */}
+      {/*
+        Not `hidden`, which loses: `.camp-groups` is `display: grid`, and an
+        author rule beats the user agent's `[hidden] { display: none }`. The
+        crews simply are not rendered.
+      */}
+      {folded ? null : (
       <div className="camp-groups">
         {band.groups.map((group) => (
           <GroupCard
@@ -1816,13 +2741,24 @@ function BandPanel({
             resolved={resolved}
             carry={carry}
             takes={takesCarried}
+            /*
+             * Whether a child's grade is worth printing on their chip.
+             *
+             * On a card of one grade it is not: every row of a Kindergarten
+             * crew said "K", ten times, under a heading that already said it.
+             * A band that has been merged — 3rd and 4th run together — is the
+             * case where it does say something, and that is the only case this
+             * is true in. A child in the wrong crew gets it back regardless;
+             * see `GroupCard`.
+             */
+            manyGrades={band.grades.length > 1}
             misplaced={misplaced}
             onOpen={onOpen}
             siblings={band.groups}
             readOnly={readOnly}
             onHold={onHold}
             onHoldGroup={onHoldGroup}
-            onDragging={onDragging}
+            grab={grab}
             onMergeCrews={onMergeCrews}
             onPlace={onPlace}
             onPatch={patch}
@@ -1849,6 +2785,7 @@ function BandPanel({
           </button>
         ) : null}
       </div>
+      )}
     </section>
   );
 }
@@ -1908,35 +2845,38 @@ function MergeGrip({
   held,
   disabled,
   onHold,
-  onDragging,
+  grab,
 }: {
   band: CampBand;
   held: boolean;
   disabled: boolean;
   onHold: (id: string | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
 }) {
   return (
-    <button
-      type="button"
-      className={`camp-grip${held ? ' is-held' : ''}`}
-      draggable={!disabled}
-      disabled={disabled}
+    <div
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      className={`camp-grip${held ? ' is-held' : ''}${disabled ? ' is-disabled' : ''}`}
+      aria-disabled={disabled}
       aria-pressed={held}
+      onKeyDown={pressed(() => {
+        if (!disabled) onHold(held ? null : band.id);
+      })}
       title={`Drag ${band.name} onto another grade to run the two together, or tap to pick it up`}
-      onDragStart={(event) => {
-        startDrag(event, 'band', band.id, band.name);
-        onDragging('band', band.id);
-      }}
-      onDragEnd={() => onDragging(null, null)}
+      {...(disabled ? {} : grab('band', band.id))}
       onClick={(event) => {
         event.stopPropagation();
+        // `disabled` is a form-control attribute and a div has none, so the
+        // refusal has to be written out. `aria-disabled` says the same thing to
+        // a screen reader.
+        if (disabled) return;
         onHold(held ? null : band.id);
       }}
     >
       <Icon name="grip" />
       {held ? 'Drop on a grade' : 'Merge'}
-    </button>
+    </div>
   );
 }
 
@@ -2043,7 +2983,7 @@ function Swatches({
   }
 
   return (
-    <div className="camp-swatches" role="group" aria-label="What colour this grade wears">
+    <div className="camp-swatches" role="group" aria-label="What color this grade wears">
       {CAMP_COLOURS.map((colour) => {
         const held = spoken.get(colour.value);
         const on = value === colour.value;
@@ -2065,8 +3005,8 @@ function Swatches({
         type="button"
         className={`camp-swatch camp-swatch--none${value === null ? ' is-on' : ''}`}
         aria-pressed={value === null}
-        aria-label="No colour yet"
-        title="No colour yet"
+        aria-label="No color yet"
+        title="No color yet"
         onClick={() => onPick(null)}
       />
     </div>
@@ -2086,6 +3026,99 @@ function Swatches({
  * many more people would bring the crew level with the rest of its half — see
  * `campCoverage` for why that is relative and not a target.
  */
+/* ---------------------------------------------------------------------------
+ * Male and female, counted
+ * ------------------------------------------------------------------------ */
+
+/**
+ * A split, as a short run of figures: `12B 8G 2?`.
+ *
+ * ---------------------------------------------------------------------------
+ * **Type, not boxes.** The first version of this drew three tinted rectangles,
+ * and it landed on a screen that was already made of them — a grade badge, a
+ * day count, an allergy flag, a reliability reading, a row of preference tags.
+ * Adding three more per crew and three per rail turned every card into a wall
+ * of small beige rounded corners, which is exactly what a screen looks like
+ * when nothing on it is more important than anything else.
+ *
+ * So this is set as text: tabular figures, the letter after each one lighter
+ * than the number it labels, sitting inside the sentence that already says how
+ * many people there are. Nothing is boxed and nothing is coloured — which is
+ * also the honest answer to a board where all twelve hues are wristbands (see
+ * `CAMP_COLOURS`). The one exception is the unanswered count, which is in the
+ * accent, because it is the only part of this anybody can act on.
+ *
+ * **A zero is still drawn.** "8B 0G" is the single most useful thing this can
+ * say, and a tally that hid its empty half would read as a crew with eight
+ * children rather than a crew with no girls.
+ * ---------------------------------------------------------------------------
+ */
+function Split({
+  split,
+  kind,
+  of,
+  words = false,
+}: {
+  split: CampGenderSplit;
+  kind: 'child' | 'servant';
+  /** What is being counted, for the hover text: "in this crew", "waiting". */
+  of: string;
+  /**
+   * Say "6 boys, 3 girls" instead of "6B 3G".
+   *
+   * On wherever there is room for it, which is now most places. `6B` is four
+   * characters and a puzzle; the letters only earn their keep on a chip, where
+   * a word cannot fit beside a name. Everything with a whole line to itself
+   * gets the words.
+   */
+  words?: boolean;
+}) {
+  // Nobody at all: the count this sits beside already says zero.
+  if (campSplitEmpty(split)) return null;
+
+  const said = (gender: 'male' | 'female') =>
+    `${split[gender]} ${campGenderPlural(gender, kind, split[gender])}`;
+
+  return (
+    <span className={`camp-split${words ? ' camp-split--words' : ''}`}>
+      {CAMP_GENDERS.map((gender) => (
+        <span
+          key={gender}
+          className={`camp-split__part camp-split__part--${gender}`}
+          title={`${split[gender]} ${campGenderPlural(gender, kind, split[gender])} ${of}`}
+        >
+          {words ? (
+            said(gender)
+          ) : (
+            <>
+              {split[gender]}
+              <em>{campGenderShort(gender, kind)}</em>
+            </>
+          )}
+        </span>
+      ))}
+      {split.unknown > 0 ? (
+        <span
+          className="camp-split__part camp-split__part--unknown"
+          title={
+            `${split.unknown} ${of} ${split.unknown === 1 ? 'was' : 'were'} registered without ` +
+            'saying. Open their registration to fill it in.'
+          }
+        >
+          {words ? (
+            `${split.unknown} not said`
+          ) : (
+            <>
+              {split.unknown}
+              <em>?</em>
+            </>
+          )}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function Meters({
   metrics,
   coverage,
@@ -2095,42 +3128,56 @@ function Meters({
   coverage: CampCoverageReading | null;
   kind: 'group' | 'station';
 }) {
-  const wish =
-    metrics.wishing > 0 ? (
-      <span
-        className={`camp-meter camp-meter--${
-          metrics.satisfied === metrics.wishing
-            ? 'happy'
-            : metrics.satisfied === 0
-              ? 'unhappy'
-              : 'partly'
-        }`}
-        title={
-          kind === 'station'
-            ? 'Servants here who asked for this station, out of those who asked for anything this week'
-            : 'Servants here who asked to be a crew leader, out of those who asked for anything this week'
-        }
-      >
-        {metrics.satisfied}/{metrics.wishing} got their pick
-      </span>
-    ) : null;
+  /*
+   * Only what somebody has to do something about.
+   *
+   * -------------------------------------------------------------------------
+   * There were two pills on every crew, and on a well-run board both of them
+   * said everything was fine: "covered", and "3/3 got their pick". A card that
+   * reports its own success on every render is a card whose meters stop being
+   * read, and then the one that says "no servants" is in the same grey oval in
+   * the same place and gets missed with them.
+   *
+   * So `ok` draws nothing, and satisfaction only speaks when somebody did not
+   * get what they asked for. A crew with no pills on it is a crew with nothing
+   * wrong, which is a thing you can see from across the board without reading a
+   * word.
+   * -------------------------------------------------------------------------
+   */
+  const short =
+    coverage && (coverage.level === 'none' || coverage.level === 'thin' || coverage.level === 'rich')
+      ? coverage
+      : null;
 
-  if (!wish && (!coverage || coverage.level === 'empty')) return null;
+  const missed = metrics.wishing > 0 && metrics.satisfied < metrics.wishing;
+
+  if (!short && !missed) return null;
 
   return (
     <div className="camp-meters">
-      {coverage && coverage.level !== 'empty' ? (
-        <span className={`camp-meter camp-meter--${coverage.level}`}>
-          {coverage.level === 'none'
-            ? `no servants — needs ${coverage.short}`
-            : coverage.level === 'thin'
-              ? `thin — ${coverage.short} more`
-              : coverage.level === 'rich'
-                ? 'more than its share'
-                : 'covered'}
+      {short ? (
+        <span className={`camp-meter camp-meter--${short.level}`}>
+          {short.level === 'none'
+            ? `nobody serving — needs ${short.short}`
+            : short.level === 'thin'
+              ? `needs ${short.short} more serving`
+              : 'more than its share'}
         </span>
       ) : null}
-      {wish}
+
+      {/* "1/3" was read as a date and as a fraction and as a score. */}
+      {missed ? (
+        <span
+          className={`camp-meter camp-meter--${metrics.satisfied === 0 ? 'unhappy' : 'partly'}`}
+          title={
+            kind === 'station'
+              ? 'Servants here who asked for this station, out of those who asked for anything this week'
+              : 'Servants here who asked to be a crew leader, out of those who asked for anything this week'
+          }
+        >
+          {metrics.satisfied} of {metrics.wishing} got the job they asked for
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -2149,13 +3196,14 @@ function GroupCard({
   resolved,
   carry,
   takes,
+  manyGrades,
   misplaced,
   onOpen,
   siblings,
   readOnly,
   onHold,
   onHoldGroup,
-  onDragging,
+  grab,
   onMergeCrews,
   onPlace,
   onPatch,
@@ -2171,6 +3219,10 @@ function GroupCard({
   carry: Carry;
   /** This grade would accept whoever is in the air. See `campCanPlace`. */
   takes: boolean;
+  /** This band covers more than one grade, so a child's own grade is worth
+      printing on their chip. On a single-grade card it is the card's heading
+      repeated once per child. */
+  manyGrades: boolean;
   misplaced: ReadonlySet<CampPersonKey>;
   onOpen: (key: CampPersonKey) => void;
   /** The other crews of this grade — the only ones this can be run in with. */
@@ -2178,7 +3230,7 @@ function GroupCard({
   readOnly: boolean;
   onHold: (key: CampPersonKey | null) => void;
   onHoldGroup: (id: string | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onMergeCrews: (fromId: string, intoId: string) => void;
   onPlace: (key: CampPersonKey, target: CampDropTarget) => void;
   onPatch: (change: (current: CampBand) => CampBand) => void;
@@ -2195,9 +3247,10 @@ function GroupCard({
    * drop is refused there rather than by a stale flag here.
    */
   const zone = useDropZone({
+    zone: { cargo: 'person', kind: 'group', bandId, groupId: group.id },
     enabled: canTake,
     readOnly,
-    accept: 'person',
+    carry,
     onDropped: (key) => onPlace(key, target),
   });
 
@@ -2214,9 +3267,10 @@ function GroupCard({
     !readOnly && carryingGroup(carry) && carry.id !== group.id &&
     siblings.some((entry) => entry.id === carry.id);
   const crewZone = useDropZone({
+    zone: { cargo: 'group', groupId: group.id },
     enabled: takesCrew,
     readOnly: !takesCrew,
-    accept: 'group',
+    carry,
     onDropped: (fromId) => onMergeCrews(fromId, group.id),
   });
   const children = group.childKeys
@@ -2231,27 +3285,17 @@ function GroupCard({
       className={`camp-group${canTake || takesCrew ? ' is-target' : ''}${
         zone.over || crewZone.over ? ' is-over' : ''
       }${liftedCrew ? ' is-lifted' : ''}`}
-      /* Two zones on one card, and each only reacts to its own MIME type — a
-         person cannot land on the crew merge and a crew cannot land on the
-         person list. `useDropZone` returns four handlers, so they are composed
-         by hand rather than spread twice. */
-      onDragEnter={(event) => {
-        zone.dropProps.onDragEnter();
-        crewZone.dropProps.onDragEnter();
-        void event;
-      }}
-      onDragLeave={() => {
-        zone.dropProps.onDragLeave();
-        crewZone.dropProps.onDragLeave();
-      }}
-      onDragOver={(event) => {
-        zone.dropProps.onDragOver(event);
-        crewZone.dropProps.onDragOver(event);
-      }}
-      onDrop={(event) => {
-        zone.dropProps.onDrop(event);
-        crewZone.dropProps.onDrop(event);
-      }}
+      /*
+       * Two zones on one card, and one attribute to write them in.
+       *
+       * Safe because they can never both be lit: `canTake` needs a person in
+       * the air and `takesCrew` needs a crew, and `lift` puts down whatever
+       * else was held rather than letting the board hold two things — which is
+       * exactly the case this would otherwise get wrong. The spread order says
+       * so out loud: at most one of the two contributes anything.
+       */
+      {...zone.dropProps}
+      {...crewZone.dropProps}
       onClick={(event) => {
         if (carry.person && !readOnly && takes) {
           // A group sits inside a grade panel, which is a merge target. Without
@@ -2295,18 +3339,16 @@ function GroupCard({
               grip that can be picked up and put nowhere is a control that
               teaches somebody the gesture does not work. */}
           {!readOnly && siblings.length > 1 ? (
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               className={`camp-grip camp-grip--crew${carry.group === group.id ? ' is-held' : ''}`}
-              draggable
               aria-pressed={carry.group === group.id}
+              onKeyDown={pressed(() =>
+                onHoldGroup(carry.group === group.id ? null : group.id),
+              )}
               title={`Drag ${group.name} onto another crew of this grade to run the two together, or tap to pick it up`}
-              onDragStart={(event) => {
-                event.stopPropagation();
-                startDrag(event, 'group', group.id, group.name);
-                onDragging('group', group.id);
-              }}
-              onDragEnd={() => onDragging(null, null)}
+              {...grab('group', group.id)}
               onClick={(event) => {
                 event.stopPropagation();
                 onHoldGroup(carry.group === group.id ? null : group.id);
@@ -2314,14 +3356,37 @@ function GroupCard({
             >
               <Icon name="grip" />
               {carry.group === group.id ? 'Drop on a crew' : 'Merge'}
-            </button>
+            </div>
           ) : null}
         </div>
+        {/*
+          The crew's headcount and its balance, in one sentence.
+          --------------------------------------------------------------------
+          The split had a line of its own underneath, which made four stacked
+          rows of metadata before the card got to a single person. It belongs
+          *against the number it decomposes* anyway: "5 children 4B 1G" is one
+          fact read once, where "5 children" above "4B 1G" is the same fact
+          twice with a gap in the middle.
+
+          Both tallies are taken off `metrics`, so they count exactly who the
+          counts beside them count — this week, withdrawals out.
+        */}
         <p className="camp-group__count">
-          {metrics?.children ?? children.length}{' '}
-          {(metrics?.children ?? children.length) === 1 ? 'child' : 'children'} ·{' '}
-          {metrics?.servants ?? servants.length} serving
+          <span className="camp-group__side">
+            {metrics?.children ?? children.length}{' '}
+            {(metrics?.children ?? children.length) === 1 ? 'child' : 'children'}
+            {metrics ? (
+              <Split split={metrics.childGender} kind="child" of="in this crew" words />
+            ) : null}
+          </span>
+          <span className="camp-group__side">
+            {metrics?.servants ?? servants.length} serving
+            {metrics ? (
+              <Split split={metrics.servantGender} kind="servant" of="serving this crew" words />
+            ) : null}
+          </span>
         </p>
+
         {metrics ? (
           <Meters metrics={metrics} coverage={campCoverage(metrics, baseline)} kind="group" />
         ) : null}
@@ -2362,7 +3427,7 @@ function GroupCard({
                     onOpen={onOpen}
                     readOnly={readOnly}
                     onHold={onHold}
-                    onDragging={onDragging}
+                    grab={grab}
                     leader={group.leaderKey === person.key}
                     onLeader={() => onLeader(person.key)}
                   />
@@ -2385,10 +3450,13 @@ function GroupCard({
                     section={section}
                     carry={carry}
                     onOpen={onOpen}
+                    // Back on for a child sitting in a crew that is not theirs:
+                    // "wrong grade" is not much use without saying which.
+                    showGrade={manyGrades || misplaced.has(person.key)}
                     wrongGrade={misplaced.has(person.key)}
                     readOnly={readOnly}
                     onHold={onHold}
-                    onDragging={onDragging}
+                    grab={grab}
                   />
                 ))}
               </ul>
@@ -2460,7 +3528,7 @@ function StationsPanel({
   onOpen,
   readOnly,
   onHold,
-  onDragging,
+  grab,
   onPlace,
   onEdit,
 }: {
@@ -2474,7 +3542,7 @@ function StationsPanel({
   onOpen: (key: CampPersonKey) => void;
   readOnly: boolean;
   onHold: (key: CampPersonKey | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onPlace: (key: CampPersonKey, target: CampDropTarget) => void;
   onEdit: GroupEdit;
 }) {
@@ -2506,7 +3574,7 @@ function StationsPanel({
             onOpen={onOpen}
             readOnly={readOnly}
             onHold={onHold}
-            onDragging={onDragging}
+            grab={grab}
             onPlace={onPlace}
             onEdit={onEdit}
           />
@@ -2535,7 +3603,7 @@ function StationCard({
   onOpen,
   readOnly,
   onHold,
-  onDragging,
+  grab,
   onPlace,
   onEdit,
 }: {
@@ -2550,7 +3618,7 @@ function StationCard({
   onOpen: (key: CampPersonKey) => void;
   readOnly: boolean;
   onHold: (key: CampPersonKey | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onPlace: (key: CampPersonKey, target: CampDropTarget) => void;
   onEdit: GroupEdit;
 }) {
@@ -2592,7 +3660,13 @@ function StationCard({
   const canTake = !readOnly && carryingPerson(carry) && takes;
   /* `drop` refuses a child itself, off `byKey`, so the drop needs no flushed
      render to be correct. See `GroupCard`'s zone for the same argument. */
-  const zone = useDropZone({ enabled: canTake, readOnly, accept: 'person', onDropped: drop });
+  const zone = useDropZone({
+    zone: { cargo: 'person', kind: 'station', role, section },
+    enabled: canTake,
+    readOnly,
+    carry,
+    onDropped: drop,
+  });
 
   return (
     <section
@@ -2610,8 +3684,17 @@ function StationCard({
     >
       <header className="camp-group__head">
         <h4 className="camp-group__role">{role}</h4>
+        {/*
+          Servants only — no child is ever on a station, `drop` refuses them.
+          Worth showing even so: the crews are staffed out of the same pool, so
+          a station holding six of the half's eight women is where the missing
+          cover on a girls' crew actually went.
+        */}
         <p className="camp-group__count">
-          {metrics.servants} {metrics.servants === 1 ? 'servant' : 'servants'}
+          <span className="camp-group__side">
+            {metrics.servants} {metrics.servants === 1 ? 'servant' : 'servants'}
+            <Split split={metrics.servantGender} kind="servant" of={`on ${role}`} words />
+          </span>
         </p>
         <Meters metrics={metrics} coverage={null} kind="station" />
       </header>
@@ -2648,7 +3731,7 @@ function StationCard({
             onOpen={onOpen}
             readOnly={readOnly}
             onHold={onHold}
-            onDragging={onDragging}
+            grab={grab}
             leader={station?.leaderKey === person.key}
             onLeader={() =>
               station &&
@@ -2706,7 +3789,7 @@ function Panel({
   carry,
   readOnly,
   onHold,
-  onDragging,
+  grab,
   onDropHere,
   empty,
 }: {
@@ -2722,7 +3805,7 @@ function Panel({
   carry: Carry;
   readOnly: boolean;
   onHold: (key: CampPersonKey | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   onDropHere: (key: CampPersonKey) => void;
   empty: string;
 }) {
@@ -2734,9 +3817,10 @@ function Panel({
 
   const canTake = !readOnly && carryingPerson(carry);
   const zone = useDropZone({
+    zone: { cargo: 'person', kind: 'pool', of: kind, section },
     enabled: canTake,
     readOnly,
-    accept: 'person',
+    carry,
     onDropped: onDropHere,
   });
 
@@ -2757,10 +3841,41 @@ function Panel({
         alike and are never interchangeable.
       */}
       <div className="camp-side__head" onClick={(event) => event.stopPropagation()}>
+        {/*
+          The rail's heading, its balance, and the number still to place.
+          --------------------------------------------------------------------
+          All on one line. The split had a row of its own between the heading
+          and the find box, which pushed three stacked bars above a list that is
+          the entire point of the rail.
+
+          It counts the *whole* list rather than what the find box has narrowed
+          it to — the question is what the camp has left, and an answer that
+          moved while somebody typed a name would be answering a different one.
+        */}
         <h3>
           {title}
           <span className="camp-side__count">{people.length}</span>
         </h3>
+
+        {/*
+          What is still waiting, in words rather than in initials.
+          --------------------------------------------------------------------
+          On the heading line beside the title it had to be `11B 9G 6?`, which
+          is three puzzles on the first line somebody reads. A line of its own
+          costs one row and buys plain English — and it is the line that teaches
+          the letters on the forty chips underneath it, which is why the two use
+          the same three colours.
+
+          It counts the *whole* list, not what the find box has narrowed it to:
+          the question is what the camp has left, and an answer that moved while
+          somebody typed a name would be answering a different one.
+        */}
+        <Split
+          split={campGenderSplit(people, week)}
+          kind={kind}
+          of={kind === 'child' ? 'still waiting' : 'not placed yet'}
+          words
+        />
 
         {/*
           What the list has been narrowed to, and the way out of it.
@@ -2808,14 +3923,24 @@ function Panel({
                 person={person}
                 week={week}
                 section={section}
+                /*
+                  `undefined`, not `null`, for somebody with no grade.
+                  ------------------------------------------------------------
+                  `null` means "this grade has no colour yet" and draws the grey
+                  `CAMP_UNCOLOURED` badge, which is right for a child. A servant
+                  has no grade at all, so that badge was a grey rectangle drawn
+                  around their age for no reason — one more box on a screen that
+                  had too many. `undefined` is the absence, and `Chip` reads the
+                  two apart.
+                */
                 gradeColour={
-                  person.grade === null ? null : (gradeColours?.get(person.grade) ?? null)
+                  person.grade === null ? undefined : (gradeColours?.get(person.grade) ?? null)
                 }
                 carry={carry}
                 onOpen={onOpen}
                 readOnly={readOnly}
                 onHold={onHold}
-                onDragging={onDragging}
+                grab={grab}
               />
             ))}
           </ul>
@@ -2855,12 +3980,13 @@ function Chip({
   week,
   section,
   gradeColour,
+  showGrade = true,
   wrongGrade,
   carry,
   onOpen,
   readOnly,
   onHold,
-  onDragging,
+  grab,
   leader,
   onLeader,
 }: {
@@ -2873,7 +3999,25 @@ function Chip({
    * grade this is, and a chip repeating its container's colour is a chip with
    * nothing to say.
    */
-  gradeColour?: CampColour | null;
+  /*
+   * `| undefined` spelled out, because `exactOptionalPropertyTypes` is on and
+   * this prop carries three meanings, not two: a colour, `null` for "this grade
+   * has no colour yet" (a grey badge), and `undefined` for "no grade at all" (no
+   * badge). A caller has to be able to pass the third one explicitly.
+   */
+  gradeColour?: CampColour | null | undefined;
+  /**
+   * Whether to print the child's grade at all.
+   *
+   * False inside a crew of one grade, which is where it was ten identical
+   * badges under a heading that had already said it. The sex letter takes the
+   * badge's place there, which is the right trade: on a crew card the question
+   * being asked of each row is who is in this crew, not what grade they are —
+   * the card says the grade once, at the top.
+   *
+   * Ignored on a servant, who has no grade to print.
+   */
+  showGrade?: boolean;
   /**
    * This child is sitting in a group whose grade is not theirs.
    *
@@ -2886,7 +4030,7 @@ function Chip({
   onOpen: (key: CampPersonKey) => void;
   readOnly: boolean;
   onHold: (key: CampPersonKey | null) => void;
-  onDragging: (what: CampCargo | null, id: string | null) => void;
+  grab: CampGrab;
   leader?: boolean;
   onLeader?: () => void;
 }) {
@@ -2909,16 +4053,13 @@ function Chip({
         worn ? ({ '--camp-colour': worn.hex, '--camp-ink': worn.ink } as React.CSSProperties) : undefined
       }
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="camp-person__grab"
-        draggable={!readOnly}
         title={reading ? reading.detail : undefined}
-        onDragStart={(event) => {
-          startDrag(event, 'person', person.key, person.name || 'Unnamed');
-          onDragging('person', person.key);
-        }}
-        onDragEnd={() => onDragging(null, null)}
+        onKeyDown={pressed(() => onOpen(person.key))}
+        {...grab('person', person.key)}
         /*
          * Click opens their card; drag moves them.
          * -------------------------------------------------------------------
@@ -2957,11 +4098,13 @@ function Chip({
           */}
           <span className={`camp-person__who${worn ? ' camp-person__who--graded' : ''}`}>
             {person.kind === 'child' ? (
-              person.grade ? (
-                campGradeShort(person.grade)
-              ) : (
-                '—'
-              )
+              showGrade ? (
+                person.grade ? (
+                  campGradeShort(person.grade)
+                ) : (
+                  '—'
+                )
+              ) : null
             ) : person.age !== null ? (
               <>
                 {person.age}
@@ -2973,20 +4116,71 @@ function Chip({
           </span>
 
           {/*
-            A servant's day count is the reliability reading — see
-            `campReliability` — so it wears the reading's colour rather than the
-            flat grey a child's does. A child has no reading: it is not a
-            judgement anybody should make about a nine-year-old, and it would
-            not change where they are placed.
+            Boy or girl, as a coloured letter — never a badge.
+            --------------------------------------------------------------
+            The board runs two colour languages, and they are told apart by
+            *form* rather than by hue, because hue alone could not do it:
+
+              a **filled** or washed shape is always a wristband — a grade's
+              colour, the thing a child is handed at the gate;
+              **coloured text** is always the sex.
+
+            Nothing on this screen is both. That is what makes a blue `B` beside
+            an amber grade badge legible rather than a third language to learn:
+            the badge is a grade because it is filled, the letter is a sex
+            because it is not.
+
+            Loud enough to count a crew down without reading a single name,
+            which is the job — "this crew is four boys and a girl" has to be
+            answerable while something is already in the air. The unrecorded
+            case is the same element in a third colour: it is the only mark on a
+            chip that is a *job*, and without it a card's tally could say "5 not
+            given" with no way to find which five.
+          */}
+          <span
+            className={`camp-person__sex camp-person__sex--${person.gender || 'unsaid'}`}
+            title={
+              person.gender
+                ? campGenderLabel(person.gender, person.kind)
+                : 'Not recorded — open their registration to say whether they are male or female'
+            }
+          >
+            {campGenderShort(person.gender, person.kind)}
+          </span>
+
+          {/*
+            How many days — and only when it is not all of them.
+            --------------------------------------------------------------
+            Every row on this board said `5d`, or `5/5 days`, because almost
+            everybody comes to the whole week. A token repeated on forty rows
+            carries no information and costs the same attention as one that
+            does; taken together with the grade badge, the sex letter and the
+            flags it was four marks per name and the name was the only one
+            being read.
+
+            So the full week is the silent default and only a *short* week is
+            drawn — which is the thing that actually changes a decision, and now
+            it is the one thing on the row that is loud. "No days at all" stays
+            loudest of the three.
+
+            A servant's still wears the reliability reading's colour, and the
+            reading still colours their spine whether or not this draws, so
+            nothing is lost from `campReliability` — only from the line.
           */}
           {reading ? (
-            <span className={`camp-person__days camp-person__days--${reading.level}`}>
-              {reading.label}
-            </span>
-          ) : (
-            <span className={`camp-person__days${days === 0 ? ' is-none' : ''}`}>
-              {person.days.length === 0 ? 'no days' : `${days}d`}
-            </span>
+            reading.level === 'full' ? null : (
+              <span className={`camp-person__days camp-person__days--${reading.level}`}>
+                {reading.level === 'unknown' || reading.level === 'none'
+                  ? reading.label
+                  : `${reading.days} of ${reading.of} days`}
+              </span>
+            )
+          ) : person.days.length === 0 ? (
+            <span className="camp-person__days is-none">no days</span>
+          ) : days === 0 ? (
+            <span className="camp-person__days is-none">not this week</span>
+          ) : days >= CAMP_WEEKDAYS_IN_WEEK ? null : (
+            <span className="camp-person__days">{days} of {CAMP_WEEKDAYS_IN_WEEK} days</span>
           )}
 
           {/*
@@ -3050,7 +4244,7 @@ function Chip({
             </span>
           </span>
         ) : null}
-      </button>
+      </div>
 
       {onLeader ? (
         <button
@@ -3172,6 +4366,14 @@ function PersonCard({
         </header>
 
         <dl className="camp-sheet__facts">
+          {/* Spelled out here, where there is room for a word. The chip has to
+              make do with one letter, and "M" is a letter somebody will
+              eventually read as "middle school". */}
+          <Fact term={person.kind === 'child' ? 'Boy or girl' : 'Male or female'}>
+            {person.gender
+              ? campGenderLabel(person.gender, person.kind)
+              : 'Not recorded — it is on their registration'}
+          </Fact>
           {person.kind === 'servant' && person.age !== null ? (
             <Fact term="Age">{person.age} years old</Fact>
           ) : null}
@@ -3302,7 +4504,7 @@ const RELIABILITY_KEY: readonly { level: CampReliability['level']; says: string 
 function ReliabilityKey() {
   return (
     <details className="camp-key">
-      <summary>What the colours mean</summary>
+      <summary>What the colors mean</summary>
       <ul className="camp-key__list">
         {RELIABILITY_KEY.map((entry) => (
           <li key={entry.level} className={`camp-key__item camp-key__item--${entry.level}`}>
@@ -3312,7 +4514,7 @@ function ReliabilityKey() {
         ))}
       </ul>
       <p className="camp-key__note">
-        A servant&rsquo;s colour is how many of the week&rsquo;s five days they are registered for, and
+        A servant&rsquo;s color is how many of the week&rsquo;s five days they are registered for, and
         nothing else. Clearance and an availability note are shown beside it as flags rather than
         folded in — a camp that has not started its paperwork would otherwise open this board with
         every chip red.

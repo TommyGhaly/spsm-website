@@ -121,9 +121,17 @@ export function ScheduleSkeleton({
      * `aria-busy`, so this is not the only signal either.
      */
     <div className="sched-skel">
-      <p className="visually-hidden" role="status">
-        {label}
-      </p>
+      {/*
+        The running line, on the rule under the stepper.
+
+        This is the signal that does not depend on anybody recognising a
+        placeholder shape: a bar that travels is the one loading convention
+        every reader already knows, and it sits at the top of the calendar
+        where the eye enters. Absolutely positioned, so it costs no layout and
+        its arrival and departure move nothing.
+      */}
+      <span className="sched-skel__line" aria-hidden="true" />
+
       <div aria-hidden="true">
         {view === 'month' ? (
           <MonthSkeleton range={range} today={today} />
@@ -131,6 +139,28 @@ export function ScheduleSkeleton({
           <WeekSkeleton range={range} today={today} />
         )}
       </div>
+
+      {/*
+        And the sentence, out loud, over the middle of the grid.
+
+        It used to be `visually-hidden`, which meant the only reader actually
+        told that anything was loading was the one on a screen reader. Everybody
+        else got a grid of pale marks and read it — reasonably — as a month with
+        nothing on. The words are the fix; the shimmer was never going to be,
+        because a placeholder only reads as a placeholder to somebody who
+        already knows the page has two states.
+
+        Over the grid rather than above it, because above it means either
+        reserving a strip that is empty for the whole of the calendar's life or
+        shifting the grid down when it goes — and not moving is the entire
+        reason this file draws a real grid in the first place. What it covers
+        is two or three cells of placeholder, which is the one thing on the page
+        that has nothing to say.
+      */}
+      <p className="sched-skel__say" role="status">
+        <span className="sched-skel__spin" aria-hidden="true" />
+        {label}
+      </p>
     </div>
   );
 }
