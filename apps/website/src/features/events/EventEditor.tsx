@@ -77,6 +77,16 @@ import { useAutosave } from './useAutosave';
 /** How long the undo offer stands after a delete. */
 const UNDO_MS = 12_000;
 
+/**
+ * How recent a file has to be for the editor's tidying sweep to leave it alone.
+ *
+ * Generous on purpose. The sweep is looking for objects that have been stranded
+ * for months, so sparing the last quarter of an hour costs it nothing — and what
+ * it buys is that no sequence of opening the editor and immediately choosing a
+ * photograph can end with that photograph deleted. See `sweepEventFiles`.
+ */
+const TIDY_GRACE_MS = 15 * 60_000;
+
 type Load =
   | { kind: 'reading' }
   | { kind: 'ready' }
@@ -115,23 +125,6 @@ export function EventEditor({ baked, onSaved }: {
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [removal, setRemoval] = useState<Removal>({ kind: 'no' });
-  /*
-   * A photograph the form has stopped pointing at, waiting to be deleted from
-   * the bucket.
-   *
-   * It cannot be deleted the moment Remove is pressed. The form is not the
-   * document — autosave writes it about a second later — and deleting the object
-   * first would leave a window in which the event still names a file that no
-   * longer exists, which is a broken picture on the live page and on the mobile
-   * app. So the path is parked here and the effect below deletes it once a save
-   * has actually landed.
-   *
-   * `since` is what makes "a save has landed" mean *this* save. Autosave's state
-   * is `saved` for as long as nothing else is typed, so a bare `kind === 'saved'`
-   * would match the previous save — the one still describing the old photograph
-   * — and delete a file the document was pointing at.
-   */
-  const [orphan, setOrphan] = useState<{ path: string; since: number } | null>(null);
 
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -156,30 +149,47 @@ export function EventEditor({ baked, onSaved }: {
        * was just sent.
        */
       const { registrationUrl, startAt, endAt, ...rest } = draft;
-      setLive((previous) => {
-        const next: DocOf<Event> = {
-          ...previous,
-          ...rest,
-          startAt: startAt.toISOString(),
-          endAt: endAt ? endAt.toISOString() : null,
-          // `registrationUrl` is the editor's shape, not the document's — pulled
-          // out of the spread above so it cannot ride along as a stray key.
-          registration: registrationUrl
-            ? {
-                formId: null,
-                externalUrl: registrationUrl,
-                opensAt: null,
-                closesAt: null,
-                capacity: null,
-              }
-            : null,
-        };
-        onSaved(next);
-        return next;
-      });
+      setLive((previous) => ({
+        ...previous,
+        ...rest,
+        startAt: startAt.toISOString(),
+        endAt: endAt ? endAt.toISOString() : null,
+        // `registrationUrl` is the editor's shape, not the document's — pulled
+        // out of the spread above so it cannot ride along as a stray key.
+        registration: registrationUrl
+          ? {
+              formId: null,
+              externalUrl: registrationUrl,
+              opensAt: null,
+              closesAt: null,
+              capacity: null,
+            }
+          : null,
+      }));
     },
-    [live.id, onSaved],
+    [live.id],
   );
+
+  /*
+   * Telling the page underneath what the editor now holds.
+   *
+   * An effect, and it used to be a call to `onSaved` from *inside* the
+   * `setLive` updater above — which React objects to out loud: "Cannot update a
+   * component (`Article`) while rendering a different component
+   * (`EventEditor`)". An updater is not a place for side effects. It runs during
+   * render, it runs twice under StrictMode, and React may discard and re-run it,
+   * so a parent's `setState` fired from in there happens an unpredictable number
+   * of times at a moment the parent is not expecting to hear from anybody. Same
+   * class of trap as [[spsm-react-strictmode-doubles-updaters]].
+   *
+   * The effect says the same thing at the only moment it is true: after the
+   * render in which `live` changed has committed. It also fires once on mount
+   * with the baked copy, which is a `setState` to the value the parent already
+   * holds — React bails out of that without re-rendering.
+   */
+  useEffect(() => {
+    onSaved(live);
+  }, [live, onSaved]);
 
   /*
    * Autosave is off until the fresh read has landed, and off once the event has
@@ -235,6 +245,33 @@ export function EventEditor({ baked, onSaved }: {
         // What was just read is, by definition, already saved.
         autosave.markSaved(loaded);
         setLoad({ kind: 'ready' });
+
+        /*
+         * Everything under this event that the document does not name.
+         *
+         * A one-off in principle and a permanent safety net in practice. For as
+         * long as "Remove photograph" only cleared a field, every replacement
+         * this parish ever made left its predecessor in `events/{slug}/`, still
+         * world-readable at the URL it was shared under — and there is no screen
+         * that lists them and no document that names them, so nobody can ask for
+         * them individually. Opening the editor is the one moment somebody with
+         * the grant is looking at this event, which makes it the only place the
+         * question can be asked.
+         *
+         * It also catches the two cases `settleHero` cannot: a tab closed
+         * mid-sweep, and a removal made while the date field was empty.
+         *
+         * Deliberately not awaited and deliberately silent. It is tidying that
+         * nobody asked for at this moment, and a failure — a lapsed token, a
+         * refusal — must not turn opening an event into an error message about
+         * files.
+         */
+        void (async () => {
+          const { sweepEventFiles } = await import('./admin');
+          await sweepEventFiles(loaded.slug, fresh.heroImagePath ?? null, TIDY_GRACE_MS);
+        })().catch((error) => {
+          console.warn('[events] could not tidy the old photographs:', error);
+        });
       } catch (error) {
         if (!alive) return;
         setLoad({
@@ -336,29 +373,101 @@ export function EventEditor({ baked, onSaved }: {
 
   /* ---- the photograph ------------------------------------------------- */
 
-  /** Queue a file for deletion once the document has stopped naming it. */
-  const dropFile = useCallback((path: string) => {
-    setOrphan({ path, since: Date.now() });
-  }, []);
+  /**
+   * Write the form now, then clear the bucket of everything it is not using.
+   *
+   * ---------------------------------------------------------------------------
+   * The ordering is the whole of this function, and both halves of it are the
+   * fix for a real bug rather than a preference.
+   *
+   * **The write comes first**, because the form is not the document. Autosave
+   * writes about a second after typing stops, and deleting the object before
+   * that lands would leave a window in which the event still names a file that
+   * is gone — a broken picture on the live page and in the mobile app, which
+   * both read this document directly.
+   *
+   * **It is awaited here rather than watched from an effect**, and that is the
+   * part that was wrong. The version before this parked the path in state and
+   * had a `useEffect` delete it once autosave reported `saved`. The reasoning
+   * was right and the mechanism could not work: `EventArticle` renders the
+   * editor only while `edit.on`, so **pressing Done unmounts this component** —
+   * and pressing Done straight after Remove is not an edge case, it is what
+   * everybody does. The effect went with the component, the write went through,
+   * and the photograph stayed in a world-readable bucket at the URL it was
+   * shared under. Which is exactly the complaint: *"still not deleting from the
+   * storage when i delete in the events page."*
+   *
+   * An awaited sequence in the handler has no such gap. The click owns the whole
+   * operation, and the only thing that can interrupt it is closing the tab.
+   * ---------------------------------------------------------------------------
+   *
+   * `keep` is the path that survives: the replacement on a Replace, and null on
+   * a Remove. Everything else under `events/{slug}/` goes — see
+   * `sweepEventFiles` for why the files the document never named are the ones
+   * that most need it.
+   */
+  async function settleHero(next: FormState, keep: string | null) {
+    setForm(next);
+
+    /*
+     * The one state in which this cannot finish. `toContentDraft` returns null
+     * while the date field is empty mid-retype, so the write would be a no-op
+     * and deleting would strand the document pointing at nothing.
+     *
+     * The picture still leaves the page — that is what was asked for and it is
+     * saved as soon as the date is typed — but the file stays, and the person is
+     * told rather than left to find out. The next removal or replacement sweeps
+     * it, and so does deleting the event.
+     */
+    if (!toContentDraft(next)) {
+      setHero({
+        kind: 'error',
+        message:
+          'Taken off the page. The old file stays in storage until this event has a date it ' +
+          'can be saved with.',
+      });
+      return;
+    }
+
+    try {
+      await save(next);
+      // Autosave's record has to be advanced by hand, or it sees a form that
+      // differs from what it believes is written and immediately writes it again.
+      autosave.markSaved(next);
+
+      const { sweepEventFiles } = await import('./admin');
+      await sweepEventFiles(next.slug, keep);
+    } catch (error) {
+      /*
+       * Said out loud rather than logged. "Remove" that quietly leaves the
+       * picture served at its old URL is the bug being fixed here, so a removal
+       * that only half happened has to be visible to the person who asked for
+       * it — and the sentence has to say which half worked.
+       */
+      setHero({
+        kind: 'error',
+        message:
+          error instanceof Error
+            ? `The event is saved, but the old photograph is still in storage: ${error.message}`
+            : 'The event is saved, but the old photograph could not be deleted from storage.',
+      });
+    }
+  }
 
   async function pickHero(file: File) {
     setHero({ kind: 'uploading' });
-    const previous = form.heroImagePath;
     try {
       const { uploadEventHero } = await import('./admin');
       const path = await uploadEventHero(file, form.slug);
-      set('heroImagePath', path);
       setHero({ kind: 'idle' });
       /*
        * Replacing is a removal too. The note that used to be here kept the old
        * object on the grounds that discarding the change would leave the event
        * pointing at a deleted file — but there is nothing to discard any more,
        * because there is no publish step and no discard: the form *is* on its way
-       * to the document. So the predecessor is queued for deletion, and the
-       * window that note was worried about is closed by waiting for the write
-       * instead of by keeping the file. See `orphan`.
+       * to the document.
        */
-      if (previous && previous !== path) dropFile(previous);
+      await settleHero({ ...form, heroImagePath: path }, path);
     } catch (error) {
       setHero({
         kind: 'error',
@@ -366,60 +475,6 @@ export function EventEditor({ baked, onSaved }: {
       });
     }
   }
-
-  /*
-   * Deleting the orphan, once the write that unreferenced it has landed.
-   *
-   * Nothing happens while autosave is `pending`, `saving`, `held` or `error` —
-   * in every one of those the document still names the file, so deleting it
-   * would break the live page. `held` and `error` can last indefinitely (an
-   * emptied date field, a lost connection), and the file simply stays until the
-   * save goes through. That is the right way round: a photograph that outlives
-   * its removal by a minute is untidy, one deleted while still referenced is a
-   * broken page.
-   */
-  useEffect(() => {
-    if (!orphan) return;
-
-    // The form points at it again — a re-upload of the same path, or the fresh
-    // read landing over an unsaved change. It is not an orphan, so let it be.
-    if (form.heroImagePath === orphan.path) {
-      setOrphan(null);
-      return;
-    }
-
-    if (autosave.state.kind !== 'saved' || autosave.state.at < orphan.since) return;
-
-    let alive = true;
-    void (async () => {
-      try {
-        const { deleteEventHero } = await import('./admin');
-        await deleteEventHero(orphan.path);
-        if (alive) setOrphan(null);
-      } catch (error) {
-        if (!alive) return;
-        setOrphan(null);
-        /*
-         * Said out loud rather than logged. "Remove" that quietly leaves the
-         * picture served at its old URL is the bug being fixed here, so a
-         * removal that only half happened has to be visible to the person who
-         * asked for it — the event is saved either way, which is what the
-         * sentence has to make clear.
-         */
-        setHero({
-          kind: 'error',
-          message:
-            error instanceof Error
-              ? `The event is saved, but the old photograph is still in storage: ${error.message}`
-              : 'The event is saved, but the old photograph could not be deleted from storage.',
-        });
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [orphan, autosave.state, form.heroImagePath]);
 
   /*
    * A deleted event takes its photographs with it.
@@ -529,9 +584,8 @@ export function EventEditor({ baked, onSaved }: {
         status={hero}
         onPick={(file) => void pickHero(file)}
         onClear={() => {
-          if (form.heroImagePath) dropFile(form.heroImagePath);
-          set('heroImagePath', null);
           setHero({ kind: 'idle' });
+          void settleHero({ ...form, heroImagePath: null }, null);
         }}
       />
 

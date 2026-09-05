@@ -61,17 +61,31 @@ export interface Downscaled {
 /**
  * The rungs, in order. Quality falls before the edge does.
  *
- * Deliberately: dropping WebP quality from 82 to 62 is close to invisible on a
+ * Deliberately: dropping WebP quality a few points is close to invisible on a
  * photograph of a room full of people, while dropping the long edge is a
  * permanent loss of detail that shows the moment anybody opens the picture
  * full-screen. Only the last rung gives up resolution, and by then the file is
  * pathological — a panorama or a flatbed scan rather than a photograph.
+ *
+ * ## The rungs got closer together on 2026-09-05
+ *
+ * They were 82, 72, 62, then 2048px at 62. The gap between the first two is the
+ * problem that fix was about: a picture one byte over the budget fell ten
+ * quality points in a single step, and ten points at the top of WebP's scale is
+ * where blotching starts. Anything detailed — a crowd, foliage, a patterned
+ * carpet, which is most of what a camp produces — is exactly what overshoots a
+ * budget, so the pictures being knocked down a rung were the ones least able to
+ * afford it.
+ *
+ * Five points at a time now, and the budget above is doubled, so the first rung
+ * carries almost everything and the fall is gradual when it does not.
  */
 const LADDER: ReadonlyArray<{ edge: number; quality: number }> = [
   { edge: PHOTO_MAX_EDGE, quality: PHOTO_QUALITY },
+  { edge: PHOTO_MAX_EDGE, quality: 87 },
+  { edge: PHOTO_MAX_EDGE, quality: 80 },
   { edge: PHOTO_MAX_EDGE, quality: 72 },
-  { edge: PHOTO_MAX_EDGE, quality: 62 },
-  { edge: 2048, quality: 62 },
+  { edge: 2560, quality: 72 },
 ];
 
 /** Whether this browser can encode WebP at all. Asked once. */
@@ -159,9 +173,15 @@ export async function downscalePhoto(file: File): Promise<Downscaled> {
     let best: Blob | null = null;
 
     for (const rung of LADDER) {
-      // JPEG's quality scale is not WebP's; 0.86 is the visual match for 82,
-      // and the fallback path is rare enough not to deserve its own ladder.
-      const quality = type === 'image/webp' ? rung.quality / 100 : 0.86;
+      /*
+       * JPEG's quality scale is not WebP's — JPEG needs roughly five more
+       * points for the same apparent result — and the fallback path is rare
+       * enough not to deserve its own ladder, so the rung is nudged rather than
+       * duplicated. Capped at 97 because JPEG above that is nearly all file and
+       * no picture.
+       */
+      const quality =
+        type === 'image/webp' ? rung.quality / 100 : Math.min(97, rung.quality + 5) / 100;
       const encoded = await render(bitmap, rung.edge, quality, type);
       if (!encoded) break;
 

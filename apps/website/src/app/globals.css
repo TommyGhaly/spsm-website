@@ -14093,6 +14093,259 @@ button.sched-month__entry:focus-visible {
 }
 
 
+/*
+ * "See it big": the whole photograph as a target, and a mark that says so.
+ *
+ * ---------------------------------------------------------------------------
+ * The card is 4:3 and a few hundred pixels wide, which is right for scanning a
+ * queue and useless for the decision the queue is for — at that size a face is
+ * thirty pixels across and a blurred frame looks like a sharp one. So the
+ * picture opens. Tommy: *"make sure the admin can click a requested image and it
+ * opens big for them to see if they want."*
+ *
+ * A transparent button laid over the picture rather than wrapped around it: the
+ * frame already holds the tick and the "sent to" chip, and neither may be inside
+ * a button. It sits at `z-index: 2`, above the photograph and its blurred mat
+ * and below both of those, so every control in the frame still belongs to
+ * whoever it belongs to.
+ *
+ * The affordance is *not* left to the cursor. A picture that does something when
+ * clicked and says nothing about it is a feature nobody finds — this queue had a
+ * lightbox-shaped hole in it for exactly that reason — so the mark is drawn from
+ * the start at low contrast and comes up to full on hover and on focus. Hover
+ * alone would leave it invisible on every phone and tablet in the parish hall.
+ * ---------------------------------------------------------------------------
+ */
+.review-queue__open {
+  grid-area: 1 / 1;
+  z-index: 2;
+  place-self: stretch;
+  display: grid;
+  place-items: end center;
+  padding: var(--space-sm, 0.6rem);
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.review-queue__openMark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-deep, #3a1310) 72%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 88%, transparent);
+  opacity: 0.55;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+@supports (backdrop-filter: blur(6px)) {
+  .review-queue__openMark {
+    background: color-mix(in srgb, var(--color-deep, #3a1310) 52%, transparent);
+    backdrop-filter: blur(8px) saturate(140%);
+  }
+}
+
+.review-queue__open:hover .review-queue__openMark,
+.review-queue__open:focus-visible .review-queue__openMark {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.review-queue__open:focus-visible {
+  outline: 2px solid var(--color-gold, #b08d43);
+  outline-offset: -3px;
+}
+
+/*
+ * A clip's card keeps the browser's own controls, so the button cannot cover it.
+ *
+ * Stretched over a `<video>`, a transparent target eats the play button — which
+ * is the one thing somebody wants from a clip in a card. So for video it shrinks
+ * to the corner the controls do not reach, and only that corner opens it.
+ */
+.review-queue__open--corner {
+  place-self: end start;
+  padding: var(--space-sm, 0.6rem);
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   The submission, full-size.
+
+   Not `.lightbox`: that one is the public gallery's and resolves its own public
+   URLs, which 403 on this prefix by design. See the note on `ReviewViewer`.
+   --------------------------------------------------------------------------- */
+
+.review-view {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-md, 1rem);
+  background: color-mix(in srgb, var(--color-ink, #1c1614) 88%, transparent);
+}
+
+@supports (backdrop-filter: blur(6px)) {
+  .review-view {
+    backdrop-filter: blur(10px);
+  }
+}
+
+/*
+ * `min-height: 0` on a grid child is the line without which the picture below
+ * cannot shrink: a grid row is `auto` by default, which means "at least the
+ * content's intrinsic size", and a 3840px photograph's intrinsic size is
+ * 3840px. Without it the stage grows past the viewport and the decision buttons
+ * under it are off the bottom of the screen — which on this panel is the one
+ * thing that must never happen.
+ */
+.review-view__panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--space-sm, 0.6rem);
+  width: min(1400px, 100%);
+  height: 100%;
+  min-height: 0;
+}
+
+.review-view__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.review-view__stage img,
+.review-view__stage video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.review-view__note {
+  max-width: 44ch;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  text-align: center;
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 76%, transparent);
+}
+
+.review-view__step,
+.review-view__close {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-deep, #3a1310) 78%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
+  cursor: pointer;
+}
+
+.review-view__step:hover,
+.review-view__close:hover {
+  background: var(--color-deep, #3a1310);
+}
+
+.review-view__step--back {
+  inset-inline-start: 0;
+}
+
+.review-view__step--on {
+  inset-inline-end: 0;
+}
+
+.review-view__close {
+  top: 0;
+  inset-inline-end: 0;
+}
+
+/*
+ * The decision, on its own band under the picture rather than floating over it.
+ *
+ * Over the picture it would cover the corner of whatever is being judged, and
+ * the corners are where a face at the edge of a frame lives — which is the
+ * commonest reason a parish photograph is refused.
+ */
+.review-view__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-deep, #3a1310) 62%, transparent);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.review-view__said {
+  flex: 1 1 16ch;
+  min-width: 0;
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.review-view__said .meta {
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 60%, transparent);
+}
+
+.review-view__where {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 80%, transparent);
+}
+
+.review-view__where strong {
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+/* Kept apart from the sentence beside it — it counts the queue, it does not
+   describe the filing. */
+.review-view__count {
+  margin-inline-end: var(--space-sm, 0.6rem);
+  padding-inline-end: var(--space-sm, 0.6rem);
+  border-inline-end: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 30%, transparent);
+}
+
+.review-view__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.6rem);
+  margin-inline-start: auto;
+}
+
+/*
+ * On a phone the picture takes the room and the band wraps under it. The stage
+ * keeps `minmax(0, 1fr)` either way — see the note on the panel — so the two
+ * buttons stay on screen however tall the photograph is.
+ */
+@media (max-width: 40rem) {
+  .review-view {
+    padding: var(--space-sm, 0.6rem);
+  }
+
+  .review-view__acts {
+    margin-inline-start: 0;
+  }
+
+  .review-view__step,
+  .review-view__close {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Editing in place.
 

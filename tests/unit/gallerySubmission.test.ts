@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   ADMIN_MAX_BYTES,
@@ -5,16 +6,17 @@ import {
   CONDENSED_NOTICE_RATIO,
   DAILY_LIMIT_PER_IP,
   DAILY_LIMIT_PER_UID,
+  formatBytes,
+  isAlreadyWebReady,
   MAX_FILES_PER_BATCH,
+  maxBytesFor,
+  mediaKindForContentType,
   PHOTO_BUDGET_BYTES,
   PHOTO_CEILING_BYTES,
   PHOTO_MAX_EDGE,
   PHOTO_QUALITY,
-  VIDEO_MAX_BYTES,
-  formatBytes,
-  maxBytesFor,
-  mediaKindForContentType,
   submissionObjectPath,
+  VIDEO_MAX_BYTES,
   worthMentioning,
 } from '@spsm/shared';
 
@@ -108,10 +110,27 @@ describe('maxBytesFor', () => {
     expect(maxBytesFor('video', false)).toBe(VIDEO_MAX_BYTES);
   });
 
-  it("lets a ministry's own administrator send an original of either kind", () => {
+  it("lets a ministry's own administrator send a photographic original", () => {
     expect(maxBytesFor('photo', true)).toBe(ADMIN_MAX_BYTES);
-    expect(maxBytesFor('video', true)).toBe(ADMIN_MAX_BYTES);
     expect(ADMIN_MAX_BYTES).toBeGreaterThan(VIDEO_MAX_BYTES);
+  });
+
+  /*
+   * Tommy, 2026-09-05: *"admins can upload any sized video."*
+   *
+   * The asymmetry with the photograph above is the point, and it is about
+   * memory rather than generosity: nothing ever decodes a clip — approval is a
+   * bucket-to-bucket copy — while a photograph is decoded into an uncompressed
+   * buffer by `sharp`, so its ceiling is what stands between a very large scan
+   * and an out-of-memory crash.
+   *
+   * Asserted as "above any real file" rather than as `Infinity` alone, because
+   * what has to hold is that the endpoint's `byteSize > ceiling` can never be
+   * true — a finite ADMIN_MAX_BYTES creeping back in here is the regression.
+   */
+  it('puts no ceiling at all on an administrator video', () => {
+    expect(maxBytesFor('video', true)).toBe(Number.POSITIVE_INFINITY);
+    expect(4 * 1024 * 1024 * 1024 > maxBytesFor('video', true)).toBe(false);
   });
 });
 
@@ -149,8 +168,34 @@ describe('the numbers themselves', () => {
    * nobody notices.
    */
   it('keeps the browser and the transcode pointed at one edge and one quality', () => {
-    expect(PHOTO_MAX_EDGE).toBe(2560);
-    expect(PHOTO_QUALITY).toBe(82);
+    const transcode = readFileSync(
+      new URL('../../functions/src/galleries.ts', import.meta.url),
+      'utf8',
+    );
+
+    /*
+     * The assertion is that the Function *derives* both numbers rather than
+     * that either number is any particular value.
+     *
+     * It used to read `expect(PHOTO_MAX_EDGE).toBe(2560)`, which is a different
+     * test wearing this one's name: it passes whether or not the two files
+     * agree, and it fails the moment anybody tunes the quality — which is
+     * exactly what happened on 2026-09-05, when both numbers went up together
+     * and this was the only thing that objected.
+     */
+    expect(transcode).toMatch(/const MAX_EDGE = PHOTO_MAX_EDGE;/);
+    expect(transcode).toMatch(/const WEBP_QUALITY = PHOTO_QUALITY;/);
+
+    /*
+     * And that they are still numbers a photograph can live with. The upper
+     * bounds are what a browser can actually encode on a phone without running
+     * out of memory; the lower ones are where a picture opened full-screen
+     * starts to look like a picture of a picture.
+     */
+    expect(PHOTO_MAX_EDGE).toBeGreaterThanOrEqual(2560);
+    expect(PHOTO_MAX_EDGE).toBeLessThanOrEqual(6000);
+    expect(PHOTO_QUALITY).toBeGreaterThanOrEqual(85);
+    expect(PHOTO_QUALITY).toBeLessThanOrEqual(95);
   });
 
   it('leaves the daily limits loose enough for a coffee hour', () => {
@@ -198,5 +243,75 @@ describe('worthMentioning', () => {
     expect(CONDENSED_NOTICE_MIN_SAVING).toBe(MB);
     // Ratio passes at 0.1, but only 900KB is saved.
     expect(worthMentioning(1000 * KB, 100 * KB)).toBe(false);
+  });
+});
+
+/**
+ * The second encode, and when there is nothing for it to do.
+ *
+ * ---------------------------------------------------------------------------
+ * Until 2026-09-05 every submitted photograph was encoded twice — once by the
+ * browser and again by the transcode Function — and the second pass was
+ * measured, on a real parish photograph, to change the file size by about two
+ * per cent. It was re-quantising an already-quantised image for no saving:
+ * pure generation loss, worst in the smooth gradients where the first pass has
+ * already left its artefacts. Tommy: *"the quality drop is too significant."*
+ *
+ * Every case below is a `sharp.metadata()` reading taken from a real file (see
+ * the probe in the 2026-09-05 session): a canvas WebP, the same bytes with an
+ * EXIF block, a JPEG, an oversized WebP, and one whose EXIF says it is sideways.
+ * The four that must not skip are the point of the test — three of them are
+ * privacy or correctness, not tidiness.
+ * ---------------------------------------------------------------------------
+ */
+describe('isAlreadyWebReady', () => {
+  /** What `downscalePhoto` produces: canvas WebP, no metadata of any kind. */
+  const browserOutput = { format: 'webp', width: 3840, height: 2560 };
+
+  it('skips the second encode for what the browser already prepared', () => {
+    expect(isAlreadyWebReady(browserOutput)).toBe(true);
+  });
+
+  /*
+   * The clause that carries the privacy property. A phone photograph's EXIF
+   * holds GPS coordinates and these are pictures of other people's children —
+   * the full pass strips all metadata, so anything carrying some must take it.
+   * Skipping on trust ("the browser strips EXIF") is exactly the assumption the
+   * endpoint cannot make, since it can be called without our JavaScript.
+   */
+  it('re-encodes anything carrying metadata, whatever else is true of it', () => {
+    expect(isAlreadyWebReady({ ...browserOutput, exif: Buffer.from('x') })).toBe(false);
+    expect(isAlreadyWebReady({ ...browserOutput, xmp: Buffer.from('x') })).toBe(false);
+    expect(isAlreadyWebReady({ ...browserOutput, iptc: Buffer.from('x') })).toBe(false);
+  });
+
+  /*
+   * `.rotate()` is the load-bearing line in the pipeline: a phone writes the
+   * sensor orientation into a tag rather than rotating pixels, so skipping the
+   * pass on one of these publishes the photograph on its side.
+   */
+  it('re-encodes a photograph whose pixels have not been turned upright', () => {
+    expect(isAlreadyWebReady({ ...browserOutput, orientation: 6 })).toBe(false);
+    // 1 and absent both mean upright, and both must still qualify.
+    expect(isAlreadyWebReady({ ...browserOutput, orientation: 1 })).toBe(true);
+  });
+
+  it('re-encodes an original, which has to be converted anyway', () => {
+    expect(isAlreadyWebReady({ format: 'jpeg', width: 3000, height: 2000 })).toBe(false);
+    expect(isAlreadyWebReady({ format: 'heif', width: 3000, height: 2000 })).toBe(false);
+  });
+
+  /* Larger than the edge has to be resized, and a resize is a decode. */
+  it('re-encodes anything that still has to be made smaller', () => {
+    expect(isAlreadyWebReady({ format: 'webp', width: PHOTO_MAX_EDGE + 1, height: 10 })).toBe(
+      false,
+    );
+    expect(isAlreadyWebReady({ format: 'webp', width: PHOTO_MAX_EDGE, height: 10 })).toBe(true);
+  });
+
+  /* A file sharp could not measure. Nothing is known, so nothing is skipped. */
+  it('re-encodes a file it could read nothing out of', () => {
+    expect(isAlreadyWebReady({})).toBe(false);
+    expect(isAlreadyWebReady({ format: 'webp' })).toBe(false);
   });
 });

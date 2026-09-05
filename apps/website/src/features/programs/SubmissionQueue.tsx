@@ -29,6 +29,7 @@ import {
   type ReviewItem,
 } from './review';
 import { useProgramAdmin } from './useProgramAdmin';
+import { Icon } from '@/components/Icon';
 
 /**
  * The photographs parishioners have sent to this ministry, awaiting a decision.
@@ -130,6 +131,16 @@ export function SubmissionQueue({
   const [bulk, setBulk] = useState<'idle' | 'approving' | 'declining'>('idle');
   /** Whether the bar's Decline has been armed. See the row's own comment. */
   const [arming, setArming] = useState(false);
+  /**
+   * The one being looked at full-size, by media id. Null when nothing is.
+   *
+   * An id rather than an index, because the queue is a live listener: a
+   * photograph decided by somebody else at the next table shortens the list
+   * underneath this, and an index would then be pointing at a different picture
+   * than the one on screen — which on a screen whose two buttons are "publish"
+   * and "destroy" is the worst possible kind of quiet.
+   */
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const rows = useMemo(() => flattenGalleryTree(tree), [tree]);
 
@@ -265,6 +276,28 @@ export function SubmissionQueue({
   const pending = items?.length ?? 0;
   const working = bulk !== 'idle';
 
+  /* ---- the one being looked at full-size ------------------------------- */
+
+  const shown = items ?? [];
+  const at = viewing === null ? -1 : shown.findIndex((one) => one.media.id === viewing);
+  /*
+   * Gone from under the viewer — decided here, or by the other person working
+   * the queue. Closing is the honest answer: there is no "the next one" when the
+   * list has been rewritten, and silently showing a different photograph beside
+   * an Approve button is how the wrong thing gets published.
+   *
+   * The ordinary case of deciding from *inside* the viewer never reaches this,
+   * because `stepFrom` moves before the write.
+   */
+  const viewed = at >= 0 ? shown[at] : null;
+  if (viewing !== null && at < 0 && items !== null) setViewing(null);
+
+  /** Wrapping, so → on the last picture goes back to the first rather than dying. */
+  function stepFrom(index: number, delta: number) {
+    if (shown.length === 0) return null;
+    return shown[(index + delta + shown.length) % shown.length]?.media.id ?? null;
+  }
+
   return (
     <section className="review-panel" aria-labelledby="queue-title">
       <div className="review-panel__head">
@@ -341,10 +374,39 @@ export function SubmissionQueue({
                 onSelect={() => toggle(item.media.id)}
                 onApprove={(target) => void act(item, 'approve', target)}
                 onRefuse={() => void act(item, 'refuse', item.media.programEventId)}
+                onOpen={() => setViewing(item.media.id)}
               />
             ))}
           </ul>
         </>
+      )}
+
+      {viewed && (
+        <ReviewViewer
+          item={viewed}
+          position={at + 1}
+          count={shown.length}
+          busy={busy.has(viewed.media.id) || working}
+          target={filingFor(viewed.media, filings)}
+          targets={targets}
+          onStep={(delta) => setViewing(stepFrom(at, delta))}
+          onClose={() => setViewing(null)}
+          onApprove={() => {
+            /*
+             * Moved before the write, not after it. The queue is a live
+             * listener, so this item vanishes from the list a moment after the
+             * decision lands — stepping first means the viewer is already
+             * somewhere else when that happens, instead of being closed out
+             * from under somebody halfway through a camp's worth of pictures.
+             */
+            setViewing(shown.length > 1 ? stepFrom(at, 1) : null);
+            void act(viewed, 'approve', filingFor(viewed.media, filings));
+          }}
+          onRefuse={() => {
+            setViewing(shown.length > 1 ? stepFrom(at, 1) : null);
+            void act(viewed, 'refuse', viewed.media.programEventId);
+          }}
+        />
       )}
     </section>
   );
@@ -582,6 +644,7 @@ function ReviewRow({
   onSelect,
   onApprove,
   onRefuse,
+  onOpen,
 }: {
   item: ReviewItem;
   targets: readonly SubmissionTarget[];
@@ -607,6 +670,8 @@ function ReviewRow({
   onSelect: () => void;
   onApprove: (target: string) => void;
   onRefuse: () => void;
+  /** Open it full-size. The card is too small to decide from — see `ReviewViewer`. */
+  onOpen: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [resolving, setResolving] = useState(true);
@@ -694,6 +759,49 @@ function ReviewRow({
             // description to give.
             <img className="review-queue__shot" src={url} alt="" />
           ))}
+
+        {/*
+          The whole picture is the way in, as a button laid over it rather than
+          as one wrapped around it: the frame already holds the tick and the
+          "sent to" chip, and a `<button>` containing a checkbox is invalid and
+          swallows its clicks. Both of those sit above this in the stack, so
+          they still work.
+
+          Only for photographs. A `<video>` in the card has the browser's own
+          controls on it, and a transparent button over them would eat the play
+          button — the clip is opened from the expand corner instead, which is
+          the one place those controls are not.
+
+          It carries a real label rather than a title attribute, because this is
+          the only route to seeing the photograph at a size anybody can judge and
+          a screen reader must be told it exists.
+        */}
+        {url !== null && item.media.kind !== 'video' && (
+          <button
+            type="button"
+            className="review-queue__open"
+            onClick={onOpen}
+            aria-label="Open this photograph full-size"
+          >
+            <span className="review-queue__openMark" aria-hidden="true">
+              <Icon name="expand" size={15} />
+              See it big
+            </span>
+          </button>
+        )}
+        {url !== null && item.media.kind === 'video' && (
+          <button
+            type="button"
+            className="review-queue__open review-queue__open--corner"
+            onClick={onOpen}
+            aria-label="Open this clip full-size"
+          >
+            <span className="review-queue__openMark" aria-hidden="true">
+              <Icon name="expand" size={15} />
+              See it big
+            </span>
+          </button>
+        )}
 
         {/*
           The tick, on the picture rather than beside the buttons.
@@ -795,5 +903,239 @@ function ReviewRow({
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * One submission, filling the screen, with the decision on it.
+ *
+ * ---------------------------------------------------------------------------
+ * The queue draws every photograph into a 4:3 card a few hundred pixels wide.
+ * That is the right shape for scanning forty of them and the wrong one for
+ * *deciding* about any: a face is thirty pixels across, a blurred frame and a
+ * sharp one are indistinguishable, and whether somebody's child is recognisable
+ * — which is the actual question being asked — cannot be answered at that size.
+ * Tommy: *"make sure the admin can click a requested image and it opens big for
+ * them to see if they want."*
+ *
+ * ## The decision comes with it
+ *
+ * Approve and Refuse are here rather than only on the card behind, because
+ * "open it, look at it, go back, find the row again, press the button" is four
+ * steps of which three are bookkeeping. Approving steps to the next photograph
+ * instead of closing, so a queue can be worked through entirely from here.
+ *
+ * The step is taken *before* the write rather than after it. The queue is a live
+ * listener, so the item being decided disappears from underneath this component
+ * a moment later; moving first means the viewer is already somewhere else when
+ * that happens, rather than finding itself pointed at a photograph that no
+ * longer exists.
+ *
+ * ## Why it does not reuse `Lightbox`
+ *
+ * That one resolves its own URLs through `galleryPosterUrl`, which builds the
+ * unauthenticated `?alt=media` form — and this prefix is the one place on the
+ * bucket where reads are gated, so those URLs 403 by design. A pending
+ * submission can only be fetched through `getDownloadURL`. Sharing the component
+ * would mean teaching it both, for two screens that also want different
+ * furniture on top of the picture.
+ * ---------------------------------------------------------------------------
+ */
+function ReviewViewer({
+  item,
+  position,
+  count,
+  busy,
+  target,
+  targets,
+  onStep,
+  onClose,
+  onApprove,
+  onRefuse,
+}: {
+  item: ReviewItem;
+  /** Which of the queue this is, one-based, for the counter. */
+  position: number;
+  count: number;
+  busy: boolean;
+  target: string;
+  targets: readonly { id: string; title: string; depth: number }[];
+  onStep: (delta: number) => void;
+  onClose: () => void;
+  onApprove: () => void;
+  onRefuse: () => void;
+}) {
+  const frame = useRef<HTMLDivElement | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(true);
+  /** Armed once, the same two-click rule the card behind uses. */
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setResolving(true);
+    setUrl(null);
+    setConfirming(false);
+    void reviewUrl(item.media).then((resolved) => {
+      if (!live) return;
+      setUrl(resolved);
+      setResolving(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [item.media]);
+
+  /*
+   * The keyboard and the scroll lock, together, because they have to be undone
+   * together — a cleanup that misses the second leaves the page underneath
+   * unscrollable after this has gone.
+   *
+   * Enter is deliberately *not* approve. This is the one screen on the site
+   * where the fast key would delete somebody's photograph if the focus were a
+   * row behind, and the arrows plus a click are quick enough.
+   */
+  useEffect(() => {
+    const opener = document.activeElement;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = 'hidden';
+    frame.current?.focus();
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onStep(1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onStep(-1);
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      if (opener instanceof HTMLElement) opener.focus();
+    };
+  }, [onClose, onStep]);
+
+  const where = targets.find((one) => one.id === target)?.title ?? 'this ministry';
+
+  return (
+    /*
+      The backdrop closes on a click, and the panel inside stops it. `onMouseDown`
+      rather than `onClick`: a click whose press began on the picture and whose
+      release landed on the backdrop — which is what dragging to select or
+      flicking a photograph does — would otherwise close the viewer.
+    */
+    <div
+      className="review-view"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Photograph ${position} of ${count}, sent to ${item.eventTitle}`}
+      onMouseDown={onClose}
+    >
+      <div
+        className="review-view__panel"
+        ref={frame}
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="review-view__stage">
+          {resolving && <p className="review-view__note">Loading the full picture…</p>}
+          {!resolving && url === null && (
+            <p className="review-view__note">
+              This one cannot be shown. Either the transcode failed or it is a video in a
+              format this browser will not play — you can still decide about it, and
+              approving publishes the file exactly as it arrived.
+            </p>
+          )}
+          {url !== null &&
+            (item.media.kind === 'video' ? (
+              <video src={url} controls autoPlay playsInline />
+            ) : (
+              <img src={url} alt="" />
+            ))}
+
+          {count > 1 && (
+            <>
+              <button
+                type="button"
+                className="review-view__step review-view__step--back"
+                onClick={() => onStep(-1)}
+                aria-label="Previous photograph"
+              >
+                <Icon name="prev" size={22} />
+              </button>
+              <button
+                type="button"
+                className="review-view__step review-view__step--on"
+                onClick={() => onStep(1)}
+                aria-label="Next photograph"
+              >
+                <Icon name="next" size={22} />
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            className="review-view__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+
+        <div className="review-view__foot">
+          <p className="review-view__said">
+            {/*
+              The caption as written, or the plain fact that there is not one.
+              A reviewer deciding from a full-size picture is the person most
+              likely to write the first one, and a blank line here reads as a
+              rendering fault rather than as an absence.
+            */}
+            {item.media.caption || <span className="meta">No caption yet.</span>}
+          </p>
+          <p className="review-view__where">
+            {count > 1 && <span className="review-view__count">{position} of {count}</span>}
+            Filing under <strong>{where}</strong>
+          </p>
+          <div className="review-view__acts">
+            <button
+              type="button"
+              className="button button--small"
+              onClick={onApprove}
+              disabled={busy}
+            >
+              {busy ? 'Saving…' : 'Approve'}
+            </button>
+            {confirming ? (
+              <button
+                type="button"
+                className="button button--small review-queue__confirm"
+                onClick={onRefuse}
+                disabled={busy}
+              >
+                Delete permanently
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button button--quiet button--small"
+                onClick={() => setConfirming(true)}
+                disabled={busy}
+              >
+                Refuse
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

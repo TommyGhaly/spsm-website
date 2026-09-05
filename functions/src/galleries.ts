@@ -51,6 +51,7 @@ import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import {
   COLLECTIONS,
+  isAlreadyWebReady,
   PHOTO_MAX_EDGE,
   PHOTO_QUALITY,
   type GalleryMedia,
@@ -60,23 +61,31 @@ import {
 const REGION = 'us-east1';
 
 /**
- * 512MiB and five minutes, still generous: the alternative to an
- * over-provisioned function here is a submission that silently never appears,
- * and this runs once per photograph ever uploaded rather than once per page view.
+ * 1GiB and five minutes, and the memory figure has moved twice for the same
+ * reason both times: what `sharp` has to hold, not what arrives.
  *
- * It was 1GiB, sized for a 12MB HEIC straight off a phone. The browser now
- * downscales before uploading, so what arrives is a WebP of a few hundred
- * kilobytes and the old figure was paying for a case that no longer happens.
+ * It was 1GiB for a 12MB HEIC off a phone, then 512MiB once the browser started
+ * downscaling first, and it is 1GiB again now. `sharp` decodes to uncompressed
+ * pixels — four bytes each — so the number that matters is the *pixel count* of
+ * the largest thing that can reach here, and that is `ADMIN_MAX_BYTES` worth of
+ * camera original rather than the few hundred kilobytes a parishioner's browser
+ * sends. A 50-megapixel photograph is 200MB decoded, plus the encoder's own
+ * working set, and 512MiB is a coin-toss on it.
+ *
+ * The failure it buys off is a bad one and a quiet one: an out-of-memory kill
+ * leaves the submission pending with no preview and nothing on screen that
+ * explains why, which is indistinguishable from a file `sharp` could not read.
  *
  * The pass itself stays, and deliberately. A canvas re-encode in the browser
  * does drop EXIF — including the GPS tag on a photograph of somebody's child —
  * but we cannot *know* it ran, because anyone can call the upload endpoint
- * without running our JavaScript. `.rotate()` below is called the load-bearing
- * line in this pipeline for that reason, and it stays load-bearing.
+ * without running our JavaScript. `alreadyWebReady` below is how that is turned
+ * from an assumption into a test, and `.rotate()` stays load-bearing for
+ * everything that fails it.
  */
 const RUNTIME = {
   region: REGION,
-  memory: '512MiB' as const,
+  memory: '1GiB' as const,
   timeoutSeconds: 300,
   /*
    * The cap with the largest bill behind it: one 1GiB instance per photograph,
@@ -101,20 +110,26 @@ const RUNTIME = {
  * every submitted photograph a second time and charging a second lossy pass
  * for it. One number, one place.
  *
- * It was 2000 and is 2560. 2000 was chosen against a bill that no longer looks
- * the same: a submitted photograph now arrives already downscaled at a few
- * hundred kilobytes rather than as a 12MB original, so the extra detail costs
- * far less than it used to, and it is visible full-bleed on a retina desktop.
+ * It was 2000, then 2560, and is 3840 since 2026-09-05 — see the note on
+ * `PHOTO_MAX_EDGE` itself for why. The short version is that a phone photograph
+ * is 4032px on its long edge and a gallery exists to be opened full-screen, so
+ * every step down here was detail thrown away at precisely the moment somebody
+ * went looking for it.
  */
 const MAX_EDGE = PHOTO_MAX_EDGE;
 
 /**
  * A photograph the parish will serve for years, weighed against a bill.
  *
- * WebP at 82 is visually indistinguishable from the original at roughly a fifth
- * the size, and every browser the parish's visitors use has supported it since
- * 2020. There is deliberately no JPEG fallback: maintaining two renditions
- * doubles the storage to serve a browser share that rounds to zero.
+ * Every browser the parish's visitors use has supported WebP since 2020. There
+ * is deliberately no JPEG fallback: maintaining two renditions doubles the
+ * storage to serve a browser share that rounds to zero.
+ *
+ * The claim that used to be here — "82 is visually indistinguishable from the
+ * original" — is the one this file got wrong. It is true of a single pass at
+ * article width and false of two passes viewed full-screen, which is what the
+ * pipeline actually did and what the gallery actually does. Both halves of that
+ * are fixed: the number is `PHOTO_QUALITY` and the second pass is gone.
  */
 const WEBP_QUALITY = PHOTO_QUALITY;
 
@@ -233,51 +248,103 @@ export const onGalleryMediaCreated = onObjectFinalized(
       const [original] = await bucket.file(media.sourcePath).download();
 
       /*
-       * `.rotate()` with no argument is the load-bearing call in this pipeline.
+       * The re-encode, skipped when there is nothing for it to do.
        *
-       * A phone does not rotate the pixels it captures; it writes the sensor
-       * orientation into an EXIF tag and leaves the image on its side. Browsers
-       * honour that tag, so the original *looks* upright — and every transcode
-       * that does not call this drops the tag along with the rest of the
-       * metadata, producing a gallery where a third of the photographs are
-       * sideways and the source files all look fine. Called with no argument it
-       * means "apply whatever the EXIF says", which is exactly the intent.
+       * ----------------------------------------------------------------------
+       * This is the larger half of the 2026-09-05 quality fix, and the half that
+       * is invisible from any one number.
        *
-       * Stripping the rest of the metadata is deliberate and is not merely a
-       * size saving: a phone photograph carries GPS coordinates, and these are
-       * pictures of other people's children at a parish camp. Publishing the
-       * location they were taken at is not something anybody consented to.
-       * `sharp` drops all metadata unless told otherwise, so this is the safe
-       * default — but it is the kind of default that gets "helpfully" changed,
-       * hence the note.
+       * Every submitted photograph was encoded **twice**: the browser produced a
+       * WebP at the shared quality, and this function then decoded that WebP and
+       * encoded another one at the same quality. WebP is lossy, so a second pass
+       * at quality 92 does not preserve quality 92 — it re-quantises what the
+       * first pass already quantised, and generation loss compounds fastest in
+       * exactly the smooth gradients where the first pass has already put its
+       * artefacts. The parish was paying twice to look worse.
+       *
+       * Tommy: *"the quality drop is too significant."* Raising the numbers
+       * alone would have raised the floor and kept the second pass.
+       *
+       * So: when the bytes that arrived are already a web rendition — WebP,
+       * inside the edge, no orientation to apply and no metadata to strip — they
+       * *are* the preview, and the file is copied rather than re-encoded. The
+       * result is exactly one lossy generation between the camera and the
+       * gallery, which is the best this pipeline can do.
+       *
+       * The condition is checked rather than assumed, and that distinction is
+       * the security of it — the endpoint can be called without running our
+       * JavaScript, so "the browser downscaled it" is not a fact this function
+       * may take on trust. `isAlreadyWebReady` reads every clause of it out of
+       * the file itself, and lives in @spsm/shared so a test can reach it; its
+       * note is where the reasoning for each clause is written down.
+       * ----------------------------------------------------------------------
        */
-      const { data, info } = await sharp(original)
-        .rotate()
-        .resize({
-          width: MAX_EDGE,
-          height: MAX_EDGE,
-          fit: 'inside',
-          withoutEnlargement: true,
-        })
-        .webp({ quality: WEBP_QUALITY })
-        .toBuffer({ resolveWithObject: true });
+      const probe = await sharp(original).metadata();
+      const alreadyWebReady = isAlreadyWebReady(probe, MAX_EDGE);
 
-      const previewPath = previewPathFor(media.programEventId, mediaId);
-      await bucket.file(previewPath).save(data, withDownloadToken('image/webp'));
+      if (alreadyWebReady) {
+        /*
+         * Written rather than returned, so the `publishWithoutReview` below the
+         * `catch` is still the single place an administrator's own upload is
+         * waved through. An early return here would need a second copy of that
+         * call, and two of them is how one of the two eventually stops matching.
+         */
+        const previewPath = previewPathFor(media.programEventId, mediaId);
+        await bucket.file(previewPath).save(original, withDownloadToken('image/webp'));
+        await reference.update({
+          previewPath,
+          width: probe.width,
+          height: probe.height,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } else {
+        /*
+         * `.rotate()` with no argument is the load-bearing call in this pipeline.
+         *
+         * A phone does not rotate the pixels it captures; it writes the sensor
+         * orientation into an EXIF tag and leaves the image on its side. Browsers
+         * honour that tag, so the original *looks* upright — and every transcode
+         * that does not call this drops the tag along with the rest of the
+         * metadata, producing a gallery where a third of the photographs are
+         * sideways and the source files all look fine. Called with no argument it
+         * means "apply whatever the EXIF says", which is exactly the intent.
+         *
+         * Stripping the rest of the metadata is deliberate and is not merely a
+         * size saving: a phone photograph carries GPS coordinates, and these are
+         * pictures of other people's children at a parish camp. Publishing the
+         * location they were taken at is not something anybody consented to.
+         * `sharp` drops all metadata unless told otherwise, so this is the safe
+         * default — but it is the kind of default that gets "helpfully" changed,
+         * hence the note.
+         */
+        const { data, info } = await sharp(original)
+          .rotate()
+          .resize({
+            width: MAX_EDGE,
+            height: MAX_EDGE,
+            fit: 'inside',
+            withoutEnlargement: true,
+          })
+          .webp({ quality: WEBP_QUALITY })
+          .toBuffer({ resolveWithObject: true });
 
-      /*
-       * Dimensions are written here rather than guessed later because the
-       * layout packer needs an aspect ratio to choose a shape, and it runs in
-       * the browser where the file is not available to measure. `info` is the
-       * output's size, post-rotation and post-resize — which is what the grid
-       * actually renders, and therefore the only correct answer.
-       */
-      await reference.update({
-        previewPath,
-        width: info.width,
-        height: info.height,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+        const previewPath = previewPathFor(media.programEventId, mediaId);
+        await bucket.file(previewPath).save(data, withDownloadToken('image/webp'));
+
+        /*
+         * Dimensions are written here rather than guessed later because the
+         * layout packer needs an aspect ratio to choose a shape, and it runs in
+         * the browser where the file is not available to measure. `info` is the
+         * output's size, post-rotation and post-resize — which is what the grid
+         * actually renders, and therefore the only correct answer.
+         */
+        await reference.update({
+          previewPath,
+          width: info.width,
+          height: info.height,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
     } catch (error) {
       /*
        * Left pending with no preview, on purpose.

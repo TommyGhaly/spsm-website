@@ -290,17 +290,23 @@ describe('events/ — hero images for the parish calendar', () => {
   });
 
   /**
-   * Deleting an event sweeps its whole prefix, and the sweep is a `listAll`.
+   * Every removal sweeps the event's whole prefix, and the sweep is a `listAll`.
    *
-   * The document only ever names the current photograph, so every photograph
-   * replaced before that sweep existed is a file nothing points at — listing is
-   * the only way to find them. `allow read: if true` is what permits it: `read`
-   * covers `list` as well as `get`, which is easy to assume and worth proving,
-   * because a refusal here would not error visibly — `deleteEventFiles` swallows
-   * it and the files would quietly stay in a world-readable bucket, which is the
-   * exact fault the sweep was written for.
+   * Not only deleting the event, since 2026-09-05: removing or replacing a
+   * photograph empties the folder of everything the document is not using. The
+   * document only ever names the *current* picture, so each replacement made
+   * before that existed is a file nothing points at — listing is the only way to
+   * find them.
+   *
+   * `allow read: if true` is what permits it: `read` covers `list` as well as
+   * `get`, which is easy to assume and worth proving. A refusal here reaches the
+   * person on the removal path — `sweepEventFiles` throws and the editor says so
+   * — but is swallowed on the two paths that cannot report it, the tidying pass
+   * the editor runs when it opens and `deleteEventFiles` after an event is gone.
+   * On those the files would quietly stay in a world-readable bucket, which is
+   * the exact fault the sweep was written for.
    */
-  it('lets the events grant list a slug, so deleting an event can sweep it', async () => {
+  it('lets the events grant list a slug, so removing a photograph can sweep it', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), `events/${RUN}-sweep/hero-1.png`), png, meta);
       await uploadBytes(ref(ctx.storage(), `events/${RUN}-sweep/hero-2.png`), png, meta);

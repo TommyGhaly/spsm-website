@@ -64,6 +64,7 @@ import {
 } from '@spsm/shared';
 import { db, storage } from '@/lib/firebase';
 import { docOf } from '@/lib/firestore';
+import { doomedFiles } from './sweep';
 
 /**
  * Every event.
@@ -308,7 +309,7 @@ export function slugify(title: string): string {
  *    cache, and Facebook link preview already has. The parish would swap the
  *    picture and keep seeing the old one.
  *  - the stamp makes each upload a new URL, so a replacement is visible
- *    immediately. `deleteEventHero` is what stops the old ones accumulating.
+ *    immediately. `sweepEventFiles` is what stops the old ones accumulating.
  *
  * The extension is carried across because Storage serves the object back with
  * the content type it was given, and the suffix is what a human sees in the
@@ -355,35 +356,86 @@ export async function uploadEventHero(file: File, slug: string): Promise<string>
 }
 
 /**
- * Remove a photograph from the bucket.
+ * Every photograph this event has ever had, except the one it is keeping.
  *
- * Called once the document has stopped pointing at the object — the editor
- * waits for that write to land before calling this, so a failure here can never
- * leave the event referencing a file that is gone.
+ * ---------------------------------------------------------------------------
+ * This is the whole of "remove a photograph" now, and it replaced a
+ * `deleteEventHero(path)` that deleted exactly the one path it was handed.
  *
- * ## It used to swallow every failure, and that was wrong
+ * ## Why the sweep, rather than the path
  *
- * The note here said a leftover file costs pennies and an error dialog costs a
- * support call. What it missed is that `events/` is `allow read: if true`: an
- * object nothing references is still served, forever, at the URL it always had.
- * "Remove photograph" that only clears a field is not a removal — the picture is
- * off the page and still on the internet, which is the opposite of what the
- * person pressing it was told. Tommy: *"when the pictures are deleted in the
- * events admin page it should delete from the entire database not just what is
- * seen."*
+ * Because the path is only ever the *current* photograph, and the current one
+ * is not the problem. `heroPath` stamps every upload with `Date.now()`, so
+ * replacing a picture makes a new object and leaves the old one — and for as
+ * long as removal only cleared a field, every replacement the parish has ever
+ * made is still sitting in `events/{slug}/`, world-readable at the URL it was
+ * shared under. Those are the files nobody has any other way to find: no screen
+ * lists them, no document names them, and the person who wants them gone has no
+ * way to ask for them individually.
  *
- * So a real failure is thrown now and the editor says so. `object-not-found` is
- * not a failure: the file is not there, which is the outcome being asked for —
- * it happens when two people remove the same photograph, or when a replacement
- * is undone and re-done.
+ * So removing a photograph empties the event's folder, and replacing one empties
+ * it of everything but the replacement. Tommy: *"when the pictures are deleted
+ * in the events admin page it should delete from the entire database not just
+ * what is seen."* `events/{slug}/` holds nothing but this event's heroes, so
+ * there is nothing else under there to lose.
+ *
+ * ## The one thing this must not do
+ *
+ * Run while the document still names a file it is about to delete. The caller
+ * writes first and awaits that write; see `settleHero` in EventEditor.tsx, which
+ * is the only correct ordering and is now an awaited sequence rather than a
+ * `useEffect` — the effect version died with the component when somebody pressed
+ * Done, which is the bug this pair was rewritten to fix.
+ *
+ * ## Failures are thrown, not swallowed
+ *
+ * The note that used to live here said a leftover file costs pennies and an
+ * error dialog costs a support call. What it missed is that `events/` is
+ * `allow read: if true`: "Remove photograph" that only clears a field takes the
+ * picture off the page and leaves it on the internet, which is the opposite of
+ * what the person pressing it was told. `object-not-found` is not a failure —
+ * the file is not there, which is the outcome being asked for.
+ *
+ * Listing is allowed to anyone (`allow read: if true` covers `list`); deleting
+ * needs `hasScreen('events')`, which whoever is editing the event has.
+ * ---------------------------------------------------------------------------
  */
-export async function deleteEventHero(path: string): Promise<void> {
-  try {
-    await deleteObject(ref(storage(), path));
-  } catch (error) {
-    if ((error as { code?: string })?.code === 'storage/object-not-found') return;
-    throw error;
-  }
+export async function sweepEventFiles(
+  slug: string,
+  keep: string | null,
+  /**
+   * Spare anything uploaded within this many milliseconds, whatever the
+   * document says.
+   *
+   * Zero for a removal somebody just pressed — they are looking at the event and
+   * have said what they want. Non-zero for the tidying sweep the editor runs on
+   * open, which is fire-and-forget and could otherwise land *after* a
+   * photograph chosen in the second or two it took to list the folder: the
+   * document it read is already stale by then, and it would delete a file that
+   * is on its way to being the event's picture.
+   *
+   * The decision itself is `doomedFiles` in ./sweep, which has no imports and is
+   * therefore the part a test can reach. Read its note for how the age of a file
+   * is known without a request per object.
+   */
+  graceMs = 0,
+): Promise<void> {
+  if (!slug) return;
+
+  const listed = await listAll(ref(storage(), `events/${slug}`));
+  const doomed = doomedFiles(listed.items, { keep, now: Date.now(), graceMs });
+
+  const failures: unknown[] = [];
+  await Promise.all(
+    doomed.map((item) =>
+      deleteObject(item).catch((error: unknown) => {
+        if ((error as { code?: string })?.code === 'storage/object-not-found') return;
+        failures.push(error);
+      }),
+    ),
+  );
+
+  if (failures.length > 0) throw failures[0];
 }
 
 /**
@@ -393,32 +445,16 @@ export async function deleteEventHero(path: string): Promise<void> {
  * calendar — but the photographs stay in a world-readable bucket at the URLs
  * they were shared under. Deleting the event has to mean deleting them too.
  *
- * A `listAll` of the prefix rather than the one path the document holds, because
- * the document only ever holds the *current* photograph. Every replacement made
- * before this existed left its predecessor behind under the same slug, and those
- * are exactly the files nobody has any other way to find: no screen lists them
- * and no document names them. Listing is allowed to anyone (`allow read: if
- * true` covers `list`); deleting needs the parish calendar grant, which whoever
- * just deleted the event has.
- *
  * Best-effort, and it has to be: it runs after the event is already gone, so
  * there is nothing to roll back and nothing useful to say to somebody who has
  * moved on. What it cannot do is run *before* the undo window closes — an undone
  * delete has to find its photograph still there.
  */
 export async function deleteEventFiles(slug: string): Promise<void> {
-  if (!slug) return;
   try {
-    const listed = await listAll(ref(storage(), `events/${slug}`));
-    await Promise.all(
-      listed.items.map((item) =>
-        deleteObject(item).catch((error) => {
-          console.warn('[events] could not delete', item.fullPath, error);
-        }),
-      ),
-    );
+    await sweepEventFiles(slug, null);
   } catch (error) {
-    console.warn('[events] could not list the files for', slug, error);
+    console.warn('[events] could not clear the files for', slug, error);
   }
 }
 

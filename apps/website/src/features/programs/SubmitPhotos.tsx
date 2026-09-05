@@ -651,10 +651,17 @@ export function SubmitPhotos({
             The video figure is stated, because a clip is the one thing that can
             still be refused: a browser cannot re-encode video, so there is
             nothing to condense it down to.
+
+            Unless the person reading it is the ministry's own administrator, who
+            has no video ceiling at all since 2026-09-05 — printing one to them
+            would be the site refusing something it is not going to refuse.
           */}
           <span className="submit-drop__hint">
             or drop them here — any size, large ones are made smaller
-            automatically. Video clips up to {formatBytes(VIDEO_MAX_BYTES)}.
+            automatically.{' '}
+            {isProgramAdmin.current
+              ? 'Video clips of any size.'
+              : `Video clips up to ${formatBytes(VIDEO_MAX_BYTES)}.`}
           </span>
         </span>
       </label>

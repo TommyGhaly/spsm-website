@@ -40,7 +40,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import {
   COLLECTIONS,
   worthMentioning,
-  VIDEO_MAX_BYTES,
+  maxBytesFor,
   formatBytes,
   type MediaKind,
   type Program,
@@ -119,12 +119,21 @@ export async function prepare(file: File, isProgramAdmin: boolean): Promise<Prep
    * file is too big, and the message says what the limit actually is.
    */
   if (kind === 'video') {
-    const tooBig = !isProgramAdmin && file.size > VIDEO_MAX_BYTES;
+    /*
+     * An administrator has no ceiling at all — `maxBytesFor` returns `Infinity`
+     * for them, and this comparison is the browser saying the same sentence
+     * before the upload starts rather than after it. Read from the shared
+     * function rather than written out, because a browser that refused what the
+     * endpoint would have accepted is a feature that looks broken and logs
+     * nothing.
+     */
+    const ceiling = maxBytesFor('video', isProgramAdmin);
+    const tooBig = file.size > ceiling;
     return {
       file,
       kind,
       refusal: tooBig
-        ? `That clip is ${formatBytes(file.size)}. Videos have to be under ${formatBytes(VIDEO_MAX_BYTES)} — a photograph can be any size, but a video cannot be made smaller in a web browser.`
+        ? `That clip is ${formatBytes(file.size)}. Videos have to be under ${formatBytes(ceiling)} — a photograph can be any size, but a video cannot be made smaller in a web browser.`
         : null,
       note: null,
       payload: file,
