@@ -22,8 +22,10 @@
  * his face the moment the jpg is dropped into `assets/` and `npm run assets` is
  * run, with no change to this file or to either page.
  *
- * **None of the three has a photograph yet.** The optimiser already names the
- * files it is waiting for; see its clergy block.
+ * **All three have their photograph now**, added 2026-09-07, and the paragraph
+ * above is what made that a five-minute job rather than a change to this file.
+ * The initial in a gold circle is still the fallback and still the right one —
+ * it is what a fourth deacon gets on the day he is named here.
  * ---------------------------------------------------------------------------
  */
 
