@@ -22879,7 +22879,42 @@ body.is-editing:has(.inspector-col.is-dragging) {
   margin-top: 0;
   padding-top: var(--space-sm, 0.6rem);
   background-color: var(--color-paper-raised, #fdf7f4);
-  box-shadow: 0 -8px 10px -8px color-mix(in srgb, var(--color-deep, #3a1310) 22%, transparent);
+}
+
+/*
+ * The rows going under the field, said in the one way that does not depend on
+ * arithmetic.
+ *
+ * This was a drop shadow, and a shadow is drawn whether or not anything is
+ * beneath it — so it decorated the field rather than reporting the list. What
+ * matters here is that a capped list gives *some* sign it continues, and the two
+ * candidates both fail: Chromium on macOS keeps its overlay scrollbar invisible
+ * until a finger moves, and the half-row the cap deliberately leaves showing
+ * shrinks to a hairline the moment one ministry's name wraps to two lines, which
+ * "College and Young Professionals" already does.
+ *
+ * A fade does not care. The last few pixels of whatever is above the field
+ * dissolve into its ground, so a list with more in it looks cut off whatever the
+ * rows happen to be.
+ *
+ * `has-more` is what stops it lying the other way. A fade drawn over the last
+ * row of a ministry with three albums promises a fourth that is not there, so
+ * the class is put on the scrolling box by hand — see the effect in
+ * `SubgroupShelf` — and comes off again at the end of the list.
+ *
+ * `bottom: 100%`, so it sits on the list rather than on the field, and
+ * `pointer-events: none`, so the tile it is drawn over is still a tile you can
+ * press.
+ */
+.subshelf--inline .subshelf__body.has-more .subshelf__add::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 1.5rem;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--color-paper-raised, #fdf7f4), transparent);
 }
 
 .subshelf__rename {
@@ -23675,14 +23710,61 @@ body.is-editing:has(.inspector-col.is-dragging) {
    * uncapped list of fifteen weeks would take the whole of it. Scrolls inside
    * itself past that; the "Add to…" row is `sticky` within this box, so it stays
    * on screen however far down the list somebody is.
+   *
+   * It was `min(48vh, 24rem)`, which is eight rows — half the panel given to
+   * navigation on a ministry that has a description, a picture and a dozen
+   * properties wanting the same space. Tommy: the subgroups take up a lot of
+   * space when there are a lot of them.
+   *
+   * **Four rows and a sliver of a fifth**, and the half-row is chosen rather
+   * than fallen into. A row is 42px — `2.6rem` of tile and a `0.35rem` gap — and
+   * the "Add a…" field is `sticky` over the last 36px of this box, so a cap that
+   * happens to land on a row boundary hides the next row *entirely* behind that
+   * field and a list of fifteen looks like a list of four. `15rem` did exactly
+   * that; `15.5rem` leaves 12px of the fifth tile showing with a name wrapped to
+   * two lines, and half a row with none, which is the honest picture either way.
+   *
+   * Not left to the scrollbar. Chromium on macOS keeps its overlay bar hidden
+   * even with `scrollbar-color` and `scrollbar-gutter: stable` both set —
+   * measured in the browser, not assumed — so on the office's own machines there
+   * is nothing to see until a finger is already moving.
+   *
+   * Fragile in one direction only: change the tile height, the gap, or the add
+   * row, and the fraction drifts back to a clean cut. That is the state this
+   * replaced, not something worse, and the count beside the legend still says
+   * how many there really are.
+   *
+   * The `vh` term is a floor for a short window, not the size: above about 730px
+   * of window the `rem` wins, so the shelf is the same four-and-a-bit rows
+   * whatever the screen — which is what makes the panel below it predictable.
    */
-  max-height: min(48vh, 24rem);
+  max-height: min(15.5rem, 34vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0;
   border: 0;
   background: none;
   box-shadow: none;
+}
+
+/*
+ * Tighter again in the sheet.
+ *
+ * Under 60rem the whole panel is 62vh along the bottom of the window, so the
+ * four-and-a-bit rows above would be very nearly half of everything the sheet
+ * has — and the sheet was opened to change a property, not to navigate. Three
+ * rows and a fraction still says where you are and still shows the next place to
+ * go; the rest is a scroll, which on a touch screen is the cheapest gesture
+ * there is.
+ *
+ * Landed on a fraction of a row for the same reason as the rule above — three
+ * tiles and a few pixels of a fourth, so the sticky "Add a…" field is not the
+ * bottom of everything there is.
+ */
+@media (max-width: 60rem) {
+  .subshelf--inline .subshelf__body {
+    max-height: min(11.5rem, 26vh);
+  }
 }
 
 /*

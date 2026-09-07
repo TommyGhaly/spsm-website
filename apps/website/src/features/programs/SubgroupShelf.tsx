@@ -351,6 +351,49 @@ export function SubgroupShelf({
     return () => window.clearInterval(timer);
   }, [open, readOnly, longest]);
 
+  /*
+   * Whether this list has anything below the fold, written to the DOM.
+   *
+   * The editing column caps the list at four rows and change, and the fade over
+   * the "Add a…" field is what says the rest is down there — see the `::before`
+   * on `.subshelf--inline .subshelf__add`. A fade drawn unconditionally is a
+   * fade drawn over the last row of a ministry that has three albums, where
+   * nothing is hidden at all, so it has to be told.
+   *
+   * **A class, set by hand, and no state.** Every other way of doing this
+   * re-renders — and a scroll here is not only somebody's trackpad: the drag
+   * auto-scrolls this very box when a row is carried near its edge, and the
+   * gesture is drawn with inline transforms that a re-render would throw away.
+   * That is the same discipline the drag itself keeps, and for the same reason.
+   *
+   * Both observers are needed. The scroll listener catches reaching the end,
+   * where the fade should come off because there is nothing more to promise;
+   * the `ResizeObserver` catches the box being capped differently at a
+   * breakpoint and the list growing, shrinking or rewrapping under it, which is
+   * every add, remove and rename.
+   */
+  const body = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = body.current;
+    if (!node) return;
+
+    const mark = () => {
+      const more = node.scrollHeight - node.clientHeight - node.scrollTop > 1;
+      node.classList.toggle('has-more', more);
+    };
+
+    mark();
+    node.addEventListener('scroll', mark, { passive: true });
+    const watch = new ResizeObserver(mark);
+    watch.observe(node);
+    if (list.current) watch.observe(list.current);
+
+    return () => {
+      node.removeEventListener('scroll', mark);
+      watch.disconnect();
+    };
+  }, [open, items.length]);
+
   return (
     <div
       className={
@@ -412,8 +455,21 @@ export function SubgroupShelf({
         </button>
       )}
 
+      {/*
+        `scroller` on the body below: the list is capped at a little over four
+        rows in the editing column and scrolls past that, so the bar it draws is
+        a real one rather than decoration.
+
+        It is not the cue that the list continues, though, and must not be
+        relied on as one — Chromium on macOS keeps its overlay scrollbar whatever
+        this asks for, so on the machines the parish office uses there is nothing
+        visible until a finger is already on the trackpad. What says "there is
+        more" is the half-row the cap leaves showing and the fade it dissolves
+        into: see the max-height on `.subshelf--inline .subshelf__body` and the
+        `::before` on `.subshelf--inline .subshelf__add`.
+      */}
       {open && (
-        <div className="subshelf__body">
+        <div className="subshelf__body scroller" ref={body}>
           {items.length === 0 && <p className="subshelf__empty">{empty}</p>}
 
           {/*
