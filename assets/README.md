@@ -31,6 +31,7 @@ table records what is known; **unknown is not the same as cleared.**
 | `Father-Youhanna.jpg` | Parish | Assumed parish-owned. Same session as Fr. Armia. |
 | `Father-Armia.jpg` | Parish | Assumed parish-owned. |
 | `Bishop-David.jpg` | "Photo From The Heart by Nash", 2014 | **Watermarked.** Parish states it owns this; written confirmation still outstanding. See below. |
+| `Deacon-Severus.jpg`, `Deacon-Peter.jpg`, `Deacon-Kyrillos.jpg` | Parish, supplied by Tommy 2026-09-07 | Assumed parish-owned. All three taken in one session in front of the sanctuary curtain. Already cut to 4:5 on the face — see below. |
 | `Crucifixion.jpg` | Unknown | Photograph of a Coptic icon. Genuine inscription. Provenance unrecorded. |
 | `Iconography1.jpg`, `Iconography2.JPG` | Unknown | Pencil studies. Artist unrecorded. |
 | `Coptic_church_example.jpg` | Unknown, likely stock | **Not this parish's building.** See below. |
@@ -178,6 +179,27 @@ photographer's copyright notice is not a thing this repo does.
 Two things are needed before launch: written confirmation of the licence, and a
 clean unwatermarked master from the photographer. If neither arrives, use the
 diocese's official portrait instead.
+
+### The three deacons' portraits are already cropped
+
+Every other file here is the original, and `optimize-assets.mjs` does the
+cutting. These three arrived as full-length shots of a man standing in front of
+the sanctuary curtain, with the icon of Christ and the curtain rod filling the
+top half of the frame — so the script's own 4:5 `position: north` crop would
+have produced three pictures of an icon with a small face beneath it.
+
+They are stored cut to 4:5 and framed on the face, which makes that crop a no-op
+and leaves the script's table untouched. The framing is not identical because it
+could not be: the three men are different heights against the same backdrop, so
+Deacon Severus has clean curtain above his hat and the other two reach the rod.
+Head size and the pectoral cross being whole were matched instead, which is what
+survives the circular mask both pages actually draw.
+
+**Both pages show a circle**, not the 4:5 file: 176px on the homepage clergy
+band, 136px on /about/who-we-are, each `object-fit: cover` at `50% 0%`. So what
+is on screen is the *top square* of these files. Judge any recrop there — a
+change that looks right on the 4:5 can put the curtain rod through the top of
+the circle, which is what a first pass at Deacon Kyrillos did.
 
 ### Two of the "church" photographs are not this church
 
