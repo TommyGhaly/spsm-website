@@ -23716,13 +23716,19 @@ body.is-editing:has(.inspector-col.is-dragging) {
    * properties wanting the same space. Tommy: the subgroups take up a lot of
    * space when there are a lot of them.
    *
-   * **Four rows and a sliver of a fifth**, and the half-row is chosen rather
-   * than fallen into. A row is 42px — `2.6rem` of tile and a `0.35rem` gap — and
-   * the "Add a…" field is `sticky` over the last 36px of this box, so a cap that
-   * happens to land on a row boundary hides the next row *entirely* behind that
-   * field and a list of fifteen looks like a list of four. `15rem` did exactly
-   * that; `15.5rem` leaves 12px of the fifth tile showing with a name wrapped to
-   * two lines, and half a row with none, which is the honest picture either way.
+   * **Two rows and most of a third.** It was four and a bit, at `15.5rem`, and
+   * Tommy asked for less again — *"not so little that it barely shows 2
+   * subgroups but around that"*. So: two whole tiles, which is the floor he set,
+   * and 60% of the next one, which is what stops two from reading as all there
+   * is.
+   *
+   * The fraction is chosen rather than fallen into. A row is 42px — `2.6rem` of
+   * tile and a `0.35rem` gap — and the "Add a…" field is `sticky` over the last
+   * 36px of this box, so a cap that happens to land on a row boundary hides the
+   * next row *entirely* behind that field and a list of fifteen looks like a
+   * list of two. `10rem` leaves 25px of the third tile showing, and still leaves
+   * a sliver of it when the row above wraps to two lines, which
+   * "College and Young Professionals" already does.
    *
    * Not left to the scrollbar. Chromium on macOS keeps its overlay bar hidden
    * even with `scrollbar-color` and `scrollbar-gutter: stable` both set —
@@ -23734,11 +23740,11 @@ body.is-editing:has(.inspector-col.is-dragging) {
    * replaced, not something worse, and the count beside the legend still says
    * how many there really are.
    *
-   * The `vh` term is a floor for a short window, not the size: above about 730px
-   * of window the `rem` wins, so the shelf is the same four-and-a-bit rows
+   * The `vh` term is a floor for a short window, not the size: above about 570px
+   * of window the `rem` wins, so the shelf is the same two-and-a-bit rows
    * whatever the screen — which is what makes the panel below it predictable.
    */
-  max-height: min(15.5rem, 34vh);
+  max-height: min(10rem, 28vh);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0;
@@ -23748,22 +23754,21 @@ body.is-editing:has(.inspector-col.is-dragging) {
 }
 
 /*
- * Tighter again in the sheet.
+ * A little tighter again in the sheet.
  *
- * Under 60rem the whole panel is 62vh along the bottom of the window, so the
- * four-and-a-bit rows above would be very nearly half of everything the sheet
- * has — and the sheet was opened to change a property, not to navigate. Three
- * rows and a fraction still says where you are and still shows the next place to
- * go; the rest is a scroll, which on a touch screen is the cheapest gesture
- * there is.
+ * Under 60rem the whole panel is 62vh along the bottom of the window, and the
+ * sheet was opened to change a property rather than to navigate — so the shelf
+ * gives up the difference. Two rows and about a third of a third, against two
+ * and most of one in the column.
  *
- * Landed on a fraction of a row for the same reason as the rule above — three
- * tiles and a few pixels of a fourth, so the sticky "Add a…" field is not the
- * bottom of everything there is.
+ * Barely less than the column now, where it used to be four rows against three.
+ * That is the cap coming down to meet it rather than this rule losing its point:
+ * two tiles is the floor either way, and there is nothing left to trim that does
+ * not break it.
  */
 @media (max-width: 60rem) {
   .subshelf--inline .subshelf__body {
-    max-height: min(11.5rem, 26vh);
+    max-height: min(9.5rem, 24vh);
   }
 }
 
