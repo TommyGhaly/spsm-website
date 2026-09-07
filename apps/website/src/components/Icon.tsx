@@ -278,6 +278,18 @@ const ICONS = {
       <path d="M3.5 6.5l8.5 6 8.5-6" />
     </>
   ),
+  /**
+   * The week's announcements — the notices read out on a Sunday, not the
+   * schedule. Set beside the word "Announcements" on the homepage, so it is
+   * illustrating a label rather than replacing one.
+   */
+  megaphone: (
+    <>
+      <path d="M4 10v4a1 1 0 0 0 1 1h3.5L17 19V5L8.5 9H5a1 1 0 0 0-1 1z" />
+      <path d="M8.5 15v3a1.5 1.5 0 0 0 3 0v-2.3" />
+      <path d="M20 9.5v5" />
+    </>
+  ),
   /** A form or a document. The default for a form card with no icon chosen. */
   file: (
     <>

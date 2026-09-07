@@ -35,20 +35,35 @@ export function BulletinWeek({ bulletin, today }: { bulletin: Bulletin; today: s
         </div>
       )}
 
+      {/* The notices the parish reads out — "do not leave clothing in church",
+          "the festival is on the 19th" — above the week's services.
+
+          **They are named and they no longer look like cards, and both halves
+          of that are the point.** As an unlabelled `.grid` of `.card`s they
+          were the same object as the multi-day entries directly beneath them,
+          which have a date, a title and a picture; the only way to tell a
+          standing notice from a festival was to read both. A heading says what
+          the group is, and the red spine on each notice says it again to
+          somebody who is scanning rather than reading. See `.bulletin-notices`
+          in globals.css. */}
       {bulletin.announcements.length > 0 && (
-        <ul className="grid reveal-stagger" style={{ marginBottom: 'var(--space-lg)' }}>
-          {bulletin.announcements.map((item) => {
-            const image = bulletinImageUrl(item.image);
-            return (
-              <li key={item.sourceId} className={image ? 'card card--aside' : 'card'}>
-                {image && <Media url={image} className="card__thumb" />}
-                <div className="card__text">
+        <div className="bulletin-notices">
+          <h3 className="bulletin-notices__head">
+            <Icon name="megaphone" size={18} />
+            Announcements
+          </h3>
+          <ul className="bulletin-notices__list reveal-stagger">
+            {bulletin.announcements.map((item) => {
+              const image = bulletinImageUrl(item.image);
+              return (
+                <li key={item.sourceId} className="bulletin-notice">
+                  {image && <Media url={image} className="bulletin-notice__thumb" />}
                   <p>{item.text}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {/* Multi-day entries — a festival, a retreat — are pulled out of the daily
