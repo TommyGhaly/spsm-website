@@ -12090,16 +12090,90 @@ button.sched-month__entry:focus-visible {
    it to a letterbox. Give it a tall box and let the frame scroll instead —
    a calendar squeezed to fit is a calendar nobody can read. */
 /*
- * The player at full column width, for `/livestream` — where it is the reason
+ * The player sized to the screen, for `/livestream` — where it is the reason
  * the page exists rather than one section among several.
  *
  * `.embed`'s 56rem cap is right on the homepage, where a full-width video would
  * outweigh everything around it. This page has nothing to outweigh: the header
  * band is gone and the archive sits below, so the cap was only leaving empty
  * gutters either side of the thing people came for.
+ *
+ * **Sized against the viewport, and it breaks out of the text column to do it.**
+ * `max-width: none` alone only reached `--shell-width` — 80rem, the measure
+ * chosen for pages made of sentences. That is 1,280px however big the display
+ * is, so on anything above a laptop the liturgy played in a box in the middle
+ * of the screen with a quarter of the window empty down each side. A video has
+ * no measure to protect; the same argument `.page-body--wide` makes for the
+ * galleries, and the same one Tommy has now made twice about a fixed cap being
+ * the wrong *shape* of answer rather than the wrong number.
+ *
+ * So the width is whichever is smaller of:
+ *
+ *   - the window, less its gutter, so nothing touches the bezel and no
+ *     horizontal scrollbar appears (the gutter is comfortably wider than a
+ *     classic scrollbar, so subtracting from `100vw` is safe here);
+ *   - the width at which a 16:9 frame still *fits the screen's height*, which
+ *     is what stops a wide monitor turning into a player taller than the
+ *     window. Height is the binding constraint on nearly every laptop: at
+ *     1512×900 this lands at about 1,260px, barely more than the old cap —
+ *     which is why this reads as no change there and as a much bigger player
+ *     on a desk monitor.
+ *
+ * `svh` rather than `vh` for the mobile browsers whose address bar makes `vh`
+ * a promise they break on scroll.
  */
+/*
+ * Declared on the root, not on `.embed--stage`, because the line beneath the
+ * player has to line up with its left edge and a custom property does not reach
+ * a sibling. One source of truth beats two rules computing the same expression
+ * and drifting apart.
+ */
+:root {
+  /*
+   * What the height has to leave room for: the masthead (86px measured, not
+   * `--masthead-h` — see the note on that token, it is a lie), `.page-body
+   * --flush`'s 2.5rem of padding above the player, and enough after it for the
+   * mute line and the top of "Recent services" to show. Without that last part
+   * the player fills the window exactly and the page looks like it has nothing
+   * else on it.
+   */
+  --stage-reserve: 12rem;
+  /*
+   * The floor keeps a short landscape window — a phone turned sideways, a
+   * half-height browser — from shrinking the liturgy to a thumbnail in the
+   * middle of a wide screen. Scrolling a little to see the rest of a player is
+   * a far better trade than a 370px-wide video.
+   */
+  --stage-width: min(
+    100vw - 2 * var(--space-gutter, 1.5rem),
+    max(40rem, (100svh - var(--stage-reserve)) * 16 / 9)
+  );
+}
+
 .embed--stage {
   max-width: none;
+  width: var(--stage-width);
+  /*
+   * Centred *and* allowed to exceed the parent. `margin-inline: auto` cannot do
+   * the second: a block wider than its containing block over-constrains the
+   * margins, one of them is ignored, and the player slides off to one side
+   * instead of sitting in the middle. Percentages here resolve against the
+   * column's width, so this is negative by exactly half the overhang on each
+   * side.
+   */
+  margin-inline: calc(50% - var(--stage-width) / 2);
+}
+
+/*
+ * The mute-and-fallback line under the stage player, pulled out to the player's
+ * own edges. Left in the text column it started hundreds of pixels inside the
+ * frame it belongs to on a wide display, reading as a stray sentence rather
+ * than as a caption. Only on `/livestream`: the homepage player stays inside
+ * its column, so its note is already aligned.
+ */
+.meta--stage {
+  width: var(--stage-width);
+  margin-inline: calc(50% - var(--stage-width) / 2);
 }
 
 /*

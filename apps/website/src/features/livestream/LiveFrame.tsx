@@ -1,6 +1,7 @@
 'use client';
 
 import { useContext } from 'react';
+import { withAutoplay, youtubeEmbed } from './embed';
 import { InheritedLiveState, useLiveStatus, type LiveProbe } from './useLiveStatus';
 
 /**
@@ -55,9 +56,16 @@ export function LiveFrame({
   const own = useLiveStatus(inherited ? null : probe);
   const { status, videoId } = inherited ?? own;
 
-  // The probe's answer wins over the build's. On a YouTube channel the build
-  // has nothing to offer; on a pinned video id it has last week's.
-  const playing = videoId ? `https://www.youtube.com/embed/${videoId}` : src;
+  /*
+   * The probe's answer wins over the build's. On a YouTube channel the build
+   * has nothing to offer; on a pinned video id it has last week's.
+   *
+   * Either way the URL carries `autoplay=1&mute=1` — see `embed.ts` for why
+   * muted is what makes autoplay happen at all. `src` goes through
+   * `withAutoplay` rather than being used as-is because it may be a Facebook
+   * or custom embed, which want different parameters or none.
+   */
+  const playing = videoId ? youtubeEmbed(videoId) : src && withAutoplay(src);
 
   if (status === 'live' && playing) {
     return (
@@ -66,10 +74,22 @@ export function LiveFrame({
           <iframe
             src={playing}
             title="Church livestream"
+            /* `autoplay` here is not optional dressing: without it in the
+               permissions list the muted autoplay above is refused by the
+               browser and the player sits paused. */
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
             referrerPolicy="strict-origin-when-cross-origin"
-            loading="lazy"
+            /*
+             * Eager on `/livestream`, where the player is the first thing on
+             * the page and the reason someone opened it — deferring the load of
+             * something already on screen only delays the liturgy starting.
+             *
+             * Still lazy on the homepage section, and deliberately: it can sit
+             * below the fold there, and a video that starts playing where
+             * nobody can see it is bandwidth spent on nothing.
+             */
+            loading={wide ? 'eager' : 'lazy'}
           />
         </div>
 
@@ -77,15 +97,24 @@ export function LiveFrame({
           Only ever beside a player. See the note in `LivestreamPlayer`: rendered
           from there it followed the standby band too, offering help with a
           player that was not on screen and a link to a stream that was not on.
+
+          The mute is stated rather than left to be discovered. It is not a
+          setting anyone chose — the browser will not start a stream with sound
+          — so a reader hearing nothing has no way to know whether the liturgy
+          is silent, their speakers are off, or the player is waiting for them.
         */}
-        {fallbackUrl && (
-          <p>
-            Trouble with the player?{' '}
-            <a href={fallbackUrl} rel="noopener noreferrer" target="_blank">
-              Watch on the church&apos;s channel instead →
-            </a>
-          </p>
-        )}
+        <p className={`meta${wide ? ' meta--stage' : ''}`}>
+          The stream starts muted — use the speaker button in the player to hear it.
+          {fallbackUrl && (
+            <>
+              {' '}
+              Trouble with the player?{' '}
+              <a href={fallbackUrl} rel="noopener noreferrer" target="_blank">
+                Watch on the church&apos;s channel instead →
+              </a>
+            </>
+          )}
+        </p>
       </>
     );
   }
