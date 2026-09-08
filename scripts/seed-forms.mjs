@@ -117,8 +117,13 @@ if (created > 0 && !write) {
   console.log('Dry run. Re-run with --write to apply.');
 } else if (created > 0) {
   console.log('');
-  console.log('Next, on /forms while signed in as staff — "Forms & submissions":');
-  console.log('  1. Add a notification address to each form, or nobody is told when one arrives.');
+  console.log('Next: `npm run office:email -- --write` points the contact form at');
+  console.log('config/parish.email, because a form with no notification address tells');
+  console.log('nobody — the submission is stored and that is all.');
+  console.log('');
+  console.log('Then on /forms while signed in as staff — "Forms & submissions":');
+  console.log('  1. Add a notification address to the other forms, which the script leaves');
+  console.log('     alone: who answers a van request is not the office address.');
   console.log('  2. Publish the three rebuilt Breeze forms once you are ready to take');
   console.log('     the Breeze originals down. Until then they are drafts, and the');
   console.log('     Breeze versions keep working.');

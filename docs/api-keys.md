@@ -241,9 +241,18 @@ and left there. The tell is in the documents themselves: they carry no
 `delivery` field at all, and the extension stamps `delivery.state` the instant
 it picks one up. Nothing had ever read the collection.
 
-Nothing was lost. The queued documents are intact, and the extension sends
-whatever it finds when it comes up — so those confirmations go out
-retroactively, without anyone re-sending them by hand.
+**The backlog does not go out by itself.** This section claimed the opposite
+until 2026-09-08, and it was wrong. The extension's function triggers on
+document *create*, so a document written before the extension existed never
+fires it — proven the day it was installed: the self-test written after the
+install reached `SUCCESS` in two seconds, and the bookstore receipt queued on
+2026-09-05 still had no `delivery` field at all beside it.
+
+Delivering one of those means writing it again under a new document id, which is
+a decision per message rather than a cleanup: a "your order is ready to collect"
+that arrives three days late may be a courtesy or may be a confusion, and only
+the church can say which. The queued documents are intact either way, so nothing
+is lost by leaving them.
 
 ### Why a subdomain, and why this is not optional
 
@@ -261,10 +270,13 @@ to edit the church's live SPF record — risking their actual mail for the sake 
 a receipt — or to send from a subdomain that carries its own SPF and DKIM and
 leaves the root untouched. We do the second.
 
-`mail.spsmwayland.org` has no DNS records of any kind today, so nothing is being
-taken over. Note where the records go: the domain's nameservers are
-`ns10`/`ns11.wixdns.net`, so they are added **in the Wix domain dashboard**, not
-in Microsoft 365.
+`mail.spsmwayland.org` has no DNS records of any kind (still true 2026-09-08 —
+`dig +short TXT mail.spsmwayland.org` returns nothing), so nothing is being taken
+over. Note where the records go: **Porkbun**, not Wix and not Microsoft 365. The
+domain was transferred there on 2026-09-07 and the registry now delegates it to
+four `*.ns.porkbun.com` nameservers; the `ns10`/`ns11.wixdns.net` this file used
+to name are gone. Check before you start — `dig +short NS spsmwayland.org` — and
+edit the zone wherever that says.
 
 ### Steps
 
@@ -272,12 +284,47 @@ in Microsoft 365.
    this site will not come close.
 2. **Domains → Add Domain** → `mail.spsmwayland.org`. Region: keep the US one.
 3. Resend shows three records — a `TXT` for SPF, a `TXT` for DKIM, and usually a
-   `MX` for return-path. Add all three at Wix under the domain's DNS settings.
-   Verification takes minutes, occasionally an hour.
+   `MX` for return-path. Add all three at **Porkbun**, under the domain's DNS
+   records. Verification takes minutes, occasionally an hour. Neither church
+   domain has a DKIM selector or a `_dmarc` record today, so the names Resend
+   gives you collide with nothing.
+
+   Add them on `mail.spsmwayland.org`, and touch no record on the bare domain.
+   The apex `TXT` holds the M365 SPF and the tenant's `MS=` verification, and the
+   apex `MX` is the church's live mail — an edit there is a mail outage for the
+   whole church, discovered by somebody who cannot receive a message on a
+   Sunday.
 4. **API Keys → Create API Key.** Permission: **Sending access** only. Scope it
    to the domain above. Copy it once — Resend never shows it again.
-5. Deploy the extension. Run this **interactively**, because it prompts for the
-   API key and writes it to Secret Manager:
+5. **Put the key in Secret Manager yourself, first.** It is not prompted for —
+   see the warning after this list, which is the trap that swallowed the first
+   install. Copy the key to the clipboard, then:
+
+   ```
+   pbpaste | tr -d '\n' | gcloud secrets create \
+     ext-firestore-send-email-SMTP_PASSWORD --data-file=- --project spsm-database
+   ```
+
+   `tr -d '\n'` matters: a trailing newline is stored as part of the secret and
+   fails SMTP auth with an error that reads like a wrong key. Verify it without
+   revealing it — a Resend key is 36 characters beginning `re_`:
+
+   ```
+   gcloud secrets versions access latest \
+     --secret ext-firestore-send-email-SMTP_PASSWORD --project spsm-database | wc -c
+   ```
+
+   Then grant the extension's own service account read access, which creating it
+   does not do:
+
+   ```
+   gcloud secrets add-iam-policy-binding ext-firestore-send-email-SMTP_PASSWORD \
+     --member=serviceAccount:ext-firestore-send-email@spsm-database.iam.gserviceaccount.com \
+     --role=roles/secretmanager.secretAccessor --project spsm-database
+   ```
+
+6. Deploy the extension. `SMTP_PASSWORD` in the env file is the secret's
+   **resource path**, so there is nothing to type:
 
    ```
    firebase deploy --only extensions --project spsm-database
@@ -289,12 +336,36 @@ in Microsoft 365.
    changing a value — in particular `DATABASE_REGION`, which must be `us-east1`
    and not the `us-central1` the console offers by default.
 
-   Do **not** run it with `--non-interactive`. `SMTP_PASSWORD` is declared
-   optional by the extension, so a non-interactive deploy installs happily with
-   no key at all and then fails to send every message — which looks exactly like
-   the bug this whole section is about.
+   **It does not prompt for the key, interactive or not.** This is the trap, and
+   it is the reason the first install on 2026-09-08 produced a working extension
+   that sent nothing. `firebase deploy --only extensions` takes its parameters
+   from the env file, and a secret parameter that is simply *absent* there is not
+   asked for: the CLI printed "Verifying secret params", reported "Successfully
+   validated create", created the instance, and reached `ACTIVE` with no error
+   and no `SMTP_PASSWORD` param at all. The advice this file used to give — "run
+   it interactively, because it prompts" — is what caused that. Step 5 is the fix:
+   the key goes in by hand and the env file names it.
 
-6. CI does not do this for you. `.github/workflows` deploys hosting and the two
+   Check the instance carries it before believing anything:
+
+   ```
+   TOKEN=$(gcloud auth print-access-token)
+   curl -s -H "Authorization: Bearer $TOKEN" \
+     "https://firebaseextensions.googleapis.com/v1beta/projects/spsm-database/instances/firestore-send-email" \
+     | python3 -c "import json,sys; print(sorted(json.load(sys.stdin)['config']['params']))"
+   ```
+
+7. `LOCATION` in the env file is **ignored** by 0.2.10 — it is not a declared
+   parameter, and the instance's functions landed in `us-central1`, the default.
+   That turned out not to matter: the self-test delivered from `us-central1`
+   against the `us-east1` database, so the trigger fires across regions. Where
+   the functions run is a *system* parameter
+   (`firebaseextensions.v1beta.function/location`) and is immutable after
+   install, so correcting it would mean uninstalling. Do not, without a reason
+   better than tidiness. `DATABASE_REGION` is the value the recorded trap was
+   actually about, and it must stay `us-east1`.
+
+8. CI does not do this for you. `.github/workflows` deploys hosting and the two
    rulesets on every commit to `main` and never touches Functions or extensions,
    so this is a by-hand deploy.
 
@@ -390,27 +461,45 @@ properly, and `firestore-send-email` supports it — it is just not written yet.
       domain with `auth/unauthorized-domain` until they are added under
       Authentication → Settings → Authorized domains. This is a different list
       in a different console from the redirect URI above — both are needed
-- [x] **Trigger Email extension installed** — it was missing entirely until
-      2026-09-05, and with it missing *no email this site produces has ever been
-      sent*: bookstore confirmations and both halves of every form notification
-      were queued to the `mail` collection and left. Configuration is committed
-      in `extensions/firestore-send-email.env`; see §4
-- [ ] **Resend account + `mail.spsmwayland.org` verified** — three DNS records,
-      added at **Wix**, not Microsoft. A subdomain because the root domain's SPF
-      ends in `-all` and lists Microsoft only; see §4
-- [ ] **Resend API key in Secret Manager** as the extension's `SMTP_PASSWORD`.
-      Deploy interactively so the CLI prompts — the extension declares this
-      param *optional*, so a `--non-interactive` deploy installs with no key and
-      silently sends nothing
+- [x] **Trigger Email extension installed** — 2026-09-08, `ACTIVE`, and
+      **proven**: a message written into `mail` reached `delivery.state: SUCCESS`
+      in two seconds with `accepted` non-empty. Its first install that same hour
+      came up `ACTIVE` with no `SMTP_PASSWORD` at all and would have sent
+      nothing; see the warning in §4 step 6. Note the functions run in
+      `us-central1` and the trigger fires anyway
+- [x] **Resend account + `mail.spsmwayland.org` verified** — 2026-09-08. Two
+      records at **Porkbun** (where the domain has been since 2026-09-07), not
+      Wix and not Microsoft: a `TXT` for DKIM at `resend._domainkey.mail`, and a
+      **CNAME** at `send.mail` → `send.forge.rmta.net`, which is where the MX and
+      SPF come from — Resend's current record set has no MX of its own to add.
+      Porkbun's Host field is relative to `spsmwayland.org`, so every name Resend
+      shows needs `.mail` appended; a blank Host is the apex and the church's live
+      mail. A subdomain because the root SPF ends in `-all` and lists Microsoft
+      only; see §4
+- [x] **Resend API key in Secret Manager** as
+      `ext-firestore-send-email-SMTP_PASSWORD`, referenced from the env file by
+      resource path at `versions/latest` — so rotating the key is
+      `gcloud secrets versions add` and no reconfigure. The extension's service
+      account holds `secretAccessor` on it
 - [x] **No-reply decided** — `DEFAULT_FROM` is `no-reply@mail.spsmwayland.org`
       and `DEFAULT_REPLY_TO` is empty on purpose, so no mailbox has to be
       staffed. The copy carries the cost: "This address is not monitored", and
       "write to" rather than "reply to", both under test. Reversing this means
       deleting that sentence in the same commit; see §4
-- [ ] **`config/bookstore.orderEmail`** — still blank, so the confirmation says
-      "contact the church office" and names no address. A buyer with a wrong
-      order has a reference number and no route. This is a Firestore document,
-      not a deploy
+- [x] **`config/bookstore.orderEmail`** — `info@spsmwayland.org` as of
+      2026-09-08. It was blank until then, so a receipt said "contact the church
+      office" and named no address: a buyer with a wrong order had a reference
+      number and no route, which on a no-reply receipt is a dead end. Written by
+      `npm run office:email -- --write`, from `config/parish.email`. A Firestore
+      document, not a deploy — it takes effect on the next checkout
+- [x] **`forms/contact.notifyEmails`** — `info@spsmwayland.org`, same date and
+      the same script. It was empty, and empty means **nobody is emailed** when
+      somebody writes to the office: `functions/src/forms/email.ts` builds the
+      notification only when the list is non-empty, so every message was stored
+      in `formSubmissions` and announced to no one. The sender's copy was empty
+      too and was refilled from the built-in default. Change either afterwards in
+      the drawer on /forms — "Tell these addresses" — not by re-running the
+      script, which never overwrites an address somebody chose
 - [ ] **Confirm the app registration is single-tenant** ("Accounts in this
       organizational directory only"). This is now a security control, not a
       preference — see §3 below

@@ -135,9 +135,25 @@ function base(): Omit<FormDraft, 'slug' | 'title' | 'blurb' | 'icon' | 'order' |
     fields: [],
     payment: { ...NO_PAYMENT },
     /*
-     * Empty, deliberately. A notification address is a real address belonging to
-     * a real person, and guessing one here would either bounce or send parish
-     * submissions somewhere nobody agreed to. Staff add theirs in the builder.
+     * Empty, deliberately, and it stays empty here even for the contact form.
+     *
+     * A notification address is a real address belonging to a real person, and
+     * guessing one in code would either bounce or send church submissions
+     * somewhere nobody agreed to — the same argument that keeps
+     * `DEFAULT_PARISH_CONFIG.email` blank.
+     *
+     * But empty has a cost, and it is worth naming here because it is invisible
+     * from every screen: `buildFormEmails` in functions/src/forms/email.ts
+     * builds the office notification **only when this list is non-empty**. An
+     * empty list is not "email the office by default" — it is *nobody is told*.
+     * The submission is stored, the submitter sees the thank-you, and the office
+     * finds out when somebody thinks to open the drawer on /forms. The contact
+     * form sat like that until 2026-09-08.
+     *
+     * So the address is data, and it is filled from the one place the church
+     * has already stated it: `npm run office:email -- --write` copies
+     * `config/parish.email` onto `forms/contact.notifyEmails` when that list is
+     * empty. Staff change it afterwards in the builder — "Tell these addresses".
      */
     notifyEmails: [],
     confirmationMessage: 'Thank you — the church office has your submission.',

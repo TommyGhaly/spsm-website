@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "spsm-database"
+  },
+  "targets": {},
+  "etags": {
+    "spsm-database": {
+      "extensionInstances": {
+        "firestore-send-email": "e57590df488dbb26008d0e11eca670aa582ddba32d685e4e104aceb4747216ab"
+      }
+    }
   }
 }

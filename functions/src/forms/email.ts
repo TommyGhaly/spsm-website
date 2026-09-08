@@ -32,8 +32,21 @@ export function buildFormEmails(input: {
 
   /* ── To the parish ─────────────────────────────────────────────────────── */
   if (form.notifyEmails.length > 0) {
+    /*
+     * "A new submission: Contact the church office." rather than "A <title> was
+     * submitted", which was the wording until 2026-09-08.
+     *
+     * A form's title is written to be read on a card in the hub, and half of
+     * them are verb phrases — "Contact the church office", "Register a
+     * vehicle". Dropping one of those into "A ___ was submitted" produces "A
+     * Contact the church office was submitted", which is what the office would
+     * have opened. A colon takes the title as the label it is and stays correct
+     * for the noun-phrase titles too ("A new submission: Van request form").
+     */
+    const opening = `A new submission: ${form.title}.`;
+
     const text = [
-      `A ${form.title} was submitted.`,
+      opening,
       '',
       ...lines.map(([label, value]) => `${label}: ${value}`),
       ...(totalCents > 0 ? ['', `Paid: ${dollars(totalCents)}`] : []),
@@ -54,7 +67,7 @@ export function buildFormEmails(input: {
           : `${form.title} — new submission`,
         text,
         html: paragraphs([
-          `A <strong>${escapeHtml(form.title)}</strong> was submitted.`,
+          `A new submission: <strong>${escapeHtml(form.title)}</strong>.`,
           table(lines),
           ...(totalCents > 0 ? [`Paid: ${dollars(totalCents)}`] : []),
         ]),
