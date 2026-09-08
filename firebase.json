@@ -1,9 +1,9 @@
 {
   "hosting": {
     "public": "apps/website/out",
+    "//ignore": "`**/.*` is deliberately NOT here, and putting it back breaks the Taksis App Clip with no diagnostic. It ships in Firebase's default scaffold and it excludes every dotfile path from the upload — including `.well-known/`, which is where `apple-app-site-association` and `assetlinks.json` have to live. Nothing errors: the deploy succeeds, the files simply are not on the site, and the App Clip and Android App Link fail silently. The two files are in `apps/website/public/.well-known/` rather than in `out/` directly, because `out/` is a generated export that CI rebuilds on every commit — Next copies `public/` into it verbatim, and its copy filter excludes only paths that collide with a page, not dotfiles.",
     "ignore": [
       "firebase.json",
-      "**/.*",
       "**/node_modules/**"
     ],
     "cleanUrls": true,
@@ -100,6 +100,11 @@
         "//gallery-upload": "Issues a signed URL for one gallery photograph, and writes the galleryMedia document that goes with it. It is the ONLY way either now happens: storage.rules refuses every client write to submissions/ and firestore.rules refuses every client create of galleryMedia, so a browser cannot reach the bucket or the collection on its own. That is deliberate \u2014 the old path uploaded bytes first and wrote the document second, so a script that skipped the second step skipped every check the project had and left objects in a billed bucket that never appeared in the review queue. This endpoint verifies an App Check token, counts the upload against a daily quota, and never sees a byte of the photograph. It MUST stay above the /events/** glob below: rewrites are first-match, and beneath it this address would serve a gallery shell instead of running.",
         "source": "/api/gallery/upload-url",
         "function": "galleryUploadUrl"
+      },
+      {
+        "//app-clip": "The Taksis App Clip's invocation target, and the URL compiled into the shipped app binary's entitlements and printed on every NFC tag in the parking lot — so it can never be renamed or moved. It sits above the two globs below because this array is first-match. It is also, as things stand, redundant: `cleanUrls` is true and Hosting resolves static files before rewrites, so `/c/register-vehicle` is already served from `c/register-vehicle.html` on disk and this entry never fires. It stays because the cost is nothing and the failure it guards against — someone turning `cleanUrls` off, or adding a catch-all above it — is silent, and Apple refuses to follow a redirect here.",
+        "source": "/c/register-vehicle",
+        "destination": "/c/register-vehicle.html"
       },
       {
         "source": "/events/**",
@@ -308,6 +313,25 @@
           {
             "key": "Cross-Origin-Resource-Policy",
             "value": "same-site"
+          }
+        ]
+      },
+      {
+        "//app-clip-content-type": "Both association files must be served as JSON or Apple and Android reject them. `apple-app-site-association` has NO file extension — that is correct, adding `.json` breaks it — so Hosting has no extension to guess from and would otherwise serve it as application/octet-stream. These two entries are LAST in this array on purpose: Hosting merges the headers of every matching rule but the last match wins for a given key, and the `**` rules above would otherwise be free to override them. That ordering is how `immutable` got stripped off every hashed asset once already.",
+        "source": "/.well-known/apple-app-site-association",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
           }
         ]
       }
