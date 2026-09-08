@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_CHILD_LABEL, type DocOf, type Program, type ProgramEvent } from '@spsm/shared';
 import { dayKey, fromDayKey, PARISH_TIME_ZONE } from '@/lib/dates';
+import { RichText } from '@/components/RichText';
 import {
   deleteProgram,
   deleteProgramEvent,
@@ -14,10 +15,15 @@ import {
  * The details of one level of the tree — its name, its words, its dates, whether
  * anyone can see it.
  *
- * Deliberately plain: labelled fields and nothing else. No rich text editor,
- * because the person using this is a parish volunteer on a laptop a few times a
- * year, and every affordance that has to be *learned* is one that gets asked
- * about on the phone.
+ * Deliberately plain: labelled fields and nothing else. The one exception is the
+ * Description, which grew Italic / Bold / Heading / List / Link buttons — and for
+ * the same reason the rest of the panel has none. The person using this is a
+ * parish volunteer on a laptop a few times a year, so every affordance that has to
+ * be *learned* is one that gets asked about on the phone; that argument cuts
+ * against a rich text editor and *for* the buttons, because the alternative here
+ * was learning that one asterisk is italic and two are bold. That field renders
+ * through `components/Prose`, so the markdown was always live — the only question
+ * was whether anybody had to type it. See `components/RichText`.
  *
  * ## There is no Save button, and that is a change
  *
@@ -124,6 +130,7 @@ function LiveText({
   note,
   busy = false,
   allowEmpty = false,
+  format = false,
 }: {
   label: string;
   value: string;
@@ -142,6 +149,12 @@ function LiveText({
    * it can be typed in and never taken out again.
    */
   allowEmpty?: boolean;
+  /**
+   * Formatting buttons over the field. Textareas only, and only where the value
+   * is rendered as prose — a marker in a field printed as plain text shows up as
+   * a literal asterisk on a card.
+   */
+  format?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -158,6 +171,30 @@ function LiveText({
     }
     onCommit(next);
   };
+
+  /*
+   * A `div` rather than a `label`, and only here.
+   *
+   * A `<button>` inside a `<label>` is a trap: the click bubbles to the label,
+   * which forwards it to its control, so a formatting button would fire and then
+   * hand the click to the field as well. Everything else in this panel is still a
+   * label, because everything else is a plain field.
+   */
+  if (rows !== undefined && format) {
+    return (
+      <div className="inspector__field">
+        <RichText
+          label={label}
+          value={draft}
+          onChange={setDraft}
+          onBlur={commit}
+          placeholder={placeholder}
+          ariaLabel={label}
+        />
+        {note && <span className="inspector__note">{note}</span>}
+      </div>
+    );
+  }
 
   return (
     <label className="inspector__field">
@@ -340,6 +377,7 @@ export function ProgramDetails({
       <LiveText
         label="Description"
         rows={4}
+        format
         value={program.description}
         busy={busy}
         placeholder="What this ministry is, when it meets, how somebody joins."
@@ -480,6 +518,7 @@ export function LevelDetails({
       <LiveText
         label="Description"
         rows={3}
+        format
         value={node.description}
         busy={busy}
         placeholder="What this was. Shown above the photographs."

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Icon } from '@/components/Icon';
-import { insertLink, toggleMarker, type Wrapped } from './markers';
+import { insertLink, toggleMarker, type Wrapped } from '@/lib/markers';
 
 /**
  * A box of words with Italic, Bold and Link buttons over it.

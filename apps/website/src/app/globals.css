@@ -11571,7 +11571,7 @@ button.sched-month__entry:focus-visible {
 /*
  * Capped here rather than on the textarea alone, so the label and the formatting
  * buttons sit over the field instead of at the two ends of the whole column —
- * `.ee-body__head` is a `space-between` row, so its width is the field's width or
+ * `.fmt__head` is a `space-between` row, so its width is the field's width or
  * the buttons end up 500px to the right of the thing they format.
  */
 .ee-body {
@@ -11581,14 +11581,40 @@ button.sched-month__entry:focus-visible {
   max-width: var(--measure, 68ch);
 }
 
-.ee-body__head {
+/*
+ * ---- formatting buttons, shared -------------------------------------------
+ *
+ * `components/RichText`, used by the event description and by the ministry and
+ * gallery Description fields in the programs inspector. Named `fmt` rather than
+ * after either of them, because the third caller is what these class names are
+ * for — the second one arrived as a bug report that the buttons were missing.
+ */
+
+.fmt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.35rem);
+  min-width: 0;
+}
+
+.fmt__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-sm, 0.5rem);
 }
 
-.ee-body__tools {
+/* The inspector's own field label, matched to the plain fields beside it. */
+.fmt__label {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.fmt__tools {
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -11597,7 +11623,7 @@ button.sched-month__entry:focus-visible {
   background: var(--color-paper-raised, #fdf7f4);
 }
 
-.ee-body__tool {
+.fmt__tool {
   min-width: 1.9rem;
   padding: 0.15rem 0.4rem;
   border: 0;
@@ -11610,9 +11636,201 @@ button.sched-month__entry:focus-visible {
   cursor: pointer;
 }
 
-.ee-body__tool:hover {
+.fmt__tool:hover {
   background: var(--color-accent-soft, #f6d8d0);
   color: var(--color-accent-strong, #731d16);
+}
+
+/*
+ * The three letter glyphs, each drawn as the thing it does.
+ *
+ * Tommy: *"the italics symbol is very unclear."* It was a slanted `I` in the UI
+ * face, which has no serifs — so it read as a leaning bar rather than a letter.
+ * In a serif face at the same slant it is unmistakably an italic I, which is the
+ * mark every word processor uses. The bold B and the heading H get the same
+ * treatment so the three sit as a set rather than one odd one out.
+ */
+.fmt__tool--italic,
+.fmt__tool--bold,
+.fmt__tool--head {
+  font-family: var(--font-display, Georgia, 'Times New Roman', serif);
+  font-size: 1.0625rem;
+  line-height: 1;
+}
+
+.fmt__tool--italic {
+  font-style: italic;
+  font-weight: 600;
+  /* The slant leaves a gap on the left and crowds the right; a nudge puts the
+     letter back in the middle of its button. */
+  padding-left: 0.3rem;
+  padding-right: 0.5rem;
+}
+
+.fmt__tool--bold {
+  font-weight: 800;
+}
+
+/*
+ * A button that is switched on — the caret is inside bold, or the link box is
+ * open.
+ *
+ * Tommy: *"if a setting is turned on there should be more indication — for
+ * example if bold is on it should let the user know that bold is on."* It was a
+ * faint sunken tint, which is a hover state's worth of difference and read as
+ * nothing at all. Filled and reversed instead: that is unmistakable at a glance
+ * and it is what a pressed key looks like everywhere else.
+ *
+ * It matters more here than in a word processor. The markers are hidden now, so
+ * a caret at the end of a bold word looks exactly like a caret at the end of a
+ * plain one — this bar is the only thing that says the next letter will be bold.
+ *
+ * After `:hover` in the file, not before. The two have the same specificity, so
+ * source order is the whole of which one wins, and an "on" button that turns
+ * pale under the cursor says the opposite of what it means.
+ *
+ * `background-color`, never the `background` shorthand — the shorthand resets
+ * the image and the geometry with it, and a state rule has no business doing
+ * that.
+ */
+.fmt__tool.is-on {
+  background-color: var(--color-accent, #992a21);
+  color: var(--color-paper, #fdf7f4);
+}
+
+.fmt__tool.is-on:hover {
+  background-color: var(--color-accent-strong, #731d16);
+  color: var(--color-paper, #fdf7f4);
+}
+
+/*
+ * A second cue that does not depend on colour.
+ *
+ * Roughly one man in twelve cannot rely on an oxblood-versus-paper difference,
+ * and this bar is small. An underline beneath the glyph carries the same fact
+ * without it.
+ */
+.fmt__tool.is-on::after {
+  content: '';
+  display: block;
+  height: 2px;
+  margin: 1px 0 -1px;
+  border-radius: 1px;
+  background-color: var(--color-gold, #b08d43);
+}
+
+/*
+ * Where a link goes, asked before it is written.
+ *
+ * Dashed rather than solid: it is a question the editor is asking, not another
+ * field of the thing being edited, and it disappears again once it is answered.
+ */
+.fmt__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.5rem);
+  border: 1px dashed var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Without this the input's default size keeps the row from ever narrowing, and
+   the box overflows a phone — or the inspector column, which is narrower still. */
+.fmt__link .field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* The field itself is the caller's; this only has to not squash it. */
+.fmt__field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/*
+ * The editable box.
+ *
+ * A `contenteditable` rather than a textarea, so bold is bold while you write —
+ * see `components/RichText`. It grows to its contents on its own, which is the
+ * one thing this is simpler at: the textarea it replaced needed JS to measure
+ * itself on every keystroke.
+ */
+.fmt__box {
+  width: 100%;
+  min-width: 0;
+  min-height: 4.5rem;
+  padding: var(--space-sm, 0.7rem) var(--space-md, 0.9rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-paper-raised, #fdf7f4);
+  font-family: var(--font-body, Georgia, serif);
+  font-size: var(--type-body, 1.0625rem);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-ink, #1c1614);
+  /* A long word or a pasted URL must wrap rather than widen the panel. */
+  overflow-wrap: anywhere;
+}
+
+.fmt__box:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: 1px;
+  border-color: var(--color-accent, #992a21);
+}
+
+/*
+ * What the box shows when it is empty.
+ *
+ * `[data-empty]` set from React rather than `:empty`, because the box is never
+ * actually empty — it always holds one `<p>` so the caret has somewhere to be,
+ * and `:empty` would therefore never match.
+ */
+.fmt__box[data-empty]::before {
+  content: attr(data-placeholder);
+  display: block;
+  color: var(--color-ink-faint, #8a7a75);
+  pointer-events: none;
+}
+
+/*
+ * The blocks inside it, drawn as the page draws them.
+ *
+ * The whole point is that the box looks like the result, so a heading has to be
+ * a heading here too. Scoped tightly: these are inside an editing surface, and
+ * `.prose` rules are not in play.
+ */
+.fmt__box > :first-child {
+  margin-top: 0;
+}
+
+.fmt__box > :last-child {
+  margin-bottom: 0;
+}
+
+.fmt__box p {
+  margin: 0 0 0.75em;
+}
+
+.fmt__box h2 {
+  margin: 0 0 0.4em;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 1.25em;
+  line-height: 1.25;
+}
+
+.fmt__box ul {
+  margin: 0 0 0.75em;
+  padding-left: 1.25em;
+}
+
+.fmt__box li {
+  margin: 0 0 0.2em;
+}
+
+.fmt__box a {
+  color: var(--color-accent-strong, #731d16);
+  text-decoration: underline;
 }
 
 /*
@@ -11628,27 +11846,21 @@ button.sched-month__entry:focus-visible {
  * 1200px-wide form this editor replaced.
  */
 .ee-body__text {
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-sm, 0.7rem) var(--space-md, 0.9rem);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--color-paper-raised, #fdf7f4);
-  font-family: var(--font-body, Georgia, serif);
-  font-size: var(--type-body, 1.0625rem);
-  line-height: var(--leading-relaxed, 1.65);
-  color: var(--color-ink, #1c1614);
-  /* The field grows to its contents from JS, so it must never also scroll —
-     a scrollbar here would mean the height is wrong. */
-  overflow: hidden;
-  resize: none;
+  /*
+   * The description at the body measure, which was wrong here first.
+   *
+   * The editing column is the page's own container, 1200px wide on a laptop; the
+   * *prose* inside it is capped at `--measure`, about 670px. So a field that
+   * filled the column was 1200px of Georgia being typed into and 670px of
+   * Georgia being read — every line break somebody arranges while writing lands
+   * somewhere else on the page.
+   *
+   * The face, the size and the leading are on `.fmt__box` now, shared with the
+   * inspector's Description. Only the measure is this field's own.
+   */
+  max-width: var(--measure, 68ch);
 }
 
-.ee-body__text:focus-visible {
-  outline: 2px solid var(--color-accent, #992a21);
-  outline-offset: 1px;
-  border-color: var(--color-accent, #992a21);
-}
 
 .ee-body--bad .ee-body__text {
   border-color: var(--color-accent, #992a21);

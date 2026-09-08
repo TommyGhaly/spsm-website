@@ -1,24 +1,35 @@
 /**
- * Putting emphasis and links into a markdown string, from a selection.
+ * Putting emphasis, headings, lists and links into a markdown string, from a
+ * selection.
  *
  * ---------------------------------------------------------------------------
- * Split out of `RichField` so it can be tested without React or a DOM. The
- * index arithmetic *is* the correctness of those buttons — an off-by-one leaves
- * a stray asterisk in a paragraph on a public page — and asserting it is far
- * cheaper than clicking it.
+ * Kept out of React so it can be tested without a DOM. The index arithmetic *is*
+ * the correctness of those buttons — an off-by-one leaves a stray asterisk in a
+ * paragraph on a public page — and asserting it is far cheaper than clicking it.
  *
  * ## Why markdown at all, when the buttons exist to hide it
  *
  * Tommy: *"I don't want markdown for italicies make buttons or something to make
- * it easier for users."* What changed is the interface, not the format. The
- * document keeps markdown because something has to render on the public page,
- * `components/Prose` already renders it safely — React elements, so raw HTML in
- * the source is inert — and the alternative is inventing a rich-text format and
- * a renderer for it in exchange for two kinds of emphasis and a link.
+ * it easier for users."* And again of the events description: *"I don't want to
+ * rely on html coding to get italicies or bold text."* What changed is the
+ * interface, not the format. The document keeps markdown because something has to
+ * render on the public page, `components/Prose` already renders it safely — React
+ * elements, so raw HTML in the source is inert — and the alternative is inventing
+ * a rich-text format and a renderer for it in exchange for two kinds of emphasis
+ * and a link.
  *
  * So the markers are still in the box. That is honest rather than ideal: a
  * volunteer who has never seen markdown never has to type them, and one who
  * notices them can see what the buttons did.
+ *
+ * ## Why it is in `lib/` rather than in a feature
+ *
+ * Two editors format prose with the same gestures — the About overlay's
+ * `RichField` and the event description's `BodyField` — and they had two copies.
+ * The events one was the older and the wrong one: it never trimmed the selection,
+ * so a double-clicked word wrapped to `**Coptic **`, which CommonMark renders as
+ * literal asterisks. One tested copy, or the fix lands in one editor and not the
+ * other.
  * ---------------------------------------------------------------------------
  */
 
@@ -143,5 +154,37 @@ export function insertLink(value: string, start: number, end: number, href: stri
     text: value.slice(0, start) + made + value.slice(end),
     start: start + 1,
     end: start + 1 + label.length,
+  };
+}
+
+/**
+ * Put `marker` at the front of every line the selection touches, or take it off
+ * every line if they all already have it.
+ *
+ * Headings and bulleted lists, which are line things rather than span things: a
+ * heading is about the line the caret is in, not the character it is on, so the
+ * start is walked back to its line's beginning before anything is written.
+ * Selecting four lines and pressing the list button makes four bullets.
+ *
+ * The whole block comes back selected. Restoring the original selection would
+ * mean tracking how many characters were inserted before it on each of several
+ * lines; showing what was changed is both simpler and clearer.
+ */
+export function togglePrefix(value: string, start: number, end: number, marker: string): Wrapped {
+  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+  const after = value.indexOf('\n', end);
+  const lineEnd = after === -1 ? value.length : after;
+
+  const lines = value.slice(lineStart, lineEnd).split('\n');
+  const allPrefixed = lines.every((line) => line.startsWith(marker));
+
+  const next = lines
+    .map((line) => (allPrefixed ? line.slice(marker.length) : `${marker}${line}`))
+    .join('\n');
+
+  return {
+    text: value.slice(0, lineStart) + next + value.slice(lineEnd),
+    start: lineStart,
+    end: lineStart + next.length,
   };
 }

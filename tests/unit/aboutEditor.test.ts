@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  insertLink,
-  toggleMarker,
-} from '../../apps/website/src/features/about/markers';
-import {
   codedTextFromMirror,
   tidy,
   type MirrorLike,
@@ -21,109 +17,18 @@ import {
 import type { AboutCopy } from '../../apps/website/src/features/about/context';
 
 /**
- * The three pure parts of the About-pages editor.
+ * The two pure parts of the About-pages editor.
  *
  * ---------------------------------------------------------------------------
- * All three were split out of components specifically so they could be asserted
- * here, and each earns it for the same reason: they are the parts whose failure
- * is *silent*. A stray asterisk left in a paragraph, three paragraphs collapsed
- * into one, an undo that steps one letter at a time — none of them throws, and
- * all of them reach a public page.
+ * Both were split out of components specifically so they could be asserted here,
+ * and each earns it for the same reason: they are the parts whose failure is
+ * *silent*. Three paragraphs collapsed into one, an undo that steps one letter at
+ * a time — neither throws, and both reach a public page.
+ *
+ * The formatting buttons were a third part and are now in `markers.test.ts`: the
+ * events description uses the same code.
  * ---------------------------------------------------------------------------
  */
-
-/* -------------------------------------------------------------------------- */
-/* Italic, bold and links                                                     */
-/* -------------------------------------------------------------------------- */
-
-describe('toggleMarker', () => {
-  it('wraps the selection', () => {
-    const out = toggleMarker('the Coptic Church', 4, 10, '*');
-    expect(out.text).toBe('the *Coptic* Church');
-    // The words stay selected, so a second press can take it off again.
-    expect(out.text.slice(out.start, out.end)).toBe('Coptic');
-  });
-
-  it('takes it off when the markers sit either side of the selection', () => {
-    // Exactly what a second press sees, after the first left the words selected.
-    const first = toggleMarker('the Coptic Church', 4, 10, '*');
-    const second = toggleMarker(first.text, first.start, first.end, '*');
-    expect(second.text).toBe('the Coptic Church');
-    expect(second.text.slice(second.start, second.end)).toBe('Coptic');
-  });
-
-  it('drops a trailing space out of the selection', () => {
-    /*
-     * A double-click on a word includes the space after it in most browsers, and
-     * CommonMark will not open emphasis on a marker followed by a space — so
-     * `*Coptic *` renders as a literal asterisk on a public page rather than as
-     * italic. This is the common case, not an edge one.
-     */
-    const out = toggleMarker('the Coptic Church', 4, 11, '*');
-    expect(out.text).toBe('the *Coptic* Church');
-  });
-
-  it('drops a leading space too', () => {
-    const out = toggleMarker('the Coptic Church', 3, 10, '*');
-    expect(out.text).toBe('the *Coptic* Church');
-  });
-
-  it('treats an all-whitespace selection as a caret', () => {
-    // Wrapping a space would produce `* *`, which is not emphasis either.
-    const out = toggleMarker('a  b', 1, 3, '*');
-    expect(out.text).toBe('a**  b');
-  });
-
-  it('takes it off when the markers are inside the selection', () => {
-    const out = toggleMarker('the *Coptic* Church', 4, 12, '*');
-    expect(out.text).toBe('the Coptic Church');
-  });
-
-  it('does the same for bold, whose marker is two characters', () => {
-    const on = toggleMarker('a word', 2, 6, '**');
-    expect(on.text).toBe('a **word**');
-    const off = toggleMarker(on.text, on.start, on.end, '**');
-    expect(off.text).toBe('a word');
-  });
-
-  it('does not read bold as italic', () => {
-    // `*` either side of a `**word**` selection is the *inner* pair. Toggling
-    // italic here must not silently half-unwrap the bold.
-    const out = toggleMarker('a **word**', 2, 10, '*');
-    expect(out.text).toBe('a *word*');
-  });
-
-  it('inserts an empty pair and puts the caret between them', () => {
-    // Wrapping nothing would leave `**` sitting in the paragraph, which reads as
-    // a bug rather than as emphasis waiting to be typed into.
-    const out = toggleMarker('start end', 5, 5, '*');
-    expect(out.text).toBe('start** end');
-    expect(out.start).toBe(6);
-    expect(out.end).toBe(6);
-  });
-
-  it('does not run off the front of the string', () => {
-    // `start - width` is negative here. Guarded, because `slice(-1, 0)` is `''`
-    // and comparing that to the marker is a coincidence waiting to happen.
-    const out = toggleMarker('word', 0, 4, '*');
-    expect(out.text).toBe('*word*');
-  });
-});
-
-describe('insertLink', () => {
-  it('links the selection', () => {
-    const out = insertLink('read Our Belief for more', 5, 15, '/about/our-belief');
-    expect(out.text).toBe('read [Our Belief](/about/our-belief) for more');
-    expect(out.text.slice(out.start, out.end)).toBe('Our Belief');
-  });
-
-  it('leaves a selected placeholder when nothing was selected', () => {
-    const out = insertLink('see ', 4, 4, '/giving');
-    expect(out.text).toBe('see [this page](/giving)');
-    // Selected, so the next thing typed replaces it.
-    expect(out.text.slice(out.start, out.end)).toBe('this page');
-  });
-});
 
 /* -------------------------------------------------------------------------- */
 /* Seeding a box from the page                                                */
