@@ -16,6 +16,19 @@
  * conversion, and `@spsm/shared` must stay importable from React Native.
  */
 
+/**
+ * The parish's own zone, and the default every formatter here should fall back
+ * to.
+ *
+ * Here rather than in the website, because it is the answer to "what time did
+ * the parish mean" and both frontends have to give the same one. It lived in
+ * `apps/website/src/lib/dates.ts` while the website was the only reader; the
+ * mobile app rendering the same calendar from the same feed is the second, and
+ * a constant that exists twice is a constant that will eventually disagree —
+ * the same argument the design tokens and the gallery layout functions make.
+ */
+export const PARISH_TIME_ZONE = 'America/New_York';
+
 /** Zones a parish in Massachusetts plausibly needs. Not the full IANA list. */
 export const COMMON_TIME_ZONES = [
   'America/New_York',

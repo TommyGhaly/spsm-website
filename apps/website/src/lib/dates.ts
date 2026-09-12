@@ -7,9 +7,14 @@
  * for anything in the evening. `Event.timeZone` exists for exactly this, and
  * the default below is the parish's own zone rather than the host's.
  */
-import { partOfDay, toDate, type Timestamped } from '@spsm/shared';
+import { PARISH_TIME_ZONE, partOfDay, toDate, type Timestamped } from '@spsm/shared';
 
-export const PARISH_TIME_ZONE = 'America/New_York';
+/*
+ * Re-exported, not redeclared. It moved to `@spsm/shared` when the mobile app
+ * became a second reader of the same calendar feed; the nine files here that
+ * import it from this module keep working, and there is still only one value.
+ */
+export { PARISH_TIME_ZONE };
 
 export function formatDate(value: Timestamped | null | undefined, timeZone = PARISH_TIME_ZONE): string {
   const date = toDate(value);
