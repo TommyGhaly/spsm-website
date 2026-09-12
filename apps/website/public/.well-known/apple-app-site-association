@@ -9,7 +9,7 @@
     "details": [
       {
         "appIDs": ["5ZRM8X66TN.com.tghaly.taksis"],
-        "components": [{ "/": "/c/*" }]
+        "components": [{ "/": "/c" }, { "/": "/c/*" }]
       },
       {
         "appIDs": ["5ZRM8X66TN.org.spsm.connect"],
