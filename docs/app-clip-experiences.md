@@ -65,14 +65,17 @@ If the binary will not fit, these four are the order to drop them in.
 
 ## Before any of it works
 
-**1. Verify the team ID.** The association file now names
-`5ZRM8X66TN.org.spsm.connect.Clip`, using the same team as Taksis because that
-is the only Apple team this repository has ever known. **Nobody has confirmed
-SPSM Connect is registered under it.** If it is not, change both
-`org.spsm.connect` entries in
-`apps/website/public/.well-known/apple-app-site-association`. Taksis's two
-entries are independent array members and are unaffected either way — a wrong id
-here breaks SPSM Connect's links and clip, and nothing else.
+**1. ~~Verify the team ID.~~ Confirmed 2026-09-11.** `5ZRM8X66TN`, read off the
+signing certificate's organizational unit on the build machine:
+
+```
+organizationalUnitName = 5ZRM8X66TN
+organizationName       = ST. PHILOPATER MERCURIUS & ST. MINA COPTIC ORTHODOX CHURCH, INC.
+```
+
+The team is the parish's own organisation account, and Taksis is registered
+under it as well — which is why both apps share a prefix in the association
+file. That was an assumption when this file was written and is now a fact.
 
 **2. Register the App Clip's App ID.** Certificates, Identifiers & Profiles →
 Identifiers → new → type **App Clip**, parent `org.spsm.connect`, product name
