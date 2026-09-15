@@ -279,6 +279,7 @@
         "//csp-embeds": "The `frame-src` entries for tithe.ly, tithely.com and breezechms.com, which are the ONLY wildcards in this policy and are wildcards deliberately. They exist twice over: give.tithe.ly is the giving form (`features/giving`), which we frame ourselves because their give.js bails to a new tab on Chrome, Safari and under 768px; the rest is /forms, where staff paste a Tithe.ly or Breeze address into the importer and get it framed under the church's masthead. **This list has to stay in step with EMBED_HOSTS in packages/shared/src/schema/forms.ts**, which is what the importer warns against and therefore what staff are told is acceptable. It did not, between 1 Sep and 5 Sep 2026: the importer accepted a Breeze address and said nothing, this directive named only give.tithe.ly, and all three imported forms drew a blank rectangle in production. Nothing reproduced locally, because `next dev` serves none of these headers \u2014 firebase.json is Hosting only. The failure names itself in the browser console ('Refused to frame ... violates ... frame-src') and NOWHERE else: there is no build error, no test, and the page renders its heading, its escape link and an empty box. Both hosts were checked and send no X-Frame-Options and no frame-ancestors of their own, so we are the only thing that can refuse.",
         "//frame-ancestors": "frame-ancestors 'none' and X-Frame-Options DENY say the same thing twice, on purpose \u2014 the second is for anything old enough not to read the first. Nothing may frame this site. If the parish ever wants a page of it embedded somewhere (the Wix site at www.spsmwayland.org is the only plausible candidate), both of these have to change together, and 'self' is not enough \u2014 it must name that origin.",
         "//hsts": "A year, without includeSubDomains or preload, and that restraint is the point. Hosting already serves HSTS on its own domains; this is what follows the site onto a custom domain. includeSubDomains would bind every subdomain of spsmwayland.org to HTTPS the moment one visitor loaded this site \u2014 including any the parish still runs elsewhere, which would go dark with no way to reach them and no way to take it back inside a year.",
+        "//payment": "The `payment` allowlist in Permissions-Policy, which is what lets the Apple Pay and Google Pay buttons call the Payment Request API from inside Square\u2019s frames. It has to name every cross-origin host those frames are served from, and it is kept in step with the wallet hosts already named in `script-src`/`frame-src` above \u2014 web.squarecdn.com for the SDK itself and js.squareup.com for the wallet buttons, each twice because Square\u2019s sandbox is a different host rather than a different path. A host missing here fails silently in the only way that matters: the button does not render, there is no console error naming this header, and card payment keeps working \u2014 so the feature looks unimplemented rather than blocked.",
         "//coop": "same-origin-allow-popups, not same-origin. Sign-in is a Microsoft popup opened by the Firebase SDK, and it has to be able to talk back to the window that opened it; same-origin severs that and the popup closes having signed nobody in.",
         "source": "**",
         "headers": [
@@ -300,7 +301,7 @@
           },
           {
             "key": "Permissions-Policy",
-            "value": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), usb=(), payment=(self \"https://web.squarecdn.com\" \"https://sandbox.web.squarecdn.com\")"
+            "value": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), usb=(), payment=(self \"https://web.squarecdn.com\" \"https://sandbox.web.squarecdn.com\" \"https://js.squareup.com\" \"https://js.squareupsandbox.com\")"
           },
           {
             "key": "Strict-Transport-Security",
@@ -332,6 +333,16 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          }
+        ]
+      },
+      {
+        "//apple-pay-domain-association": "Square's Apple Pay domain verification file, and it lives under the same two constraints as the two association files above: no file extension (correct \u2014 adding `.txt` breaks it), so Hosting would otherwise serve it as application/octet-stream, and LAST in this array so the `**` rules cannot override the type. Apple fetches this address itself when a payment sheet opens, follows NO redirect, and reports nothing when it fails \u2014 the Apple Pay button simply never appears. Note that the apex spsmwayland.org 301s to www, so the domain registered with Square must be **www.spsmwayland.org**: the apex would 301 here and fail verification with no diagnostic. The file is Square's, not ours \u2014 it carries Square's pspId and signature \u2014 so it is not a secret and re-downloading it from the Developer Console is how it is replaced.",
+        "source": "/.well-known/apple-developer-merchantid-domain-association",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "text/plain"
           }
         ]
       }
