@@ -1079,8 +1079,12 @@ export function Shop({
                   ))}
                 </ul>
 
+                {/* "Subtotal", not "Total". The delivery charge is chosen a
+                    step below this and named there; two figures both called the
+                    total, one of them smaller, is how a checkout stops being
+                    trusted. */}
                 <p className="recap__total">
-                  <span>Total</span>
+                  <span>Subtotal</span>
                   <strong>{money(total)}</strong>
                 </p>
               </div>
@@ -1091,6 +1095,17 @@ export function Shop({
                   quantity: line.quantity,
                 }))}
                 total={total}
+                /*
+                 * The live figure when there is one, the baked one otherwise.
+                 *
+                 * It has to be live. The checkout Function reads
+                 * `config/bookstore` at the moment it charges, and this is what
+                 * the payer is shown and — for Apple Pay and Google Pay — what
+                 * they authorize with a thumbprint. A value baked at the last
+                 * deploy is a number the parish may have changed since, and the
+                 * two disagreeing is the parish charging more than it displayed.
+                 */
+                deliveryCents={live.deliveryCents ?? settings.deliveryCents}
                 applicationId={square.applicationId}
                 locationId={square.locationId}
                 sandbox={square.sandbox}

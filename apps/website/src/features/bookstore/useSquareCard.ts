@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { squarePublicConfig } from './squareConfig';
-import { loadSquareSdk, type SquareCard } from './squareSdk';
+import { squarePayments, type SquareCard } from './squareSdk';
 
 /**
  * A Square card field, mounted and tokenized — the dance, without the panel.
@@ -71,10 +71,10 @@ export function useSquareCard(): SquareCardField {
 
     async function start() {
       try {
-        await loadSquareSdk(sandbox);
-        if (cancelled || !window.Square || !holder.current) return;
+        // The shared instance, not a second `payments()` — see `squarePayments`.
+        const payments = await squarePayments(applicationId, locationId, sandbox);
+        if (cancelled || !holder.current) return;
 
-        const payments = window.Square.payments(applicationId, locationId);
         const instance = await payments.card();
         if (cancelled) return;
         await instance.attach(holder.current);

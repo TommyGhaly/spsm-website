@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   decodeFirestoreFields,
-  parseSections,
+  parseBookstoreConfig,
   type BookstoreSection,
   type Product,
 } from '@spsm/shared';
@@ -52,6 +52,18 @@ export interface LiveCatalog {
   /** Null until a fresher copy actually arrives. Callers keep their baked one. */
   products: ShopProduct[] | null;
   sections: BookstoreSection[] | null;
+  /**
+   * The delivery charge as `config/bookstore` holds it *now*, not as the build
+   * baked it.
+   *
+   * It comes free: this hook already fetches that document for `sections` and
+   * threw the rest of it away. Reading it matters because the checkout shows
+   * this figure to the payer and Apple Pay and Google Pay ask them to authorize
+   * it — and the charge itself is computed by `functions/src/checkout.ts` from
+   * the live document, so a baked copy a fortnight old is a sheet that says one
+   * number against a card statement that says another.
+   */
+  deliveryCents: number | null;
 }
 
 interface RestDocument {
@@ -174,7 +186,11 @@ export function useLiveCatalog(
   enabled = true,
   nonce = 0,
 ): LiveCatalog {
-  const [live, setLive] = useState<LiveCatalog>({ products: null, sections: null });
+  const [live, setLive] = useState<LiveCatalog>({
+    products: null,
+    sections: null,
+    deliveryCents: null,
+  });
 
   /*
    * The baked list is read through a ref rather than depended on.
@@ -246,16 +262,25 @@ export function useLiveCatalog(
          * document — and means no sections, not a failed refresh.
          */
         let sections: BookstoreSection[] = [];
+        let deliveryCents: number | null = null;
         if (configRes.ok) {
           const doc = (await configRes.json()) as RestDocument;
-          sections = parseSections(decodeFirestoreFields(doc.fields)['sections']);
+          /*
+           * The shared parser rather than two field reads, so the delivery
+           * charge is range-checked here exactly as the checkout Function
+           * range-checks it — same guard against a stray zero, same fallback
+           * when the document is half-written.
+           */
+          const config = parseBookstoreConfig(decodeFirestoreFields(doc.fields));
+          sections = config.sections;
+          deliveryCents = config.deliveryCents;
         }
 
         // An empty result is treated as a failed read, not as an emptied shop.
         // A transient permission or network fault must never blank the catalog.
         if (products.length === 0) return;
 
-        setLive({ products, sections });
+        setLive({ products, sections, deliveryCents });
       } catch {
         /* Baked copy stays. See the header. */
       }

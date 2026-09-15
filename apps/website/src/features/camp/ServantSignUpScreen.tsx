@@ -21,6 +21,8 @@ import {
 } from '@spsm/shared';
 import { money } from '@/features/bookstore/money';
 import { useSquareCard } from '@/features/bookstore/useSquareCard';
+import { useSquareWallets, type WalletKind } from '@/features/bookstore/useSquareWallets';
+import { WalletButtons } from '@/features/bookstore/WalletButtons';
 import { PageBody } from '@/components/PageBody';
 import { PageHeader } from '@/components/PageHeader';
 import { BackLink } from '@/components/BackLink';
@@ -770,6 +772,34 @@ function PayAndSend({
   onSend: (cardToken: string) => Promise<boolean>;
 }) {
   const { holder, status, error, tokenize, release, sandbox } = useSquareCard();
+  /*
+   * The wallets show `cents` because `cents` is the whole charge — the servants'
+   * fee is one figure decided in `config/camp` and nothing is added to it later.
+   * See `useSquareWallets` for why that is the condition rather than a detail.
+   */
+  const wallets = useSquareWallets({ amountCents: cents, label });
+
+  /**
+   * The wallet path through the same three steps as `payAndSend` below.
+   *
+   * `complete()` still runs first and still runs *before* a token is minted,
+   * for the same reason: a sign-up that is going to be refused for a missing
+   * emergency contact should be refused before anybody authorizes a payment.
+   * It is synchronous, which is what makes it safe to put in front of
+   * `tokenize` — an `await` there would spend the gesture and Apple's sheet
+   * would never open.
+   */
+  function payAndSendWithWallet(kind: WalletKind) {
+    if (!complete()) return;
+
+    void wallets.tokenize(kind).then(async (token) => {
+      if (!token) return;
+      const ok = await onSend(token);
+      // Released only on a refusal by the church's own server, exactly as the
+      // card path is, and for the same reason — see the note in `payAndSend`.
+      if (!ok) wallets.release();
+    });
+  }
 
   async function payAndSend() {
     // Before the card, not after it. A form that is going to be refused for a
@@ -806,11 +836,21 @@ function PayAndSend({
         Paid once, whether you serve one week or both.
       </p>
 
-      {error ? (
+      {(error ?? wallets.error) ? (
         <div className="notice notice--alarm" role="alert">
-          <p>{error}</p>
+          <p>{error ?? wallets.error}</p>
         </div>
       ) : null}
+
+      {/* `sending` covers the request; `status === 'working'` covers the beat
+          between a card tokenizing and `sending` turning true, which is the
+          window in which a wallet press would mint a second token against the
+          same sign-up. The card button below locks out the reverse. */}
+      <WalletButtons
+        wallets={wallets}
+        disabled={sending || status === 'working'}
+        onPay={payAndSendWithWallet}
+      />
 
       {/* The iframe's host. Kept mounted even while the SDK is still loading,
           because `attach()` needs a node already in the document to render
@@ -821,7 +861,7 @@ function PayAndSend({
         <button
           type="button"
           className="button"
-          disabled={status !== 'ready' || sending}
+          disabled={status !== 'ready' || sending || wallets.status === 'working'}
           onClick={() => void payAndSend()}
         >
           {sending

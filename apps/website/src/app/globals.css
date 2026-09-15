@@ -5709,6 +5709,83 @@ main {
   border-radius: var(--radius-sm, 5px);
 }
 
+/*
+ * ---- digital wallets ----------------------------------------------------
+ *
+ * Apple Pay and Google Pay, on all three screens that take a payment. Almost
+ * nothing here is a design choice. Safari draws the Apple Pay button itself
+ * from `appearance: -apple-pay-button` and ignores any colour, font or label
+ * set on it; Google's button is injected by Square into `.wallets__google` and
+ * is styled through `attach()`'s options rather than from here. Both vendors
+ * publish brand rules over shape, wording and minimum size and both reserve the
+ * right to withdraw the payment method over them. What is genuinely ours is the
+ * spacing and the divider — and the divider exists only when a wallet does.
+ */
+.wallets {
+  display: grid;
+  gap: var(--space-sm, 0.7rem);
+}
+
+/*
+ * Most desktop browsers offer neither wallet, and on those this component still
+ * renders — the holder for Google's button has to be in the document before
+ * `attach()` can find it, so it is mounted empty and hidden rather than
+ * conditionally. Without this the gap would push the card form down by a row
+ * on every browser that has no wallet at all.
+ */
+.wallets[data-offered='no'] {
+  gap: 0;
+}
+
+.wallets__apple {
+  width: 100%;
+  min-height: 2.9rem;
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  -webkit-appearance: -apple-pay-button;
+  appearance: -apple-pay-button;
+  -apple-pay-button-type: buy;
+  -apple-pay-button-style: black;
+}
+
+.wallets__apple:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Nothing until Square has put a button inside it. */
+.wallets__google:not([hidden]) {
+  min-height: 2.9rem;
+}
+
+.wallets__hint {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* A rule either side of the words, so the card form below reads as the
+   alternative it is rather than as a second thing to fill in. */
+.wallets__or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.7rem);
+  margin: var(--space-xs, 0.3rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.wallets__or::before,
+.wallets__or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-rule, #e0cac3);
+}
+
 .pay__hint {
   margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);

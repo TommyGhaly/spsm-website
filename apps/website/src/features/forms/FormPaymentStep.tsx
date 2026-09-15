@@ -3,6 +3,8 @@
 import type { FormDefinition } from '@spsm/shared';
 import { money } from '@/features/bookstore/money';
 import { useSquareCard } from '@/features/bookstore/useSquareCard';
+import { useSquareWallets, type WalletKind } from '@/features/bookstore/useSquareWallets';
+import { WalletButtons } from '@/features/bookstore/WalletButtons';
 
 /**
  * The card step of a paid form.
@@ -38,6 +40,17 @@ export function FormPaymentStep({
   onToken: (cardToken: string, verificationToken: string | null) => void;
 }) {
   const { holder, status, error, tokenize, sandbox } = useSquareCard();
+  /*
+   * The wallets take the same total the button below prints, because on a form
+   * that total is the whole of the charge — `functions/src/forms/submit.ts`
+   * prices the answers itself and adds nothing to them. That is what makes a
+   * wallet sheet honest here and what makes it conditional in the bookstore,
+   * where a delivery charge is added server-side. See `useSquareWallets`.
+   */
+  const wallets = useSquareWallets({
+    amountCents: totalCents,
+    label: form.payment.label || form.title,
+  });
 
   async function pay() {
     const token = await tokenize();
@@ -45,6 +58,15 @@ export function FormPaymentStep({
     // re-enabling it would let a second tap mint a second token against a
     // submission that is already in flight.
     if (token) onToken(token, null);
+  }
+
+  function payWithWallet(kind: WalletKind) {
+    // `tokenize` first and nothing before it: Apple will not open a sheet that
+    // is not a direct consequence of the gesture, and an `await` here spends
+    // it. Everything that follows hangs off the promise instead.
+    void wallets.tokenize(kind).then((token) => {
+      if (token) onToken(token, null);
+    });
   }
 
   return (
@@ -59,11 +81,24 @@ export function FormPaymentStep({
         <strong>{money(totalCents)}</strong>
       </p>
 
-      {error && (
+      {(error ?? wallets.error) && (
         <div className="notice notice--alarm" role="alert">
-          <p>{error}</p>
+          <p>{error ?? wallets.error}</p>
         </div>
       )}
+
+      {/*
+        Each instrument locks the other out while it is in flight. There is no
+        "submitting" flag on this screen — the parent replaces it once the token
+        is handed over — so `working` on one hook is what the other reads. Left
+        open, a wallet pressed while a card token was already on its way to
+        `FormRenderer` would mint a second token for the same submission.
+      */}
+      <WalletButtons
+        wallets={wallets}
+        disabled={status === 'working'}
+        onPay={payWithWallet}
+      />
 
       {/*
         The iframe's host. Kept mounted even while `status` is 'loading',
@@ -76,7 +111,7 @@ export function FormPaymentStep({
         className="button"
         type="button"
         onClick={() => void pay()}
-        disabled={status !== 'ready'}
+        disabled={status !== 'ready' || wallets.status === 'working'}
       >
         {status === 'working' ? 'Submitting…' : `Pay ${money(totalCents)} and submit`}
       </button>
