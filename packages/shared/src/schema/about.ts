@@ -1,5 +1,5 @@
 /**
- * Staff's edits to the five About pages.
+ * Staff's edits to the five About pages, and to /privacy.
  *
  * ---------------------------------------------------------------------------
  * ## What this is not
@@ -21,11 +21,12 @@
  * A slot nobody has declared cannot be reached, which is deliberate. The Creed
  * is not editable prose, and neither is a computed feast date.
  *
- * ## One document per page, five ever
+ * ## One document per page, and a closed list of pages
  *
  * `aboutOverrides/{slug}`, and the rule refuses any id not in `ABOUT_SLUGS` —
- * a sixth part of About is a code change, because it needs a route file that
- * `output: 'export'` can enumerate. See `features/content/about.ts`.
+ * a new editable page is a code change, because it needs a route file that
+ * `output: 'export'` can enumerate and a band manifest in
+ * `features/about/slots.ts`. See `features/content/about.ts`.
  *
  * Appended sections are an array **inside** the same document rather than a
  * subcollection. Three reasons and the third decided it: the counts are tiny,
@@ -47,13 +48,37 @@
  */
 import type { AuditFields } from './common.js';
 
-/** The five, and there will not be a sixth without a route file beside it. */
+/**
+ * Every page this overlay can edit. There will not be a seventh without a route
+ * file and a band manifest beside it.
+ *
+ * ---------------------------------------------------------------------------
+ * `privacy` is not part of About and the name of this constant is now half a
+ * lie, which is the honest trade and worth stating rather than renaming the
+ * collection under a live document. Tommy asked for /privacy to be editable
+ * *the same way* the About pages are, on *the same flag*, and the machinery
+ * that does that is all keyed off this list: the rule, the slot manifest, the
+ * picker, the live refresh, the appended sections. A parallel `privacyOverride`
+ * collection with its own rule, its own hook and its own editor would be the
+ * same feature twice, and the second copy is the one that rots.
+ *
+ * What makes it a good fit rather than a convenient one: /privacy is
+ * hand-written React for the same reason `our-belief` is — bands, a computed
+ * ground counter, no `<details>` — and its accuracy is tied to the code beside
+ * it. So the overlay's central restraint applies unchanged: a developer
+ * declares which sentences staff may rewrite, and the page's own structure is
+ * not among them. The page's header comment carries the standing warning that
+ * a change to what the site *does* is a change to what this page *says*, and
+ * that warning now has to be read by whoever edits the words as well.
+ * ---------------------------------------------------------------------------
+ */
 export const ABOUT_SLUGS = [
   'who-we-are',
   'our-belief',
   'patron-saints',
   'welcome-newcomers',
   'future-plans',
+  'privacy',
 ] as const;
 
 export type AboutSlug = (typeof ABOUT_SLUGS)[number];

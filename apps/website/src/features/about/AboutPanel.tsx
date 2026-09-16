@@ -80,7 +80,8 @@ export function bandTitle(
     return { kind: 'Part of the page', title: band?.label ?? 'This part' };
   }
   if (selection.kind === 'level') return { kind: 'Section you added', title: 'This section' };
-  return { kind: 'About page', title: 'The whole page' };
+  // Not "About page": /privacy is edited by this same column and is not one.
+  return { kind: 'This page', title: 'The whole page' };
 }
 
 export function AboutPanel({

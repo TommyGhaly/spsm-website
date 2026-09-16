@@ -231,7 +231,7 @@ service cloud.firestore {
       allow write: if hasScreen('content');
     }
 
-    // Staff's edits to the five About pages.
+    // Staff's edits to the five About pages, and to /privacy.
     //
     // Read by the world, and that is not a widening of anything — it is the
     // copy on a public page. Three readers: `next build` reading it
@@ -245,11 +245,17 @@ service cloud.firestore {
     // docs/decisions.md #10 cannot apply here. If something ever does list it,
     // that reader needs a filter and this comment needs deleting.
     //
-    // The `slug in [...]` clause is where "there is no sixth part of About"
-    // actually lives. A new part needs a route file for the static export to
-    // enumerate (see features/content/about.ts), so a document alone would only
-    // produce copy nothing renders; refusing it here means the editor cannot
-    // create one by accident. Add the slug in both places or in neither.
+    // The `slug in [...]` clause is where "the editable pages are a closed list"
+    // actually lives. A new one needs a route file for the static export to
+    // enumerate (see features/content/about.ts) and a band manifest in
+    // features/about/slots.ts, so a document alone would only produce copy
+    // nothing renders; refusing it here means the editor cannot create one by
+    // accident. Keep this list and `ABOUT_SLUGS` identical — add a slug in both
+    // places or in neither.
+    //
+    // `privacy` is on the list and is not part of About: /privacy is edited by
+    // the same overlay, under the same `content` flag, because it is the same
+    // shape of page. See the note on `ABOUT_SLUGS` in schema/about.ts.
     //
     // Delete is closed outright. Clearing every field already restores the
     // hand-written page — that is what `copyOf` and `pictureOf` are for — so a
@@ -258,7 +264,14 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if hasScreen('content')
         && request.resource.data.slug == slug
-        && slug in ['who-we-are', 'our-belief', 'patron-saints', 'welcome-newcomers', 'future-plans'];
+        && slug in [
+          'who-we-are',
+          'our-belief',
+          'patron-saints',
+          'welcome-newcomers',
+          'future-plans',
+          'privacy',
+        ];
       allow delete: if false;
     }
 

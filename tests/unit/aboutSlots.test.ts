@@ -56,6 +56,10 @@ const SOURCES: Record<string, readonly string[]> = {
     'apps/website/src/features/future/FutureScreen.tsx',
     'apps/website/src/features/future/parts.tsx',
   ],
+  // Not an About page, and edited by the same overlay on the same flag. The
+  // whole page is in its route file — no screen, no `parts.tsx` — which is why
+  // this row is one path where the others are two or three.
+  privacy: ['apps/website/src/app/privacy/page.tsx'],
 };
 
 const root = fileURLToPath(new URL('../../', import.meta.url));

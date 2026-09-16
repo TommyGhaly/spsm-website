@@ -8,7 +8,7 @@ import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { createTestEnv, asAnon, asSignedIn, asSuper } from './helpers.js';
 
 /**
- * `aboutOverrides` — staff's edits to the five About pages.
+ * `aboutOverrides` — staff's edits to the five About pages and to /privacy.
  *
  * ---------------------------------------------------------------------------
  * Three claims in that rule are load-bearing and none of them is obvious from
@@ -20,10 +20,10 @@ import { createTestEnv, asAnon, asSignedIn, asSuper } from './helpers.js';
  *     it over REST. A rule that asked for `published` — the shape every other
  *     public collection here uses — would deny both, and the symptom would be
  *     a build that fails or a swap that silently never happens.
- *  2. **The slug is closed.** There is no sixth part of About, because a new
- *     part needs a route file the static export can enumerate. The rule
- *     enforces that against the *document id*, so the editor cannot create one
- *     by accident and neither can a console edit.
+ *  2. **The slug is closed.** The editable pages are a fixed list, because a
+ *     new one needs a route file the static export can enumerate and a band
+ *     manifest beside it. The rule enforces that against the *document id*, so
+ *     the editor cannot create one by accident and neither can a console edit.
  *  3. **`slug` must match its own id.** Without it, a writer with the grant
  *     could park one page's copy in another page's document.
  * ---------------------------------------------------------------------------
@@ -142,13 +142,28 @@ describe('writing', () => {
   });
 });
 
-describe('the five slugs, and only the five', () => {
-  it('refuses a sixth part of About', async () => {
+describe('the six slugs, and only the six', () => {
+  it('refuses a slug with no page behind it', async () => {
     // The one that matters. A document here with no route file behind it is
     // copy nothing renders, and the editor should not be able to make one.
     const db = asContent(env).firestore();
     await assertFails(
       setDoc(doc(db, 'aboutOverrides', 'our-history'), { ...OVERRIDE, slug: 'our-history' }),
+    );
+  });
+
+  it('allows /privacy, which is not part of About', async () => {
+    /*
+     * The privacy notice is edited by the same overlay on the same `content`
+     * flag — Tommy asked for it to work the way the About pages do. Asserted
+     * here because the rule's slug list and `ABOUT_SLUGS` are two copies of the
+     * same fact, and the symptom of them disagreeing is a page that looks
+     * editable and refuses every save. That has happened once already: see the
+     * note in `AboutEditor` about the rule being written but not deployed.
+     */
+    const db = asContent(env).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'aboutOverrides', 'privacy'), { ...OVERRIDE, slug: 'privacy' }),
     );
   });
 

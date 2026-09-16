@@ -7,10 +7,11 @@ export const COLLECTIONS = {
   /** Public static-ish content: beliefs, clergy bios, contact copy. */
   content: 'content',
   /**
-   * Staff's edits to the five About pages — an overlay on hand-written routes,
-   * never the pages themselves. One document per slug, five ever; the rule
-   * refuses any other id, because a sixth part of About needs a route file the
-   * static export can enumerate. See schema/about.ts.
+   * Staff's edits to the five About pages and to /privacy — an overlay on
+   * hand-written routes, never the pages themselves. One document per slug, and
+   * the rule refuses any id outside `ABOUT_SLUGS`, because a new editable page
+   * needs a route file the static export can enumerate and a band manifest.
+   * See schema/about.ts.
    */
   aboutOverrides: 'aboutOverrides',
   /** Homepage / push announcements, authored by staff here. */

@@ -241,7 +241,7 @@ export const AREA_BOOKSTORE: AccessArea = {
 };
 
 /**
- * The five About pages.
+ * The five About pages, and the privacy notice.
  *
  * ---------------------------------------------------------------------------
  * **This row is back, and the file's own instruction is why it is back now
@@ -263,9 +263,20 @@ export const AREA_BOOKSTORE: AccessArea = {
  *    is editable, band by band — see `features/about/slots.ts`. The Creed, the
  *    dated spines, the feast tables and the tour's station bodies are
  *    deliberately beyond reach.
- *  - **Not new pages.** The five parts of About are fixed; a sixth needs a
- *    route file the static export can enumerate, so the database itself refuses
- *    any other slug.
+ *  - **Not new pages.** The editable pages are a closed list; a new one needs a
+ *    route file the static export can enumerate and a band manifest beside it,
+ *    so the database itself refuses any other slug.
+ *
+ * **The privacy notice is on that list, and it is the one page here worth
+ * naming out loud when granting this flag.** Tommy asked for it to be editable
+ * the same way the About pages are, on the same flag, and it is — the same
+ * overlay, the same column, the same live-as-typed write. What that means for
+ * whoever hands this out: the person given `content` can reword the church's
+ * published statement about what it does with a parishioner's information.
+ * They cannot change what the site actually does with it, and they cannot reach
+ * the page's structure, but a notice that has drifted from the code is a false
+ * statement the church has published — which is the warning at the top of
+ * `app/privacy/page.tsx`, and it now has two audiences.
  *
  * It also still opens the older `content` documents — the welcome page, the
  * beliefs prose, the clergy bios, the contact copy — which have no editor of
@@ -277,9 +288,9 @@ export const AREA_CONTENT: AccessArea = {
   key: 'content',
   label: 'About pages',
   blurb:
-    'Rewriting the headings, words and photographs on the five About pages, and adding sections to the foot of them.',
+    'Rewriting the headings, words and photographs on the five About pages and the privacy notice, and adding sections to the foot of them.',
   caveat:
-    'Live the moment it is typed — there is no draft, on pages strangers arrive at from a search result. Not the page layouts, and not everything on them: what can be changed is chosen band by band, and the Creed, the dated histories and the feast days are deliberately not. Not new pages either — the five parts of About are fixed.',
+    'Live the moment it is typed — there is no draft, on pages strangers arrive at from a search result. Not the page layouts, and not everything on them: what can be changed is chosen band by band, and the Creed, the dated histories and the feast days are deliberately not. This includes the wording of /privacy, which is the church’s published statement about what it does with what people tell it. Not new pages either — the list of editable ones is fixed.',
 };
 
 export const AREA_EVENTS: AccessArea = {

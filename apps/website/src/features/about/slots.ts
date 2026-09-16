@@ -8,7 +8,8 @@ import { ROSTER } from '@/features/who/clergy';
 import type { AboutSlug } from '@spsm/shared';
 
 /**
- * Every part of the five About pages staff may rewrite, and nothing else.
+ * Every part of the five About pages and /privacy staff may rewrite, and
+ * nothing else.
  *
  * ---------------------------------------------------------------------------
  * ## This file is the whole of the permission
@@ -87,6 +88,31 @@ function lede(band: string, label = 'Standfirst'): AboutSlotSpec {
  */
 function note(band: string, label = 'Line under the heading'): AboutSlotSpec {
   return { id: `${band}.note`, kind: 'heading', label };
+}
+/**
+ * `SectionHeading`'s gold first line.
+ *
+ * Written out inline on the saints and belief bands above, which predate this
+ * helper; /privacy has ten `SectionHeading`s and every one of them has an
+ * eyebrow, so there it is worth a name.
+ */
+function eyebrow(band: string, label = 'Eyebrow'): AboutSlotSpec {
+  return { id: `${band}.eyebrow`, kind: 'heading', label };
+}
+/**
+ * One named paragraph inside a band.
+ *
+ * /privacy is the page this exists for. Its bands are runs of three to seven
+ * paragraphs with no photographs and no widgets, and each paragraph is about a
+ * different thing — one names Square, one names Taksis, one is the promise the
+ * office will answer a request. Declaring the run as a single `prose('band')`
+ * block would mean rewriting a sentence about the bookstore replaced the
+ * paragraph about Tithe.ly beside it, because an override is markdown and
+ * arrives whole. So each paragraph is its own slot, named for its subject, and
+ * the column lists the band's paragraphs by what they are about.
+ */
+function para(band: string, part: string, label: string): AboutSlotSpec {
+  return { id: `${band}.${part}`, kind: 'prose', label };
 }
 
 /**
@@ -567,6 +593,192 @@ const FUTURE_BANDS: readonly AboutBand[] = [
     // general fund silently.
   },
 ];
+
+/**
+ * /privacy, which is not part of About and is edited by the same overlay.
+ *
+ * ---------------------------------------------------------------------------
+ * ## Why it is here at all
+ *
+ * Tommy asked for the privacy notice to be editable the same way the About
+ * pages are, on the same flag. It fits: it is hand-written React in bands, it
+ * has no `<details>` and no widget, and every word on it is prose somebody in
+ * the office might need to soften or correct without waiting for a deploy.
+ *
+ * The page's own header comment explains at length why it was written in code
+ * rather than as a `content` document — its accuracy depends on the code it
+ * sits beside. **That is still true and this does not weaken it.** What an
+ * override can change is the wording; what makes the wording *true* is the
+ * behaviour, and nothing here can reach that. The page carries the warning; it
+ * now has to be read by whoever edits the words as well as by whoever changes
+ * the code, which is why that comment says so out loud.
+ *
+ * ## Everything on the page, paragraph by paragraph
+ *
+ * Ten bands, each a `SectionHeading` and a run of paragraphs, plus the two
+ * lists — the two things that happen without you doing anything, and the nine
+ * named services. Both lists are declared one `<li>` at a time for the same
+ * reason the dated spines are: a list is the one place where a whole-block
+ * override would flatten several independent statements into one, and a
+ * service the church stops using should be removable without retyping the
+ * other eight.
+ *
+ * ## What is not offered
+ *
+ * `UPDATED` — the date under the title — is a constant in the route file, and
+ * `SectionHeading`'s `note` on the opening band is built from it. The note *is*
+ * offered, so staff can date their own change; the constant is not, because a
+ * second place to hold the same date is a second place for it to be wrong. And
+ * the alternating grounds are a counter, not content: there is nothing to say
+ * about which band is sunken.
+ * ---------------------------------------------------------------------------
+ */
+const PRIVACY_BANDS: readonly AboutBand[] = [
+  {
+    id: 'privacy-heading',
+    label: 'The opening band',
+    slots: [
+      eyebrow('privacy-heading'),
+      heading('privacy-heading'),
+      /*
+       * The one `note` on the page: "How this website handles what you tell it.
+       * Last changed 2 September 2026." Offered deliberately — somebody
+       * rewording a paragraph should be able to re-date the notice in the same
+       * sitting, because a privacy page whose date lies about when it last
+       * changed is worse than one with no date at all.
+       */
+      note('privacy-heading', 'Line under the heading, with the date'),
+      lede('privacy-heading', 'Who runs this site, and what it collects'),
+      para('privacy-heading', 'body', 'No advertising, nothing sold'),
+    ],
+  },
+  {
+    id: 'on-its-own-heading',
+    label: 'What the site collects on its own',
+    slots: [
+      eyebrow('on-its-own-heading'),
+      heading('on-its-own-heading'),
+      para('on-its-own-heading', 'body', 'No trackers, no pixels, no analytics'),
+      para('on-its-own-heading', 'more', 'The line introducing the two'),
+      para('on-its-own-heading', 'item-logs', 'The list · server logs'),
+      para('on-its-own-heading', 'item-counts', 'The list · bookstore counts'),
+      para('on-its-own-heading', 'foot', 'What is kept in your own browser'),
+    ],
+  },
+  {
+    id: 'forms-heading',
+    label: 'Forms',
+    slots: [
+      eyebrow('forms-heading'),
+      heading('forms-heading'),
+      para('forms-heading', 'body', 'The contact form'),
+      para('forms-heading', 'other', 'Every other form, and who reads one'),
+      para('forms-heading', 'vehicles', 'Vehicle registration, and Taksis'),
+      para('forms-heading', 'fees', 'A form that charges a fee'),
+    ],
+  },
+  {
+    id: 'money-heading',
+    label: 'Buying and giving',
+    slots: [
+      eyebrow('money-heading'),
+      heading('money-heading'),
+      para('money-heading', 'bookstore', 'The bookstore, and Square'),
+      para('money-heading', 'giving', 'Giving, and Tithe.ly'),
+    ],
+  },
+  {
+    id: 'camp-heading',
+    label: 'Summer camp registration',
+    slots: [
+      eyebrow('camp-heading'),
+      heading('camp-heading'),
+      para('camp-heading', 'body', 'What registration asks for'),
+      para('camp-heading', 'who-reads', 'Who reads it, and how long it is kept'),
+      para('camp-heading', 'photography', 'Permission to photograph a child'),
+      para('camp-heading', 'children', 'Nothing here asks a child to fill it in'),
+    ],
+  },
+  {
+    id: 'photos-heading',
+    label: 'Photographs',
+    slots: [
+      eyebrow('photos-heading'),
+      heading('photos-heading'),
+      para('photos-heading', 'body', 'Sending one, and approval before it appears'),
+      para('photos-heading', 'metadata', 'What re-encoding removes'),
+      para('photos-heading', 'session', 'The anonymous session, and the scrambled address'),
+      para('photos-heading', 'downscale', 'Made smaller in your own browser'),
+      para('photos-heading', 'takedown', 'Asking for one to be taken down'),
+      para('photos-heading', 'livestream', 'The livestream, and what stays on YouTube'),
+    ],
+  },
+  {
+    id: 'accounts-heading',
+    label: 'Accounts',
+    slots: [
+      eyebrow('accounts-heading'),
+      heading('accounts-heading'),
+      para('accounts-heading', 'body', 'Only for servants and staff'),
+      para('accounts-heading', 'signin', 'Signing in with Microsoft'),
+      para('accounts-heading', 'deletion', 'Deleting an account, and what is kept'),
+    ],
+  },
+  {
+    id: 'services-heading',
+    label: 'Services this site relies on',
+    slots: [
+      eyebrow('services-heading'),
+      heading('services-heading'),
+      para('services-heading', 'body', 'The line above the list'),
+      /*
+       * One slot per service rather than one for the list. The list is the part
+       * of this page most likely to need a change — a service is added or
+       * dropped — and the person making that change should not have to retype
+       * the eight rows they are not touching.
+       */
+      para('services-heading', 'item-firebase', 'The list · Google Firebase'),
+      para('services-heading', 'item-recaptcha', 'The list · reCAPTCHA'),
+      para('services-heading', 'item-square', 'The list · Square'),
+      para('services-heading', 'item-tithely', 'The list · Tithe.ly'),
+      para('services-heading', 'item-microsoft', 'The list · Microsoft'),
+      para('services-heading', 'item-youtube', 'The list · YouTube'),
+      para('services-heading', 'item-maps', 'The list · Google Maps'),
+      para('services-heading', 'item-breeze', 'The list · Breeze'),
+      para('services-heading', 'item-taksis', 'The list · Taksis'),
+    ],
+  },
+  {
+    id: 'keeping-heading',
+    label: 'Keeping it, and keeping it safe',
+    slots: [
+      eyebrow('keeping-heading'),
+      heading('keeping-heading'),
+      para('keeping-heading', 'body', 'Encryption, and what a page may reach'),
+      para('keeping-heading', 'access', 'One area at a time, not one password'),
+      para('keeping-heading', 'retention', 'How long each thing is kept'),
+    ],
+  },
+  {
+    id: 'asking-heading',
+    label: 'Asking what we hold',
+    slots: [
+      eyebrow('asking-heading'),
+      heading('asking-heading'),
+      /*
+       * This paragraph carries the `<Link>` to /contact and the parish's
+       * `mailto:`, both from `getParishConfig`. An override is markdown, so
+       * rewriting it loses the live email address — which is the ordinary cost
+       * of the overlay everywhere, and the reason this band's three paragraphs
+       * are three slots rather than one.
+       */
+      para('asking-heading', 'body', 'How to ask, and where to write'),
+      para('asking-heading', 'limits', 'The two honest limits'),
+      para('asking-heading', 'foot', 'How this notice changes'),
+    ],
+  },
+];
+
 /**
  * Captions, and the prose blocks that were reached later.
  *
@@ -697,6 +909,9 @@ export const ABOUT_BANDS: Record<AboutSlug, readonly AboutBand[]> = {
   'patron-saints': withExtras('patron-saints', SAINTS_BANDS),
   'welcome-newcomers': withExtras('welcome-newcomers', TOUR_BANDS),
   'future-plans': withExtras('future-plans', FUTURE_BANDS),
+  // No `EXTRA_SLOTS` row: /privacy has no photographs, so there are no captions
+  // to fold in, and its paragraphs are already declared one at a time above.
+  privacy: PRIVACY_BANDS,
 };
 
 /** The spec for one key, for the editor. Undefined means "not declared". */
