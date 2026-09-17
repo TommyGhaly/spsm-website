@@ -24,6 +24,8 @@
     "verify:scopes": "node scripts/verify-scopes.mjs",
     "//audit:secrets": "Looks for every credential in .env in two places it must never be: anything git tracks, and anything the build wrote. Never prints a value \u2014 a finding names the variable and the file. Pairs with verify:scopes, which asks whether a credential still works; this asks whether anyone else can see it. Run a build first for the fuller check, and exit code 1 means stop.",
     "audit:secrets": "node scripts/audit-secrets.mjs",
+    "//clip:pages": "Rewrites the eight App Clip fallback pages in apps/website/public/c/ from the table in scripts/make-clip-pages.mjs. Run by hand when an experience's copy changes; outputs are committed. Taksis's c/register-vehicle.html is not touched by it.",
+    "clip:pages": "npm run build --workspace @spsm/shared && node scripts/make-clip-pages.mjs",
     "//bulletin": "Prints this week's bulletin exactly as the site build reads it. First stop when the homepage bulletin section is missing.",
     "bulletin": "npm run build --workspace @spsm/shared && node scripts/read-bulletin.mjs",
     "//config": "Shows config/integrations, config/parish, config/theme and config/camp; --write creates any that are missing from the committed defaults. Narrow it with --only=camp.",

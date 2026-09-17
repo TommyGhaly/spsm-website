@@ -1,4 +1,5 @@
 {
+  "//": "Two apps, one domain, and no overlapping path. `appclips` associates the site with both App Clips; `applinks` decides which installed app opens for a URL, and an overlap there is undefined behaviour when both are installed. Taksis owns exactly `/c/register-vehicle`, which is printed on the car-park tags. SPSM Connect owns the eight `/c/*` experiences listed below and nothing else under that prefix. Neither app claims a glob. Keep this file in step with `src/clip/experiences.ts` in the SPSM-Connect repo, and remember that `firebase.json` must never ignore `**/.*` or this file silently stops being served.",
   "appclips": {
     "apps": [
       "5ZRM8X66TN.com.tghaly.taksis.Clip",
@@ -9,11 +10,19 @@
     "details": [
       {
         "appIDs": ["5ZRM8X66TN.com.tghaly.taksis"],
-        "components": [{ "/": "/c" }, { "/": "/c/*" }]
+        "components": [{ "/": "/c/register-vehicle" }]
       },
       {
         "appIDs": ["5ZRM8X66TN.org.spsm.connect"],
         "components": [
+          { "/": "/c/give" },
+          { "/": "/c/schedule" },
+          { "/": "/c/apps" },
+          { "/": "/c/welcome" },
+          { "/": "/c/plans" },
+          { "/": "/c/bookstore" },
+          { "/": "/c/forms" },
+          { "/": "/c/photos" },
           { "/": "/events" },
           { "/": "/events/*" },
           { "/": "/calendar" },
