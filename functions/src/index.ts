@@ -164,6 +164,43 @@ export {
 export { galleryUploadUrl } from './galleries/uploadUrl.js';
 export { sweepUnuploadedSubmissions, sweepStaleQuotas } from './galleries/orphans.js';
 
+/*
+ * Notifications, and the one thing to know before reading notify/.
+ *
+ * There are two kinds and only one of them is here. **Admin notices** are
+ * remote pushes: a photograph arrives, an order is paid, a form is signed, and
+ * a servant who administers that area is told on a phone that may not have been
+ * opened for a week. Nothing on a device can know those happened, so they are
+ * FCM sends from Firestore triggers — `notify/triggers.ts` — to tokens the app
+ * registers through `pushRegister`.
+ *
+ * **Calendar reminders** are the other kind and have no Function at all. They
+ * are local notifications the phone schedules for itself out of the schedule it
+ * already fetched, because there is no server-side copy of the parish calendar
+ * to trigger from (it is read out of Breeze at request time), because most
+ * people using the app are anonymous and have no document to hang a preference
+ * on, and because a reminder preference is a statement about somebody's week
+ * that the parish has no reason to hold. The long version is in
+ * `packages/shared/src/schema/notifications.ts`; do not add a scheduler here
+ * without reading it.
+ *
+ * The audience for every notice is exactly the people who could already open
+ * the screen the notice is about — `notify/audience.ts` is `screenGrants.ts`
+ * run backwards, and that file is the one worth getting right.
+ *
+ * The triggers are in **us-east1** with the gallery ones, because a v2
+ * Firestore trigger must sit in its database's region. `pushRegister` is an
+ * HTTP endpoint and stays in us-central1 with its siblings.
+ */
+export { pushRegister } from './notify/register.js';
+export {
+  onOrderPaid,
+  onOrderRefunded,
+  onFormSubmitted,
+  onCampRegistration,
+  onCampServantRequest,
+} from './notify/triggers.js';
+
 // Declared as secrets, not env vars: these are read from Secret Manager at
 // runtime and never appear in source, in git, or in a deployed bundle.
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');

@@ -122,6 +122,16 @@ export const BUDGETS = {
    * sitting must not be stopped halfway.
    */
   bookstoreEdit: 90,
+  /**
+   * Registering a phone for notifications.
+   *
+   * Called on every app start — the token is re-asserted so a dead device can
+   * be swept — and again whenever somebody flips a switch on the settings
+   * screen. Thirty covers a person toggling every row twice and still bounds a
+   * loop in a bad release, which is the realistic threat: this endpoint is
+   * called by client code on a timer rather than by a person clicking.
+   */
+  pushRegister: 30,
   /** Refunding. Money leaves the parish; nobody issues ten in a minute. */
   refund: 10,
   /**
@@ -191,6 +201,8 @@ export const CAPS = {
   /** Signed-in editing. A handful of volunteers, never a crowd. */
   bookstoreEdit: 10,
   refund: 5,
+  /** Registering a phone. One tiny write; called once per app start. */
+  pushRegister: 10,
   /** Deleting your own account. Rarer than a refund by a wide margin. */
   accountDelete: 2,
   /** Full scans. More than a few at once is a mistake by definition. */

@@ -959,7 +959,30 @@ function withinDay(a: CalendarOccurrence, b: CalendarOccurrence): number {
  * a wrong guess deletes a service and the bar is correspondingly much higher.
  * ---------------------------------------------------------------------------
  */
-export type OccurrenceKind = 'liturgy' | 'study' | 'gathering' | 'other';
+/**
+ * The four kinds, as a list.
+ *
+ * A const array with the type derived off it, rather than the hand-written
+ * union this was, for the reason `ADMIN_SCREENS` is one: the kinds now have to
+ * be *iterated* — `CalendarReminderPrefs` carries a boolean per kind and the
+ * settings screen draws a row per kind — and a union cannot be looped over at
+ * runtime. Same four members, same order as `KIND_WORDS` below.
+ */
+export const OCCURRENCE_KINDS = ['liturgy', 'study', 'gathering', 'other'] as const;
+
+export type OccurrenceKind = (typeof OCCURRENCE_KINDS)[number];
+
+export function isOccurrenceKind(value: unknown): value is OccurrenceKind {
+  return typeof value === 'string' && (OCCURRENCE_KINDS as readonly string[]).includes(value);
+}
+
+/** How a kind reads in a list of switches. Plural, because it is a subscription. */
+export const OCCURRENCE_KIND_LABELS: Record<OccurrenceKind, string> = {
+  liturgy: 'Liturgies and services',
+  study: 'Studies and lessons',
+  gathering: 'Meetings and gatherings',
+  other: 'Everything else',
+};
 
 /**
  * Words that place an entry, most specific first.

@@ -24,6 +24,7 @@ export * from './schema/about.js';
 export * from './schema/events.js';
 export * from './schema/calendar.js';
 export * from './calendarView.js';
+export * from './schema/notifications.js';
 export * from './schema/scheduleAdmin.js';
 export * from './schema/programs.js';
 export * from './schema/sectionLayout.js';

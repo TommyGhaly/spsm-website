@@ -45,6 +45,7 @@
 import { onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { CAPS } from './rateLimit.js';
+import { announceGallerySubmission } from './notify/triggers.js';
 import { getStorage } from 'firebase-admin/storage';
 import { FieldValue, getFirestore, type DocumentReference } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
@@ -378,6 +379,22 @@ export const onGalleryMediaCreated = onObjectFinalized(
      * the person who would have been asked.
      */
     await publishWithoutReview(reference, media);
+
+    /*
+     * And last of all, tell whoever looks after this gallery.
+     *
+     * After `publishWithoutReview` rather than before it, for one reason: that
+     * call is what decides whether this photograph needs reviewing at all, and
+     * a notification about a review queue must not fire for something that was
+     * just waved through. `announceGallerySubmission` re-reads
+     * `media.autoApproveBy` to make the same decision — see its note — so the
+     * ordering here is belt to that braces rather than the whole of it.
+     *
+     * Awaited, but it cannot throw. A failed push must not fail this trigger:
+     * Cloud Functions would retry it, and a retried Storage trigger is a second
+     * transcode of a photograph that already has its preview.
+     */
+    await announceGallerySubmission(media);
   },
 );
 

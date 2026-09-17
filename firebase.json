@@ -97,6 +97,11 @@
         "function": "calendar"
       },
       {
+        "//push-register": "A phone telling us its FCM token and which admin notices it wants. Authenticated \u2014 it verifies an ID token and intersects the request with the caller's own grants \u2014 and the only door into `pushDevices`, which firestore.rules closes to every client. It is an endpoint rather than a rule because the document id is a hash of the token, and a rule cannot hash: a client free to choose the id could overwrite somebody else's registration and redirect their notifications to its own phone. Only the app calls this; the website has no notifications. Above the globs below for the usual first-match reason.",
+        "source": "/api/push/register",
+        "function": "pushRegister"
+      },
+      {
         "//gallery-upload": "Issues a signed URL for one gallery photograph, and writes the galleryMedia document that goes with it. It is the ONLY way either now happens: storage.rules refuses every client write to submissions/ and firestore.rules refuses every client create of galleryMedia, so a browser cannot reach the bucket or the collection on its own. That is deliberate \u2014 the old path uploaded bytes first and wrote the document second, so a script that skipped the second step skipped every check the project had and left objects in a billed bucket that never appeared in the review queue. This endpoint verifies an App Check token, counts the upload against a daily quota, and never sees a byte of the photograph. It MUST stay above the /events/** glob below: rewrites are first-match, and beneath it this address would serve a gallery shell instead of running.",
         "source": "/api/gallery/upload-url",
         "function": "galleryUploadUrl"

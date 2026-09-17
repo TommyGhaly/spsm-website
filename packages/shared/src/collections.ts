@@ -161,6 +161,19 @@ export const COLLECTIONS = {
   /** Append-only audit trail for staff reads of sensitive collections. */
   auditLog: 'auditLog',
   /**
+   * One document per phone that has asked to be told about something.
+   *
+   * Written by its owner and readable by nobody else — a device row names a
+   * servant's uid and which parts of the parish they are watching, which is a
+   * small map of who does what and is not public. The fan-out reads it with the
+   * Admin SDK; see firestore.rules and functions/src/notify/.
+   *
+   * Only for the *remote* half of notifications. Calendar reminders are local
+   * notifications scheduled on the device and have no document here at all —
+   * see schema/notifications.ts for why that asymmetry is deliberate.
+   */
+  pushDevices: 'pushDevices',
+  /**
    * Outbound email queue, drained by the Trigger Email extension.
    *
    * Written by Cloud Functions only, and readable by nobody: a queued message

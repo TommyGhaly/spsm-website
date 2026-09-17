@@ -1110,6 +1110,58 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- notification devices ---------------------------------------------
+
+    match /pushDevices/{deviceId} {
+      /*
+       * Closed to every client, in both directions. The endpoint is the door.
+       *
+       * -----------------------------------------------------------------------
+       * This is the rule most likely to look wrong, because a person's own
+       * notification preferences are exactly the kind of thing `match
+       * /members/{uid}` lets them write for themselves. Three reasons it cannot
+       * be that here, and the first is the one no rule can work around.
+       *
+       * **The document id is a SHA-256 of the FCM token.** It has to be derived
+       * from the token rather than from the uid, because one servant has a
+       * phone and an iPad and both should ring — and it has to be *hashed*
+       * because an FCM token is base64 with characters a Firestore id may not
+       * contain. Rules cannot hash. So a rule could not check that a caller's
+       * chosen id matched the token in the body, and a client free to pick its
+       * own id can overwrite **somebody else's registration** — pointing their
+       * notifications at its own token. That is a read of other people's
+       * notifications achieved entirely through a write, and it is why
+       * POST /api/push/register is the only way in.
+       *
+       * **A subscription must be intersected with a grant, not merely checked
+       * against one.** `pushRegister` reads the caller's member document and
+       * ANDs their five requested notices against `entitledAdminNotices`,
+       * saving the ones they hold and dropping the ones they do not. A rule can
+       * refuse a request; it cannot partially honour one, so the equivalent
+       * rule would 403 a stale app instead of saving the four rows it may have.
+       *
+       * **Read would expose who administers what.** A device row names a uid
+       * beside the parts of the parish they are watching — a map of which
+       * servant does which job, assembled from documents each of which only
+       * ever needed to be written. `members/{uid}` is already `isSelf() ||
+       * isSuper()` for the same reason, and this must not be the softer copy
+       * of it.
+       *
+       * The fan-out reads and prunes this collection with the Admin SDK, which
+       * bypasses these rules — the same arrangement as `mail` below and
+       * `financeRollups` above. See functions/src/notify/.
+       *
+       * Note there is nothing here about *calendar reminders*. Those are local
+       * notifications scheduled on the device and never leave it, so they have
+       * no document in this collection and no rule anywhere. See
+       * packages/shared/src/schema/notifications.ts for why that asymmetry is
+       * deliberate rather than unfinished.
+       * -----------------------------------------------------------------------
+       */
+      allow read: if false;
+      allow write: if false;
+    }
+
     // ---- outbound email ---------------------------------------------------
 
     match /mail/{messageId} {
