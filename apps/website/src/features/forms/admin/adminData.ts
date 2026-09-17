@@ -16,11 +16,13 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  CONFIG_DOC_FORMS,
   isBuiltInForm,
   toFormSlug,
   type FormAnswers,
   type FormDefinition,
   type FormDraft,
+  type FormsPageConfig,
   type SubmissionStatus,
 } from '@spsm/shared';
 import { auth } from '@/lib/auth';
@@ -118,6 +120,12 @@ export async function deleteForm(id: string): Promise<void> {
  * documents whose number actually changed are written — reordering the last two
  * of nine forms costs two writes, not nine.
  *
+ * The numbers are computed by the caller and passed in, rather than taken from
+ * this array's own indices. One row in that list is the summer camp, which has
+ * no document here at all — its position is a field in `config/forms` — so
+ * numbering by index would close the gap it occupies and slide every form below
+ * it up past the camp on the hub.
+ *
  * One `updateDoc` each rather than a `writeBatch`: the rule on `forms` is
  * evaluated per document either way, the counts are single digits, and a batch
  * would make a partial failure invisible. If one write is refused the rest still
@@ -126,11 +134,10 @@ export async function deleteForm(id: string): Promise<void> {
  * ---------------------------------------------------------------------------
  */
 export async function setFormOrder(
-  ids: string[],
+  positions: readonly { id: string; order: number }[],
   current: Map<string, number>,
 ): Promise<void> {
-  const writes = ids
-    .map((id, index) => ({ id, order: (index + 1) * 10 }))
+  const writes = positions
     .filter((entry) => current.get(entry.id) !== entry.order)
     .map((entry) => setFormFlags(entry.id, { order: entry.order }));
 
@@ -147,6 +154,33 @@ export async function setFormFlags(
     updatedAt: serverTimestamp(),
     updatedBy: auth().currentUser?.uid ?? null,
   });
+}
+
+/**
+ * Change the hub's own settings — the tap destination, the camp's position.
+ *
+ * `setDoc` with `merge` rather than `updateDoc`, because nothing seeds
+ * `config/forms`: on a parish that has never set either of these the document
+ * does not exist, and an update would be refused with nothing on screen to
+ * explain it. Merging also means writing one of the two settings leaves the
+ * other alone, which matters here — a drag that renumbers the list must not
+ * quietly move the tag's destination.
+ *
+ * `updatedBy` is not bookkeeping: `firestore.rules` requires it to be the
+ * signer's own uid on both branches.
+ */
+export async function setFormsPageConfig(
+  patch: Partial<Pick<FormsPageConfig, 'nfcFormSlug' | 'campOrder'>>,
+): Promise<void> {
+  await setDoc(
+    doc(db(), COLLECTIONS.config, CONFIG_DOC_FORMS),
+    {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth().currentUser?.uid ?? null,
+    },
+    { merge: true },
+  );
 }
 
 /* ---------------------------------------------------------------------------

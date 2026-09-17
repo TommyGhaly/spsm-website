@@ -479,6 +479,55 @@ service cloud.firestore {
       return sections is list && sections.size() <= 12;
     }
 
+    /*
+     * The forms hub's two settings, writable by the people who keep the forms.
+     *
+     * -----------------------------------------------------------------------
+     * Another carve-out of `config/{docId}`, which is superadmin-only above.
+     * Firestore grants if any rule allows, so this widens that one document and
+     * nothing else — and it widens it to exactly the grant that already decides
+     * every other thing about this page: whoever may build a form may say which
+     * one a tap lands on, and where the summer camp sits in the list.
+     *
+     * Neither value authorizes anything. `nfcFormSlug` names a form that is
+     * public the moment it is published, and `campOrder` is a position in a
+     * list — so the worst a bad write can do is send a tap to the wrong parish
+     * form, which is a thing the same person can already do by editing the form
+     * itself. `parseFormsPageConfig` bounds both on the way out.
+     *
+     * Create and update are separate for the reason `config/bookstore` states:
+     * nothing seeds this document, so on a parish that has never touched it
+     * `resource` is null and `diff` cannot be dereferenced.
+     * -----------------------------------------------------------------------
+     */
+    match /config/forms {
+      allow read: if true;
+
+      allow create: if hasScreen('forms')
+        && request.resource.data.keys().hasOnly(
+             ['nfcFormSlug', 'campOrder', 'updatedAt', 'updatedBy'])
+        && isFormsPageConfig(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      allow update: if hasScreen('forms')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['nfcFormSlug', 'campOrder', 'updatedAt', 'updatedBy'])
+        && isFormsPageConfig(request.resource.data)
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      // Never. The tag's destination going missing wholesale is not an edit —
+      // and a reader that finds no document falls back to the vehicle
+      // registration, which is not what a delete would have meant.
+      allow delete: if false;
+    }
+
+    function isFormsPageConfig(data) {
+      return (!('nfcFormSlug' in data)
+               || (data.nfcFormSlug is string && data.nfcFormSlug.size() <= 120))
+        && (!('campOrder' in data)
+             || (data.campOrder is int && data.campOrder >= 0 && data.campOrder <= 100000));
+    }
+
     match /events/{eventId} {
       // Parish calendar. Servant-only entries live in /servantEvents so this
       // stays a path check rather than a per-doc audience filter — a filter

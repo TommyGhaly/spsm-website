@@ -12,3 +12,4 @@ export { FormScreen } from './FormScreen';
 export { FormRenderer } from './FormRenderer';
 export { ContactForm } from './ContactForm';
 export { VehicleForm } from './VehicleForm';
+export { NfcRedirect } from './NfcRedirect';

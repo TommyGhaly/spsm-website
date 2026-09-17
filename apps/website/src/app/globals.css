@@ -26783,6 +26783,12 @@ body.is-reordering * {
   cursor: pointer;
 }
 
+/* The camp's row is the one title here that opens nothing, so it does not
+   claim a pointer it has no use for. See `isCampRow` in FormsAdmin.tsx. */
+span.fxa__row-title {
+  cursor: default;
+}
+
 .fxa__row-meta {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
@@ -26805,6 +26811,35 @@ body.is-reordering * {
   font-size: var(--type-small, 0.875rem);
   color: var(--color-ink-soft, #4b413e);
   cursor: pointer;
+}
+
+/*
+ * The summer camp's row says a sentence where the two checkboxes would be.
+ *
+ * Its own class rather than `.fxa__flag`, which is a label with a cursor on it:
+ * this is a statement about where that switch actually lives, not a control
+ * somebody should be trying to click. See `isCampRow` in FormsAdmin.tsx.
+ */
+.fxa__fixed {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+/*
+ * The tap destination, above the list.
+ *
+ * A `.field` for the label, the select and the hint — nothing here restyles
+ * those — plus a ruled panel, because this is the one control in the drawer
+ * that is about the whole list rather than about a row of it, and sitting it
+ * flush against "+ New form" read as a third thing in the same stack.
+ */
+.fxa__nfc {
+  margin-block: var(--space-sm, 0.7rem);
+  padding: var(--space-sm, 0.7rem);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-paper-raised, #fdf7f4);
 }
 
 /* The confirm spans the whole row under everything else. */

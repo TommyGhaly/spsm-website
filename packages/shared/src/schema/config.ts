@@ -1270,3 +1270,97 @@ export function campWeekRoleOptions(
   const shared = config.weekRoles[campWeekRoleKey(week)] ?? [];
   return shared.length > 0 ? shared : [...CAMP_ROLE_SUGGESTIONS];
 }
+
+/* ==========================================================================
+   The forms hub's own settings
+   ========================================================================== */
+
+/** Document id of the `/forms` page's own settings. */
+export const CONFIG_DOC_FORMS = 'forms';
+
+/**
+ * The summer camp sign-up, as the forms hub addresses it.
+ *
+ * It is not a `forms` document and cannot become one — `FormsHub` records why
+ * — but it *is* a card on the hub and a thing the parish can point a tag at, so
+ * the two settings below have to be able to name it. This is the name they use,
+ * and it is the same string as the route: `/forms/summer-camp`.
+ */
+export const CAMP_FORM_SLUG = 'summer-camp';
+
+/**
+ * Where a tap lands, and where the camp sits, decided by the office.
+ *
+ * ---------------------------------------------------------------------------
+ * Why these two live in `config` rather than on the form documents.
+ *
+ * **`nfcFormSlug` is a single choice across a collection.** Modelled as a
+ * `priority: true` field on `FormDefinition` it would be a flag that must be
+ * true on exactly one document, maintained by a client that has to unset the
+ * old one before setting the new one — two writes with no transaction around
+ * them, and a tag that points at nothing (or at two things) whenever the second
+ * one fails. One field naming one slug cannot get into that state.
+ *
+ * **`campOrder` has no document to live on.** The camp card is assembled in the
+ * page from a route that exists in this codebase, so there is nowhere on a form
+ * document to record where it sits; without this it is appended after
+ * everything else, which is where it was before the office could say otherwise.
+ *
+ * Both are read by the public hub, which is why they are in `config` — world
+ * readable, one document, already fetched by pages that need nothing else from
+ * Firestore.
+ * ---------------------------------------------------------------------------
+ */
+export interface FormsPageConfig {
+  /**
+   * The slug of the form an NFC tap should land on.
+   *
+   * A **slug**, not a document id, because that is what a URL is made of and
+   * what the camp — which has no document — can be named by. The cost is that
+   * renaming a form's slug in the builder can leave this pointing at nothing,
+   * and the answer is the one `EventsPageConfig.mainSection` gives: a pointer
+   * that does not resolve is read as "not set", and every reader falls back to
+   * the vehicle registration rather than to an error.
+   *
+   * Defaults to `vehicle-registration` rather than to null, because that is
+   * what the tag in the car park has always done and an unconfigured parish
+   * must keep doing it.
+   */
+  nfcFormSlug: string;
+
+  /**
+   * Where the summer camp card sits among the forms, as an `order` number.
+   *
+   * The same scale the form documents use — `setFormOrder` renumbers the list
+   * 10, 20, 30 … — so the hub can sort the camp in with everything else by
+   * comparing one field. 1000 keeps it last on a parish that has never dragged
+   * it, which is where it was appended before this existed.
+   */
+  campOrder: number;
+}
+
+/** The hub as it behaved before anybody set either of these. */
+export const DEFAULT_FORMS_PAGE_CONFIG: FormsPageConfig = {
+  nfcFormSlug: 'vehicle-registration',
+  campOrder: 1000,
+};
+
+/**
+ * Coerce whatever is in `config/forms` into a usable pair of settings.
+ *
+ * A blank or missing `nfcFormSlug` reads as the vehicle registration, for the
+ * reason on the field: the tag has to go somewhere, and where it has always
+ * gone is the only safe answer. `campOrder` is bounded to the range an `order`
+ * can sensibly take so that a mistyped number cannot pin the card off the list.
+ */
+export function parseFormsPageConfig(raw: unknown): FormsPageConfig {
+  const doc = asRecord(raw);
+  const order = doc?.['campOrder'];
+  return {
+    nfcFormSlug: str(doc?.['nfcFormSlug']) || DEFAULT_FORMS_PAGE_CONFIG.nfcFormSlug,
+    campOrder:
+      typeof order === 'number' && Number.isFinite(order)
+        ? Math.min(100_000, Math.max(0, Math.round(order)))
+        : DEFAULT_FORMS_PAGE_CONFIG.campOrder,
+  };
+}

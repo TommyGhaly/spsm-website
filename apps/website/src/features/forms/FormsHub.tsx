@@ -1,10 +1,16 @@
 'use client';
 
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { builtInForms, type FormDefinition } from '@spsm/shared';
+import {
+  CAMP_FORM_SLUG,
+  DEFAULT_FORMS_PAGE_CONFIG,
+  builtInForms,
+  type FormDefinition,
+  type FormsPageConfig,
+} from '@spsm/shared';
 import { Icon, isIconName } from '@/components/Icon';
 import { useCampSignUpOpen } from '@/features/camp';
-import { watchPublishedForms } from './data';
+import { watchFormsPageConfig, watchPublishedForms } from './data';
 import { useFormsAdmin } from './useFormsAdmin';
 
 /**
@@ -86,8 +92,8 @@ const FormsAdmin = lazy(() =>
  * card away.
  * ---------------------------------------------------------------------------
  */
-const CAMP_CARD: HubCard = {
-  slug: 'summer-camp',
+const CAMP_CARD: Omit<HubCard, 'order'> = {
+  slug: CAMP_FORM_SLUG,
   href: '/forms/summer-camp',
   title: 'Serve at summer camp',
   blurb:
@@ -190,6 +196,14 @@ function withBuiltIns(cards: readonly HubCard[]): HubCard[] {
 
 interface HubCard {
   slug: string;
+  /**
+   * Where the card sits, on the same scale the drawer renumbers forms with.
+   *
+   * Carried on the card rather than left to the order the list arrived in
+   * because the camp is merged in here, out of `config/forms`, and two lists
+   * cannot be interleaved without the field they were both sorted by.
+   */
+  order: number;
   href: string;
   title: string;
   blurb: string;
@@ -201,7 +215,15 @@ interface HubCard {
 
 export function FormsHub() {
   const [cards, setCards] = useState<readonly HubCard[]>(builtInCards);
+  /*
+   * The page's own settings — here only for where the camp card sits. Defaults
+   * until Firestore answers and after a read that fails, so neither a slow
+   * connection nor a broken one can move a card about under somebody.
+   */
+  const [config, setConfig] = useState<FormsPageConfig>(DEFAULT_FORMS_PAGE_CONFIG);
   const admin = useFormsAdmin();
+
+  useEffect(() => watchFormsPageConfig(setConfig), []);
 
   useEffect(() => {
     const stop = watchPublishedForms(
@@ -232,7 +254,20 @@ export function FormsHub() {
    * reason above.
    */
   const campSignUpsOpen = useCampSignUpOpen();
-  const visible = SHOW_CAMP && campSignUpsOpen ? [...cards, CAMP_CARD] : cards;
+  const visible =
+    SHOW_CAMP && campSignUpsOpen
+      ? /*
+         * Sorted in at the position the office dragged it to, rather than
+         * appended. `campOrder` is the camp's `order` on the same 10, 20, 30 …
+         * scale the drawer renumbers the forms with, so one comparison puts the
+         * whole page in order; a parish that has never moved it keeps the
+         * default 1000 and the card stays last, which is where appending put
+         * it. Same tie-break as `sortForms` in `./data`.
+         */
+        [...cards, { ...CAMP_CARD, order: config.campOrder }].sort(
+          (a, b) => a.order - b.order || a.title.localeCompare(b.title),
+        )
+      : cards;
 
   return (
     <>
@@ -312,6 +347,7 @@ function toCard(form: FormDefinition): HubCard {
   const external = form.kind === 'external' && form.externalUrl !== null;
   return {
     slug: form.slug,
+    order: form.order,
     href: external
       ? (form.externalUrl as string)
       : (FORMS_WITH_A_HOME[form.slug] ?? `/forms/${form.slug}`),

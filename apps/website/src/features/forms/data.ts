@@ -12,9 +12,13 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  CONFIG_DOC_FORMS,
+  DEFAULT_FORMS_PAGE_CONFIG,
   parseFormDefinition,
+  parseFormsPageConfig,
   type FormAnswers,
   type FormDefinition,
+  type FormsPageConfig,
 } from '@spsm/shared';
 import { db } from '@/lib/firebase';
 
@@ -50,6 +54,60 @@ export function watchPublishedForms(
     },
     (error) => onError(error),
   );
+}
+
+/**
+ * The hub's own two settings, live: the tap destination and the camp's place.
+ *
+ * ---------------------------------------------------------------------------
+ * It answers with the defaults first and only ever replaces them with a
+ * document, which is the same promise `useCampSignUpOpen` makes and for the
+ * same reason. Every caller here is drawing something a person is waiting for —
+ * the list of cards, or the page a tag has just opened — and "the parish has
+ * not configured this" and "Firestore did not answer" must both come out as the
+ * behaviour the site had before this setting existed. A failed read cannot be
+ * allowed to move the camp card or send a tap somewhere new.
+ *
+ * `config` is world-readable, so this needs no permission and is made by the
+ * public hub as well as by the drawer.
+ * ---------------------------------------------------------------------------
+ */
+export function watchFormsPageConfig(
+  onConfig: (config: FormsPageConfig) => void,
+): Unsubscribe {
+  return onSnapshot(
+    doc(db(), COLLECTIONS.config, CONFIG_DOC_FORMS),
+    (snapshot) => {
+      onConfig(
+        snapshot.exists()
+          ? parseFormsPageConfig(snapshot.data())
+          : { ...DEFAULT_FORMS_PAGE_CONFIG },
+      );
+    },
+    (error) => {
+      console.warn(
+        '[forms] could not read the forms settings; using the built-in defaults',
+        error,
+      );
+      onConfig({ ...DEFAULT_FORMS_PAGE_CONFIG });
+    },
+  );
+}
+
+/** The same settings, once, for a page that is not staying to watch them. */
+export async function readFormsPageConfig(): Promise<FormsPageConfig> {
+  try {
+    const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_FORMS));
+    return snapshot.exists()
+      ? parseFormsPageConfig(snapshot.data())
+      : { ...DEFAULT_FORMS_PAGE_CONFIG };
+  } catch (error) {
+    console.warn(
+      '[forms] could not read the forms settings; using the built-in defaults',
+      error,
+    );
+    return { ...DEFAULT_FORMS_PAGE_CONFIG };
+  }
 }
 
 /**

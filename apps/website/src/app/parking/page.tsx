@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { VehicleForm } from '@/features/forms';
+import { NfcRedirect, VehicleForm } from '@/features/forms';
 import { PageHeader } from '@/components/PageHeader';
 import { PageBody } from '@/components/PageBody';
 import { BackLink } from '@/components/BackLink';
@@ -51,6 +51,15 @@ export default function ParkingPage() {
           this form is browsable from, and the only other place the church's
           paperwork lives.
         */}
+        {/*
+          The tag's destination is a setting now — "Tap destination" in the
+          drawer on /forms — and this is what honours it. Unset, it is this
+          form, so nothing below changes for a parish that has never touched it.
+          See `NfcRedirect` for why the page draws the vehicle form first rather
+          than waiting to be told.
+        */}
+        <NfcRedirect thisForm="vehicle-registration" />
+
         <BackLink href="/forms" label="Forms" />
         <p className="note">
           So the parking team can reach you if your car needs moving. No account needed —

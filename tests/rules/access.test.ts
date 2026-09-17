@@ -335,6 +335,82 @@ describe('the forms grant', () => {
     await assertSucceeds(deleteDoc(doc(db, 'forms/festival-stall')));
   });
 
+  /**
+   * `config/forms` — the tap destination and where the summer camp sits.
+   *
+   * A second grant on a document the block above reserves to the superadmin, so
+   * the assertions worth making are the boundary ones: the forms grant reaches
+   * this document and no other `config` document, the key set is exactly the
+   * two settings, and the write is attributable. See the rule for why widening
+   * one document here is safe — neither value authorizes anything.
+   */
+  it('reaches config/forms, and only the two settings on it', async () => {
+    const db = asServant(env, 'forms-servant').firestore();
+    const settings = (data: Record<string, unknown>) => ({
+      ...data,
+      updatedBy: 'forms-servant',
+    });
+
+    // Create: nothing seeds this document, so the first write anybody makes is
+    // against a missing one and `diff(resource.data)` cannot be dereferenced.
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'config/forms'),
+        settings({ nfcFormSlug: 'summer-camp', campOrder: 20 }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, 'config/forms'), settings({ campOrder: 30 }), { merge: true }),
+    );
+
+    // The public reads it — the hub and the tag's own page both do, signed out.
+    await assertSucceeds(getDoc(doc(asAnonymousSession(env).firestore(), 'config/forms')));
+
+    // Attributable, like every other write on this site.
+    await assertFails(
+      setDoc(doc(db, 'config/forms'), { campOrder: 40, updatedBy: 'somebody-else' }, {
+        merge: true,
+      }),
+    );
+
+    // Bounded: a position is a number on the forms' own scale, and a
+    // destination is a slug.
+    await assertFails(
+      setDoc(doc(db, 'config/forms'), settings({ campOrder: -1 }), { merge: true }),
+    );
+    await assertFails(
+      setDoc(doc(db, 'config/forms'), settings({ nfcFormSlug: 7 }), { merge: true }),
+    );
+
+    // A key that is not one of the two. The grant is for this page's settings,
+    // not for a place to keep anything else world-readable.
+    await assertFails(
+      setDoc(doc(db, 'config/forms'), settings({ projectId: 'theirs' }), { merge: true }),
+    );
+
+    // And it opens no other config document, which is the point of carving this
+    // one out rather than widening `config/{docId}`.
+    for (const id of ['integrations', 'parish', 'theme', 'events']) {
+      await assertFails(
+        setDoc(doc(db, `config/${id}`), settings({ campOrder: 10 }), { merge: true }),
+      );
+    }
+
+    // Nobody without the grant, signed in or not.
+    await assertFails(
+      setDoc(
+        doc(asSignedIn(env).firestore(), 'config/forms'),
+        { campOrder: 10, updatedBy: 'servant-1' },
+        { merge: true },
+      ),
+    );
+
+    // The destination going missing wholesale is not an edit: a reader that
+    // finds no document falls back to the vehicle registration, which is not
+    // what deleting it would have meant.
+    await assertFails(deleteDoc(doc(db, 'config/forms')));
+  });
+
   it('still lets them be edited — permanent is not read-only', async () => {
     // The blurb, the picture, the notification address and the questions are
     // all still the office's to change. What is withheld is delete, and (in

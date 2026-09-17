@@ -9,16 +9,25 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import {
+  CAMP_FORM_SLUG,
+  DEFAULT_FORMS_PAGE_CONFIG,
   NO_PAYMENT,
   isBuiltInForm,
   keepsNoSubmissions,
   toFormSlug,
   type FormDefinition,
   type FormDraft,
+  type FormsPageConfig,
 } from '@spsm/shared';
 import { Dialog } from '@/features/bookstore/Sheet';
-import { readAllForms, type WithId } from '../data';
-import { deleteForm, setFormFlags, setFormOrder, writeForm } from './adminData';
+import { readAllForms, watchFormsPageConfig, type WithId } from '../data';
+import {
+  deleteForm,
+  setFormFlags,
+  setFormOrder,
+  setFormsPageConfig,
+  writeForm,
+} from './adminData';
 import { FormBuilder } from './FormBuilder';
 import { SubmissionsPanel } from './SubmissionsPanel';
 import { EmbedImport } from './EmbedImport';
@@ -74,7 +83,19 @@ export function FormsAdmin() {
 function AdminDrawer({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<View>({ kind: 'list' });
   const [forms, setForms] = useState<WithId<FormDefinition>[] | null>(null);
+  /*
+   * The hub's own two settings, live rather than fetched with the list.
+   *
+   * They are one world-readable document and they change from this drawer, so a
+   * subscription means the tap destination on screen is the one stored even
+   * when a second administrator is the one who moved it. Until it answers these
+   * are the defaults, which is the behaviour the page had before the document
+   * existed — see `watchFormsPageConfig`.
+   */
+  const [config, setConfig] = useState<FormsPageConfig>(DEFAULT_FORMS_PAGE_CONFIG);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => watchFormsPageConfig(setConfig), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -148,6 +169,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
         {view.kind === 'list' && (
           <FormsList
             forms={forms}
+            config={config}
             onCreate={() => void create()}
             onEdit={(form) => setView({ kind: 'build', form })}
             onSubmissions={(formId) => setView({ kind: 'submissions', formId })}
@@ -204,18 +226,90 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
  *
  * `firestore.rules` refuses the delete regardless of what this draws.
  */
-function isPermanent(form: WithId<FormDefinition>): boolean {
-  return isBuiltInForm(form.id) || form.kind === 'vehicle';
+function isPermanent(form: WithId<FormDraft>): boolean {
+  return isBuiltInForm(form.id) || form.kind === 'vehicle' || isCampRow(form);
+}
+
+/**
+ * The summer camp's row, which is not a form document.
+ *
+ * ---------------------------------------------------------------------------
+ * Why the camp is in this list at all, given it has nothing to edit here.
+ *
+ * Because it is a card on /forms, and this list is the parish's answer to "what
+ * order are the cards in". Leaving the camp out meant the one card nobody could
+ * move — appended after everything else, whatever the office wanted the page to
+ * lead with in June. So it appears as a row that can be dragged and can be
+ * chosen as the tap destination, and nothing else.
+ *
+ * **The two checkboxes are not offered, and that is not the same withholding
+ * `isPermanent` does for the vehicle form.** There, Published is withheld
+ * because unticking it would break a printed tag. Here there is no `published`
+ * field to tick: whether the camp is advertised is decided by `SHOW_CAMP` in
+ * `FormsHub` and by `servantSignUp` in the camp's own settings panel, which is
+ * where somebody running a camp already goes to open and close the sign-up. A
+ * checkbox here would be a second, disagreeing switch for one thing.
+ *
+ * It is `isPermanent` too, so the delete and the submissions rows stay off the
+ * `⋯` menu — there is no document to delete and the registrations live in the
+ * camp's own collections, behind its own screen.
+ * ---------------------------------------------------------------------------
+ */
+function isCampRow(form: WithId<FormDraft>): boolean {
+  return form.id === CAMP_FORM_SLUG;
+}
+
+/**
+ * The camp as a row, carrying the position stored in `config/forms`.
+ *
+ * A `FormDraft` rather than a `FormDefinition`, which is what types the whole
+ * list below: the draft is everything the builder can edit and the definition
+ * adds the three stamps a *stored document* carries. There is no document here,
+ * so inventing a `createdAt` for it would be a lie this list would then have to
+ * be careful around. Every stored form is a draft too, so the forms read from
+ * Firestore sit in the same array unchanged.
+ */
+function campRow(order: number): WithId<FormDraft> {
+  return {
+    ...blankForm(CAMP_FORM_SLUG),
+    id: CAMP_FORM_SLUG,
+    title: 'Serve at summer camp',
+    blurb: '',
+    icon: 'present',
+    order,
+    // Neither is read anywhere — the row draws a sentence where the checkboxes
+    // would be — but `published: true` keeps the shape honest for anything that
+    // later reads this list looking for what is on the hub.
+    published: true,
+    open: true,
+  };
+}
+
+/**
+ * The forms and the camp, in one list, sorted the way the hub sorts them.
+ *
+ * Same tie-break as `sortForms` in `../data`: `order`, then title, so two rows
+ * left on the same number still come out in an order somebody can explain.
+ */
+function withCampRow(
+  forms: readonly WithId<FormDraft>[],
+  campOrder: number,
+): WithId<FormDraft>[] {
+  return [...forms, campRow(campOrder)].sort(
+    (a, b) => a.order - b.order || a.title.localeCompare(b.title),
+  );
 }
 
 function FormsList({
   forms,
+  config,
   onCreate,
   onEdit,
   onSubmissions,
   onChanged,
 }: {
   forms: WithId<FormDefinition>[] | null;
+  config: FormsPageConfig;
   onCreate: () => void;
   onEdit: (form: WithId<FormDraft>) => void;
   onSubmissions: (formId: string) => void;
@@ -234,7 +328,7 @@ function FormsList({
    * matters after a refresh: keeping a stale local array would pin the list to
    * an order that no longer exists once somebody else has edited it.
    */
-  const [moved, setMoved] = useState<WithId<FormDefinition>[] | null>(null);
+  const [moved, setMoved] = useState<WithId<FormDraft>[] | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   /*
    * What a drag is doing, said out loud.
@@ -249,7 +343,16 @@ function FormsList({
 
   if (forms === null) return <p className="note">Loading…</p>;
 
-  const rows = moved ?? forms;
+  const rows = moved ?? withCampRow(forms, config.campOrder);
+  /*
+   * What the select shows: the stored slug, whether or not it still names a
+   * published form. Never a silent substitution — `parseFormsPageConfig`
+   * already decides what the *site* does with a pointer that resolves to
+   * nothing (it falls back to the vehicle registration), and this control's job
+   * is to report the setting rather than to hide it. The extra option below is
+   * what keeps the select honest when they disagree.
+   */
+  const nfcChoice = config.nfcFormSlug;
 
   /**
    * Renumber the whole list on the server.
@@ -257,13 +360,32 @@ function FormsList({
    * Every row is rewritten rather than the two that swapped — see
    * `setFormOrder` for why a swap does not work when most forms share
    * `order: 100`.
+   *
+   * The camp's row is pulled out and sent somewhere else. It is not a document
+   * in `forms` and never will be, so its position is a field on `config/forms`
+   * — but it is numbered from the same sequence as everything above and below
+   * it, which is what lets the hub sort one list by one field. Its slot in the
+   * numbering is left empty rather than closed up, so a form does not jump past
+   * the camp because the camp is stored elsewhere.
    */
-  function commit(next: WithId<FormDefinition>[]) {
+  function commit(next: WithId<FormDraft>[]) {
     setMoved(next);
-    void setFormOrder(
-      next.map((form) => form.id),
-      new Map(next.map((form) => [form.id, form.order])),
-    ).then(() => {
+    const numbered = next.map((form, index) => ({ form, order: (index + 1) * 10 }));
+    const camp = numbered.find((entry) => isCampRow(entry.form));
+
+    void Promise.all([
+      setFormOrder(
+        numbered
+          .filter((entry) => !isCampRow(entry.form))
+          .map((entry) => ({ id: entry.form.id, order: entry.order })),
+        new Map(next.map((form) => [form.id, form.order])),
+      ),
+      // Only when it moved. A drag two rows down the list should not write a
+      // settings document that says exactly what it said before.
+      camp && camp.order !== config.campOrder
+        ? setFormsPageConfig({ campOrder: camp.order })
+        : Promise.resolve(),
+    ]).then(() => {
       // Let the server's answer take over again. Without this the local array
       // outlives the edit and hides anything a second administrator changed.
       setMoved(null);
@@ -277,7 +399,7 @@ function FormsList({
   }
 
   /** Move one form to a new index, without writing. Used while a drag runs. */
-  function reorder(from: number, to: number): WithId<FormDefinition>[] | null {
+  function reorder(from: number, to: number): WithId<FormDraft>[] | null {
     if (to < 0 || to >= rows.length || to === from) return null;
     const next = [...rows];
     const [row] = next.splice(from, 1);
@@ -563,6 +685,53 @@ function FormsList({
 
       {rows.length === 0 && <p className="note">No forms yet.</p>}
 
+      {/*
+        The tap destination.
+        ---------------------------------------------------------------------
+        A select rather than a star on each row, and the difference is what it
+        can say. There is exactly one destination, and a control with one value
+        cannot be left in the state a per-row toggle can — two stars, or none,
+        after a write that half-landed. See `FormsPageConfig.nfcFormSlug`.
+
+        Unpublished forms are deliberately absent from the list: `formSubmit`
+        answers 404 to a form that is not published, so pointing a tag at one is
+        a tag that opens a page refusing every submission with nothing on screen
+        to say why.
+      */}
+      <label className="field fxa__nfc">
+        <span>Tap destination</span>
+        <select
+          value={nfcChoice}
+          onChange={(event) => {
+            void setFormsPageConfig({ nfcFormSlug: event.target.value });
+          }}
+        >
+          {/*
+            The stored slug, when it is not one of the rows below. A form's slug
+            is editable and a form can be unpublished or deleted, so this
+            setting can end up naming nothing — and a select that silently
+            showed the first form instead would be telling the office the tag
+            points somewhere it does not. The site falls back to the vehicle
+            registration meanwhile; this is the sentence that asks somebody to
+            decide on purpose.
+          */}
+          {!rows.some((form) => form.published && form.slug === nfcChoice) && (
+            <option value={nfcChoice}>{nfcChoice} — not a published form any more</option>
+          )}
+          {rows
+            .filter((form) => form.published)
+            .map((form) => (
+              <option key={form.id} value={form.slug}>
+                {form.title}
+              </option>
+            ))}
+        </select>
+        <small>
+          Where a tap on the church’s NFC tag lands. The summer camp can be chosen
+          here like any other form.
+        </small>
+      </label>
+
       {rows.length > 1 && (
         <p className="note">
           The order here is the order on /forms. Drag a form by its handle to move it, or
@@ -586,20 +755,47 @@ function FormsList({
             </button>
 
             <div className="fxa__row-main">
-              <button
-                type="button"
-                className="fxa__row-title"
-                onClick={() => onEdit(form)}
-              >
-                {form.title}
-              </button>
+              {isCampRow(form) ? (
+                /*
+                  Not a button. Everything else in this column opens the
+                  builder, and there is no form document behind this row to open
+                  — a title that looks the same and does nothing is worse than
+                  one that plainly is not a control.
+                */
+                <span className="fxa__row-title">{form.title}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="fxa__row-title"
+                  onClick={() => onEdit(form)}
+                >
+                  {form.title}
+                </button>
+              )}
               <span className="fxa__row-meta">
-                /forms/{form.slug} · {KIND_LABEL[form.kind]}
-                {form.payment.enabled && ' · takes payment'}
+                /forms/{form.slug} ·{' '}
+                {isCampRow(form) ? 'the camp’s own sign-up' : KIND_LABEL[form.kind]}
+                {!isCampRow(form) && form.payment.enabled && ' · takes payment'}
               </span>
             </div>
 
             <div className="fxa__row-flags">
+              {isCampRow(form) ? (
+                /*
+                  A sentence where the two checkboxes would be. Whether the camp
+                  is on the hub is the camp's decision and is made on its own
+                  settings panel — see `isCampRow` for why a switch here would be
+                  a second, disagreeing one. The row is still draggable, and it
+                  can still be chosen above as the tap destination.
+                */
+                <p className="fxa__fixed">
+                  <small>
+                    Shown while the camp is taking sign-ups. Open and close it under{' '}
+                    <strong>Run summer camp</strong>.
+                  </small>
+                </p>
+              ) : (
+                <>
               {/*
                 Publish and open are toggled here rather than only inside the
                 builder. Closing a registration the night it fills up is the one
@@ -636,6 +832,8 @@ function FormsList({
                 />
                 <span>Open</span>
               </label>
+                </>
+              )}
             </div>
 
             {/*
