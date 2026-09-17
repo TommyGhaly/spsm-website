@@ -242,13 +242,17 @@ function isPermanent(form: WithId<FormDraft>): boolean {
  * lead with in June. So it appears as a row that can be dragged and can be
  * chosen as the tap destination, and nothing else.
  *
- * **The two checkboxes are not offered, and that is not the same withholding
+ * **Published and Open are not offered, and that is not the same withholding
  * `isPermanent` does for the vehicle form.** There, Published is withheld
  * because unticking it would break a printed tag. Here there is no `published`
  * field to tick: whether the camp is advertised is decided by `SHOW_CAMP` in
  * `FormsHub` and by `servantSignUp` in the camp's own settings panel, which is
  * where somebody running a camp already goes to open and close the sign-up. A
- * checkbox here would be a second, disagreeing switch for one thing.
+ * box here would be a second, disagreeing switch for one thing.
+ *
+ * The tap destination box *is* offered, because that one is this drawer's
+ * question rather than the camp's: pointing the tag at the sign-up for the
+ * fortnight it runs is the whole reason the camp is in this list.
  *
  * It is `isPermanent` too, so the delete and the submissions rows stay off the
  * `⋯` menu — there is no document to delete and the registrations live in the
@@ -257,6 +261,20 @@ function isPermanent(form: WithId<FormDraft>): boolean {
  */
 function isCampRow(form: WithId<FormDraft>): boolean {
   return form.id === CAMP_FORM_SLUG;
+}
+
+/**
+ * Whether a tap on the tag opens this row's form.
+ *
+ * Compares on **slug**, because that is what the setting stores and what the
+ * camp — which has no document in `forms` and so no id there — can be named by.
+ * A form whose slug was edited in the builder stops matching, and that is the
+ * honest answer rather than a bug: the setting names an address, and the
+ * address changed. The list draws a warning above itself when nothing matches,
+ * and the site falls back to the vehicle registration meanwhile.
+ */
+function isTapDestination(form: WithId<FormDraft>, config: FormsPageConfig): boolean {
+  return form.published && form.slug === config.nfcFormSlug;
 }
 
 /**
@@ -344,15 +362,6 @@ function FormsList({
   if (forms === null) return <p className="note">Loading…</p>;
 
   const rows = moved ?? withCampRow(forms, config.campOrder);
-  /*
-   * What the select shows: the stored slug, whether or not it still names a
-   * published form. Never a silent substitution — `parseFormsPageConfig`
-   * already decides what the *site* does with a pointer that resolves to
-   * nothing (it falls back to the vehicle registration), and this control's job
-   * is to report the setting rather than to hide it. The extra option below is
-   * what keeps the select honest when they disagree.
-   */
-  const nfcChoice = config.nfcFormSlug;
 
   /**
    * Renumber the whole list on the server.
@@ -686,51 +695,40 @@ function FormsList({
       {rows.length === 0 && <p className="note">No forms yet.</p>}
 
       {/*
-        The tap destination.
+        The tap destination has no control of its own up here.
         ---------------------------------------------------------------------
-        A select rather than a star on each row, and the difference is what it
-        can say. There is exactly one destination, and a control with one value
-        cannot be left in the state a per-row toggle can — two stars, or none,
-        after a write that half-landed. See `FormsPageConfig.nfcFormSlug`.
+        It was a select over the list, and it is a box on each row instead, at
+        Tommy's direction. The reason to prefer it: the question "which form
+        does the tag open" is asked *about a form*, and every other answer this
+        drawer gives about a form — published, open — is a box on its row. A
+        select is a second place to look and a second vocabulary for one list.
 
-        Unpublished forms are deliberately absent from the list: `formSubmit`
-        answers 404 to a form that is not published, so pointing a tag at one is
-        a tag that opens a page refusing every submission with nothing on screen
-        to say why.
+        Only one box is ever ticked, and that is a property of the storage
+        rather than of this screen policing it: the destination is one field
+        naming one slug, so ticking a box is a single write that names the new
+        form, and the box that was ticked before goes out because the document
+        says something else now. There is no state where two are ticked, and
+        none where a half-landed write leaves zero. See
+        `FormsPageConfig.nfcFormSlug`.
+
+        What *is* policed here is unticking. A tag has to go somewhere, so the
+        ticked box refuses to become unticked — the way out is to tick another
+        one. See the `onChange` below.
+
+        This paragraph is the exception: it is drawn only when the stored
+        destination is no form on the list, which is the one state the boxes
+        cannot express. Nothing is ticked, and without a sentence that reads as
+        a bug rather than as a setting that has gone stale behind a rename.
       */}
-      <label className="field fxa__nfc">
-        <span>Tap destination</span>
-        <select
-          value={nfcChoice}
-          onChange={(event) => {
-            void setFormsPageConfig({ nfcFormSlug: event.target.value });
-          }}
-        >
-          {/*
-            The stored slug, when it is not one of the rows below. A form's slug
-            is editable and a form can be unpublished or deleted, so this
-            setting can end up naming nothing — and a select that silently
-            showed the first form instead would be telling the office the tag
-            points somewhere it does not. The site falls back to the vehicle
-            registration meanwhile; this is the sentence that asks somebody to
-            decide on purpose.
-          */}
-          {!rows.some((form) => form.published && form.slug === nfcChoice) && (
-            <option value={nfcChoice}>{nfcChoice} — not a published form any more</option>
-          )}
-          {rows
-            .filter((form) => form.published)
-            .map((form) => (
-              <option key={form.id} value={form.slug}>
-                {form.title}
-              </option>
-            ))}
-        </select>
-        <small>
-          Where a tap on the church’s NFC tag lands. The summer camp can be chosen
-          here like any other form.
-        </small>
-      </label>
+      {!rows.some((form) => form.published && form.slug === config.nfcFormSlug) && (
+        <div className="notice notice--alarm" role="status">
+          <p>
+            The NFC tag is set to open <strong>{config.nfcFormSlug}</strong>, which is not
+            a published form any more. Until somebody ticks a box below, a tap opens the
+            vehicle registration.
+          </p>
+        </div>
+      )}
 
       {rows.length > 1 && (
         <p className="note">
@@ -782,11 +780,11 @@ function FormsList({
             <div className="fxa__row-flags">
               {isCampRow(form) ? (
                 /*
-                  A sentence where the two checkboxes would be. Whether the camp
-                  is on the hub is the camp's decision and is made on its own
-                  settings panel — see `isCampRow` for why a switch here would be
-                  a second, disagreeing one. The row is still draggable, and it
-                  can still be chosen above as the tap destination.
+                  A sentence where Published and Open would be. Whether the
+                  camp is on the hub is the camp's decision and is made on its
+                  own settings panel — see `isCampRow` for why a switch here
+                  would be a second, disagreeing one. The row is still
+                  draggable, and it still carries the tap box below.
                 */
                 <p className="fxa__fixed">
                   <small>
@@ -796,44 +794,92 @@ function FormsList({
                 </p>
               ) : (
                 <>
+                  {/*
+                    Publish and open are toggled here rather than only inside
+                    the builder. Closing a registration the night it fills up is
+                    the one edit that is urgent, and it should not require
+                    opening a form editor and finding the right checkbox.
+                  */}
+                  <label className="fxa__flag">
+                    <input
+                      type="checkbox"
+                      checked={form.published}
+                      disabled={isPermanent(form)}
+                      onChange={(event) => {
+                        void setFormFlags(form.id, {
+                          published: event.target.checked,
+                        }).then(onChanged);
+                      }}
+                    />
+                    <span>
+                      Published
+                      {isPermanent(form) && (
+                        <small> — always on, the church’s own links use it</small>
+                      )}
+                    </span>
+                  </label>
+                  <label className="fxa__flag">
+                    <input
+                      type="checkbox"
+                      checked={form.open}
+                      onChange={(event) => {
+                        void setFormFlags(form.id, {
+                          open: event.target.checked,
+                        }).then(onChanged);
+                      }}
+                    />
+                    <span>Open</span>
+                  </label>
+                </>
+              )}
+
               {/*
-                Publish and open are toggled here rather than only inside the
-                builder. Closing a registration the night it fills up is the one
-                edit that is urgent, and it should not require opening a form
-                editor and finding the right checkbox.
+                The tap destination, on every row including the camp's.
+                -------------------------------------------------------------
+                A checkbox rather than a radio, which is the accessible default
+                for one-of-many and is deliberately not what this is. A radio
+                group has to be one group — one `name`, one set of inputs — and
+                these are scattered one per row through a list that also
+                contains a row backed by no document, in a drawer where a row
+                can appear and disappear under a live subscription. The boxes
+                beside this one are checkboxes, and a circle among them would
+                read as a different kind of answer to the same kind of
+                question.
+
+                What that owes the reader is said out loud rather than left to
+                the shape of the control: the ticked row's label carries how to
+                move it.
               */}
-              <label className="fxa__flag">
+              <label className="fxa__flag fxa__flag--nfc">
                 <input
                   type="checkbox"
-                  checked={form.published}
-                  disabled={isPermanent(form)}
+                  checked={isTapDestination(form, config)}
+                  /*
+                   * A form nobody can see is not somewhere to send a tap:
+                   * `formSubmit` answers 404 to an unpublished form, so the tag
+                   * would open a page that refuses every submission with
+                   * nothing on it to say why.
+                   */
+                  disabled={!form.published}
                   onChange={(event) => {
-                    void setFormFlags(form.id, {
-                      published: event.target.checked,
-                    }).then(onChanged);
+                    /*
+                     * Unticking is not an edit, it is an empty tag. The only
+                     * way out of being the destination is for another form to
+                     * become it, so the box does not come off — and it cannot
+                     * be left looking off either, because `config` is a live
+                     * subscription and the next render draws the stored answer.
+                     */
+                    if (!event.target.checked) return;
+                    void setFormsPageConfig({ nfcFormSlug: form.slug });
                   }}
                 />
                 <span>
-                  Published
-                  {isPermanent(form) && (
-                    <small> — always on, the church’s own links use it</small>
+                  Opens from the NFC tag
+                  {isTapDestination(form, config) && (
+                    <small> — tick another form to move it</small>
                   )}
                 </span>
               </label>
-              <label className="fxa__flag">
-                <input
-                  type="checkbox"
-                  checked={form.open}
-                  onChange={(event) => {
-                    void setFormFlags(form.id, {
-                      open: event.target.checked,
-                    }).then(onChanged);
-                  }}
-                />
-                <span>Open</span>
-              </label>
-                </>
-              )}
             </div>
 
             {/*

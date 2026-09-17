@@ -26827,19 +26827,20 @@ span.fxa__row-title {
 }
 
 /*
- * The tap destination, above the list.
+ * The tap destination, on its own line under Published and Open.
  *
- * A `.field` for the label, the select and the hint — nothing here restyles
- * those — plus a ruled panel, because this is the one control in the drawer
- * that is about the whole list rather than about a row of it, and sitting it
- * flush against "+ New form" read as a third thing in the same stack.
+ * `flex-basis: 100%` rather than a fourth item wrapping where it lands: this is
+ * the one box in the row that is about the *list* — only one form in the drawer
+ * can carry it — and sitting it inline with the two that are about this form
+ * alone read as a third flag of the same kind. Its `small` is the sentence that
+ * says how to move it, so the row needs the width anyway.
  */
-.fxa__nfc {
-  margin-block: var(--space-sm, 0.7rem);
-  padding: var(--space-sm, 0.7rem);
-  border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-paper-raised, #fdf7f4);
+.fxa__flag--nfc {
+  flex-basis: 100%;
+}
+
+.fxa__flag--nfc small {
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 /* The confirm spans the whole row under everything else. */
