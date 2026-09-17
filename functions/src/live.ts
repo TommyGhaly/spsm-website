@@ -63,9 +63,11 @@ import {
   isYouTubeChannelId,
   liveBroadcastIds,
   parseUploadsPlaylist,
+  pastBroadcasts,
   uploadsPlaylistUrl,
   parseIntegrationsConfig,
   videosListUrl,
+  type PastStream,
 } from '@spsm/shared';
 
 /**
@@ -107,12 +109,38 @@ const CACHE_CONTROL = 'public, max-age=0, s-maxage=30, stale-while-revalidate=12
 const TIMEOUT_MS = 8_000;
 
 /**
- * `GET /api/live` -> `{ live, videoId }`.
+ * `GET /api/live` -> `{ live, videoId, recent }`.
  *
  * 200 with `live: false` is the ordinary answer on a Tuesday, and is
  * deliberately distinguishable from a failure: every error path returns a
  * non-2xx so the page can tell "there is no service" from "we could not find
  * out", and show a way through to YouTube in the second case.
+ *
+ * ---------------------------------------------------------------------------
+ * `recent` is the back catalogue, and it is here because it was already paid
+ * for.
+ *
+ * The website does not use it: `/livestream` reads past streams from
+ * `archive.json`, a snapshot committed in `apps/website` and refreshed daily by
+ * `.github/workflows/refresh-archive.yml`, because a static export must not
+ * fetch at build time — see `features/livestream/data.ts` for that whole
+ * argument, which still stands.
+ *
+ * The **app** cannot read that file. It is a different repository with a
+ * different release cadence, and the snapshot rotates completely in about eight
+ * days — so a copy bundled into a build would spend most of its life listing
+ * liturgies that had already scrolled off the website. Its "Recent services"
+ * list is read from here instead, and is therefore always current.
+ *
+ * It costs nothing. `findLiveBroadcast` below already lists the channel's
+ * recent uploads and already asks `videos.list` about them; the only change is
+ * that the request now names `liveStreamingDetails` as well as `snippet`, and a
+ * v3 quota unit is charged per method rather than per part. Same two units a
+ * call, same 30-second CDN cache, one more field in the body.
+ *
+ * Additive on purpose: the website reads `live` and `videoId` and is untouched
+ * by this.
+ * ---------------------------------------------------------------------------
  */
 export const live = onRequest(
   {
@@ -143,9 +171,17 @@ export const live = onRequest(
     const config = await livestream();
 
     if (!config.enabled) {
-      // Somebody switched the stream off in config/integrations. Not an error.
+      /*
+       * Somebody switched the stream off in config/integrations. Not an error.
+       *
+       * `recent` is empty rather than looked up, and that is the same rule
+       * `getPastStreams` follows for an empty `archiveChannelId`: a parish that
+       * has switched the stream off has switched the archive off with it, and
+       * spending two units of quota to list a channel nobody is being shown
+       * would be answering a question that is no longer being asked.
+       */
       res.set('Cache-Control', CACHE_CONTROL);
-      res.status(200).json({ live: false, videoId: null, reason: 'disabled' });
+      res.status(200).json({ live: false, videoId: null, recent: [], reason: 'disabled' });
       return;
     }
 
@@ -186,9 +222,10 @@ export const live = onRequest(
 
       res.set('Cache-Control', CACHE_CONTROL);
       res.status(200).json({
-        live: !!found,
-        videoId: found?.videoId ?? null,
-        reason: found ? null : 'not-live',
+        live: !!found.videoId,
+        videoId: found.videoId,
+        recent: found.recent,
+        reason: found.videoId ? null : 'not-live',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -222,7 +259,7 @@ export const live = onRequest(
 async function findLiveBroadcast(
   channelId: string,
   apiKey: string,
-): Promise<{ videoId: string } | null> {
+): Promise<{ videoId: string | null; recent: PastStream[] }> {
   /*
    * The newest few, not the newest one.
    *
@@ -235,7 +272,7 @@ async function findLiveBroadcast(
    */
   const uploads = await getJson(`${uploadsPlaylistUrl(channelId, CANDIDATES)}&key=${key(apiKey)}`);
   const candidates = parseUploadsPlaylist(uploads).map((video) => video.id);
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return { videoId: null, recent: [] };
 
   const response = await fetch(`${videosListUrl(candidates)}&key=${key(apiKey)}`, {
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -247,11 +284,18 @@ async function findLiveBroadcast(
     throw new Error(`videos.list returned HTTP ${response.status}`);
   }
 
-  const live = liveBroadcastIds(await response.json(), candidates);
-  if (live[0]) return { videoId: live[0] };
+  /*
+   * One body, read twice, for the two different questions it answers — which of
+   * these is on now, and which of them were on before. See `videosListUrl` for
+   * why asking both costs the same single unit of quota as asking either.
+   */
+  const body = await response.json();
+  const live = liveBroadcastIds(body, candidates);
+  const recent = pastBroadcasts(body);
 
-  console.info(`[live] nothing live among ${candidates.join(', ')}.`);
-  return null;
+  if (!live[0]) console.info(`[live] nothing live among ${candidates.join(', ')}.`);
+
+  return { videoId: live[0] ?? null, recent };
 }
 
 /**

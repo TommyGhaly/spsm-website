@@ -41,7 +41,7 @@
  *     list exactly as it did before.
  * ---------------------------------------------------------------------------
  */
-import type { FeedVideo } from './schema/config.js';
+import type { FeedVideo, PastStream } from './schema/config.js';
 
 /**
  * A channel's uploads playlist id.
@@ -237,8 +237,98 @@ export function liveBroadcastIds(body: unknown, candidates: readonly string[]): 
   return candidates.filter((id) => live.has(id));
 }
 
-/** The `videos.list` request that answers `liveBroadcastIds` for these ids. */
+/**
+ * The `videos.list` request that answers `liveBroadcastIds` and
+ * `pastBroadcasts` for these ids.
+ *
+ * **`liveStreamingDetails` is free, and that is why both questions are asked
+ * here rather than in two calls.** A v3 quota unit is charged per method, not
+ * per part: `videos.list` costs one whether you ask for one part or five. So
+ * the part that carries `actualStartTime` — the only trustworthy answer to
+ * *when did this liturgy begin* — rides along on the request the live check was
+ * making anyway, and the archive costs nothing it did not already cost.
+ *
+ * That is worth stating because the obvious alternative is what
+ * `scripts/refresh-archive.mjs` still does: fetch each video's watch page and
+ * scrape `startTimestamp` out of its page JSON. That works from a laptop or a
+ * GitHub runner and **cannot** work from a Cloud Function, which is served a
+ * deliberately thinner page with the player-response object stripped out — see
+ * the measurements in `functions/src/live.ts`. `actualStartTime` is the same
+ * fact from a documented field, and every caller can read it.
+ */
 export function videosListUrl(ids: readonly string[]): string {
-  const params = new URLSearchParams({ part: 'snippet', id: ids.join(',') });
+  const params = new URLSearchParams({
+    part: 'snippet,liveStreamingDetails',
+    id: ids.join(','),
+  });
   return `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`;
+}
+
+/**
+ * The broadcasts among these videos that have already finished, newest first.
+ *
+ * Reads the same `videos.list` response `liveBroadcastIds` reads, and is the
+ * other half of it: that one answers "which of these is on now", this one
+ * answers "which of these were on before". One request, both answers.
+ *
+ * **The in-progress broadcast is excluded, and a scheduled one with it.** The
+ * word in the name is `past`, and a list of previous services whose first row
+ * is the liturgy playing in the player above it is a list that has miscounted.
+ * Note this is a real difference from the website's `getPastStreams`, which
+ * lists whatever is in `archive.json` including a stream that was live when the
+ * snapshot was taken — it can afford to, because the snapshot is up to a day
+ * stale and the overlap is rare. A list read live cannot.
+ *
+ * `startedAt` prefers `liveStreamingDetails.actualStartTime`, which is when the
+ * broadcast actually went on air, and falls back to `snippet.publishedAt`,
+ * which is when YouTube finished processing the recording — routinely twelve
+ * hours later and often on the following day. See `parseWatchPageStart` for the
+ * measurements that make the distinction worth this much care; the fallback is
+ * here for an ordinary upload, which has no start time because it was never
+ * streamed.
+ *
+ * Never throws. A body of the wrong shape yields an empty list, and one
+ * malformed item is skipped rather than discarding the page with it.
+ */
+export function pastBroadcasts(body: unknown): PastStream[] {
+  const items = (body as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return [];
+
+  const streams: PastStream[] = [];
+  for (const item of items) {
+    const id = text((item as { id?: unknown })?.id);
+    const snippet = (item as { snippet?: Record<string, unknown> })?.snippet;
+    const details = (item as { liveStreamingDetails?: Record<string, unknown> })
+      ?.liveStreamingDetails;
+
+    if (!id) continue;
+
+    // `'live'` is the one in the player and `'upcoming'` has nothing in it yet.
+    // Anything else — `'none'` for a finished stream or a plain upload — is past.
+    const content = snippet?.['liveBroadcastContent'];
+    if (content === 'live' || content === 'upcoming') continue;
+
+    const startedAt = text(details?.['actualStartTime']) ?? text(snippet?.['publishedAt']);
+    // A stream with no date cannot be placed in a list whose whole organising
+    // principle is the date. Same rule as `parseUploadsPlaylist`.
+    if (!startedAt || Number.isNaN(Date.parse(startedAt))) continue;
+
+    streams.push({
+      id,
+      /*
+       * Canonicalised rather than passed through as YouTube spelled it, for the
+       * reason `refresh-archive.mjs` gives at greater length: the two sources
+       * disagree on offset notation for the same instant, and a caller that
+       * compares or caches these should not see a change where there is none.
+       */
+      startedAt: new Date(startedAt).toISOString(),
+      thumbnailUrl: bestThumbnail(snippet?.['thumbnails']),
+    });
+  }
+
+  // By start time, not by the response's order or the caller's. The true
+  // broadcast order differs from publish order often enough to matter — a
+  // morning liturgy and the evening service before it are sometimes processed
+  // the other way round — and this is the field that settles it.
+  return streams.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
 }

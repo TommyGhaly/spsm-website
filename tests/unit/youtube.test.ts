@@ -4,6 +4,7 @@ import {
   liveBroadcastIds,
   parseUploadsPlaylist,
   parseWatchPageStart,
+  pastBroadcasts,
   uploadsPlaylistId,
   uploadsPlaylistUrl,
   videosListUrl,
@@ -336,13 +337,162 @@ describe('videosListUrl', () => {
     // One request for many ids is what makes this cost a single unit of quota
     // rather than one per video.
     expect(videosListUrl(['aaaaaaaaaaa', 'bbbbbbbbbbb'])).toBe(
-      'https://www.googleapis.com/youtube/v3/videos?part=snippet&id=aaaaaaaaaaa%2Cbbbbbbbbbbb',
+      'https://www.googleapis.com/youtube/v3/videos?part=snippet%2CliveStreamingDetails' +
+        '&id=aaaaaaaaaaa%2Cbbbbbbbbbbb',
     );
+  });
+
+  it('asks for liveStreamingDetails, which is what makes the archive free', () => {
+    /*
+     * A v3 quota unit is charged per method, not per part, so naming this part
+     * costs nothing on a call the live check was making anyway — and it carries
+     * `actualStartTime`, the only field that says when a broadcast went on air.
+     * Dropping it would look like tidying an unused parameter and would quietly
+     * take `/api/live`'s `recent` list with it.
+     */
+    expect(videosListUrl(['aaaaaaaaaaa'])).toContain('part=snippet%2CliveStreamingDetails');
   });
 
   it('carries no key', () => {
     // The key is appended by the Function from Secret Manager. Building it into
     // a shared URL helper would invite it into the website bundle.
     expect(videosListUrl(['aaaaaaaaaaa'])).not.toContain('key=');
+  });
+});
+
+/**
+ * `pastBroadcasts` reads the same `videos.list` response `liveBroadcastIds`
+ * does, and answers the other half of the question: not "which of these is on"
+ * but "which of these were on". It is what `/api/live` returns as `recent`, and
+ * what the app's "Recent services" list is built from.
+ *
+ * Two behaviours carry the weight. It must **exclude the broadcast that is
+ * playing right now**, because the app shows this list directly beneath the
+ * player and a "previous services" list whose first row is the current liturgy
+ * has miscounted. And it must prefer `actualStartTime` over `publishedAt`,
+ * because the second is when YouTube finished processing the recording —
+ * routinely twelve hours after the service and often on the following day. Both
+ * are the kind of thing that looks right in a code review and wrong on a phone.
+ */
+describe('pastBroadcasts', () => {
+  const item = (
+    id: string,
+    liveBroadcastContent: string,
+    details: Record<string, string> | null,
+    publishedAt = '2026-09-10T12:00:00Z',
+  ) => ({
+    id,
+    snippet: {
+      liveBroadcastContent,
+      publishedAt,
+      thumbnails: { high: { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` } },
+    },
+    ...(details ? { liveStreamingDetails: details } : {}),
+  });
+
+  it('prefers the real start time over the publish time', () => {
+    /*
+     * Measured against this parish on 2026-08-17: a liturgy that began Sunday
+     * at 7:52 AM was published at 03:36Z the next day, so a list built on
+     * `publishedAt` showed it as Sunday 11:36 PM — the wrong time, and often
+     * the wrong day.
+     */
+    const streams = pastBroadcasts({
+      items: [
+        item('aaaaaaaaaaa', 'none', { actualStartTime: '2026-09-13T11:52:00Z' }, '2026-09-14T03:36:00Z'),
+      ],
+    });
+
+    expect(streams).toEqual([
+      {
+        id: 'aaaaaaaaaaa',
+        startedAt: '2026-09-13T11:52:00.000Z',
+        thumbnailUrl: 'https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg',
+      },
+    ]);
+  });
+
+  it('falls back to the publish time for an ordinary upload', () => {
+    // A video that was never streamed has no `liveStreamingDetails` at all.
+    // Dropping it would silently shorten the list; the publish date is right
+    // for an upload anyway, since there was no broadcast to be late for.
+    expect(pastBroadcasts({ items: [item('bbbbbbbbbbb', 'none', null, '2026-09-11T14:00:00Z')] })).toEqual([
+      {
+        id: 'bbbbbbbbbbb',
+        startedAt: '2026-09-11T14:00:00.000Z',
+        thumbnailUrl: 'https://i.ytimg.com/vi/bbbbbbbbbbb/hqdefault.jpg',
+      },
+    ]);
+  });
+
+  it('leaves out the broadcast that is live now', () => {
+    // It is in the player above this list. See the note on the function.
+    const streams = pastBroadcasts({
+      items: [
+        item('aaaaaaaaaaa', 'live', { actualStartTime: '2026-09-15T11:30:00Z' }),
+        item('bbbbbbbbbbb', 'none', { actualStartTime: '2026-09-14T11:30:00Z' }),
+      ],
+    });
+
+    expect(streams.map((stream) => stream.id)).toEqual(['bbbbbbbbbbb']);
+  });
+
+  it('leaves out a scheduled broadcast', () => {
+    // An `upcoming` stream has nothing in it yet, so it is not something a
+    // reader can watch — and it is not "recent" either, it is in the future.
+    expect(
+      pastBroadcasts({
+        items: [item('aaaaaaaaaaa', 'upcoming', { scheduledStartTime: '2026-09-20T11:30:00Z' })],
+      }),
+    ).toEqual([]);
+  });
+
+  it('orders by when the broadcast began, not by publish order', () => {
+    /*
+     * The two disagree, and this is the case that proves it: Saturday evening's
+     * service was processed *after* Sunday morning's liturgy, so publish order
+     * puts them the wrong way round. Start time settles it.
+     */
+    const streams = pastBroadcasts({
+      items: [
+        item('aaaaaaaaaaa', 'none', { actualStartTime: '2026-09-12T22:40:00Z' }, '2026-09-13T06:00:00Z'),
+        item('bbbbbbbbbbb', 'none', { actualStartTime: '2026-09-13T11:52:00Z' }, '2026-09-13T02:00:00Z'),
+      ],
+    });
+
+    expect(streams.map((stream) => stream.id)).toEqual(['bbbbbbbbbbb', 'aaaaaaaaaaa']);
+  });
+
+  it('skips an entry it cannot date rather than the whole page', () => {
+    const streams = pastBroadcasts({
+      items: [
+        { id: 'aaaaaaaaaaa', snippet: { liveBroadcastContent: 'none' } },
+        { id: 'bbbbbbbbbbb', snippet: { liveBroadcastContent: 'none', publishedAt: 'not a date' } },
+        item('ccccccccccc', 'none', { actualStartTime: '2026-09-13T11:52:00Z' }),
+      ],
+    });
+
+    expect(streams.map((stream) => stream.id)).toEqual(['ccccccccccc']);
+  });
+
+  it('renders no thumbnail rather than dropping a stream that has none', () => {
+    // `''` is what `PastStream` uses for "no picture", and both frontends draw
+    // their own placeholder for it. A missing image must not hide a liturgy.
+    const streams = pastBroadcasts({
+      items: [
+        { id: 'aaaaaaaaaaa', snippet: { liveBroadcastContent: 'none', publishedAt: '2026-09-13T11:52:00Z' } },
+      ],
+    });
+
+    expect(streams).toEqual([
+      { id: 'aaaaaaaaaaa', startedAt: '2026-09-13T11:52:00.000Z', thumbnailUrl: '' },
+    ]);
+  });
+
+  it('returns nothing on a body it cannot read, without throwing', () => {
+    for (const junk of [null, undefined, {}, { items: 'nope' }, { items: [null, 7] }, 'text']) {
+      expect(() => pastBroadcasts(junk)).not.toThrow();
+      expect(pastBroadcasts(junk)).toEqual([]);
+    }
   });
 });
