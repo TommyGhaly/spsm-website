@@ -61,4 +61,5 @@ export * from './payments/shopSections.js';
 export * from './accountDeletion.js';
 
 export * from './analytics/bookstoreEvents.js';
+export * from './analytics/faults.js';
 export * from './analytics/rollup.js';

@@ -863,6 +863,58 @@ service cloud.firestore {
       allow create: if isBookstoreEvent(request.resource.data);
     }
 
+    /*
+     * -----------------------------------------------------------------------
+     * `faults` — the app's own crash reporter.
+     *
+     * Deliberately not Crashlytics. The app's privacy notice promises there is
+     * no third-party crash reporter in it, so a fault is one document here, in
+     * the church's own database. See packages/shared/src/analytics/faults.ts,
+     * which this block must agree with field for field: a document this rule
+     * rejects is invisible, because the reporter swallows its own errors by
+     * design and nothing anywhere will say why.
+     *
+     * **Unauthenticated create, and that is the point.** The failure being
+     * reported may be the one that stopped sign-in from finishing; a reporter
+     * that needs a working app to report a broken one reports nothing. App
+     * Check still gates it, so this is reachable only from a real build.
+     *
+     * **No client may read it, ever.** A stack trace names the screen somebody
+     * was on, and a collection of them is a record of who used what and when.
+     * Staff read these in the Firebase console, where access is the console's
+     * own and is logged. There is deliberately no uid on the document either —
+     * see the file above.
+     * -----------------------------------------------------------------------
+     */
+    match /faults/{faultId} {
+      allow read, update, delete: if false;
+
+      allow create: if isFault(request.resource.data);
+    }
+
+    function isFault(doc) {
+      return doc.keys().hasOnly(['message', 'stack', 'source', 'route', 'platform', 'version', 'dev', 'at', 'expiresAt'])
+        && doc.keys().hasAll(['message', 'stack', 'source', 'route', 'platform', 'version', 'dev', 'at', 'expiresAt'])
+        // FAULT_MESSAGE_MAX / FAULT_STACK_MAX. A stack is allowed to be empty
+        // — plenty of thrown values carry none — but never absent.
+        && doc.message is string && doc.message.size() > 0 && doc.message.size() <= 500
+        && doc.stack is string && doc.stack.size() <= 4000
+        && doc.source in ['render', 'handler']
+        // A path, never a URL and never a person. Bounded so this cannot be
+        // used to store arbitrary text in a collection nobody reads.
+        && doc.route is string && doc.route.size() <= 200
+        && doc.platform in ['ios', 'android']
+        && doc.version is string && doc.version.size() <= 20
+        && doc.dev is bool
+        && doc.at == request.time
+        // FAULT_TTL_DAYS, swept by the TTL policy on expiresAt. Pinned to the
+        // server's clock so a wrong phone clock cannot park a document here
+        // for a decade.
+        && doc.expiresAt is timestamp
+        && doc.expiresAt > request.time
+        && doc.expiresAt < request.time + duration.value(31, 'd');
+    }
+
     function isBookstoreEvent(doc) {
       return doc.keys().hasOnly(['kind', 'slug', 'term', 'quantity', 'visitor', 'day', 'at', 'expiresAt'])
         && doc.keys().hasAll(['kind', 'slug', 'term', 'quantity', 'visitor', 'day', 'at', 'expiresAt'])

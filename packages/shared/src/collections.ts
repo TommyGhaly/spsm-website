@@ -181,6 +181,29 @@ export const COLLECTIONS = {
    * until the extension has delivered it. See firestore.rules.
    */
   mail: 'mail',
+  /**
+   * What the app was doing when it broke.
+   *
+   * The church's own crash reporter, and it is deliberately not Crashlytics.
+   * The app's privacy notice promises in so many words that there is "no
+   * analytics service, no crash reporter, no advertising identifier", and that
+   * promise is worth more to a parish than a vendor dashboard is — so a fault
+   * is one document here, in the church's own database, and no third party is
+   * involved at any point.
+   *
+   * **Create-only, and readable by nobody through a client.** A stack trace
+   * names the screen somebody was on, which over a collection is a record of
+   * who used what and when. Staff read these in the Firebase console, where the
+   * access is the console's own and is logged.
+   *
+   * The write is unauthenticated on purpose: the crash being reported may well
+   * be the one that stopped sign-in from finishing, and a reporter that needs a
+   * working app to report a broken one reports nothing. App Check still applies
+   * — the SDK attaches the token — so this is not open to anything but a real
+   * build of the app. `expiresAt` is enforced by the rule and swept by TTL; see
+   * FAULT_TTL_DAYS.
+   */
+  faults: 'faults',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
