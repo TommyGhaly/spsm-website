@@ -57,6 +57,29 @@ const STORAGE_RULES_PATH = fileURLToPath(new URL('../../storage.rules', import.m
  * argument is now belt and braces: only one suite needs Storage, and loading a
  * ruleset it will never consult costs a round trip for nothing.
  */
+/**
+ * Where the emulators are listening.
+ *
+ * These were hardcoded 8080 and 9199, which is right until something else on
+ * the machine is already using one — a stale emulator from another checkout of
+ * this repo is the usual culprit, and it squats the port for days. The failure
+ * is `Could not start Firestore Emulator, port taken`, and the obvious fix
+ * (running the suite on free ports via a merged firebase.json) does not work on
+ * its own: the *client* below would still dial 8080 and every test would fail
+ * to connect to an emulator that was running perfectly well elsewhere.
+ *
+ * So both halves read the same two variables. `npm run test:rules` sets
+ * neither and gets the defaults; a machine with a busy 8080 can run
+ *
+ *   FIRESTORE_EMULATOR_PORT=8085 STORAGE_EMULATOR_PORT=9195 npm run test:rules
+ *
+ * with a firebase.json pointed at the same pair.
+ */
+export const EMULATOR_PORTS = {
+  firestore: Number(process.env.FIRESTORE_EMULATOR_PORT ?? 8080),
+  storage: Number(process.env.STORAGE_EMULATOR_PORT ?? 9199),
+};
+
 export async function createTestEnv(
   suite: string,
   withStorage = false,
@@ -69,7 +92,7 @@ export async function createTestEnv(
     firestore: {
       rules: readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
-      port: 8080,
+      port: EMULATOR_PORTS.firestore,
     },
     /*
      * Storage joined this harness when program galleries opened the first
@@ -86,7 +109,7 @@ export async function createTestEnv(
           storage: {
             rules: readFileSync(STORAGE_RULES_PATH, 'utf8'),
             host: '127.0.0.1',
-            port: 9199,
+            port: EMULATOR_PORTS.storage,
           },
         }
       : {}),
