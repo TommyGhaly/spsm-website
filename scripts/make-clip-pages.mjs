@@ -47,7 +47,14 @@ import { DEFAULT_THEME } from '@spsm/shared';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'apps/website/public/c');
 
-const ORIGIN = 'https://spsmwayland.org';
+/**
+ * The canonical host, and it is `www.` for a reason worth keeping written down:
+ * the apex answers 301 to this host for every path, `.well-known/` included,
+ * and **Apple follows no redirect** from an App Clip invocation URL or when
+ * fetching the association file. A tag printed without the `www.` opens Safari
+ * and never the clip.
+ */
+const ORIGIN = 'https://www.spsmwayland.org';
 
 /**
  * The Smart App Banner, once SPSM Connect has an App Store id.

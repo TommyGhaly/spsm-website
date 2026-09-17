@@ -2,11 +2,18 @@
 
 The parish's tags, and what each one opens without an install.
 
-Everything the church invokes lives under **`/c/*` on this domain**, which was
-already a shipped App Clip namespace before SPSM Connect had one: Taksis's
-vehicle registration is `/c/register-vehicle`, printed on every car-park tag,
-and `public/c/register-vehicle.html` is its live fallback. Nothing here touches
-it. Vehicle registration is Taksis's clip and stays Taksis's clip.
+Everything the church invokes lives under **`/c/*` on this domain**, at
+`https://www.spsmwayland.org/c/<slug>` — **with the `www.`**. The apex answers
+301 to it for every path, `.well-known/` included, and Apple follows no redirect
+from an invocation URL or when fetching the association file, so a tag printed
+without it opens Safari and never the clip. The same applies to Android's
+`assetlinks.json`, which is why the app's `associatedDomains` and intent filters
+name the `www` host and not the apex.
+
+`/c/*` was already a shipped App Clip namespace before SPSM Connect had one:
+Taksis's vehicle registration is `/c/register-vehicle`, printed on every
+car-park tag, and `public/c/register-vehicle.html` is its live fallback. Nothing
+here touches it. Vehicle registration is Taksis's clip and stays Taksis's clip.
 
 ## Three constraints that decided the shape of this
 
@@ -32,13 +39,13 @@ shim that answers a library request with the camera.
 | # | Invocation URL | Card title | What the clip does |
 |---|---|---|---|
 | 1 | `/c/give` | Give | The giving screen, and Tithe.ly's form in Safari over it. |
-| 2 | `/c/schedule` | This Week | The next seven days from `/api/calendar`, read-only. |
-| 3 | `/c/apps` | The Parish’s Apps | Taksis, Tithe.ly, SPSM Connect, with store links. |
+| 2 | `/c/schedule` | This Week | Week and month views over `/api/calendar`, read-only. |
+| 3 | `/c/apps` | The Parish’s Apps | Taksis and Tithe.ly with store links, plus a card for SPSM Connect that the full app does not show. |
 | 4 | `/c/welcome` | Welcome | The liturgy tour, for a visitor at the door. |
 | 5 | `/c/plans` | Our Expansion Plans | Renderings, and the flythrough in Safari. |
 | 6 | `/c/bookstore` | The Bookstore | **Hands off.** Explains, then offers the app or the website. |
-| 7 | `/c/forms` | Parish Forms | Renders the form from its `FormDefinition` and submits it. |
-| 8 | `/c/photos` | Send a Photograph | Camera, then straight into the ministry's queue. |
+| 7 | `/c/forms` | Parish Forms | Opens on `config/forms.nfcFormSlug`; the list is one press away. |
+| 8 | `/c/photos` | Send a Photograph | Camera, filed against `config/events.mainSection`, changeable from the pill. |
 
 The table in the app is `src/clip/experiences.ts` in the SPSM-Connect repo, and
 it is the one to change first: its header lists the four places outside itself
@@ -80,6 +87,21 @@ Static HTML rather than Next routes on purpose: `cleanUrls` and
 `trailingSlash: false` decide what an exported route is actually served at, and
 an invocation URL that is wrong by a slash is a tag that has to be reprinted. A
 file at `public/c/give.html` is served at `/c/give` and nowhere else.
+
+### Two of them open on a setting the office controls
+
+`/c/forms` opens on `config/forms.nfcFormSlug` rather than on a list — the same
+field the website's own tag page redirects by, and the reason it exists is the
+reason all of these URLs are `/c/*`: a tag cannot be reprogrammed, so it points
+at one URL for ever and the office changes the answer in one field. The parish
+default is the vehicle registration. `‹ All forms` is one press away and marks
+which form the tag was pointing at.
+
+`/c/photos` does the same with `config/events.mainSection` — "the thing
+happening now" — and the pill under the viewfinder changes it, using the app's
+own `DestinationBar`. The rule that component carries is worth repeating because
+a clip makes it literal: *the church's answer is live, the sender's answer wins,
+and the sender's answer does not outlive the visit.* A clip is one visit.
 
 ### Two of these were argued against, and one of them changed its mind
 
@@ -125,7 +147,8 @@ exactly `Clip`. Apple requires that string; it is what makes the bundle id
 
 **3. Register the experiences.** App Store Connect → the app → App Clip →
 Advanced App Clip Experiences. One per row above, each with a 3:2 image and a
-call to action, at `https://spsmwayland.org/c/<slug>`. Reports of NFC invocation
+call to action, at `https://www.spsmwayland.org/c/<slug>` — the `www.` is not
+optional; see the top of this file. Reports of NFC invocation
 failing start around fifty configured experiences; eight is comfortable.
 
 **4. The association file.** `public/.well-known/apple-app-site-association`
