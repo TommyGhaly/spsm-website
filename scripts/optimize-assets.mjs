@@ -854,7 +854,9 @@ for (const [source, slug] of [
 }
 
 // ── App icons ───────────────────────────────────────────────────────────────
-// The two icons on /apps, from each app's own App Store listing at 512×512.
+// The three icons on /apps. Taksis's and Tithe.ly's are from each app's own App
+// Store listing at 512×512; SPSM Connect's is the parish's own artwork, taken
+// from the app repository rather than from a listing — see the note below it.
 //
 // Resized and re-encoded, unlike the two badges above, and the distinction is
 // worth stating because it looks inconsistent. A badge is a *lockup with type in
@@ -870,12 +872,22 @@ for (const [source, slug] of [
 // the sixth-century icon of Christ and St. Menas. Tithe.ly's belongs to Your
 // Giving, Inc. and is used to identify their app beside their own store badges.
 //
+// SPSM Connect's is the parish seal on the brand ground, and it is a **copy of a
+// generated file**: the app repository's `scripts/make-icons.mjs` draws it from
+// `config/theme`, writes it to `assets/icon.png`, and that is what Apple has.
+// So it is not taken from a store listing like the other two — the listing's
+// copy is downscaled by Apple and this is the master — and it does not update
+// itself. If the parish ever restyles the app and `npm run icons` there produces
+// a different ground, re-copy it and rerun this. assets/README.md carries the
+// provenance.
+//
 // Two sizes for a 64px slot, 2x and 3x. No 1x: the 128 is 6 KB and a file that
 // small is not worth a third variant, and a 1x screen simply takes the 2x.
 {
   for (const [source, name] of [
     ['taksis-icon.png', 'taksis'],
     ['tithely-icon.png', 'tithely'],
+    ['spsm-connect-icon.png', 'spsm-connect'],
   ]) {
     for (const size of [128, 192]) {
       write(

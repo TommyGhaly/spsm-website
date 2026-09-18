@@ -23,10 +23,12 @@ export type ParishApp = {
    * scripts/optimize-assets.mjs, and `assets/README.md` for where each one came
    * from and who owns it.
    *
-   * Absent on an app that has no listing to take an icon from, which today means
-   * SPSM Connect. The card renders no picture at all rather than a placeholder:
-   * an invented mark for an unbuilt app is the one thing on this page that could
-   * mislead somebody.
+   * Optional, and today all three have one. It stayed optional when SPSM
+   * Connect got its icon because the rule behind the empty slot has not
+   * changed: an app with no artwork renders no picture at all rather than a
+   * placeholder, since an invented mark is the one thing on this page that
+   * could mislead somebody. SPSM Connect's is not invented — it is the parish
+   * seal the app itself ships, copied from the app repository.
    */
   icon?: string;
   /** App Store URL, absent when it is not on the App Store. */
@@ -107,6 +109,14 @@ export const PARISH_APPS: readonly ParishApp[] = [
      * grow a feature list, a screenshot, or a month.
      */
     what: 'Our next app, for everyone rather than for servants.',
+    /*
+     * The parish's own seal on the brand ground, which is the icon the app
+     * ships and the one Apple has — not an invention for a card, which is what
+     * the empty slot in `ParishAppCard` exists to prevent. Its source is a copy
+     * of the app repository's generated `assets/icon.png`; the app-icons block
+     * in scripts/optimize-assets.mjs says when to re-copy it.
+     */
+    icon: 'app-spsm-connect',
     unreleased: 'Being built. There is nothing to install yet.',
   },
 ];

@@ -50,12 +50,13 @@ table records what is known; **unknown is not the same as cleared.**
 | `brand/instagram.svg`, `brand/facebook.svg`, `brand/youtube.svg` | Official brand marks | Third-party trademarks. See below. |
 | `brand/app-store-badge.svg` | Apple Marketing Tools, 2026-08-26 | **Apple trademark.** Official "Download on the App Store" badge, US/UK English, black. Licensed for linking to the App Store only; may not be recoloured, recomposed, redrawn or reworded. Copied through unchanged. |
 | `apps/taksis-icon.png` | Taksis App Store listing (`id6743824691`), 2026-08-27 | **The parish's own.** Apple lists the seller as "ST. PHILOPATER MERCURIUS & ST. MINA COPTIC ORTHODOX CHURCH, INC." The artwork is the sixth-century icon of Christ and St. Menas. 512×512, resized for /apps. |
+| `apps/spsm-connect-icon.png` | SPSM Connect's own `assets/icon.png`, 2026-09-17 | **The parish's own.** The parish seal on the brand ground — the App Store icon the app ships, and the icon Apple has. Copied from the app repository rather than from the listing, because `scripts/make-icons.mjs` there generates it from `config/theme` and that file is the master; Apple's copy is a downscale of it. 1024×1024 reduced to 512, resized again for /apps. Re-copy it if the app is ever restyled. |
 | `apps/tithely-icon.png` | Tithe.ly App Store listing (`id694740700`), 2026-08-27 | **Your Giving, Inc.'s mark.** Their app's icon, shown on /apps to identify the app the parish's own store badges link to. Resized only — not cropped, recoloured, or rounded in the file. |
 | `brand/google-play-badge.png` | Google Play brand resources, 2026-08-26 | **Google trademark.** Official "Get it on Google Play" generic web badge. May not be modified, and the padding in the file is Google's required clear space — do not crop it. Copied through unchanged. |
 
 ### An app icon is not a badge
 
-`apps/taksis-icon.png` and `apps/tithely-icon.png` **are** resized and
+The three icons in `apps/` **are** resized and
 re-encoded, unlike the two store badges below, and the distinction is worth
 stating because it looks inconsistent. A badge is a lockup with type in it that
 Apple and Google license for one purpose and publish rules about altering; an app
@@ -64,8 +65,9 @@ is not altering it. What is not done to either: no crop, no recolour, and no
 rounded corner baked into the pixels — the corner is a CSS `border-radius` on the
 element, which is how every store renders these and leaves the file untouched.
 
-Taksis's is the parish's own artwork and raises no question at all. Tithe.ly's is
-theirs, used beside their own badges to say which app you are installing.
+Taksis's and SPSM Connect's are the parish's own artwork and raise no question at
+all. Tithe.ly's is theirs, used beside their own badges to say which app you are
+installing.
 
 ### The three social marks are not ours to redraw
 
