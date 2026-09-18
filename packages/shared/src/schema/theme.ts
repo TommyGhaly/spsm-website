@@ -400,14 +400,47 @@ export const DEFAULT_THEME: ThemeTokens = {
   },
 
   font: {
-    // System fonts throughout, and no webfont anywhere. A parish site is read
-    // on old Android phones over church-hall wifi; 200KB of webfont to render
-    // the word "Welcome" is a poor trade, and a serif the reader's own OS
-    // supplies never flashes unstyled.
+    /*
+     * One real serif, and the system sans for chrome.
+     *
+     * This used to be system fonts throughout, on the grounds that a parish
+     * site is read on old Android phones over church-hall wifi and 200KB of
+     * webfont to render the word "Welcome" is a poor trade. That trade was
+     * priced honestly and it has changed: the latin subset of EB Garamond is
+     * 23KB for the regular, 108KB for all four faces, and only the regular is
+     * on the critical path. What the old answer actually bought was a parish
+     * whose typeface was "whatever Georgia is on this device" — a different
+     * face on Android, on Windows, and in the app, which is the same drift
+     * this file exists to prevent, just in type instead of colour.
+     *
+     * `ui` stays on the system sans deliberately. The reader's own OS sans is
+     * the one face that never looks borrowed in a tab bar, it costs nothing,
+     * and it is what keeps the serif meaning "this is the church's voice"
+     * rather than "this is all text".
+     *
+     * Georgia and the generic `serif` stay in the stack behind EB Garamond,
+     * so a reader who blocks webfonts lands exactly where this theme used to.
+     *
+     * The native names are not free-form. On iOS `fontFamily` resolves the
+     * family name stored *inside* the file, and Google's static EB Garamond
+     * puts only Regular, Italic, Bold and Bold Italic under `EB Garamond`;
+     * SemiBold and friends each get their own family. On Android the name is
+     * whatever the embedded XML family declares. Both platforms are wired to
+     * answer to `EB Garamond` with those four faces — see the `expo-font`
+     * block in SPSM-Connect's app.config.ts, which is the other half of this
+     * and must ship before this name does.
+     */
     body: {
-      webStack: ['ui-serif', 'Georgia', 'Iowan Old Style', 'Times New Roman', 'serif'],
-      ios: 'Georgia',
-      android: 'serif',
+      webStack: [
+        'EB Garamond',
+        'ui-serif',
+        'Georgia',
+        'Iowan Old Style',
+        'Times New Roman',
+        'serif',
+      ],
+      ios: 'EB Garamond',
+      android: 'EB Garamond',
     },
     ui: {
       webStack: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
@@ -415,9 +448,16 @@ export const DEFAULT_THEME: ThemeTokens = {
       android: 'sans-serif',
     },
     display: {
-      webStack: ['ui-serif', 'Georgia', 'Iowan Old Style', 'Times New Roman', 'serif'],
-      ios: 'Georgia',
-      android: 'serif',
+      webStack: [
+        'EB Garamond',
+        'ui-serif',
+        'Georgia',
+        'Iowan Old Style',
+        'Times New Roman',
+        'serif',
+      ],
+      ios: 'EB Garamond',
+      android: 'EB Garamond',
     },
   },
 

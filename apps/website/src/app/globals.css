@@ -17,6 +17,58 @@
  * volunteer picking this up in three years can read it.
  */
 
+/*
+ * EB Garamond — the parish's serif, behind `--font-body` and `--font-display`.
+ *
+ * Self-hosted rather than fetched from Google: a third-party font request is a
+ * third party watching every reader arrive, it is a second DNS lookup and TLS
+ * handshake before any text can paint, and the cross-site cache that used to
+ * pay for it has been partitioned in every browser since 2020. These four
+ * files are the latin subset and total 108KB, of which one 23KB regular is on
+ * the critical path.
+ *
+ * `font-display: swap` is the honest choice for prose. The alternative,
+ * `optional`, would drop the face entirely on a slow first visit — and this
+ * parish's readers are the ones on church-hall wifi, so "the font never
+ * arrives for the people it was chosen for" is not a trade worth making. They
+ * see Georgia for a moment instead, which is what this site shipped for years.
+ *
+ * Weights are 400 and 700 only, matching what the app can embed — see the
+ * `font` block in packages/shared/src/schema/theme.ts. A `font-weight: 600`
+ * anywhere in this sheet gets a browser-synthesised fake bold, so don't.
+ */
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/eb-garamond-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/eb-garamond-latin-400-italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/eb-garamond-latin-700-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/eb-garamond-latin-700-italic.woff2') format('woff2');
+}
+
 *,
 *::before,
 *::after {
@@ -76,7 +128,7 @@ body {
   margin: 0;
   background: var(--color-paper, #f6e8e3);
   color: var(--color-ink, #1c1614);
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-body, 1.0625rem);
   line-height: var(--leading-relaxed, 1.65);
   text-rendering: optimizeLegibility;
@@ -93,7 +145,7 @@ nav,
 }
 
 h1 {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.1);
   letter-spacing: var(--tracking-tight, -0.02em);
@@ -729,7 +781,7 @@ main {
 .wordmark__name {
   display: block;
   min-width: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   /*
    * One line, at every width. Tommy: *"make philopater mercurius one line."*
@@ -3304,7 +3356,7 @@ main {
 
 .shop-head__title {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2rem);
   line-height: 1;
   letter-spacing: var(--tracking-tight, -0.02em);
@@ -3635,7 +3687,7 @@ main {
  * and on the element itself, so nothing is lost — only deferred.
  */
 .book__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   line-height: var(--leading-snug, 1.3);
   color: var(--color-ink, #1c1614);
@@ -3682,7 +3734,7 @@ main {
 
 .book__price {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.2rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
@@ -3786,7 +3838,7 @@ main {
 }
 
 .alsoin__name {
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.8125rem);
   line-height: 1.25;
   color: var(--color-ink, #1c1614);
@@ -4126,7 +4178,7 @@ main {
    reads. */
 .bookshelf__name {
   margin-top: 0.95rem;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.9375rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #1c1614);
@@ -4390,7 +4442,7 @@ main {
 .sheet__name {
   margin: 0;
   min-width: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: var(--leading-tight, 1.2);
   letter-spacing: var(--tracking-tight, -0.015em);
@@ -4647,7 +4699,7 @@ main {
   margin: 0;
   padding-bottom: var(--space-xs, 0.45rem);
   border-bottom: 1px solid var(--color-rule, #e0cac3);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.55rem);
   line-height: var(--leading-tight, 1.15);
   letter-spacing: var(--tracking-tight, -0.015em);
@@ -4661,7 +4713,7 @@ main {
  */
 .item__price {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-accent, #992a21);
@@ -4703,7 +4755,7 @@ main {
 
 .buybox__price {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
@@ -4871,7 +4923,7 @@ main {
 }
 
 .recap__total strong {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.4rem);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -4951,7 +5003,7 @@ main {
 
 .basket__name {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #1c1614);
@@ -4998,7 +5050,7 @@ main {
 
 .basket__sum {
   margin: 0 0 0 auto;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.15rem);
   font-variant-numeric: tabular-nums;
   color: var(--color-ink, #1c1614);
@@ -5027,7 +5079,7 @@ main {
 }
 
 .basket__totalsum {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2rem);
   font-weight: 400;
   line-height: 1;
@@ -5101,7 +5153,7 @@ main {
 
 .basket__emptytitle {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.4rem);
 }
 
@@ -5209,7 +5261,7 @@ main {
 }
 
 .addmore__name {
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.8125rem);
   line-height: 1.25;
   color: var(--color-ink, #1c1614);
@@ -5295,7 +5347,7 @@ main {
 }
 
 .cover--none__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-micro, 0.75rem);
   line-height: var(--leading-snug, 1.3);
   color: color-mix(in srgb, var(--color-gold, #b08d43) 80%, var(--color-ink-inverse, #fdf7f4));
@@ -5383,7 +5435,7 @@ main {
 
 .done__title {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 1.75rem);
   line-height: var(--leading-tight, 1.15);
   letter-spacing: var(--tracking-tight, -0.015em);
@@ -5451,7 +5503,7 @@ main {
 }
 
 .done__total strong {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-weight: 400;
   line-height: 1;
@@ -6266,7 +6318,7 @@ main {
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
   background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
   color: var(--color-gold, #b08d43);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: 1;
 }
@@ -6277,7 +6329,7 @@ main {
 }
 
 .cleric__id h3 {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   line-height: var(--leading-snug, 1.25);
   margin: 0;
@@ -6504,7 +6556,7 @@ main {
  */
 .fact__body p {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.9375rem);
   line-height: var(--leading-snug, 1.35);
   color: color-mix(in srgb, var(--color-ink, #1c1614) 78%, transparent);
@@ -6997,7 +7049,7 @@ main {
   align-items: center;
   gap: var(--space-sm, 0.5rem);
   margin: 0 0 var(--space-sm, 0.75rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   font-weight: 400;
   line-height: var(--leading-snug, 1.3);
@@ -7182,7 +7234,7 @@ main {
     color-mix(in srgb, var(--color-accent, #992a21) 22%, var(--color-deep, #481010)),
     var(--color-deep, #481010)
   );
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   font-weight: 400;
   line-height: var(--leading-snug, 1.3);
@@ -7497,7 +7549,7 @@ main {
   margin: var(--space-lg, 2rem) 0 0;
   padding-top: var(--space-md, 1rem);
   border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-lede, 1.125rem);
   font-style: italic;
   line-height: var(--leading-snug, 1.4);
@@ -7684,7 +7736,7 @@ main {
  */
 .give-hero h2 {
   margin: var(--space-sm, 0.75rem) 0 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.1);
   text-shadow: 0 1px 12px color-mix(in srgb, var(--color-deep, #481010) 70%, transparent);
@@ -7702,7 +7754,7 @@ main {
   margin: var(--space-md, 1.25rem) 0 0;
   padding-inline-start: var(--space-md, 1rem);
   border-inline-start: 2px solid color-mix(in srgb, var(--color-gold, #b08d43) 60%, transparent);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-lede, 1.125rem);
   font-style: italic;
   line-height: var(--leading-snug, 1.4);
@@ -7971,7 +8023,7 @@ main {
   align-items: baseline;
   gap: var(--space-sm, 0.5rem);
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.1875rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #2c2320);
@@ -8127,7 +8179,7 @@ main {
   display: flex;
   align-items: center;
   gap: var(--space-sm, 0.5rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.1875rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #2c2320);
@@ -8418,7 +8470,7 @@ main {
   margin: 0;
   min-width: 15ch;
   text-align: center;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.1875rem);
   font-weight: 500;
   color: var(--color-ink, #1c1614);
@@ -8588,7 +8640,7 @@ main {
 
 .signin-help__title {
   margin: 0 0 var(--space-md, 1rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   font-weight: 600;
   color: var(--color-ink, #1c1614);
@@ -8901,7 +8953,7 @@ main {
 
 .sched-wheel__weekday {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.1875rem);
   font-weight: 500;
   color: var(--color-ink, #1c1614);
@@ -9296,7 +9348,7 @@ main {
 }
 
 .sched-entry__title {
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-body, 1.0625rem);
   line-height: var(--leading-snug, 1.3);
   color: var(--color-ink, #1c1614);
@@ -10387,7 +10439,7 @@ button.sched-month__entry:focus-visible {
   margin: 0;
   padding-left: var(--space-sm, 0.5rem);
   border-left: 3px solid var(--sched-tone);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   font-weight: 500;
   line-height: var(--leading-snug, 1.3);
@@ -10895,7 +10947,7 @@ button.sched-month__entry:focus-visible {
  * column and colliding with the "Explore" heading beside it.
  */
 .footer__name {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   color: var(--color-ink-inverse, #f9efec);
   line-height: var(--leading-snug, 1.25);
   letter-spacing: -0.005em;
@@ -11842,7 +11894,7 @@ button.sched-month__entry:focus-visible {
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-sm, 4px);
   background: var(--color-paper-raised, #fdf7f4);
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-body, 1.0625rem);
   line-height: var(--leading-relaxed, 1.65);
   color: var(--color-ink, #1c1614);
@@ -11891,7 +11943,7 @@ button.sched-month__entry:focus-visible {
 
 .fmt__box h2 {
   margin: 0 0 0.4em;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: 1.25em;
   line-height: 1.25;
 }
@@ -12615,7 +12667,7 @@ button.sched-month__entry:focus-visible {
 }
 
 .standby__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   /* A step down from `--type-heading`: this band sits directly above the
      "Recent services" heading, and two headings of the same size next to each
      other leaves neither leading. */
@@ -12795,7 +12847,7 @@ button.sched-month__entry:focus-visible {
 }
 
 .form-card__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.1875rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #2c2320);
@@ -13336,7 +13388,7 @@ button.sched-month__entry:focus-visible {
     border-color 180ms ease;
   /* The serif the program cards set names in, so the menu and the page it opens
      agree about what a name is. */
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.3;
@@ -16984,7 +17036,7 @@ button.sched-month__entry:focus-visible {
 }
 
 .gathering-card__name {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   font-weight: 600;
   line-height: var(--leading-snug, 1.25);
@@ -17362,7 +17414,7 @@ button.sched-month__entry:focus-visible {
   margin: 0 0 var(--space-xs, 0.35rem);
   padding: var(--space-xs, 0.35rem) 0;
   background: var(--color-paper, #f6e8e3);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
 }
 
@@ -18186,7 +18238,7 @@ button.sched-month__entry:focus-visible {
 
 .present__label {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   color: var(--color-ink-inverse, #f9efec);
   text-shadow: 0 1px 12px color-mix(in srgb, var(--color-deep, #3a1310) 70%, transparent);
@@ -18855,7 +18907,7 @@ button.sched-month__entry:focus-visible {
 .gallery-title--large,
 .gallery-title--display {
   margin: 0 0 var(--space-lg, 1.5rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   line-height: var(--leading-snug, 1.25);
   letter-spacing: var(--tracking-tight, -0.02em);
   color: var(--color-ink, #1c1614);
@@ -19553,7 +19605,7 @@ span.gallery-figure__frame {
 
 .designer__head h4 {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
 }
 
@@ -20205,7 +20257,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
   flex: 1 0 100%;
   order: 3;
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
   line-height: var(--leading-snug, 1.25);
 }
@@ -20604,7 +20656,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .inspector__head h2 {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
 }
 
@@ -24390,7 +24442,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .orderfind__count {
   margin: 0 0 var(--space-md, 1rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.25rem);
   color: var(--color-ink, #2f2723);
 }
@@ -24428,7 +24480,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .orderfind__when {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-body, 1rem);
   color: var(--color-ink, #2f2723);
 }
@@ -24659,7 +24711,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .bkorder__name {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   color: var(--color-ink, #2f2723);
 }
@@ -24810,7 +24862,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .bkmodal__title {
   margin: 0 0 var(--space-sm, 0.6rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.4rem);
   color: var(--color-ink, #2f2723);
 }
@@ -24898,7 +24950,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .bktile__value {
   margin: 0.2rem 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   color: var(--color-ink, #2f2723);
   font-variant-numeric: tabular-nums;
@@ -24927,7 +24979,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .bktable__title {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   color: var(--color-ink, #2f2723);
 }
@@ -25083,7 +25135,7 @@ body.is-editing:has(.inspector-col.is-dragging) {
   margin: 0 0 var(--space-md, 1rem);
   padding-bottom: var(--space-xs, 0.35rem);
   border-bottom: 1px solid var(--color-rule, #e4dbd2);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.25rem);
   color: var(--color-ink, #2f2723);
 }
@@ -27716,7 +27768,7 @@ span.fxa__row-title {
 
 .fx__done h2 {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h4, 1.3rem);
   color: var(--color-ink, #2c2320);
 }
@@ -28150,7 +28202,7 @@ span.fxa__row-title {
   width: 100%;
   min-width: 0;
   padding: 0.25rem 0.45rem;
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink, #1c1614);
   background-color: var(--color-paper, #fffefb);
@@ -28205,7 +28257,7 @@ span.fxa__row-title {
   width: 100%;
   min-width: 0;
   padding: 0.3rem 0.45rem;
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.9375rem);
   line-height: 1.4;
   color: var(--color-ink, #1c1614);
@@ -28578,7 +28630,7 @@ span.fxa__row-title {
 /* A `p` carrying the page's visible title — `PageHeader` has already rendered
    the hidden `h1`, and a second would give the document two. */
 .about-hero__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.1);
   color: var(--color-ink-inverse, #f9efec);
@@ -28650,7 +28702,7 @@ span.fxa__row-title {
  * are narrow and the column ragged.
  */
 .about-index__num {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.15rem);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -28664,7 +28716,7 @@ span.fxa__row-title {
 }
 
 .about-index__name {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.15rem);
   font-weight: 600;
   color: var(--color-ink, #1c1614);
@@ -28822,7 +28874,7 @@ span.fxa__row-title {
 }
 
 .about-more__label {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-lede, 1.15rem);
   line-height: var(--leading-tight, 1.2);
   color: var(--color-accent-strong, #731d16);
@@ -28919,7 +28971,7 @@ span.fxa__row-title {
 }
 
 .credits-drawer__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.15rem);
   font-weight: 600;
   color: var(--color-ink, #1c1614);
@@ -28989,7 +29041,7 @@ span.fxa__row-title {
   align-items: baseline;
   gap: var(--space-sm, 0.5rem);
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-body, 1.0625rem);
 }
 
@@ -29161,7 +29213,7 @@ span.fxa__row-title {
 }
 
 .tour-hero__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.1);
   margin: 0;
@@ -29493,7 +29545,7 @@ span.fxa__row-title {
  */
 .tour-station__title {
   margin: 0 0 var(--space-sm, 0.5rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.1);
 }
@@ -29561,7 +29613,7 @@ span.fxa__row-title {
 
 .tour-part__title {
   margin: 0 0 var(--space-md, 1rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: var(--leading-tight, 1.1);
   color: var(--color-deep, #481010);
@@ -30006,7 +30058,7 @@ span.fxa__row-title {
 
 .tour-stepper__title {
   margin: var(--space-xs, 0.25rem) 0 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: var(--leading-tight, 1.1);
 }
@@ -30070,7 +30122,7 @@ span.fxa__row-title {
   /* 16px minimum. Anything smaller and iOS Safari zooms the page in when the
      field is focused, and never zooms back out. */
   font-size: 1rem;
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
 }
 
 .tour-name__out {
@@ -30322,7 +30374,7 @@ span.fxa__row-title {
 
 .tour-reward__headline {
   margin: var(--space-xs, 0.25rem) 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-display, 3rem);
   line-height: var(--leading-tight, 1.1);
   color: var(--color-accent, #992a21);
@@ -30473,7 +30525,7 @@ span.fxa__row-title {
  * display type, marked up as what it is.
  */
 .belief-hero__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-ink-inverse, #f9efec);
@@ -30503,7 +30555,7 @@ span.fxa__row-title {
 .belief-articles h2,
 .belief-see h2,
 .belief-article__heading {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   line-height: var(--leading-tight, 1.15);
 }
 
@@ -30667,7 +30719,7 @@ span.fxa__row-title {
   border-radius: var(--radius-md, 0.5rem);
   background: var(--color-paper-raised, #fdf7f4);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-lede, 1.25rem);
   line-height: var(--leading-relaxed, 1.65);
   color: var(--color-ink, #1c1614);
@@ -30786,7 +30838,7 @@ span.fxa__row-title {
   margin: 0 0 var(--space-sm, 0.5rem);
   padding-inline-start: var(--space-md, 1rem);
   border-inline-start: 2px solid var(--color-gold, #b08d43);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-small, 0.9rem);
   line-height: var(--leading-normal, 1.5);
   font-style: italic;
@@ -30882,7 +30934,7 @@ span.fxa__row-title {
 .saint-figure__name {
   display: block;
   margin-bottom: var(--space-xs, 0.5rem);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #1c1614);
@@ -31188,7 +31240,7 @@ span.fxa__row-title {
  * type, marked up as what it is.
  */
 .who-hero__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-ink-inverse, #f9efec);
@@ -31217,7 +31269,7 @@ span.fxa__row-title {
 .who-crossing h2,
 .who-here h2,
 .who-wayland h2 {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   line-height: var(--leading-tight, 1.15);
 }
 
@@ -31411,7 +31463,7 @@ span.fxa__row-title {
  * through this page should land on the six sections, not on twenty years.
  */
 .who-chron__when {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-accent-strong, #731d16);
@@ -31540,14 +31592,14 @@ span.fxa__row-title {
   border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 45%, transparent);
   background: color-mix(in srgb, var(--color-gold, #b08d43) 12%, transparent);
   color: var(--color-gold, #b08d43);
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.5rem);
   line-height: 1;
 }
 
 .who-cleric__name {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.125rem);
   line-height: var(--leading-snug, 1.25);
 }
@@ -32205,7 +32257,7 @@ span.fxa__row-title {
 
 .camp-bar__name {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h3, 1.375rem);
   line-height: 1.1;
 }
@@ -32384,7 +32436,7 @@ span.fxa__row-title {
 }
 
 .camp-figure__value {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h1, 2rem);
   line-height: 1;
 }
@@ -32528,7 +32580,7 @@ span.fxa__row-title {
   display: flex;
   align-items: center;
   gap: 0.6ch;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h3, 1.375rem);
 }
 
@@ -34695,7 +34747,7 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   border: 0;
   border-bottom: 1px dashed color-mix(in srgb, var(--camp-colour, #6f5f5a) 50%, transparent);
   background: none;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.375rem);
   font-weight: 700;
   line-height: 1.2;
@@ -35293,7 +35345,7 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
   border-bottom: 1px dashed transparent;
   background: none;
   padding: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
   font-weight: 600;
   color: color-mix(in srgb, var(--camp-colour, #6f5f5a) 78%, #241b18);
@@ -35694,7 +35746,7 @@ input[type='time'].input::-webkit-calendar-picker-indicator:hover {
 }
 
 .camp-weekRoles__legend strong {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
   font-weight: 700;
   color: var(--color-accent, #992a21);
@@ -37862,7 +37914,7 @@ body.is-camp-dragging {
 }
 
 .camp-weekNow strong {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-subheading, 1.0625rem);
   font-weight: 700;
   color: var(--color-accent, #992a21);
@@ -38693,7 +38745,7 @@ body.is-camp-dragging {
 }
 
 .fin__tileValue {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h3, 1.35rem);
   /* Every figure on this screen is read down a column against another figure,
      so the digits have to be the same width or the columns stop lining up. */
@@ -38841,7 +38893,7 @@ body.is-camp-dragging {
 
 .fin__rosterBar h4 {
   margin: 0;
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-h4, 1.125rem);
 }
 
@@ -39033,7 +39085,7 @@ body.is-camp-dragging {
  * type, marked up as what it is.
  */
 .future-hero__title {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-ink-inverse, #f9efec);
@@ -39064,7 +39116,7 @@ body.is-camp-dragging {
 .future-land h2,
 .future-stands h2,
 .future-team-band h2 {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.75rem);
   line-height: var(--leading-tight, 1.15);
 }
@@ -39359,7 +39411,7 @@ body.is-camp-dragging {
 }
 
 .future-figure__value {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-title, 2.25rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-accent-strong, #731d16);
@@ -39439,7 +39491,7 @@ body.is-camp-dragging {
 }
 
 .future-uses__area {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.4rem);
   line-height: var(--leading-tight, 1.15);
   color: var(--color-accent-strong, #731d16);
@@ -39513,7 +39565,7 @@ body.is-camp-dragging {
  * through this page should land on the eight sections, not on seven dates.
  */
 .future-chron__when {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   /*
    * `--type-lede`, not `--type-heading`, and that is a measurement rather than
    * a taste. The theme's `--type-heading` is 1.75rem; "November 2025" set in
@@ -39779,7 +39831,7 @@ body.is-camp-dragging {
 }
 
 .future-give h2 {
-  font-family: var(--font-display, Georgia, serif);
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
   font-size: var(--type-heading, 1.75rem);
   line-height: var(--leading-tight, 1.15);
 }
@@ -40521,7 +40573,7 @@ body.is-camp-dragging {
   border: 1px solid var(--color-rule, #e0cac3);
   border-radius: var(--radius-sm, 4px);
   background: transparent;
-  font-family: var(--font-body, Georgia, serif);
+  font-family: var(--font-body, 'EB Garamond', Georgia, serif);
   font-size: 0.9375rem;
   line-height: 1;
   color: var(--color-ink, #1c1614);
