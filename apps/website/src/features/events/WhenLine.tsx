@@ -35,12 +35,19 @@
  * panel — because the panel can cover the line it hangs from.
  */
 
-import { COMMON_TIME_ZONES, zoneAbbreviation } from '@spsm/shared';
+import {
+  COMMON_TIME_ZONES,
+  endInstantOf,
+  startInstantOf,
+  zoneAbbreviation,
+  type EventFieldKey,
+  type EventFormState,
+} from '@spsm/shared';
 import { PARISH_TIME_ZONE, formatEventWhen } from '@/lib/dates';
 import { Icon } from '@/components/Icon';
 import { Popover } from '@/components/Popover';
 import { Check, Group } from './EditorParts';
-import { endInstantOf, startInstantOf, type FieldKey, type FormState } from './form';
+
 
 /** How long an event usually is. Enough to cover a class, a liturgy, a festival. */
 const DURATIONS: [string, number][] = [
@@ -75,10 +82,10 @@ function dayAfter(date: string, days: number): string {
   return new Date(shifted).toISOString().slice(0, 10);
 }
 
-type Setter = <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+type Setter = <K extends keyof EventFormState>(key: K, value: EventFormState[K]) => void;
 
 /** The sentence, or a prompt when the fields do not yet name a moment. */
-function sentenceOf(form: FormState): { text: string; missing: boolean } {
+function sentenceOf(form: EventFormState): { text: string; missing: boolean } {
   const start = startInstantOf(form);
   if (!start) return { text: 'Say when it is', missing: true };
   return {
@@ -92,9 +99,9 @@ export function WhenLine({
   set,
   errorOf,
 }: {
-  form: FormState;
+  form: EventFormState;
   set: Setter;
-  errorOf: (field: FieldKey) => string | null;
+  errorOf: (field: EventFieldKey) => string | null;
 }) {
   const { text, missing } = sentenceOf(form);
 
@@ -124,9 +131,9 @@ function WhenPanel({
   set,
   errorOf,
 }: {
-  form: FormState;
+  form: EventFormState;
   set: Setter;
-  errorOf: (field: FieldKey) => string | null;
+  errorOf: (field: EventFieldKey) => string | null;
 }) {
   const start = startInstantOf(form);
   const { text, missing } = sentenceOf(form);

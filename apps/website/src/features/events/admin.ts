@@ -56,9 +56,10 @@ import { deleteObject, listAll, ref, uploadBytes } from 'firebase/storage';
 import { explainUploadFailure } from '@/lib/storageErrors';
 import {
   COLLECTIONS,
+  draftToDocument,
   type DocOf,
   type Event,
-  type EventLocation,
+  type EventDraft,
   type Program,
   type ProgramEvent,
 } from '@spsm/shared';
@@ -99,63 +100,20 @@ export async function readEvent(id: string): Promise<DocOf<Event> | null> {
 }
 
 /**
- * What the editor owns, in the editor's own units.
+ * What the editor owns, in the editor's own units, and what the document wants
+ * back — both `@spsm/shared`'s now.
  *
- * `Date` and a bare URL string rather than the document's `Timestamped` and
- * `registration` object, because this is the boundary: everything above it
- * thinks in wall clocks and text fields, everything below it thinks in the
- * shapes `schema/events.ts` describes. `slug` and `published` are absent on
- * purpose — see `EventContent` for why neither is something you type.
+ * `EventContentDraft` and a local `toContent()` used to live here. They moved
+ * to `packages/shared/src/eventForm.ts` when the mobile app grew an editor for
+ * the same document, because the write is the half that must not differ: the
+ * draft names which fields a save is allowed to carry, and `draftToDocument`
+ * decides that `registration` is rebuilt rather than merged. Two copies of that
+ * would be two answers to "what does saving overwrite".
+ *
+ * The name is kept as an alias so the callers here and in `EventEditor` read as
+ * they did.
  */
-export interface EventContentDraft {
-  title: string;
-  summary: string;
-  body: string;
-  startAt: Date;
-  endAt: Date | null;
-  allDay: boolean;
-  timeZone: string;
-  location: EventLocation | null;
-  heroImagePath: string | null;
-  category: Event['category'];
-  tags: string[];
-  audience: Event['audience'];
-  registrationUrl: string | null;
-}
-
-/** The draft as the document wants it. Never includes `slug` or `published`. */
-function toContent(draft: EventContentDraft) {
-  return {
-    title: draft.title,
-    summary: draft.summary,
-    body: draft.body,
-
-    startAt: draft.startAt,
-    endAt: draft.endAt,
-    allDay: draft.allDay,
-    timeZone: draft.timeZone,
-
-    location: draft.location,
-    heroImagePath: draft.heroImagePath,
-
-    category: draft.category,
-    tags: draft.tags,
-    audience: draft.audience,
-
-    // `formId` is deliberately not settable. It points at the `forms`
-    // collection, which has rules but no schema and no route — a link to it
-    // would send a parishioner to a 404. Only an external URL for now.
-    registration: draft.registrationUrl
-      ? {
-          formId: null,
-          externalUrl: draft.registrationUrl,
-          opensAt: null,
-          closesAt: null,
-          capacity: null,
-        }
-      : null,
-  };
-}
+export type EventContentDraft = EventDraft;
 
 /**
  * Autosave. Writes what has been typed, straight onto the event.
@@ -183,7 +141,7 @@ export async function updateEventContent(
   uid: string | null,
 ): Promise<void> {
   await updateDoc(doc(db(), COLLECTIONS.events, id), {
-    ...toContent(draft),
+    ...draftToDocument(draft),
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   });
@@ -208,7 +166,7 @@ export async function createEvent(
   uid: string | null,
 ): Promise<string> {
   const created = await addDoc(collection(db(), COLLECTIONS.events), {
-    ...toContent(draft),
+    ...draftToDocument(draft),
     slug,
     // Out of scope for MVP; see docs/decisions.md #8.
     recurrence: null,

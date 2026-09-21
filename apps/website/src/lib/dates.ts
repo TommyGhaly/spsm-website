@@ -7,60 +7,28 @@
  * for anything in the evening. `Event.timeZone` exists for exactly this, and
  * the default below is the parish's own zone rather than the host's.
  */
-import { PARISH_TIME_ZONE, partOfDay, toDate, type Timestamped } from '@spsm/shared';
+import {
+  PARISH_TIME_ZONE,
+  formatDate,
+  formatEventWhen,
+  formatTime,
+  partOfDay,
+  toDate,
+  type Timestamped,
+} from '@spsm/shared';
 
 /*
- * Re-exported, not redeclared. It moved to `@spsm/shared` when the mobile app
- * became a second reader of the same calendar feed; the nine files here that
- * import it from this module keep working, and there is still only one value.
+ * Re-exported, not redeclared. `PARISH_TIME_ZONE` moved to `@spsm/shared` when
+ * the mobile app became a second reader of the same calendar feed, and the
+ * three formatters followed it when the app grew an event page: both surfaces
+ * now print the same sentence about the same document, and it is defined once,
+ * in `packages/shared/src/dates.ts`.
+ *
+ * The eleven files here that import from this module keep working, and there is
+ * still only one implementation of each. `formatDateSpan` and the rest below
+ * stay: nothing outside this app renders them.
  */
-export { PARISH_TIME_ZONE };
-
-export function formatDate(value: Timestamped | null | undefined, timeZone = PARISH_TIME_ZONE): string {
-  const date = toDate(value);
-  if (!date) return '';
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone,
-  }).format(date);
-}
-
-export function formatTime(value: Timestamped | null | undefined, timeZone = PARISH_TIME_ZONE): string {
-  const date = toDate(value);
-  if (!date) return '';
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone,
-  }).format(date);
-}
-
-/** "Sunday, August 3, 2025 · 9:00 AM – 11:30 AM" */
-export function formatEventWhen(
-  startAt: Timestamped,
-  endAt: Timestamped | null,
-  allDay: boolean,
-  timeZone = PARISH_TIME_ZONE,
-): string {
-  const start = toDate(startAt);
-  if (!start) return '';
-
-  const day = formatDate(startAt, timeZone);
-  if (allDay) return day;
-
-  const end = toDate(endAt);
-  const startTime = formatTime(startAt, timeZone);
-  if (!end) return `${day} · ${startTime}`;
-
-  // A same-day range only needs the day printed once.
-  const sameDay = formatDate(endAt, timeZone) === day;
-  return sameDay
-    ? `${day} · ${startTime} – ${formatTime(endAt, timeZone)}`
-    : `${day}, ${startTime} – ${formatDate(endAt, timeZone)}, ${formatTime(endAt, timeZone)}`;
-}
+export { PARISH_TIME_ZONE, formatDate, formatEventWhen, formatTime };
 
 /**
  * A gathering's dates, as short as they can honestly be.

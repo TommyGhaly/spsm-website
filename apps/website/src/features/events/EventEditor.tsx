@@ -48,7 +48,32 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DocOf, Event, EventAudience, EventCategory } from '@spsm/shared';
+/*
+ * The form model is `@spsm/shared`'s now, not this folder's.
+ *
+ * It was `./form` until the mobile app grew an editor for the same document.
+ * Two copies of "what counts as a mistake" is two answers to it, so the state,
+ * the wall-clock arithmetic, the validation and the words for the enums moved
+ * to `packages/shared/src/eventForm.ts` and both surfaces import them. What
+ * stays on each side is the drawing.
+ */
+import {
+  EVENT_AUDIENCE_LABELS,
+  EVENT_AUDIENCE_OPTIONS,
+  EVENT_CATEGORY_LABELS,
+  EVENT_CATEGORY_OPTIONS,
+  eventMistakes,
+  eventStillMissing,
+  eventToForm,
+  formToDraft,
+  startInstantOf,
+  type DocOf,
+  type Event,
+  type EventAudience,
+  type EventCategory,
+  type EventFieldKey,
+  type EventFormState,
+} from '@spsm/shared';
 import { useEditMode } from '@/features/programs/editMode';
 import { PageBody } from '@/components/PageBody';
 import { Icon } from '@/components/Icon';
@@ -59,19 +84,7 @@ import { HeroBand, type HeroStatus } from './HeroBand';
 import { WhenLine } from './WhenLine';
 import { BodyField } from './BodyField';
 import { EditorBar } from './EditorBar';
-import {
-  AUDIENCE_LABELS,
-  AUDIENCE_OPTIONS,
-  CATEGORY_LABELS,
-  CATEGORY_OPTIONS,
-  fromEvent,
-  mistakes,
-  startInstantOf,
-  stillMissing,
-  toContentDraft,
-  type FieldKey,
-  type FormState,
-} from './form';
+
 import { useAutosave } from './useAutosave';
 
 /** How long the undo offer stands after a delete. */
@@ -119,22 +132,22 @@ export function EventEditor({ baked, onSaved }: {
   const edit = useEditMode();
 
   const [live, setLive] = useState<DocOf<Event>>(baked);
-  const [form, setForm] = useState<FormState>(() => fromEvent(baked));
+  const [form, setForm] = useState<EventFormState>(() => eventToForm(baked));
   const [load, setLoad] = useState<Load>({ kind: 'reading' });
   const [hero, setHero] = useState<HeroStatus>({ kind: 'idle' });
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [removal, setRemoval] = useState<Removal>({ kind: 'no' });
 
-  const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const set = useCallback(<K extends keyof EventFormState>(key: K, value: EventFormState[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
   }, []);
 
   /* ---- autosave ------------------------------------------------------- */
 
   const save = useCallback(
-    async (value: FormState) => {
-      const draft = toContentDraft(value);
+    async (value: EventFormState) => {
+      const draft = formToDraft(value);
       if (!draft) return;
       const [{ updateEventContent }, { auth }] = await Promise.all([
         import('./admin'),
@@ -239,7 +252,7 @@ export function EventEditor({ baked, onSaved }: {
           setLoad({ kind: 'gone' });
           return;
         }
-        const loaded = fromEvent(fresh);
+        const loaded = eventToForm(fresh);
         setLive(fresh);
         setForm(loaded);
         // What was just read is, by definition, already saved.
@@ -297,19 +310,19 @@ export function EventEditor({ baked, onSaved }: {
   /*
    * Two lists, and the split is all that survives of the publish step.
    *
-   * `mistakes` are wrong — an end before a start, a link that is not a link —
-   * and are drawn on the field the moment they are true. `stillMissing` is a
+   * `eventMistakes` are wrong — an end before a start, a link that is not a link —
+   * and are drawn on the field the moment they are true. `eventStillMissing` is a
    * summary or a description nobody has written yet, which on an event that is
    * live from the moment it is created is the ordinary state of a new one; it is
    * a quiet line in the bar rather than a red field.
    *
    * Neither blocks anything. Nothing can be blocked: typing is the save.
    */
-  const wrong = mistakes(form);
-  const missing = stillMissing(form);
+  const wrong = eventMistakes(form);
+  const missing = eventStillMissing(form);
 
   const errorOf = useCallback(
-    (field: FieldKey): string | null =>
+    (field: EventFieldKey): string | null =>
       wrong.find((problem) => problem.field === field)?.message ?? null,
     [wrong],
   );
@@ -406,11 +419,11 @@ export function EventEditor({ baked, onSaved }: {
    * `sweepEventFiles` for why the files the document never named are the ones
    * that most need it.
    */
-  async function settleHero(next: FormState, keep: string | null) {
+  async function settleHero(next: EventFormState, keep: string | null) {
     setForm(next);
 
     /*
-     * The one state in which this cannot finish. `toContentDraft` returns null
+     * The one state in which this cannot finish. `formToDraft` returns null
      * while the date field is empty mid-retype, so the write would be a no-op
      * and deleting would strand the document pointing at nothing.
      *
@@ -419,7 +432,7 @@ export function EventEditor({ baked, onSaved }: {
      * told rather than left to find out. The next removal or replacement sweeps
      * it, and so does deleting the event.
      */
-    if (!toContentDraft(next)) {
+    if (!formToDraft(next)) {
       setHero({
         kind: 'error',
         message:
@@ -694,7 +707,7 @@ export function EventEditor({ baked, onSaved }: {
             title="Filing and sign-ups"
             value={
               <>
-                {CATEGORY_LABELS[form.category]} · {AUDIENCE_LABELS[form.audience].toLowerCase()}
+                {EVENT_CATEGORY_LABELS[form.category]} · {EVENT_AUDIENCE_LABELS[form.audience].toLowerCase()}
                 {form.tags.length > 0 &&
                   ` · ${form.tags.length} ${form.tags.length === 1 ? 'tag' : 'tags'}`}
               </>
@@ -709,7 +722,7 @@ export function EventEditor({ baked, onSaved }: {
                   value={form.category}
                   onChange={(event) => set('category', event.target.value as EventCategory)}
                 >
-                  {CATEGORY_OPTIONS.map((option) => (
+                  {EVENT_CATEGORY_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -722,7 +735,7 @@ export function EventEditor({ baked, onSaved }: {
               >
                 <Segmented
                   label="Who it is for"
-                  options={AUDIENCE_OPTIONS}
+                  options={EVENT_AUDIENCE_OPTIONS}
                   value={form.audience}
                   onChange={(value) => set('audience', value as EventAudience)}
                 />
