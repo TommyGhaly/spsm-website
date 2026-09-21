@@ -75,8 +75,9 @@ const CLIP_BUNDLE_ID = 'org.spsm.connect.Clip';
  *
  * `title` and `blurb` are the card's title and subtitle in App Store Connect;
  * keeping them the same here means somebody who dismissed the card reads the
- * same words on the page it falls back to. `sitePath` is the page that does the
- * thing — the one this file exists to hand off to.
+ * same words on the page it falls back to. The bookstore's `blurb` is the one
+ * deliberate exception, and says on the row why. `sitePath` is the page that
+ * does the thing — the one this file exists to hand off to.
  */
 const EXPERIENCES = [
   {
@@ -97,7 +98,14 @@ const EXPERIENCES = [
   },
   {
     slug: 'apps',
-    title: 'The Parish’s Apps',
+    /*
+     * "Church", not "parish". The app's table and `ClipDestination.swift` both
+     * say `The Church’s Apps`, and this is the App Store Connect title — the
+     * words on the card somebody dismissed to arrive here. The site's own prose
+     * still says "parish", which is the site's voice and is left alone; a title
+     * that has to match three other files is not the place to keep a voice.
+     */
+    title: 'The Church’s Apps',
     blurb: 'Taksis, Tithe.ly and SPSM Connect.',
     body: 'Three apps, and what each one is for. Two of them are ours; the giving app is Tithe.ly’s.',
     action: 'See the apps',
@@ -122,6 +130,21 @@ const EXPERIENCES = [
   {
     slug: 'bookstore',
     title: 'The Bookstore',
+    /*
+     * The one row whose `blurb` is deliberately **not** the App Store Connect
+     * subtitle, and it must stay that way.
+     *
+     * The card reads "See the shelf and buy in the app", because the bookstore
+     * is the clip's only handoff — Square's SDK is too large for the 15 MB
+     * budget, so the clip cannot take money. Nobody reading *this* page is in
+     * that situation: they are on Android, or on a laptop, or they dismissed the
+     * card, and the button below sends them to a bookstore that sells to them
+     * perfectly well. Repeating the card's words here would tell a shopper who
+     * can already buy that they have to install something first.
+     *
+     * So the rule above holds for seven rows and this sentence is the eighth's
+     * answer to the same question, asked of a different reader.
+     */
     blurb: 'Icons, books and gifts from the church.',
     body: 'Order here and collect at the church, or have it posted. Payment is taken by Square.',
     action: 'Open the bookstore',

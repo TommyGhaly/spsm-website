@@ -40,7 +40,7 @@ shim that answers a library request with the camera.
 |---|---|---|---|
 | 1 | `/c/give` | Give | The giving screen, and Tithe.ly's form in Safari over it. |
 | 2 | `/c/schedule` | This Week | Week and month views over `/api/calendar`, read-only. |
-| 3 | `/c/apps` | The Parish’s Apps | Taksis and Tithe.ly with store links, plus a card for SPSM Connect that the full app does not show. |
+| 3 | `/c/apps` | The Church’s Apps | Taksis and Tithe.ly with store links, plus a card for SPSM Connect that the full app does not show. |
 | 4 | `/c/welcome` | Welcome | The liturgy tour, for a visitor at the door. |
 | 5 | `/c/plans` | Our Expansion Plans | Renderings, and the flythrough in Safari. |
 | 6 | `/c/bookstore` | The Bookstore | **Hands off.** Explains, then offers the app or the website. |
