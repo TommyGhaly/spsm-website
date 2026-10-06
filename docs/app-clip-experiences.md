@@ -43,7 +43,7 @@ shim that answers a library request with the camera.
 | 3 | `/c/apps` | The Church’s Apps | Taksis and Tithe.ly with store links, plus a card for SPSM Connect that the full app does not show. |
 | 4 | `/c/welcome` | Welcome | The liturgy tour, for a visitor at the door. |
 | 5 | `/c/plans` | Our Expansion Plans | Renderings, and the flythrough in Safari. |
-| 6 | `/c/bookstore` | The Bookstore | **Hands off.** Explains, then offers the app or the website. |
+| 6 | `/c/bookstore` | The Bookstore | The shelf, and Apple Pay under it. Hands off only when it cannot charge. |
 | 7 | `/c/forms` | Parish Forms | Opens on `config/forms.nfcFormSlug`; the list is one press away. |
 | 8 | `/c/photos` | Send a Photograph | Camera, filed against `config/events.mainSection`, changeable from the pill. |
 
@@ -103,14 +103,37 @@ own `DestinationBar`. The rule that component carries is worth repeating because
 a clip makes it literal: *the church's answer is live, the sender's answer wins,
 and the sender's answer does not outlive the visit.* A clip is one visit.
 
-### Two of these were argued against, and one of them changed its mind
+### Two of these were argued against, and both changed their minds
 
-- **6, bookstore** — physical goods cannot use IAP, so the only way to take money
-  for a book is Square's native SDK, which is a large framework in a 15 MB
-  budget and is excluded from the clip target. The shelf *would* render — 
-  `payments/square.ts` degrades honestly in a binary without the SDK — but a shop
-  that cannot sell is a worse card than an honest one. It is the only handoff of
-  the eight. Revisit with a measurement, not before.
+- **6, bookstore** — this was the one handoff of the eight, on the grounds that
+  physical goods cannot use IAP (true) and that the Square SDK needed to charge
+  a card is therefore "a large framework in a 15 MB budget" (not true, and
+  never measured). Measured on the arm64 device slice,
+  `SquareInAppPaymentsSDK` is **~1.4 MB embedded** — 580 KB of binary, 160 KB
+  of nested `CorePaymentCard`, ~630 KB of resource bundles. The six-megabyte
+  figure belongs to `SquareBuyerVerificationSDK`, a separate pod that only the
+  React Native wrapper depended on, for a 3DS flow this checkout does not use.
+  The clip is Swift now and links the bare SDK alone.
+
+  What actually unblocked it was not the framework but the form. The checkout
+  requires an email address, a name, a fulfilment choice and an address, all
+  validated in `functions/src/checkout.ts`, and asking for five typed fields at
+  a bookstall is worse than an honest refusal. Apple Pay returns every one of
+  them from the wallet, and collect-or-post is a `PKShippingMethod` inside
+  Apple's own sheet — so **the clip asks for nothing**. The Function did not
+  change: it reads one `sourceId`, and a nonce is a nonce whether a browser, a
+  phone or a clip minted it.
+
+  It still shows the old card when it cannot charge — no merchant id in the
+  build, no wallet on the phone, no card Square accepts.
+
+  Two things this needs that the website's Apple Pay does not, because a native
+  sheet is a different integration from a web one (see
+  `docs/apple-pay-google-pay.md`): an **Apple Pay merchant ID** on team
+  `5ZRM8X66TN`, and a **payment-processing certificate** generated from the CSR
+  Square's Developer Console issues. If a merchant ID there already carries a
+  certificate, Square requires a new one. Until both exist, `APPLE_PAY_MERCHANT_ID`
+  is unset in the app's build and the clip shows the handoff.
 - **1, giving** — the old objection was that a third-party hosted web form inside
   a clip is a web view under guideline 4.2, and that it is not Apple Pay. Half of
   that was wrong about this app: the giving screen does not embed anything. It
