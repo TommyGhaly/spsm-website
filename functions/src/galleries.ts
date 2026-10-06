@@ -600,6 +600,7 @@ export const onGalleryMediaReviewed = onDocumentUpdated(
         await bucket.file(source).copy(bucket.file(renditionPath));
         await ref.update({
           renditionPath,
+          previewPath: null,
           updatedAt: FieldValue.serverTimestamp(),
         });
       } catch (error) {
@@ -614,37 +615,68 @@ export const onGalleryMediaReviewed = onDocumentUpdated(
             `${renditionPath}. It will show as still processing until retried.`,
           error,
         );
+        return;
+      }
+
+      /*
+       * A move, not a copy. Once the public file exists, everything left in
+       * `submissions/` is dead weight: the preview is byte-for-byte the file
+       * just published, and the original is a format nobody can display. Kept,
+       * they tripled what every approved photograph cost to store, for up to
+       * 120 days or forever if the lifecycle rule was never set.
+       *
+       * After the document update, so a failure here leaves files the lifecycle
+       * rule will sweep rather than a document pointing at nothing. Un-rejecting
+       * still works without them — the rejection branch below moves the public
+       * file back into quarantine instead of deleting it.
+       */
+      for (const path of new Set([after.previewPath, after.sourcePath])) {
+        if (!path) continue;
+        try {
+          await bucket.file(path).delete({ ignoreNotFound: true });
+        } catch (error) {
+          console.warn(`[galleries] published ${mediaId} but could not delete ${path}:`, error);
+        }
       }
       return;
     }
 
     if (after.status === 'rejected') {
       /*
-       * The rendition first, because it is the one that is publicly reachable.
-       * If this dies halfway, the file left on the internet should be the one
-       * that was never public in the first place.
+       * Back into quarantine rather than deleted.
+       *
+       * Approval no longer keeps a private copy, so for a photograph that was
+       * published the public file is the only one left. Deleting it would make
+       * the rejection permanent; moving it back to `submissions/` takes it off
+       * the internet just as surely, keeps it in the review queue, and lets a
+       * rejection reversed a week later publish it again. The lifecycle rule in
+       * docs/gallery-console-setup.md §2 clears it if nobody does.
+       *
+       * A submission rejected straight from pending has no rendition and keeps
+       * its preview and original where they are, for the same reason.
        */
-      const paths = [after.renditionPath, after.previewPath].filter(
-        (path): path is string => typeof path === 'string' && path.length > 0,
-      );
+      if (!after.renditionPath) return;
 
-      for (const path of paths) {
-        try {
-          await bucket.file(path).delete({ ignoreNotFound: true });
-        } catch (error) {
-          console.warn(`[galleries] could not delete ${path} for rejected ${mediaId}:`, error);
-        }
+      const extension = after.renditionPath.split('.').pop()?.toLowerCase() || 'bin';
+      const previewPath = `submissions/${after.programEventId}/preview-${mediaId}.${extension}`;
+
+      try {
+        await bucket.file(after.renditionPath).move(bucket.file(previewPath));
+      } catch (error) {
+        /*
+         * Fall back to a plain delete: taking it off the internet matters more
+         * than keeping it, and an `approved` document is what the reviewer
+         * would have to re-set to get it back either way.
+         */
+        console.warn(`[galleries] could not move ${after.renditionPath} back for rejected ${mediaId}:`, error);
+        await bucket.file(after.renditionPath).delete({ ignoreNotFound: true });
+        await ref.update({ renditionPath: null, updatedAt: FieldValue.serverTimestamp() });
+        return;
       }
 
-      /*
-       * `sourcePath` is deliberately left alone. It is the archive — §2 of
-       * docs/gallery-console-setup.md sets the lifecycle rule at 120 days
-       * rather than 30 precisely so an original outlives the decision made
-       * about it, and a rejection reversed a week later can still be published.
-       */
       await ref.update({
         renditionPath: null,
-        previewPath: null,
+        previewPath,
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
