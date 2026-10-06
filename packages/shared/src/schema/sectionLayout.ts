@@ -438,6 +438,26 @@ export function fitWheelHeight(width: number, aspect: number): number | null {
 }
 
 /**
+ * The shortest and tallest an upright wheel's dragged height is stored at, in rem.
+ *
+ * The floor is about one small landscape — below it the frame is a letterbox and
+ * not a wheel. The ceiling is not the real limit, only a guard against a
+ * hand-edited document asking for a mile: the real one is the pictures, and the
+ * website measures it (one whole set, less the shortest picture, so there is
+ * always something left to scroll to). A number here could not know how many
+ * photographs are in the block or how wide the column draws them.
+ */
+export const WHEEL_HEIGHT_MIN_REM = 8;
+export const WHEEL_HEIGHT_MAX_REM = 600;
+
+/** Keep a stored height inside the two guards, rounded to a tenth of a rem. */
+export function clampWheelHeight(rem: number): number {
+  if (!Number.isFinite(rem)) return WHEEL_HEIGHT_MIN_REM;
+  const kept = Math.min(Math.max(rem, WHEEL_HEIGHT_MIN_REM), WHEEL_HEIGHT_MAX_REM);
+  return Math.round(kept * 10) / 10;
+}
+
+/**
  * The share of the window `full` takes before the cap in `WHEEL_HEIGHT_REM`
  * applies — `min(62vh, 34rem)` and `min(82vh, 54rem)`, the same two the
  * stylesheet writes.
@@ -601,6 +621,20 @@ export interface SectionLayout {
    * Ignored by `grid`, whose tiles are sized by the canvas. See `SECTION_FITS`.
    */
   fit: SectionFit;
+  /**
+   * An upright wheel's frame height in rem, set by dragging its bottom edge.
+   *
+   * `null` is "use `scale`", which is every block written before this existed.
+   * Tommy: *"if there are 10 photos in the wheel it should be able to be 9 or 8
+   * photos long"* — and the ladder's tallest rung was `min(82vh, 54rem)`, which is
+   * two portraits. So the drag stopped snapping and writes the height it was let
+   * go at. See `clampWheelHeight` for the limits, and `wheelCap` on the website
+   * for why the real ceiling is the pictures rather than a number.
+   *
+   * Ignored by every display but `column`. Kept across a change of shape, for the
+   * reason `scale` is: switching to a grid and back is not asking for a new size.
+   */
+  height: number | null;
   title: SectionTitleStyle;
   caption: SectionCaptionStyle;
 }
@@ -628,6 +662,7 @@ export function defaultSectionLayout(): SectionLayout {
        a document gaining them renders exactly as it did. */
     spin: 'left',
     fit: 'natural',
+    height: null,
     title: { scale: 'small', placement: 'above', align: 'start' },
     caption: { scale: 'small', placement: 'over', align: 'start' },
   };
@@ -667,6 +702,10 @@ export function resolveSectionLayout(value: unknown): SectionLayout {
     drift: source['drift'] === undefined ? fallback.drift : source['drift'] !== false,
     spin: oneOf(source['spin'], WHEEL_SPINS, fallback.spin),
     fit: oneOf(source['fit'], SECTION_FITS, fallback.fit),
+    height:
+      typeof source['height'] === 'number' && Number.isFinite(source['height'])
+        ? clampWheelHeight(source['height'])
+        : null,
     title: {
       scale: oneOf(title['scale'], TEXT_SCALES, fallback.title.scale),
       placement: oneOf(title['placement'], TITLE_PLACEMENTS, fallback.title.placement),
@@ -856,6 +895,32 @@ export function resolveBands(source: unknown): GalleryBand[] {
 }
 
 /**
+ * Where the page's own block sits among `bandCount` bands, read off whatever is
+ * stored. See `Program.pageBlockAt`.
+ *
+ * Clamped rather than trusted: a page whose last band was deleted can be holding
+ * a position past the end, and that means "last", not "nowhere".
+ */
+export function pageBlockIndex(stored: unknown, bandCount: number): number {
+  if (typeof stored !== 'number' || !Number.isFinite(stored)) return 0;
+  return Math.min(Math.max(Math.round(stored), 0), Math.max(bandCount, 0));
+}
+
+/**
+ * Swap two entries of a block order, by key. The list comes back unchanged when
+ * either key is missing or they are the same, so a drop onto itself is a no-op.
+ */
+export function swapBlocks<T extends string>(order: readonly T[], a: T, b: T): T[] {
+  const from = order.indexOf(a);
+  const to = order.indexOf(b);
+  if (from === -1 || to === -1 || from === to) return [...order];
+  const next = [...order];
+  next[from] = b;
+  next[to] = a;
+  return next;
+}
+
+/**
  * A list of document ids off an unknown field.
  *
  * Non-strings are dropped rather than coerced: an id is a Firestore document name
@@ -939,6 +1004,8 @@ export function layoutForLook(
    */
   spin: WheelSpin = DEFAULT_SPIN[display === 'grid' ? 'rail' : display],
   fit: SectionFit = 'natural',
+  /** The upright wheel's dragged height, carried for the reason `scale` is. */
+  height: number | null = null,
 ): SectionLayout {
   return {
     display,
@@ -947,6 +1014,7 @@ export function layoutForLook(
     drift: true,
     spin,
     fit,
+    height,
     title: { scale: 'small', placement: 'above', align: 'start' },
     caption: { scale: 'small', placement: caption, align: 'start' },
   };

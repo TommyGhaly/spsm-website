@@ -12,7 +12,9 @@ import {
   SECTION_WIDTH_COLUMNS,
   dockWidths,
   layoutForLook,
+  pageBlockIndex,
   spinFor,
+  swapBlocks,
   pagePictures,
   resolveBands,
   resolveSectionLayout,
@@ -95,11 +97,11 @@ import { setCaption } from './review';
 import {
   MAX_BANDS,
   addBand,
+  arrangeBlocks,
   setPagePicturesHidden,
   setPageShowsAll,
   createProgramEvent,
   deleteProgramEvent,
-  moveBand,
   removeBand,
   updateBand,
   listProgramEventsForAdmin,
@@ -542,6 +544,15 @@ function LevelView({
    */
   const [picturesOffDraft, setPicturesOffDraft] = useState<boolean | null>(null);
   /**
+   * The order of the blocks after a swap, held locally until the document agrees.
+   *
+   * Keys, with `'summary'` for the page's own block — see `blockOrder` below, which
+   * only honours this while it names exactly the blocks the document has. A band
+   * added or deleted since makes it stale, and a stale draft is dropped rather than
+   * patched.
+   */
+  const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
+  /**
    * The same two lists for each band, keyed by band id.
    *
    * Local because a band's lists are written with `updateBand`, which is a
@@ -582,6 +593,7 @@ function LevelView({
     setAllPictures(null);
     setPageHidden(null);
     setPicturesOffDraft(null);
+    setOrderDraft(null);
     setBandSets({});
     bandsWritten.current = {};
     setPicking(null);
@@ -841,26 +853,87 @@ function LevelView({
   }, [picturesOff, pictures, bandBlocks]);
 
   /**
-   * Every block's width, in the order the page lays them out.
+   * Every block's key, in the order the page lays them out — `'summary'` for the
+   * page's own block, a band's id for the rest.
    *
-   * The page's own block first when it is drawn at all, then the bands. This is
-   * the list `dockWidths` flows to work out what is left on a row, so it has to be
-   * the same order the twelve columns fill in — which is document order, because
-   * CSS auto-placement never runs backwards.
+   * The page's own block goes wherever `pageBlockAt` says, which is first unless
+   * somebody has dragged it elsewhere; see `Program.pageBlockAt`. A local draft
+   * wins while it names the same blocks as the document, so a swap redraws on the
+   * drop rather than after the round trip.
    */
-  const blockWidths = useMemo(
-    () => [
-      ...(picturesOff ? [] : [summaryLayout.width]),
-      ...bandBlocks.map((block) => block.layout.width),
-    ],
-    [picturesOff, summaryLayout.width, bandBlocks],
+  const blockOrder = useMemo(() => {
+    const ids = bandBlocks.map((block) => block.band.id);
+    const stored = node === null ? program.pageBlockAt : node.pageBlockAt;
+    const fromDocument = picturesOff
+      ? ids
+      : [
+          ...ids.slice(0, pageBlockIndex(stored, ids.length)),
+          'summary',
+          ...ids.slice(pageBlockIndex(stored, ids.length)),
+        ];
+    const agrees =
+      orderDraft !== null &&
+      orderDraft.length === fromDocument.length &&
+      fromDocument.every((key) => orderDraft.includes(key));
+    return agrees ? orderDraft : fromDocument;
+  }, [bandBlocks, node, program.pageBlockAt, picturesOff, orderDraft]);
+
+  /** A block's layout by key, the page's own block included. */
+  const layoutOf = useCallback(
+    (key: string): SectionLayout =>
+      key === 'summary'
+        ? summaryLayout
+        : (bandBlocks.find((block) => block.band.id === key)?.layout ?? summaryLayout),
+    [bandBlocks, summaryLayout],
   );
 
-  /** Where a band sits among all of them — the page's own block shifts it by one. */
-  const blockIndexOf = (index: number) => (picturesOff ? 0 : 1) + index;
+  /**
+   * Every block's width, in page order.
+   *
+   * This is the list `dockWidths` flows to work out what is left on a row, so it
+   * has to be the same order the twelve columns fill in.
+   */
+  const blockWidths = useMemo(
+    () => blockOrder.map((key) => layoutOf(key).width),
+    [blockOrder, layoutOf],
+  );
 
   /**
-   * Put a band beside the block before it, narrowing that one if it has to.
+   * Put the blocks in this order, and save it.
+   *
+   * Drafted first so the page redraws on the drop. One write for the bands and the
+   * page's own block together — see `arrangeBlocks`.
+   */
+  const reorder = (next: string[]) => {
+    setOrderDraft(next);
+    void write(async () => {
+      await arrangeBlocks(target, next, admin.uid);
+      refresh();
+    });
+  };
+
+  /**
+   * Swap two blocks. What dropping one block onto another does.
+   *
+   * Tommy: *"if there are two scroll wheels next to each other I should be able to
+   * switch the left and right one."* A swap of positions in the order, each block
+   * keeping its own width, is exactly that for two that share a row — and for two
+   * that do not, it is the same gesture meaning the same thing.
+   */
+  const swap = (a: string, b: string) => {
+    const next = swapBlocks(blockOrder, a, b);
+    if (next.every((key, at) => key === blockOrder[at])) return;
+    reorder(next);
+  };
+
+  /** One place earlier or later. The grip's keyboard route. */
+  const moveBy = (key: string, delta: -1 | 1) => {
+    const neighbour = blockOrder[blockOrder.indexOf(key) + delta];
+    if (neighbour !== undefined) swap(key, neighbour);
+  };
+
+  /**
+   * Put a block beside the block before it, narrowing that one if it has to.
    *
    * What the drag on the grip does when it ends in the right-hand side of the
    * block above. Tommy: *"if it is dragged to the same area as the grid the grid
@@ -872,38 +945,31 @@ function LevelView({
    * drafted before either is sent, so the pair moves in one frame on screen
    * whatever the round trips do.
    */
-  const dockBand = (index: number) => {
-    const plan = dockWidths(blockWidths, blockIndexOf(index));
-    const dragged = bandBlocks[index];
-    if (!plan || !dragged) return;
+  const dockBlock = (key: string) => {
+    const at = blockOrder.indexOf(key);
+    const plan = dockWidths(blockWidths, at);
+    const neighbourKey = blockOrder[at - 1];
+    if (!plan || neighbourKey === undefined) return;
 
-    const sized = { ...dragged.layout, width: plan.dragged };
-    // The neighbour is the block before it: another band, or the page's own — which
-    // is the one case where the write is a section rather than a band.
-    const asBand = blockIndexOf(index) - 1 - (picturesOff ? 0 : 1);
-    const neighbour = asBand >= 0 ? bandBlocks[asBand] : null;
+    const sized = { ...layoutOf(key), width: plan.dragged };
     const narrowed =
-      plan.neighbour === null
-        ? null
-        : {
-            ...(neighbour ? neighbour.layout : summaryLayout),
-            width: plan.neighbour,
-          };
-    const neighbourKey = neighbour ? neighbour.band.id : 'summary';
+      plan.neighbour === null ? null : { ...layoutOf(neighbourKey), width: plan.neighbour };
 
     setDrafts((was) => ({
       ...was,
       ...(narrowed ? { [neighbourKey]: narrowed } : {}),
-      [dragged.band.id]: sized,
+      [key]: sized,
     }));
 
+    /** The page's own block is a section write; a band is a band write. */
+    const save = (which: string, layout: SectionLayout) =>
+      which === 'summary'
+        ? setSectionLayout(target, layout, admin.uid)
+        : updateBand(target, which, { layout }, admin.uid);
+
     void write(async () => {
-      if (narrowed) {
-        if (neighbour)
-          await updateBand(target, neighbour.band.id, { layout: narrowed }, admin.uid);
-        else await setSectionLayout(target, narrowed, admin.uid);
-      }
-      await updateBand(target, dragged.band.id, { layout: sized }, admin.uid);
+      if (narrowed) await save(neighbourKey, narrowed);
+      await save(key, sized);
       refresh();
     });
   };
@@ -925,16 +991,21 @@ function LevelView({
   const { flat, offsets } = useMemo(() => {
     const list: DocOf<GalleryMedia>[] = [];
     const at = new Map<string, number>();
-    at.set('summary', 0);
-    list.push(...pictures);
-    for (const block of bandBlocks) {
-      at.set(block.band.id, list.length);
-      list.push(...block.media);
+    // In page order, so the arrow keys walk the blocks the way they are laid out
+    // — which is no longer "the page's own block first" once it can be moved.
+    for (const key of blockOrder) {
+      at.set(key, list.length);
+      list.push(
+        ...(key === 'summary'
+          ? pictures
+          : (bandBlocks.find((block) => block.band.id === key)?.media ?? [])),
+      );
     }
+    if (!at.has('summary')) at.set('summary', list.length);
     at.set('also', list.length);
     list.push(...alsoHere);
     return { flat: list, offsets: at };
-  }, [pictures, bandBlocks, alsoHere]);
+  }, [blockOrder, pictures, bandBlocks, alsoHere]);
 
   /**
    * The page draws no photographs anywhere and has no levels inside it.
@@ -1430,12 +1501,20 @@ function LevelView({
   const bandEditor = (band: GalleryBand) => (
     <BandEditor
       band={band}
+      layout={drafts[band.id] ?? band.layout}
       onTitle={(title) =>
         void write(async () => {
           await updateBand(target, band.id, { title }, admin.uid);
           refresh();
         })
       }
+      onLayout={(layout) => {
+        setDrafts((was) => ({ ...was, [band.id]: layout }));
+        void write(async () => {
+          await updateBand(target, band.id, { layout }, admin.uid);
+          refresh();
+        });
+      }}
     />
   );
 
@@ -1584,15 +1663,15 @@ function LevelView({
           kind: 'Section',
           title: key === 'also' ? 'Also from here' : 'Photographs',
           body: (
-            <SectionDesigner
-              layout={key === 'also' ? alsoLayout : summaryLayout}
-              saving={saving}
-              onClose={() => edit.select({ kind: 'page' })}
-              onChange={(next) => {
-                setDrafts((was) => ({ ...was, [key]: next }));
-                void write(() => setSectionLayout(sectionTarget, next, admin.uid));
-              }}
-            />
+            <div className="inspector__body">
+              <SectionDesigner
+                layout={key === 'also' ? alsoLayout : summaryLayout}
+                onChange={(next) => {
+                  setDrafts((was) => ({ ...was, [key]: next }));
+                  void write(() => setSectionLayout(sectionTarget, next, admin.uid));
+                }}
+              />
+            </div>
           ),
         };
       }
@@ -2048,13 +2127,14 @@ function LevelView({
    * a real element, and it cannot be placed until every one of them has been, so
    * building them and drawing them are two steps with a measurement between.
    */
-  const blocks: {
-    width: SectionWidth;
-    node: (spot: BlockPlacement | null) => React.ReactNode;
-  }[] = [];
+  /** Each drawn block by key; `blocks` below puts them in `blockOrder`. */
+  const blockByKey = new Map<
+    string,
+    { width: SectionWidth; node: (spot: BlockPlacement | null) => React.ReactNode }
+  >();
 
   if (!picturesOff && (pictures.length > 0 || edit.on)) {
-    blocks.push({
+    blockByKey.set('summary', {
       width: summaryLayout.width,
       node: (spot) => (
         /*
@@ -2082,10 +2162,22 @@ function LevelView({
               */
         <Block
           key="summary"
+          blockKey="summary"
           place={spot}
           display={summaryLayout.display}
-          label="the first block"
+          label="the page’s own block"
           busy={saving}
+          {...(blockOrder.length > 1
+            ? {
+                onSwap: (other: string) => swap('summary', other),
+                onMove: (delta: -1 | 1) => moveBy('summary', delta),
+              }
+            : {})}
+          onDock={
+            dockWidths(blockWidths, blockOrder.indexOf('summary'))
+              ? () => dockBlock('summary')
+              : undefined
+          }
           onShape={(next) => {
             const layout = layoutForLook(
               next,
@@ -2100,6 +2192,7 @@ function LevelView({
               summaryLayout.caption.placement,
               summaryLayout.spin,
               summaryLayout.fit,
+              summaryLayout.height,
             );
             setDrafts((was) => ({ ...was, summary: layout }));
             void write(() => setSectionLayout(target, layout, admin.uid));
@@ -2133,6 +2226,7 @@ function LevelView({
               on ? 'over' : 'hidden',
               summaryLayout.spin,
               summaryLayout.fit,
+              summaryLayout.height,
             );
             setDrafts((was) => ({ ...was, summary: layout }));
             void write(() => setSectionLayout(target, layout, admin.uid));
@@ -2161,8 +2255,9 @@ function LevelView({
                   or a drag across four sizes would be four round trips.
                 */
           scale={summaryLayout.scale}
+          height={summaryLayout.height}
           onHeight={(next, live) => {
-            const layout = { ...summaryLayout, scale: next };
+            const layout = { ...summaryLayout, ...next };
             setDrafts((was) => ({ ...was, summary: layout }));
             if (!live) void write(() => setSectionLayout(target, layout, admin.uid));
           }}
@@ -2241,11 +2336,13 @@ function LevelView({
         */
   }
   bandBlocks.forEach(({ band, layout, picks, media: shown }, index) => {
-    blocks.push({
+    blockByKey.set(band.id, {
       width: layout.width,
       node: (spot) => (
         <Block
           key={band.id}
+          blockKey={band.id}
+          {...(blockOrder.length > 1 ? { onSwap: (other: string) => swap(band.id, other) } : {})}
           place={spot}
           display={layout.display}
           label={`block ${index + 2}`}
@@ -2258,6 +2355,7 @@ function LevelView({
               layout.caption.placement,
               layout.spin,
               layout.fit,
+              layout.height,
             );
             setDrafts((was) => ({ ...was, [band.id]: shaped }));
             void write(async () => {
@@ -2292,6 +2390,7 @@ function LevelView({
               on ? 'over' : 'hidden',
               layout.spin,
               layout.fit,
+              layout.height,
             );
             setDrafts((was) => ({ ...was, [band.id]: shaped }));
             void write(async () => {
@@ -2314,8 +2413,9 @@ function LevelView({
                   gesture is written.
                 */
           scale={layout.scale}
+          height={layout.height}
           onHeight={(next, live) => {
-            const sized = { ...layout, scale: next };
+            const sized = { ...layout, ...next };
             setDrafts((was) => ({ ...was, [band.id]: sized }));
             if (live) return;
             void write(async () => {
@@ -2330,16 +2430,11 @@ function LevelView({
                   nothing.
                 */
           onDock={
-            dockWidths(blockWidths, blockIndexOf(index))
-              ? () => dockBand(index)
+            dockWidths(blockWidths, blockOrder.indexOf(band.id))
+              ? () => dockBlock(band.id)
               : undefined
           }
-          onMove={(delta) =>
-            void write(async () => {
-              await moveBand(target, band.id, delta, admin.uid);
-              refresh();
-            })
-          }
+          {...(blockOrder.length > 1 ? { onMove: (delta: -1 | 1) => moveBy(band.id, delta) } : {})}
           onRemove={() =>
             void write(async () => {
               await removeBand(target, band.id, admin.uid);
@@ -2397,6 +2492,12 @@ function LevelView({
         </Block>
       ),
     });
+  });
+
+  /** Every drawn block, in page order. */
+  const blocks = blockOrder.flatMap((key) => {
+    const one = blockByKey.get(key);
+    return one ? [one] : [];
   });
 
   /**
@@ -3017,10 +3118,15 @@ function LevelView({
  */
 function BandEditor({
   band,
+  layout,
   onTitle,
+  onLayout,
 }: {
   band: GalleryBand;
+  /** The band's layout with any unsaved draft folded in. */
+  layout: SectionLayout;
   onTitle: (title: string) => void;
+  onLayout: (next: SectionLayout) => void;
 }) {
   const [title, setTitle] = useState(band.title);
   useEffect(() => setTitle(band.title), [band.id, band.title]);
@@ -3044,11 +3150,11 @@ function BandEditor({
           }}
         />
         <span className="inspector__note">
-          Its shape, its position, whether it stays and which photographs are in it are
-          all on the block itself — the controls in its corner and the row under it. This
-          is the only thing about it that is words.
+          Drag the block by Move to swap it with another, and its edges to resize it.
         </span>
       </label>
+
+      <SectionDesigner layout={layout} onChange={onLayout} />
     </div>
   );
 }

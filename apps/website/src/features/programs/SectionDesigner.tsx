@@ -17,17 +17,17 @@ import {
   type SectionScale,
   type WheelSpin,
 } from '@spsm/shared';
-import { useDisclosureClose } from './Disclosure';
 
 /**
- * A named row of choices. The only control shape this panel has.
+ * One question and its answers, as a segmented control.
  *
  * Out here rather than inside the component, for the reason `BandEditor` is: a
  * component declared during a render is a new type every render, so React
- * unmounts and rebuilds it instead of updating it. Nothing here holds state, so
- * the visible cost was only a lost focus ring after every save — but it is the
- * same defect that made the scroll-wheel controls look inert, and one of these in
- * a file is one too many.
+ * unmounts and rebuilds it instead of updating it — which loses the focus ring
+ * after every save.
+ *
+ * `value` may be `null`, which is "none of these" — an upright wheel with a dragged
+ * height is no named size, and lighting one up would say something untrue.
  */
 function Row<T extends string>({
   label,
@@ -35,23 +35,31 @@ function Row<T extends string>({
   value,
   onPick,
   names,
+  note,
 }: {
   label: string;
   options: readonly T[];
-  value: T;
+  value: T | null;
   onPick: (next: T) => void;
   /** Human names, because the stored values are terse on purpose. */
   names: Record<T, string>;
+  /** A line under the row, for a state the buttons alone cannot say. */
+  note?: string | undefined;
 }) {
   return (
-    <div className="designer__row">
+    <div className="designer__row" role="group" aria-label={label}>
       <p className="designer__label">{label}</p>
-      <div className="chips" role="group" aria-label={label}>
+      <div
+        className="designer__seg"
+        // Two or three answers share a line; four or five wrap to an even grid
+        // rather than leaving one orphan on a second line.
+        data-count={options.length}
+      >
         {options.map((option) => (
           <button
             key={option}
             type="button"
-            className={`chip${value === option ? ' is-on' : ''}`}
+            className={`designer__opt${value === option ? ' is-on' : ''}`}
             aria-pressed={value === option}
             onClick={() => onPick(option)}
           >
@@ -59,9 +67,16 @@ function Row<T extends string>({
           </button>
         ))}
       </div>
+      {note && <p className="designer__note">{note}</p>}
     </div>
   );
 }
+
+const CAPTION_CHOICES = ['shown', 'hidden'] as const;
+const CAPTION_CHOICE_NAMES: Record<(typeof CAPTION_CHOICES)[number], string> = {
+  shown: 'Shown',
+  hidden: 'Hidden',
+};
 
 /**
  * How a block of photographs looks. Two questions.
@@ -105,59 +120,45 @@ function Row<T extends string>({
  * object written as a plain field — so a partial patch silently drops the
  * settings it does not mention. Passing the complete object both ways makes the
  * correct write the only write. See `setSectionLayout`.
+ *
+ * ## Why it has no header of its own, and rows that fill the panel
+ *
+ * Tommy: *"how it looks settings on the side looks very bad and unusable."* It was
+ * drawn flush against the column's left edge with no padding, repeated the
+ * column's own title, "Saved" and Done a second time under them, and wrapped its
+ * chips onto ragged second lines in a 350px column. The column already says what
+ * is selected, whether it saved and how to get back, so the header went; the
+ * chips became a segmented control per row — equal cells across the full width,
+ * so every option is a big target and nothing wraps mid-row.
+ *
+ * It also used to be the page's own block alone. Every other block's panel was a
+ * heading field, so the same question — "make this one smaller" — had an answer on
+ * one block and not on the next. It is on all of them now.
  */
 export function SectionDesigner({
   layout,
   onChange,
-  /** True while a write is in flight. Only ever a hint; nothing is disabled. */
-  saving = false,
-  onClose,
 }: {
   layout: SectionLayout;
   onChange: (next: SectionLayout) => void;
-  saving?: boolean;
-  onClose: () => void;
 }) {
-  const closeRow = useDisclosureClose();
+  /** An upright wheel somebody has dragged to a height of their own. */
+  const custom = layout.display === 'column' && layout.height !== null;
 
   return (
     <section className="designer" aria-label="How this block looks">
-      <header className="designer__head">
-        <h4>How it looks</h4>
-        <span className="designer__state">{saving ? 'Saving…' : 'Saved'}</span>
-        <button
-          type="button"
-          className="button button--quiet button--small"
-          onClick={() => {
-            closeRow();
-            onClose();
-          }}
-        >
-          Done
-        </button>
-      </header>
-
-      {/*
-        The look, which carries the typography with it — see `layoutForLook`. The
-        scale is kept across a change, because "large" means the same thing to
-        somebody whichever look they are in and re-choosing it every time would be
-        the kind of small annoyance that makes a panel feel unreliable.
-      */}
       <Row
         label="Shape"
         options={GALLERY_DISPLAYS}
         value={layout.display}
         names={GALLERY_DISPLAY_NAMES}
         onPick={(display: GalleryDisplay) =>
-          // The width goes through too, for the same reason the scale does:
-          // somebody who dragged this block to half the page and is now changing
-          // its shape has changed their mind about one thing. There is no width
-          // row here — it is the handle on the block's own edge.
-          //
-          // The size is dropped back onto the ladder when it was `fit` and this is
-          // no longer a column: `fit` means "one picture tall", which a sideways
-          // wheel and a grid have no way to be. The spin and the tile shape go
-          // through untouched — see `layoutForLook`.
+          /*
+            The width, captions, spin, tile shape and dragged height all go
+            through: somebody changing the shape has changed their mind about one
+            thing. `fit` drops back onto the ladder when this is no longer a
+            column, because "one picture tall" is the upright wheel's alone.
+          */
           onChange(
             layoutForLook(
               display,
@@ -166,40 +167,43 @@ export function SectionDesigner({
               layout.caption.placement,
               layout.spin,
               layout.fit,
+              layout.height,
             ),
           )
         }
       />
 
       {/*
-        `scalesFor` rather than every size: "One picture" is the upright wheel's
-        alone, because a sideways wheel's height *is* its tile height and a grid
-        has no frame to fit anything to.
+        `scalesFor`: "One picture" is the upright wheel's alone. Picking any size
+        clears a dragged height — it is a request for that size.
       */}
       <Row
-        label="Size"
+        label={layout.display === 'grid' ? 'Picture size' : 'Size'}
         options={scalesFor(layout.display)}
-        value={layout.scale}
+        value={custom ? null : layout.scale}
         names={SECTION_SCALE_NAMES}
-        onPick={(scale: SectionScale) => onChange({ ...layout, scale })}
+        onPick={(scale: SectionScale) => onChange({ ...layout, scale, height: null })}
+        note={
+          custom
+            ? 'Custom height, from dragging the wheel\u2019s bottom edge. Pick a size to go back to one.'
+            : layout.display === 'column'
+              ? 'Or drag the wheel\u2019s bottom edge to any height.'
+              : undefined
+        }
       />
 
       {/*
-        The two wheel rows, and only for a wheel.
-
-        A grid has nowhere to spin to and its tiles are sized by the canvas, so both
-        of these would be controls that did nothing. The stored values survive the
-        trip through grid regardless — `layoutForLook` carries them and `spinFor`
-        settles the axis — so switching to a grid and back does not cost either.
+        The two wheel rows, and only for a wheel. A grid has nowhere to spin to
+        and its tiles are sized by the canvas. The stored values survive the trip
+        through grid regardless — see `layoutForLook` and `spinFor`.
       */}
       {layout.display !== 'grid' && (
         <>
           <Row
             label="Direction"
             options={SPINS_FOR_DISPLAY[layout.display]}
-            /* `spinFor`, not `layout.spin`: a column still holding "rightward" from
-               when it was a sideways wheel must show the direction it is actually
-               going, or the row states something the page contradicts. */
+            /* `spinFor`, not `layout.spin`: a column still holding "rightward"
+               from when it was a sideways wheel must show where it is going. */
             value={spinFor(layout)}
             names={WHEEL_SPIN_NAMES}
             onPick={(spin: WheelSpin) => onChange({ ...layout, spin })}
@@ -214,6 +218,31 @@ export function SectionDesigner({
           />
         </>
       )}
+
+      {/*
+        The same switch as Captions on the block's bar. `over` for on, as there:
+        `below` stays honoured on read but has no control.
+      */}
+      <Row
+        label="Captions"
+        options={CAPTION_CHOICES}
+        value={layout.caption.placement === 'hidden' ? 'hidden' : 'shown'}
+        names={CAPTION_CHOICE_NAMES}
+        onPick={(choice) =>
+          onChange({
+            ...layout,
+            caption: {
+              ...layout.caption,
+              placement:
+                choice === 'hidden'
+                  ? 'hidden'
+                  : layout.caption.placement === 'hidden'
+                    ? 'over'
+                    : layout.caption.placement,
+            },
+          })
+        }
+      />
     </section>
   );
 }

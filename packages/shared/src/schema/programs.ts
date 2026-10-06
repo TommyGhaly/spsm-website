@@ -123,6 +123,22 @@ export interface Program extends AuditFields, Publishable {
   bands?: GalleryBand[];
 
   /**
+   * Where the page's own block sits among the bands: `0` is first, `bands.length`
+   * is last.
+   *
+   * Absent is `0`, which is where it has always been, so no page moves. It is a
+   * number beside `bands` rather than a member of it because the page's own block
+   * is not a `GalleryBand` — its pictures and its layout live on this document —
+   * and moving all of that into the array to give it a position would be a
+   * migration of every gallery for the sake of one integer.
+   *
+   * Tommy asked to be able to swap two blocks by dragging one onto the other, and
+   * the page's own block was the one that could not take part. Read through
+   * `pageBlockIndex`, which clamps it to the bands actually there.
+   */
+  pageBlockAt?: number;
+
+  /**
    * Whether this page shows *every* photograph beneath it rather than a selection.
    *
    * Three states between this and a block's picked list, and they are exclusive:
@@ -391,6 +407,9 @@ export interface ProgramEvent extends AuditFields, Publishable {
    * Read through `resolveBands`, never directly.
    */
   bands?: GalleryBand[];
+
+  /** See `Program.pageBlockAt`. The same position at every depth. */
+  pageBlockAt?: number;
 
   /** See `Program.showAllPictures`. The same three-way choice at every depth. */
   showAllPictures?: boolean;

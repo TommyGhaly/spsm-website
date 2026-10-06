@@ -19584,73 +19584,107 @@ span.gallery-figure__frame {
  * numeric, no Save — a control whose purpose is seeing the result should not make
  * you submit a form to find out.
  *
- * It reuses `.chip`, which is the same control the public subgroup filter is
- * built from. That is on purpose: an administrator pressing "Sideways rail" and a
- * visitor pressing "Day 2" are doing the same kind of thing, and a second visual
- * language for staff controls is how an admin panel starts looking like a
- * different piece of software bolted onto the page.
+ * Each row is a segmented control in the chips' own colours — the same accent
+ * for "this one is on" — laid out as equal cells so it fits the editing column.
  * ------------------------------------------------------------------------ */
 .designer {
-  margin-top: var(--space-md, 1rem);
-  padding-top: var(--space-md, 1rem);
-  border-top: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
-}
-
-.designer__head {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
   gap: var(--space-md, 1rem);
-  margin-bottom: var(--space-md, 1rem);
-}
-
-.designer__head h4 {
-  margin: 0;
-  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
-  font-size: var(--type-subheading, 1.0625rem);
 }
 
 /*
- * "Saved" / "Saving…", in the corner rather than as a message.
- *
- * `margin-left: auto` pushes it to sit beside Done. It is deliberately quiet and
- * deliberately always present: a status that only appears when something is
- * happening makes its absence ambiguous, and with no Save button the one question
- * this panel has to answer at a glance is whether the last click stuck.
+ * One question per row, ruled off from the next. The label sits tight on its own
+ * answers and the rule sits between questions, which is what groups them by eye.
  */
-.designer__state {
-  margin-left: auto;
+.designer__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.designer__row + .designer__row {
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 70%, transparent);
+}
+
+/* The same micro caps every other label in the editing column uses. */
+.designer__label {
+  margin: 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
   letter-spacing: var(--tracking-wide, 0.03em);
   text-transform: uppercase;
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.designer__row + .designer__row {
-  margin-top: var(--space-md, 1rem);
+/*
+ * The answers, as one segmented control across the full width.
+ *
+ * Equal cells rather than chips sized to their words: in a 350px column chips
+ * wrapped onto ragged second lines and a row of four read as two unrelated rows.
+ * Two or three answers share one line; four or five go two to a line, so nothing
+ * is ever left alone on a line of its own looking like a different control.
+ */
+.designer__seg {
+  display: grid;
+  grid-template-columns: repeat(var(--seg-cols, 2), minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-rule, #e0cac3);
+  overflow: hidden;
 }
 
-.designer__label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin: 0 0 var(--space-sm, 0.5rem);
+.designer__seg[data-count='3'] {
+  --seg-cols: 3;
+}
+
+/* Five: the fifth spans the row, so the grid stays even. */
+.designer__seg[data-count='5'] > :last-child {
+  grid-column: 1 / -1;
+}
+
+.designer__opt {
+  min-height: 2.4rem;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  background: var(--color-paper-raised, #fdf7f4);
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
-  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-ink-soft, #4b413e);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.designer__opt:hover {
+  background: var(--color-paper-sunken, #eeddd7);
   color: var(--color-ink, #1c1614);
 }
 
-.designer__hint {
-  font-weight: 400;
-  font-size: var(--type-micro, 0.8125rem);
-  color: var(--color-ink-soft, #4b413e);
+.designer__opt:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-gold, #b08d43);
+  outline-offset: -2px;
 }
 
-.designer__rule {
-  margin: var(--space-lg, 1.5rem) 0;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-rule, #e0cac3) 70%, transparent);
+.designer__opt.is-on {
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #fff);
+  font-weight: 600;
+}
+
+/* A state the buttons alone cannot say — a dragged height, for one. */
+.designer__note {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: var(--leading-snug, 1.35);
+  color: var(--color-ink-faint, #6f5f5a);
 }
 
 /*
@@ -19665,10 +19699,6 @@ span.gallery-figure__frame {
   padding: var(--space-sm, 0.6rem) var(--space-md, 1rem);
   border-left-width: 2px;
   background: none;
-}
-
-.gallery-admin--section .designer {
-  border-top-color: color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -21564,6 +21594,21 @@ body.is-editing:has(.inspector-col.is-dragging) {
   border-radius: var(--radius-md, 8px);
 }
 
+/*
+ * The block a drop would swap with.
+ *
+ * Dashed where docking is solid: both are gold because both say "this is where it
+ * goes", and the dash is what tells the two outcomes apart — a swap trades places,
+ * a dock squeezes in beside. Tinted inside as well, because an outline alone on a
+ * block of photographs is easy to lose against the pictures' own edges.
+ */
+.block.is-swap-target {
+  outline: 2px dashed var(--color-gold, #b08d43);
+  outline-offset: var(--space-xs, 0.4rem);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 8%, transparent);
+}
+
 .block__dock {
   position: absolute;
   top: var(--space-xs, 0.4rem);
@@ -22392,72 +22437,6 @@ body.is-editing:has(.inspector-col.is-dragging) {
 /* -------------------------------------------------------------------------- */
 
 /*
- * Inside the panel the designer has no head of its own — the row is its head.
- *
- * It was written to sit inline on the page, so it carries a serif `<h4>` saying
- * "Arrange this section", its own Saved/Saving state, and a rule above it. In a
- * disclosure row labelled ARRANGEMENT, with the panel's own Saved in the corner
- * three inches above, all three are the same information twice — and the h4 is a
- * 17px serif heading in a column whose every other label is 13px caps, which is
- * the single loudest thing in it.
- *
- * Hidden rather than deleted from the component: it still renders standalone on
- * `/events`, where the head is the only thing that says what the box is.
- */
-.inspector .designer {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.inspector .designer__head h4,
-.inspector .designer__state {
-  display: none;
-}
-
-/* Which leaves Done, on its own, right-aligned. */
-.inspector .designer__head {
-  justify-content: flex-end;
-  margin-bottom: var(--space-sm, 0.6rem);
-}
-
-/*
- * The rows inside it, brought into line with the rest of the panel.
- *
- * Two things were off. The labels were `--type-small` semibold in near-black —
- * heavier than the row headings *above* them, so a setting looked more important
- * than the thing it belonged to. And every row was `--space-md` apart, which in a
- * list of six choices is a lot of air between a label and the chips that answer
- * it.
- *
- * So: the same micro caps every other label in this column uses, and the space
- * moved from *between* the rows to *inside* them — a label sits close to its own
- * chips and further from the next question, which is the only arrangement that
- * groups them by eye.
- */
-.inspector .designer__label {
-  margin-bottom: 0.4rem;
-  font-size: var(--type-micro, 0.8125rem);
-  letter-spacing: var(--tracking-wide, 0.03em);
-  text-transform: uppercase;
-  color: var(--color-ink-faint, #6f5f5a);
-}
-
-/* The hint keeps sentence case — it is a sentence. */
-.inspector .designer__hint {
-  letter-spacing: normal;
-  text-transform: none;
-}
-
-.inspector .designer__row + .designer__row {
-  margin-top: var(--space-md, 1rem);
-}
-
-.inspector .designer__rule {
-  margin: var(--space-md, 1rem) 0;
-}
-
-/*
  * Chips, at panel scale.
  *
  * The page's chips are 15px in a 1152px column. The same chip in a 22rem panel
@@ -22488,10 +22467,6 @@ body.is-editing:has(.inspector-col.is-dragging) {
 
 .inspector .picker__head h3 {
   font-size: var(--type-small, 0.9375rem);
-}
-
-.inspector .designer__head {
-  display: none;
 }
 
 @media (max-width: 60rem) {

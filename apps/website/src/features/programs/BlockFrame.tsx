@@ -10,7 +10,9 @@ import {
   SECTION_WIDTH_COLUMNS,
   SECTION_WIDTH_NAMES,
   SPINS_FOR_DISPLAY,
+  WHEEL_HEIGHT_MIN_REM,
   WHEEL_SPIN_NAMES,
+  clampWheelHeight,
   isWheel,
   nearestSectionScale,
   nearestSectionWidth,
@@ -26,6 +28,7 @@ import {
 } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { useEditMode } from './editMode';
+import { stripIn, tileSpans, wheelCap } from './wheelMeasure';
 
 /**
  * The controls for one block of photographs, **on the block**.
@@ -140,6 +143,26 @@ import { useEditMode } from './editMode';
  * a straight drag upwards ends in the left half of the block above and moves, and
  * one aimed at the space beside it ends in the right half and docks. See
  * `dockWidths` for what the widths become.
+ *
+ * ## Dropping a block *onto* another swaps them
+ *
+ * Tommy: *"if there are two scroll wheels next to each other I should be able to
+ * switch the left and right one."* The block now follows the pointer on both axes,
+ * and whichever other block is under the pointer when it is let go trades places
+ * with it — outlined while it is the target, so the drop is never a surprise. The
+ * page's own block takes part too; see `Program.pageBlockAt`.
+ *
+ * Docking only applies to a block that is still *under* the one above. A block
+ * already beside it has nothing to dock into, and its drag into that neighbour is
+ * a swap.
+ *
+ * ## An upright wheel's height is free
+ *
+ * The bottom-edge handle used to snap to four sizes. On an upright wheel it now
+ * follows the pointer and saves the height it is let go at — Tommy wanted a wheel
+ * of ten photographs to be able to stand eight or nine tall — capped at the whole
+ * set less its shortest picture, so there is always something left to scroll to.
+ * A sideways wheel keeps the ladder; its height is its tile size, not its length.
  */
 export function BlockFrame({
   children,
@@ -155,8 +178,10 @@ export function BlockFrame({
   onWidth,
   place = null,
   scale,
+  height = null,
   onHeight,
-  /** Absent on the page's own first block, which cannot move. */
+  blockKey,
+  onSwap,
   onMove,
   onDock,
   onRemove,
@@ -219,7 +244,17 @@ export function BlockFrame({
    * holds the candidate in the same drafts map it already uses to keep a
    * just-changed block from flashing back while a write is in flight.
    */
-  onHeight: (next: SectionScale, live: boolean) => void;
+  onHeight: (next: { scale: SectionScale; height: number | null }, live: boolean) => void;
+  /**
+   * An upright wheel's dragged height in rem, or null while it follows `scale`.
+   * See `SectionLayout.height`.
+   */
+  height?: number | null;
+  /** This block's key in the page's order — what another block's drop names. */
+  blockKey: string;
+  /** Trade places with the block whose key this is. What a drop onto one does. */
+  onSwap?: ((other: string) => void) | undefined;
+  /** One place earlier or later. Absent when there is nowhere to go. */
   onMove?: ((delta: -1 | 1) => void) | undefined;
   /**
    * Put this block beside the one before it, narrowing that one if it has to.
@@ -269,13 +304,41 @@ export function BlockFrame({
   const [drag, setDrag] = useState<{
     fromX: number;
     fromY: number;
+    /** `scrollY` at the press, so the page auto-scrolling under the drag is travel too. */
+    fromScroll: number;
     offset: number;
+    offsetX: number;
     docking: boolean;
+    /** Whether it began *under* the block above rather than beside it. */
+    below: boolean;
+    /** The block the pointer is over, which a drop would swap with. */
+    target: string | null;
   } | null>(null);
+
+  /**
+   * The block a drop would swap with, outlined on its own element.
+   *
+   * Rather than through state the parent would thread back down: it is a different
+   * `BlockFrame`, and an outline for the length of a drag is not worth re-rendering
+   * the page for. A ref, because the drag effect re-runs on every pointer move and
+   * a local variable would be forgotten — and the outline cleared — each time.
+   */
+  const marked = useRef<HTMLElement | null>(null);
+  /** Where the pointer is during a move — for the auto-scroll. See `tick`. */
+  const movePoint = useRef<Point | null>(null);
+  const mark = useCallback((key: string | null) => {
+    const next = key
+      ? document.querySelector<HTMLElement>(`[data-block-key="${CSS.escape(key)}"]`)
+      : null;
+    if (next === marked.current) return;
+    marked.current?.classList.remove('is-swap-target');
+    next?.classList.add('is-swap-target');
+    marked.current = next;
+  }, []);
 
   const start = useCallback(
     (event: React.PointerEvent) => {
-      if (!onMove) return;
+      if (!onMove && !onSwap) return;
       // Otherwise the browser starts its own image-drag on the photographs under
       // the grip, and a text selection across the block.
       event.preventDefault();
@@ -284,18 +347,28 @@ export function BlockFrame({
       } catch {
         /* a synthetic pointer; the window listeners below still work */
       }
+      const above = frame.current?.previousElementSibling;
+      const below =
+        !(above instanceof HTMLElement) ||
+        !above.classList.contains('block') ||
+        (frame.current?.getBoundingClientRect().top ?? 0) >=
+          above.getBoundingClientRect().bottom - 2;
       setDrag({
         fromX: event.clientX,
         fromY: event.clientY,
+        fromScroll: window.scrollY,
         offset: 0,
+        offsetX: 0,
         docking: false,
+        below,
+        target: null,
       });
     },
-    [onMove],
+    [onMove, onSwap],
   );
 
   useEffect(() => {
-    if (drag === null || !onMove) return;
+    if (drag === null) return;
 
     /*
      * How far it has to travel to count as a move.
@@ -325,8 +398,8 @@ export function BlockFrame({
      * block above is a deliberately different gesture, and it is also literally
      * where the block would land.
      */
-    const wouldDock = (event: PointerEvent, travelled: number): boolean => {
-      if (!onDock) return false;
+    const wouldDock = (event: Point, travelled: number): boolean => {
+      if (!onDock || !drag.below) return false;
       /*
        * A gesture, not a click.
        *
@@ -349,25 +422,100 @@ export function BlockFrame({
     };
 
     /** How far the pointer has come, in both directions — a dock is mostly sideways. */
-    const travel = (event: PointerEvent) =>
-      Math.hypot(event.clientX - drag.fromX, event.clientY - drag.fromY);
+    const travel = (event: Point) =>
+      Math.hypot(event.clientX - drag.fromX, down(event));
 
-    const onPointerMove = (event: PointerEvent) => {
-      const docking = wouldDock(event, travel(event));
+    /** How far down the page it has come, counting what the page has scrolled. */
+    const down = (event: Point) =>
+      event.clientY - drag.fromY + (window.scrollY - drag.fromScroll);
+
+    /**
+     * The other block under the pointer, if any.
+     *
+     * `elementsFromPoint` rather than `elementFromPoint`, because the block being
+     * dragged follows the pointer and is on top of everything — the first hit is
+     * always itself. Read off `data-block-key`, so the answer is a key the parent
+     * understands rather than a DOM node it would have to map back.
+     */
+    const targetAt = (event: Point, travelled: number): string | null => {
+      if (!onSwap || travelled < 24) return null;
+      for (const hit of document.elementsFromPoint(event.clientX, event.clientY)) {
+        const block = hit.closest<HTMLElement>('[data-block-key]');
+        if (block && block !== frame.current) return block.dataset.blockKey ?? null;
+      }
+      return null;
+    };
+
+    const follow = (event: Point) => {
+      const travelled = travel(event);
+      const target = targetAt(event, travelled);
+      // A block under the pointer is a swap, whatever half of it the pointer is in.
+      const docking = target === null && wouldDock(event, travelled);
+      mark(target);
       setDrag((was) =>
-        was === null ? null : { ...was, offset: event.clientY - was.fromY, docking },
+        was === null
+          ? null
+          : {
+              ...was,
+              offset: down(event),
+              offsetX: event.clientX - was.fromX,
+              docking,
+              target,
+            },
       );
     };
 
+    /*
+     * Scrolling the page while the block is held near the top or bottom edge.
+     *
+     * An upright wheel can now be several screens tall, and its grip is on the bar
+     * at its foot — so the block it should swap with can be far off screen. Parking
+     * the pointer in the last stretch of the window scrolls toward it, faster the
+     * closer to the edge, the way a long list's drag-to-reorder does. The point is
+     * kept in a ref because this effect is rebuilt on every step of the drag.
+     */
+    const EDGE = 64;
+    let frameId = 0;
+    const tick = () => {
+      frameId = 0;
+      const point = movePoint.current;
+      if (point === null) return;
+      const below = point.clientY - (window.innerHeight - EDGE);
+      const above = EDGE - point.clientY;
+      const step = below > 0 ? (below / EDGE) * 32 : above > 0 ? -(above / EDGE) * 32 : 0;
+      if (step === 0) return;
+      const was = window.scrollY;
+      window.scrollBy(0, step > 0 ? Math.ceil(step) : Math.floor(step));
+      if (window.scrollY === was) return;
+      follow(point);
+      frameId = requestAnimationFrame(tick);
+    };
+    if (movePoint.current !== null) frameId = requestAnimationFrame(tick);
+
+    const onPointerMove = (event: PointerEvent) => {
+      movePoint.current = { clientX: event.clientX, clientY: event.clientY };
+      follow(event);
+      if (frameId === 0) frameId = requestAnimationFrame(tick);
+    };
+
     const onUp = (event: PointerEvent) => {
-      const docking = wouldDock(event, travel(event));
-      const travelled = event.clientY - drag.fromY;
+      cancelAnimationFrame(frameId);
+      movePoint.current = null;
+      const travelled = travel(event);
+      const target = targetAt(event, travelled);
+      const docking = target === null && wouldDock(event, travelled);
+      const vertical = down(event);
+      mark(null);
       setDrag(null);
+      if (target !== null) {
+        onSwap?.(target);
+        return;
+      }
       if (docking) {
         onDock?.();
         return;
       }
-      if (Math.abs(travelled) > threshold) onMove(travelled > 0 ? 1 : -1);
+      if (onMove && Math.abs(vertical) > threshold) onMove(vertical > 0 ? 1 : -1);
     };
 
     /*
@@ -384,19 +532,29 @@ export function BlockFrame({
      * gesture away — a phone call, a palm on the trackpad — and docking on one
      * would rewrite two blocks' widths off a gesture nobody finished.
      */
-    const onCancel = () => setDrag(null);
+    const onCancel = () => {
+      cancelAnimationFrame(frameId);
+      movePoint.current = null;
+      mark(null);
+      setDrag(null);
+    };
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     return () => {
+      cancelAnimationFrame(frameId);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
     };
-  }, [drag, onMove, onDock]);
+  }, [drag, onMove, onDock, onSwap, mark]);
+
+  // A block unmounted mid-drag — the page refetched under it — leaves no outline.
+  useEffect(() => () => mark(null), [mark]);
 
   const offset = drag?.offset ?? null;
+  const offsetX = drag?.offsetX ?? 0;
 
   /**
    * The width drag in flight.
@@ -528,7 +686,20 @@ export function BlockFrame({
     chrome: number;
     view: Viewport;
     scale: SectionScale;
+    /** An upright wheel's free height, in rem, while it is being dragged. */
+    rem: number | null;
+    /** The tallest it may go, in px: the whole set less its shortest picture. */
+    cap: number;
+    /** Where each picture starts and ends below the first, in px — for the readout. */
+    tiles: { top: number; bottom: number }[];
   } | null>(null);
+
+  /** Where the pointer is during a height drag — for the auto-scroll. A ref, because
+   *  the effect that reads it is rebuilt on every step of the drag. */
+  const pointerY = useRef<number | null>(null);
+
+  /** Whether the bottom edge is free rather than a ladder. Upright wheels only. */
+  const free = display === 'column';
 
   const startHeight = useCallback(
     (event: React.PointerEvent) => {
@@ -547,38 +718,100 @@ export function BlockFrame({
         rem: parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
         height: window.innerHeight,
       };
+      /*
+       * The frame as it is drawn, measured rather than looked up: on an upright
+       * wheel it may be a dragged height, a `fit` height or a capped one, and only
+       * the element knows which.
+       */
+      const strip = free ? stripIn(body.current) : null;
+      const drawn = strip?.getBoundingClientRect().height ?? wheelHeight(display, scale, view);
       setHeights({
-        top: box?.top ?? 0,
+        // In page coordinates, so the page scrolling under a long drag does not
+        // move the origin — see the auto-scroll in the effect below.
+        top: (box?.top ?? 0) + window.scrollY,
         // Never negative: a block measured mid-transition can be shorter than the
         // wheel it holds, and a negative chrome would offset every snap upwards.
-        chrome: Math.max((box?.height ?? 0) - wheelHeight(display, scale, view), 0),
+        chrome: Math.max((box?.height ?? 0) - drawn, 0),
         view,
         scale,
+        rem: free ? drawn / view.rem : null,
+        cap: strip ? wheelCap(strip) : Number.POSITIVE_INFINITY,
+        tiles: strip ? tileSpans(strip) : [],
       });
     },
-    [display, scale],
+    [display, scale, free],
   );
 
   useEffect(() => {
     if (heights === null || !isWheel(display)) return;
 
-    const onPointerMove = (event: PointerEvent) => {
-      const asked = nearestSectionScale(
-        event.clientY - heights.top - heights.chrome,
-        display,
-        heights.view,
-      );
+
+    const apply = (clientY: number) => {
+      const px = clientY + window.scrollY - heights.top - heights.chrome;
+
+      if (heights.rem !== null) {
+        // Free: wherever the pointer is, inside the floor and the pictures' cap.
+        const floor = WHEEL_HEIGHT_MIN_REM * heights.view.rem;
+        const ceiling = Math.max(heights.cap, floor);
+        const rem = clampWheelHeight(Math.min(Math.max(px, floor), ceiling) / heights.view.rem);
+        if (rem === heights.rem) return;
+        setHeights((was) => (was === null ? null : { ...was, rem }));
+        onHeight({ scale: heights.scale, height: rem }, true);
+        return;
+      }
+
+      const asked = nearestSectionScale(px, display, heights.view);
       if (asked === heights.scale) return;
       setHeights((was) => (was === null ? null : { ...was, scale: asked }));
       // The block redraws at the new size because the parent holds it, not this
       // component — see `onHeight`. Nothing is written until the pointer is up.
-      onHeight(asked, true);
+      onHeight({ scale: asked, height }, true);
+    };
+
+    /*
+     * Scrolling the page while the pointer is held near the bottom of the window.
+     *
+     * Without it the tallest a wheel could be dragged to was the bottom of the
+     * screen, and a wheel eight photographs tall is several screens. So the page
+     * moves under a pointer parked in the last stretch of the window — faster the
+     * closer it is — and the height follows, the way every editor that resizes
+     * something taller than the window behaves. Upright wheels only; the ladder
+     * tops out well inside one screen.
+     */
+    const EDGE = 64;
+    let frameId = 0;
+    const tick = () => {
+      frameId = 0;
+      const lastY = pointerY.current;
+      if (lastY === null || heights.rem === null) return;
+      const into = lastY - (window.innerHeight - EDGE);
+      if (into <= 0) return;
+      window.scrollBy(0, Math.ceil((into / EDGE) * 32));
+      apply(lastY);
+      frameId = requestAnimationFrame(tick);
+    };
+    // This effect re-runs on every step of the height, which cancels the loop
+    // above; picking it straight back up is what keeps a parked pointer scrolling.
+    if (pointerY.current !== null) frameId = requestAnimationFrame(tick);
+
+    const onPointerMove = (event: PointerEvent) => {
+      pointerY.current = event.clientY;
+      apply(event.clientY);
+      if (frameId === 0) frameId = requestAnimationFrame(tick);
     };
 
     const onUp = () => {
-      const landed = heights.scale;
+      cancelAnimationFrame(frameId);
+      pointerY.current = null;
+      const landed = heights;
       setHeights(null);
-      onHeight(landed, false);
+      onHeight(
+        landed.rem !== null
+          ? // A dragged height leaves `fit` behind: it is a request for this height.
+            { scale: landed.scale === 'fit' ? 'large' : landed.scale, height: landed.rem }
+          : { scale: landed.scale, height },
+        false,
+      );
     };
 
     /*
@@ -593,14 +826,24 @@ export function BlockFrame({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
     return () => {
+      cancelAnimationFrame(frameId);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [heights, display, onHeight]);
+  }, [heights, display, onHeight, height]);
 
   /** The same, for the height: the candidate while its drag is live. */
   const tall = heights?.scale ?? scale;
+  /** An upright wheel's height as words, for the readout and a screen reader. */
+  const tallRem = heights?.rem ?? height;
+  const tallText = !free
+    ? SECTION_SCALE_NAMES[tall]
+    : heights?.rem != null && heights.tiles.length > 0
+      ? `${photosTall(photosIn(heights.tiles, heights.rem * heights.view.rem))} tall`
+      : tallRem !== null
+        ? 'Custom height'
+        : SECTION_SCALE_NAMES[tall];
 
   /*
    * A visitor gets the block and nothing else — no bar, no handle, no grip.
@@ -623,9 +866,12 @@ export function BlockFrame({
         sizing !== null ? ' is-sizing' : ''
       }${heights !== null ? ' is-sizing-tall' : ''}${drag?.docking ? ' is-docking' : ''}`}
       ref={frame}
+      data-block-key={blockKey}
       style={{
         ...placed,
-        ...(offset !== null ? { transform: `translate3d(0, ${offset}px, 0)` } : {}),
+        ...(offset !== null
+          ? { transform: `translate3d(${offsetX}px, ${offset}px, 0)` }
+          : {}),
       }}
     >
       <div className="block__body" ref={body}>
@@ -684,24 +930,44 @@ export function BlockFrame({
             role="slider"
             tabIndex={0}
             aria-label={`Length of ${label}`}
-            aria-valuemin={1}
-            aria-valuemax={SECTION_SCALES.length}
-            aria-valuenow={SECTION_SCALES.indexOf(tall) + 1}
-            aria-valuetext={SECTION_SCALE_NAMES[tall]}
-            title="Drag to set how long this wheel is"
+            aria-valuemin={free ? WHEEL_HEIGHT_MIN_REM : 1}
+            aria-valuemax={free ? undefined : SECTION_SCALES.length}
+            aria-valuenow={
+              free ? Math.round(tallRem ?? 0) : SECTION_SCALES.indexOf(tall) + 1
+            }
+            aria-valuetext={tallText}
+            title={
+              free
+                ? 'Drag to make this wheel as tall as you like'
+                : 'Drag to set how long this wheel is'
+            }
             onPointerDown={startHeight}
             onKeyDown={(key) => {
               const step =
                 key.key === 'ArrowUp' ? -1 : key.key === 'ArrowDown' ? 1 : null;
               if (step === null) return;
               key.preventDefault();
+              if (free) {
+                // Two rem a press, from whatever it is drawn at now, and never past
+                // the pictures — the same cap the drag has.
+                const strip = stripIn(body.current);
+                const rem =
+                  parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+                const now = (strip?.getBoundingClientRect().height ?? 0) / rem;
+                const cap = strip ? wheelCap(strip) / rem : Number.POSITIVE_INFINITY;
+                const next = clampWheelHeight(
+                  Math.min(now + step * 2, Math.max(cap, WHEEL_HEIGHT_MIN_REM)),
+                );
+                onHeight({ scale: scale === 'fit' ? 'large' : scale, height: next }, false);
+                return;
+              }
               const next = stepSectionScale(scale, step);
               // Down the screen is taller, which is the direction the handle
               // itself moves — the arrow follows the edge, not the number.
-              if (next !== scale) onHeight(next, false);
+              if (next !== scale) onHeight({ scale: next, height }, false);
             }}
           >
-            <span className="block__width">{SECTION_SCALE_NAMES[tall]}</span>
+            <span className="block__width">{tallText}</span>
           </span>
         )}
 
@@ -713,6 +979,7 @@ export function BlockFrame({
           the two is discovered by letting go. Drawn only while it is true.
         */}
         {drag?.docking && <span className="block__dock">Beside the block above</span>}
+        {drag?.target && <span className="block__dock">Drop to swap places</span>}
       </div>
 
       {/*
@@ -736,13 +1003,13 @@ export function BlockFrame({
         otherwise wrap to three lines. `title` and `aria-label` carry them there.
       */}
       <div className={`block__bar${picker ? ' is-open' : ''}`}>
-        {onMove && (
+        {(onMove || onSwap) && (
           <span
             className="block__grip"
             role="button"
             tabIndex={0}
             aria-label={`Move ${label}`}
-            title="Drag to move this block up or down"
+            title="Drag onto another block to swap them, or up and down to move"
             onPointerDown={start}
             /*
               A keyboard route to the same thing, because a drag has none. This is
@@ -750,11 +1017,12 @@ export function BlockFrame({
               than a bare span.
             */
             onKeyDown={(key) => {
-              if (key.key === 'ArrowUp') {
+              if (!onMove) return;
+              if (key.key === 'ArrowUp' || key.key === 'ArrowLeft') {
                 key.preventDefault();
                 onMove(-1);
               }
-              if (key.key === 'ArrowDown') {
+              if (key.key === 'ArrowDown' || key.key === 'ArrowRight') {
                 key.preventDefault();
                 onMove(1);
               }
@@ -842,15 +1110,22 @@ export function BlockFrame({
             {display === 'column' && (
               <button
                 type="button"
-                className={`block__fit${scale === 'fit' ? ' is-on' : ''}`}
-                aria-pressed={scale === 'fit'}
+                className={`block__fit${scale === 'fit' && height === null ? ' is-on' : ''}`}
+                aria-pressed={scale === 'fit' && height === null}
                 title={
-                  scale === 'fit'
+                  scale === 'fit' && height === null
                     ? 'The frame is one picture tall. Press to go back to a fixed height.'
                     : 'Make the frame as tall as one of its pictures, less a sliver.'
                 }
                 disabled={busy}
-                onClick={() => onHeight(scale === 'fit' ? 'large' : 'fit', false)}
+                onClick={() =>
+                  onHeight(
+                    scale === 'fit' && height === null
+                      ? { scale: 'large', height: null }
+                      : { scale: 'fit', height: null },
+                    false,
+                  )
+                }
               >
                 One picture
               </button>
@@ -974,4 +1249,32 @@ export function BlockFrame({
       {picker}
     </div>
   );
+}
+
+/** A pointer position, from an event or remembered between frames. */
+type Point = { clientX: number; clientY: number };
+
+/**
+ * How many pictures a frame this tall shows from the top: every whole one, plus
+ * the share of the one it cuts through.
+ */
+function photosIn(tiles: readonly { top: number; bottom: number }[], frame: number): number {
+  let count = 0;
+  for (const tile of tiles) {
+    if (tile.bottom <= frame) count += 1;
+    else {
+      if (tile.top < frame) count += (frame - tile.top) / (tile.bottom - tile.top);
+      break;
+    }
+  }
+  return count;
+}
+
+/** "1 photo", "2½ photos" — to the nearest half, because that is what the eye counts. */
+function photosTall(count: number): string {
+  const halves = Math.max(Math.round(count * 2), 1);
+  const whole = Math.floor(halves / 2);
+  const half = halves % 2 === 1;
+  const words = whole === 0 ? '½' : `${whole}${half ? '½' : ''}`;
+  return `${words} ${halves <= 2 ? 'photo' : 'photos'}`;
 }

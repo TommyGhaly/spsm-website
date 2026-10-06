@@ -24,6 +24,7 @@ import { GalleryFigure } from './GalleryFigure';
 import { GalleryCanvas } from './GalleryCanvas';
 import { PictureStrip } from './PictureStrip';
 import { useEditMode } from './editMode';
+import { wheelCap } from './wheelMeasure';
 
 /**
  * One titled block of photographs, arranged however its section says.
@@ -146,11 +147,31 @@ export function GallerySection({
    * individually; nothing in CSS can say "make the frame as tall as one of these".
    */
   const strip = useRef<HTMLUListElement | null>(null);
+  /** An upright wheel's dragged height, which wins over `scale`. */
+  const dragged = layout.display === 'column' ? layout.height : null;
   const fitHeight = useFitHeight(
     strip,
-    layout.display === 'column' && layout.scale === 'fit',
+    layout.display === 'column' && layout.scale === 'fit' && dragged === null,
     medianAspect(media),
   );
+  /*
+   * The ceiling for a dragged height, measured off the strip a visitor sees.
+   *
+   * It was set against the column as wide as the editor drew it; a wider window
+   * draws shorter pictures, and a frame taller than its own set has nothing to
+   * scroll to. So the stored height is a request and this is the limit — see
+   * `wheelCap`. Absent while editing, where the strip is `PictureStrip` and the
+   * handle already capped the drag.
+   */
+  const cap = useWheelCap(strip, dragged !== null);
+  const railHeight =
+    dragged !== null
+      ? cap === null
+        ? `${dragged}rem`
+        : `min(${dragged}rem, ${cap}px)`
+      : fitHeight === null
+        ? null
+        : `${fitHeight}px`;
 
   /**
    * An empty title draws no heading at all.
@@ -299,9 +320,9 @@ export function GallerySection({
         `gallery-band--scale-fit` rule's own value holds, which is what stops the
         block jumping on first paint.
       */
-      {...(fitHeight === null
+      {...(railHeight === null
         ? {}
-        : { style: { '--rail-height': `${fitHeight}px` } as CSSProperties })}
+        : { style: { '--rail-height': railHeight } as CSSProperties })}
       // The block the properties panel hangs off. See "Where the panel goes".
       data-panel-group=""
     >
@@ -414,6 +435,44 @@ function useFitHeight(
   });
 
   return enabled ? height : null;
+}
+
+/**
+ * One set of an upright wheel's pictures, less the shortest, in px — the tallest
+ * its frame can be with something still to scroll to. `null` until measured.
+ *
+ * Shaped like `useFitHeight` and for the same reason: measured synchronously, then
+ * observed, because `ResizeObserver` is the part that cannot be relied on here.
+ */
+function useWheelCap(
+  strip: React.RefObject<HTMLUListElement | null>,
+  enabled: boolean,
+): number | null {
+  const [cap, setCap] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setCap((was) => (was === null ? was : null));
+      return;
+    }
+    const el = strip.current;
+    if (!el) return;
+
+    const measure = () => {
+      const frame = el.closest<HTMLElement>('.rail--y');
+      if (!frame) return;
+      const next = Math.round(wheelCap(frame));
+      if (next <= 0) return;
+      setCap((was) => (was === next ? was : next));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  return enabled ? cap : null;
 }
 
 function aspectOf(item: DocOf<GalleryMedia>): string {

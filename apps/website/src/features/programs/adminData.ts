@@ -1050,6 +1050,56 @@ export async function moveBand(
   });
 }
 
+/**
+ * Put the blocks on a page in this order — the bands *and* the page's own block.
+ *
+ * `order` is every block's key in page order, with `'summary'` standing for the
+ * page's own one when it is drawn. The bands are reordered to match and
+ * `pageBlockAt` records where `'summary'` fell; see `Program.pageBlockAt`.
+ *
+ * One write for both, read-modify-write like `editBands`, so a swap between the
+ * page's own block and a band cannot land half done. A key the document no longer
+ * has is skipped, and a band the order does not mention keeps its place at the
+ * end rather than vanishing — the order came from a page drawn a moment ago, and
+ * somebody in another tab may have added or deleted one since.
+ */
+export async function arrangeBlocks(
+  target: SectionTarget,
+  order: readonly string[],
+  uid: string | null,
+): Promise<void> {
+  const reference =
+    target.kind === 'program'
+      ? doc(db(), COLLECTIONS.programs, target.programId)
+      : doc(db(), COLLECTIONS.programEvents, target.programEventId);
+
+  const snapshot = await getDoc(reference);
+  if (!snapshot.exists()) throw new Error('That page no longer exists.');
+
+  const bands = resolveBands((snapshot.data() as { bands?: unknown }).bands);
+  const byId = new Map(bands.map((band) => [band.id, band]));
+  const ordered: GalleryBand[] = [];
+  let pageBlockAt: number | null = null;
+  for (const key of order) {
+    if (key === 'summary') {
+      pageBlockAt = ordered.length;
+      continue;
+    }
+    const band = byId.get(key);
+    if (!band) continue;
+    ordered.push(band);
+    byId.delete(key);
+  }
+  ordered.push(...byId.values());
+
+  await updateDoc(reference, {
+    bands: ordered,
+    ...(pageBlockAt === null ? {} : { pageBlockAt }),
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Arranging the pictures inside a section                                    */
 /* -------------------------------------------------------------------------- */

@@ -6,8 +6,13 @@ import {
   SECTION_SCALES,
   SECTION_SCALE_LADDER,
   SECTION_WIDTHS,
+  WHEEL_HEIGHT_MAX_REM,
+  WHEEL_HEIGHT_MIN_REM,
   WHEEL_SPINS,
+  clampWheelHeight,
   defaultBand,
+  pageBlockIndex,
+  swapBlocks,
   defaultSectionLayout,
   driftsFor,
   layoutForLook,
@@ -71,6 +76,7 @@ describe('resolveSectionLayout', () => {
       drift: false,
       spin: 'down',
       fit: 'uniform',
+      height: 64,
       title: { scale: 'display', placement: 'beside', align: 'end' },
       caption: { scale: 'medium', placement: 'below', align: 'center' },
     });
@@ -82,6 +88,7 @@ describe('resolveSectionLayout', () => {
       drift: false,
       spin: 'down',
       fit: 'uniform',
+      height: 64,
       title: { scale: 'display', placement: 'beside', align: 'end' },
       caption: { scale: 'medium', placement: 'below', align: 'center' },
     });
@@ -737,5 +744,63 @@ describe('layoutForLook keeps the wheel settings', () => {
     expect(layoutForLook('column', 'medium').spin).toBe(DEFAULT_SPIN.column);
     expect(layoutForLook('rail', 'medium').spin).toBe(DEFAULT_SPIN.rail);
     expect(SECTION_FITS).toContain(layoutForLook('rail', 'medium').fit);
+  });
+});
+
+/**
+ * An upright wheel's dragged height. Free, so the stored number is whatever a
+ * pointer let go at — the resolver is what keeps a hand-edited one renderable.
+ */
+describe('wheel height', () => {
+  it('is null on every layout written before it existed', () => {
+    expect(defaultSectionLayout().height).toBeNull();
+    expect(resolveSectionLayout({ display: 'column' }).height).toBeNull();
+    expect(resolveSectionLayout({ display: 'column', height: 'tall' }).height).toBeNull();
+    expect(resolveSectionLayout({ display: 'column', height: Number.NaN }).height).toBeNull();
+  });
+
+  it('reads a stored height back, inside the guards', () => {
+    expect(resolveSectionLayout({ display: 'column', height: 120.04 }).height).toBe(120);
+    expect(resolveSectionLayout({ display: 'column', height: 1 }).height).toBe(
+      WHEEL_HEIGHT_MIN_REM,
+    );
+    expect(resolveSectionLayout({ display: 'column', height: 1e9 }).height).toBe(
+      WHEEL_HEIGHT_MAX_REM,
+    );
+  });
+
+  it('clamps and rounds to a tenth of a rem', () => {
+    expect(clampWheelHeight(42.26)).toBe(42.3);
+    expect(clampWheelHeight(Number.POSITIVE_INFINITY)).toBe(WHEEL_HEIGHT_MIN_REM);
+  });
+
+  it('survives a change of shape', () => {
+    expect(layoutForLook('grid', 'large', 'full', 'over', 'up', 'natural', 96).height).toBe(96);
+    expect(layoutForLook('column', 'large').height).toBeNull();
+  });
+});
+
+/** Where the page's own block sits among the bands, and swapping two blocks. */
+describe('block order', () => {
+  it('puts the page block first unless told otherwise', () => {
+    expect(pageBlockIndex(undefined, 3)).toBe(0);
+    expect(pageBlockIndex('2', 3)).toBe(0);
+    expect(pageBlockIndex(2, 3)).toBe(2);
+  });
+
+  it('clamps a position left over from a deleted band to the end', () => {
+    expect(pageBlockIndex(5, 2)).toBe(2);
+    expect(pageBlockIndex(-1, 2)).toBe(0);
+    expect(pageBlockIndex(1, 0)).toBe(0);
+  });
+
+  it('swaps two blocks and leaves the rest alone', () => {
+    expect(swapBlocks(['summary', 'a', 'b'], 'b', 'summary')).toEqual(['b', 'a', 'summary']);
+    expect(swapBlocks(['a', 'b'], 'a', 'b')).toEqual(['b', 'a']);
+  });
+
+  it('does nothing for a drop onto itself or onto something gone', () => {
+    expect(swapBlocks(['a', 'b'], 'a', 'a')).toEqual(['a', 'b']);
+    expect(swapBlocks(['a', 'b'], 'a', 'zz')).toEqual(['a', 'b']);
   });
 });
