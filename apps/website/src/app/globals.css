@@ -28404,10 +28404,18 @@ span.fxa__row-title {
   flex: 1 1 100%;
 }
 
-/* The shop-wide postage settings: two columns of small labelled boxes. */
+/*
+ * The shop-wide postage settings.
+ *
+ * A choice first — two pressable cards, the same accent ring as checkout's
+ * choices — then, for USPS, one field per row: a label, the box with its unit
+ * beside it, and a line saying what it does. One column on purpose: the
+ * editing column is narrow, and side-by-side boxes there were where the old
+ * panel read as a form nobody wanted to fill in.
+ */
 .bkshipcfg {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.85rem;
   width: 100%;
 }
 
@@ -28418,30 +28426,127 @@ span.fxa__row-title {
   min-width: 0;
 }
 
-.bkshipcfg__grid {
+.bkshipcfg__mode {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.5rem 0.75rem;
+  gap: 0.4rem;
 }
 
-.bkshipcfg__grid label {
+.bkshipcfg__q,
+.bkshipcfg__label {
+  padding: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.bkshipcfg__q {
+  margin-bottom: 0.15rem;
+}
+
+.bkshipcfg__opt {
   display: grid;
-  gap: 0.2rem;
-  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.55rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+
+.bkshipcfg__opt.is-on {
+  border-color: var(--color-accent, #992a21);
+  box-shadow: inset 0 0 0 1px var(--color-accent, #992a21);
+}
+
+.bkshipcfg__opt input {
+  grid-row: span 2;
+  accent-color: var(--color-accent, #992a21);
+}
+
+.bkshipcfg__opt-name {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.bkshipcfg__opt-note,
+.bkshipcfg__hint {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.4;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkshipcfg__hint {
+  display: block;
+  margin: 0;
+  font-weight: 400;
+}
+
+.bkshipcfg__details {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.85rem 0 0 !important;
+  border-top: 1px solid var(--color-rule, #e4dbd2) !important;
+}
+
+.bkshipcfg__field {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  min-width: 0;
+}
+
+.bkshipcfg__field > .bkrename__input {
+  max-width: 8rem;
+}
+
+/* A box with its unit stuck to it: "$ [1.50]", "[12] in", "[0.4] lb". */
+.bkunit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.bkunit .bkrename__input {
+  width: 5.5rem;
+}
+
+.bkunit__pre,
+.bkunit__post {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
 
 .bkshipcfg__box {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
 }
 
-.bkshipcfg__services {
-  display: grid;
-  gap: 0.3rem;
+.bkshipcfg__box .bkrename__input {
+  width: 3.5rem;
+}
+
+.bkshipcfg__svc {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+  cursor: pointer;
+}
+
+.bkshipcfg__svc input {
+  margin-top: 0.2rem;
+  accent-color: var(--color-accent, #992a21);
 }
 
 .bkshipcfg__go {

@@ -20,6 +20,7 @@ import {
   parseWeight,
   sectionId,
   MAX_HANDLING_CENTS,
+  SERVICE_DAYS,
   SERVICE_LABELS,
   SHIPPING_SERVICES,
   type BookstoreSection,
@@ -1993,46 +1994,87 @@ async function downscale(file: File, max = 1600): Promise<string> {
  * explicit Save is the honest control for it — the same reasoning as a book's
  * title and price.
  *
- * The weights that live postage needs are not here. They are per book, in each
- * book's own Shipping block, and the warning below lists the ones still
- * missing, because every delivery containing one of them falls back to the
- * flat charge and nothing else on the page would say so.
+ * Laid out as a choice first — flat rate or USPS — and only the USPS details
+ * when USPS is chosen, each with its unit beside the box and a line saying
+ * what it does. Weights are per book, in each book's own Shipping block.
  * ---------------------------------------------------------------------------
  */
 function ShippingSettings({
   shipping,
+  flatCents,
   onChanged,
   onError,
 }: {
   shipping: BookstoreShipping;
+  /** The flat delivery charge, shown for reference; set by the office. */
+  flatCents: number;
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
   const { busy, saved, write } = useWriter(onChanged, onError);
+  const seedText = (from: BookstoreShipping) => ({
+    handling: (from.handlingCents / 100).toFixed(2),
+    lengthIn: String(from.box.lengthIn),
+    widthIn: String(from.box.widthIn),
+    heightIn: String(from.box.heightIn),
+    tare: ouncesToPounds(from.box.tareOz),
+  });
   const [draft, setDraft] = useState(shipping);
-  const [handling, setHandling] = useState((shipping.handlingCents / 100).toFixed(2));
+  // What is typed, kept as text so a half-typed "1." is not rewritten.
+  const [text, setText] = useState(() => seedText(shipping));
   // Re-seed when a save comes back, so the button goes quiet once it has landed.
   useEffect(() => {
     setDraft(shipping);
-    setHandling((shipping.handlingCents / 100).toFixed(2));
+    setText(seedText(shipping));
   }, [shipping]);
 
-  const handlingCents = (() => {
-    const trimmed = handling.trim().replace(/^\$/, '');
-    if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
-    const value = Math.round(Number(trimmed) * 100);
-    return value <= MAX_HANDLING_CENTS ? value : null;
-  })();
-  const zipOk = /^\d{5}$/.test(draft.originZip);
-  const boxOk = (['lengthIn', 'widthIn', 'heightIn'] as const).every(
-    (key) => draft.box[key] > 0 && draft.box[key] <= 36,
-  ) && draft.box.tareOz >= 0 && draft.box.tareOz <= 80;
-  const next: BookstoreShipping = { ...draft, handlingCents: handlingCents ?? draft.handlingCents };
-  const changed = JSON.stringify(next) !== JSON.stringify(shipping);
-  const valid = handlingCents !== null && zipOk && boxOk;
+  const money = (value: string): number | null => {
+    const trimmed = value.trim().replace(/^\$/, '');
+    if (!/^\d*(\.\d{0,2})?$/.test(trimmed) || trimmed === '' || trimmed === '.') return null;
+    const cents = Math.round(Number(trimmed) * 100);
+    return cents <= MAX_HANDLING_CENTS ? cents : null;
+  };
+  const number = (value: string, min: number, max: number): number | null => {
+    const n = Number(value.trim());
+    return value.trim() !== '' && Number.isFinite(n) && n >= min && n <= max ? n : null;
+  };
 
-  const setBox = (key: keyof BookstoreShipping['box'], value: string) =>
-    setDraft((was) => ({ ...was, box: { ...was.box, [key]: Number(value) || 0 } }));
+  const handlingCents = money(text.handling);
+  const lengthIn = number(text.lengthIn, 1, 36);
+  const widthIn = number(text.widthIn, 1, 36);
+  const heightIn = number(text.heightIn, 1, 36);
+  const tareLb = number(text.tare, 0, 5);
+  const zipOk = /^\d{5}$/.test(draft.originZip);
+  const live = draft.mode === 'usps';
+
+  const valid =
+    !live ||
+    (zipOk &&
+      handlingCents !== null &&
+      lengthIn !== null &&
+      widthIn !== null &&
+      heightIn !== null &&
+      tareLb !== null &&
+      draft.services.length > 0);
+  const next: BookstoreShipping = {
+    ...draft,
+    handlingCents: handlingCents ?? draft.handlingCents,
+    box: {
+      lengthIn: lengthIn ?? draft.box.lengthIn,
+      widthIn: widthIn ?? draft.box.widthIn,
+      heightIn: heightIn ?? draft.box.heightIn,
+      // Untouched text keeps the stored ounces: 6 oz shows as 0.38 lb, and
+      // converting that back would read as an edit nobody made.
+      tareOz:
+        tareLb === null || text.tare === ouncesToPounds(draft.box.tareOz)
+          ? draft.box.tareOz
+          : Math.round(tareLb * 1600) / 100,
+    },
+  };
+  const changed = JSON.stringify(next) !== JSON.stringify(shipping);
+
+  const type = (key: keyof ReturnType<typeof seedText>) => (event: { target: { value: string } }) =>
+    setText((was) => ({ ...was, [key]: event.target.value }));
   const toggleService = (service: ShippingService, on: boolean) =>
     setDraft((was) => ({
       ...was,
@@ -2042,85 +2084,127 @@ function ShippingSettings({
 
   return (
     <div className="bkshipcfg">
-      <label className="bkship__media">
-        <input
-          type="checkbox"
-          checked={draft.mode === 'usps'}
-          disabled={busy}
-          onChange={(event) => setDraft((was) => ({ ...was, mode: event.target.checked ? 'usps' : 'flat' }))}
-        />
-        Live USPS postage
-      </label>
-      <p className="bkpanel__aside">
-        {draft.mode === 'usps'
-          ? 'Buyers see USPS prices for their ZIP code, plus handling. A basket with an unweighed book pays the flat delivery charge.'
-          : 'Every delivery pays the flat delivery charge.'}
-      </p>
-
-      <fieldset className="bkshipcfg__grid" disabled={busy}>
-        <label>
-          <span>Posted from (ZIP)</span>
+      <fieldset className="bkshipcfg__mode" disabled={busy}>
+        <legend className="bkshipcfg__q">How is delivery priced?</legend>
+        <label className={!live ? 'bkshipcfg__opt is-on' : 'bkshipcfg__opt'}>
           <input
-            className={zipOk ? 'bkrename__input' : 'bkrename__input is-wrong'}
-            inputMode="numeric"
-            maxLength={5}
-            value={draft.originZip}
-            onChange={(event) => setDraft((was) => ({ ...was, originZip: event.target.value.trim() }))}
+            type="radio"
+            name="shipping-mode"
+            checked={!live}
+            onChange={() => setDraft((was) => ({ ...was, mode: 'flat' }))}
           />
+          <span className="bkshipcfg__opt-name">Flat rate</span>
+          <span className="bkshipcfg__opt-note">{formatCents(flatCents)} on every delivery</span>
         </label>
-        <label>
-          <span>Handling, per order ($)</span>
+        <label className={live ? 'bkshipcfg__opt is-on' : 'bkshipcfg__opt'}>
           <input
-            className={handlingCents === null ? 'bkrename__input is-wrong' : 'bkrename__input'}
-            inputMode="decimal"
-            value={handling}
-            onChange={(event) => setHandling(event.target.value)}
+            type="radio"
+            name="shipping-mode"
+            checked={live}
+            onChange={() => setDraft((was) => ({ ...was, mode: 'usps' }))}
           />
-        </label>
-        <label>
-          <span>Box (in): L × W × H</span>
-          <span className="bkshipcfg__box">
-            {(['lengthIn', 'widthIn', 'heightIn'] as const).map((key) => (
-              <input
-                key={key}
-                className="bkrename__input"
-                inputMode="decimal"
-                aria-label={`Box ${key.replace('In', '')} in inches`}
-                value={draft.box[key] || ''}
-                onChange={(event) => setBox(key, event.target.value)}
-              />
-            ))}
-          </span>
-        </label>
-        <label>
-          <span>Empty box weight (lb)</span>
-          <input
-            className="bkrename__input"
-            inputMode="decimal"
-            defaultValue={ouncesToPounds(draft.box.tareOz)}
-            key={shipping.box.tareOz}
-            onChange={(event) => {
-              const pounds = Number(event.target.value);
-              if (Number.isFinite(pounds) && pounds >= 0) setBox('tareOz', String(Math.round(pounds * 1600) / 100));
-            }}
-          />
+          <span className="bkshipcfg__opt-name">USPS rates</span>
+          <span className="bkshipcfg__opt-note">Priced by weight and the buyer&rsquo;s ZIP code</span>
         </label>
       </fieldset>
 
-      <fieldset className="bkshipcfg__services" disabled={busy}>
-        <legend className="visually-hidden">Services offered</legend>
-        {SHIPPING_SERVICES.map((service) => (
-          <label key={service} className="bkship__media">
+      {live && (
+        <fieldset className="bkshipcfg__details" disabled={busy}>
+          <label className="bkshipcfg__field">
+            <span className="bkshipcfg__label">Ship from ZIP code</span>
             <input
-              type="checkbox"
-              checked={draft.services.includes(service)}
-              onChange={(event) => toggleService(service, event.target.checked)}
+              className={zipOk ? 'bkrename__input' : 'bkrename__input is-wrong'}
+              inputMode="numeric"
+              maxLength={5}
+              value={draft.originZip}
+              onChange={(event) => setDraft((was) => ({ ...was, originZip: event.target.value.trim() }))}
             />
-            {SERVICE_LABELS[service]}
-            {service === 'MEDIA_MAIL' && ' (all-book orders only)'}
+            <span className="bkshipcfg__hint">Where parcels are posted from.</span>
           </label>
-        ))}
-      </fieldset>
+
+          <label className="bkshipcfg__field">
+            <span className="bkshipcfg__label">Handling fee</span>
+            <span className="bkunit">
+              <span className="bkunit__pre">$</span>
+              <input
+                className={handlingCents === null ? 'bkrename__input is-wrong' : 'bkrename__input'}
+                inputMode="decimal"
+                value={text.handling}
+                onChange={type('handling')}
+              />
+            </span>
+            <span className="bkshipcfg__hint">Added once per order, on top of postage. 0 for none.</span>
+          </label>
+
+          <div className="bkshipcfg__field">
+            <span className="bkshipcfg__label">Box size</span>
+            <span className="bkshipcfg__box">
+              {(
+                [
+                  ['lengthIn', 'Length', lengthIn],
+                  ['widthIn', 'Width', widthIn],
+                  ['heightIn', 'Height', heightIn],
+                ] as const
+              ).map(([key, label, parsed]) => (
+                <label key={key} className="bkunit">
+                  <span className="visually-hidden">{label} in inches</span>
+                  <input
+                    className={parsed === null ? 'bkrename__input is-wrong' : 'bkrename__input'}
+                    inputMode="decimal"
+                    value={text[key]}
+                    placeholder={label[0]}
+                    onChange={type(key)}
+                  />
+                  <span className="bkunit__post">in</span>
+                </label>
+              ))}
+            </span>
+            <span className="bkshipcfg__hint">Length × width × height of the box you usually use.</span>
+          </div>
+
+          <label className="bkshipcfg__field">
+            <span className="bkshipcfg__label">Empty box weight</span>
+            <span className="bkunit">
+              <input
+                className={tareLb === null ? 'bkrename__input is-wrong' : 'bkrename__input'}
+                inputMode="decimal"
+                value={text.tare}
+                onChange={type('tare')}
+              />
+              <span className="bkunit__post">lb</span>
+            </span>
+            <span className="bkshipcfg__hint">Added to the books&rsquo; weight, with the packing.</span>
+          </label>
+
+          <div className="bkshipcfg__field">
+            <span className="bkshipcfg__label">Services buyers can choose</span>
+            {SHIPPING_SERVICES.map((service) => (
+              <label key={service} className="bkshipcfg__svc">
+                <input
+                  type="checkbox"
+                  checked={draft.services.includes(service)}
+                  onChange={(event) => toggleService(service, event.target.checked)}
+                />
+                <span>
+                  {SERVICE_LABELS[service]}
+                  <span className="bkshipcfg__hint">
+                    {SERVICE_DAYS[service]}
+                    {service === 'MEDIA_MAIL' && ' · only when every item is a book or media'}
+                  </span>
+                </span>
+              </label>
+            ))}
+            {draft.services.length === 0 && (
+              <span className="bkpanel__aside bkpanel__aside--wrong">Choose at least one.</span>
+            )}
+          </div>
+
+          <p className="bkshipcfg__hint">
+            Each item&rsquo;s weight is set on the item itself. An order with an item that has no weight
+            pays the flat rate.
+          </p>
+        </fieldset>
+      )}
 
       <div className="bkshipcfg__go">
         <button
@@ -2143,16 +2227,9 @@ function ShippingSettings({
   );
 }
 
-/** The books that would send a delivery to the flat charge. */
-function UnweighedWarning({ products }: { products: readonly ShopProduct[] }) {
-  const missing = products.filter((product) => product.weightOz === null);
-  if (missing.length === 0) return null;
-  return (
-    <p className="bkpanel__aside bkpanel__aside--wrong">
-      Not weighed yet, so a delivery with {missing.length === 1 ? 'it' : 'any of them'} in it pays
-      the flat charge: {missing.map((product) => product.name).join(', ')}.
-    </p>
-  );
+/** `700` → `"$7.00"`. */
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 export function ShopInspector({
@@ -2162,7 +2239,7 @@ export function ShopInspector({
   sections,
   groups,
   shipping,
-  products,
+  flatCents,
   onDone,
   onSelect,
   onChanged,
@@ -2178,8 +2255,8 @@ export function ShopInspector({
   groups: { id: string; label: string; count: number }[];
   /** The live-postage settings, as `config/bookstore` holds them. */
   shipping: BookstoreShipping;
-  /** Every book on the shelf, to say which are still unweighed. */
-  products: readonly ShopProduct[];
+  /** The flat delivery charge, for the shipping panel to show. */
+  flatCents: number;
   onDone: () => void;
   onSelect: (slug: string | null) => void;
   onChanged: () => void;
@@ -2253,8 +2330,12 @@ export function ShopInspector({
 
           <div className="bkpanel__block">
             <h4 className="bkpanel__label">Shipping</h4>
-            <ShippingSettings shipping={shipping} onChanged={onChanged} onError={onError} />
-            {shipping.mode === 'usps' && <UnweighedWarning products={products} />}
+            <ShippingSettings
+              shipping={shipping}
+              flatCents={flatCents}
+              onChanged={onChanged}
+              onError={onError}
+            />
           </div>
 
           {children && (

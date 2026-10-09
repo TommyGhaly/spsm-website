@@ -1178,7 +1178,7 @@ export function Shop({
               count: group.items.length,
             }))}
             shipping={live.shipping ?? settings.shipping}
-            products={products}
+            flatCents={live.deliveryCents ?? settings.deliveryCents}
             onDone={() => setEditing(false)}
             onSelect={setSelected}
             onChanged={refresh}
