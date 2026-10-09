@@ -188,28 +188,29 @@ describe('signed quotes', () => {
 });
 
 describe('parseWeight', () => {
-  it('reads ounces, pounds, and both', () => {
-    expect(parseWeight('12')).toBe(12);
-    expect(parseWeight('12 oz')).toBe(12);
-    expect(parseWeight('10.5')).toBe(10.5);
-    expect(parseWeight('1.5 lb')).toBe(24);
-    expect(parseWeight('1 lb 4 oz')).toBe(20);
-    expect(parseWeight('1lb4')).toBe(20);
+  it('reads pounds and returns ounces', () => {
+    expect(parseWeight('2')).toBe(32);
+    expect(parseWeight('1.5')).toBe(24);
+    expect(parseWeight('.5')).toBe(8);
+    expect(parseWeight('2.5 lb')).toBe(40);
+    expect(parseWeight('31 lbs')).toBe(496);
   });
 
   it('tells an emptied box from a mistyped one', () => {
     expect(parseWeight('  ')).toBeNull();
     expect(parseWeight('heavy')).toBeUndefined();
     expect(parseWeight('0')).toBeUndefined();
-    expect(parseWeight('100 lb')).toBeUndefined();
+    expect(parseWeight('100')).toBeUndefined();
+    // Ounces are no longer a unit the box takes.
+    expect(parseWeight('12 oz')).toBeUndefined();
   });
 });
 
 describe('formatWeight', () => {
   it('says it the way a person would', () => {
-    expect(formatWeight(6.5)).toBe('6.5 oz');
     expect(formatWeight(16)).toBe('1 lb');
-    expect(formatWeight(20)).toBe('1 lb 4 oz');
+    expect(formatWeight(40)).toBe('2.5 lb');
+    expect(formatWeight(25)).toBe('1.56 lb');
   });
 });
 

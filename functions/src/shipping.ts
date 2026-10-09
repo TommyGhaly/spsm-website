@@ -47,7 +47,7 @@ function uspsHost(): string {
 
 /** The signer, or null when the secret is missing — which means no live quotes. */
 export function quoteHmac(): Hmac | null {
-  const key = SHIPPING_QUOTE_SECRET.value();
+  const key = SHIPPING_QUOTE_SECRET.value().trim();
   if (!key) return null;
   return (message) => createHmac('sha256', key).update(message).digest('base64url');
 }
@@ -63,8 +63,10 @@ async function uspsToken(signal: AbortSignal): Promise<string | null> {
   const host = uspsHost();
   if (cachedToken && cachedToken.host === host && cachedToken.expires > Date.now()) return cachedToken.value;
 
-  const clientId = USPS_CLIENT_ID.value();
-  const clientSecret = USPS_CLIENT_SECRET.value();
+  // Trimmed: a value pasted into `secrets:set` keeps its trailing newline,
+  // and USPS answers a key with a newline on the end with a bare 401.
+  const clientId = USPS_CLIENT_ID.value().trim();
+  const clientSecret = USPS_CLIENT_SECRET.value().trim();
   if (!clientId || !clientSecret) return null;
 
   const res = await fetch(`${host}/oauth2/v3/token`, {
@@ -74,7 +76,9 @@ async function uspsToken(signal: AbortSignal): Promise<string | null> {
     signal,
   });
   if (!res.ok) {
-    console.error(`[shipping] USPS token request failed: ${res.status}`);
+    // USPS's own reason, which is what tells a wrong key from a missing API
+    // product. It carries no credential — only the error code and message.
+    console.error(`[shipping] USPS token request failed: ${res.status} ${await res.text().catch(() => '')}`);
     return null;
   }
   const json = (await res.json()) as { access_token?: string; expires_in?: number };

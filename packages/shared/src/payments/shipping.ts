@@ -233,29 +233,29 @@ export interface ShippingQuoteResponse {
 }
 
 /**
- * A weight as somebody at a kitchen scale types it, in ounces.
+ * A weight as staff type it, in **pounds** — returned in ounces, which is what
+ * is stored and what the parcel arithmetic uses.
  *
- * `"12"` and `"12 oz"` are ounces; `"1.5 lb"`, `"1 lb 4 oz"` and `"1lb4"` mean
- * what they say. A bare number is ounces because that is what the field is
- * labelled in, and because a book weighed in pounds is rarely a whole number.
- * Empty is `null` — not weighed — and nonsense is `undefined`, so the form can
- * tell "cleared" from "mistyped".
+ * `"2"`, `"2.5"` and `"2.5 lb"` are pounds; the field is labelled in pounds
+ * because that is how the parish weighs things. Empty is `null` — not weighed —
+ * and nonsense is `undefined`, so the form can tell "cleared" from "mistyped".
  */
 export function parseWeight(text: string): number | null | undefined {
   const value = text.trim().toLowerCase();
   if (!value) return null;
-  const match =
-    /^(?:(\d+(?:\.\d+)?)\s*(?:lbs?|pounds?))?\s*(?:(\d+(?:\.\d+)?)\s*(?:oz|ounces?)?)?$/.exec(value);
-  if (!match || (match[1] === undefined && match[2] === undefined)) return undefined;
-  const ounces = Number(match[1] ?? 0) * 16 + Number(match[2] ?? 0);
+  const match = /^(\d+(?:\.\d+)?|\.\d+)\s*(?:lbs?|pounds?)?$/.exec(value);
+  if (!match) return undefined;
+  const ounces = Number(match[1]) * 16;
   if (!(ounces > 0) || ounces > MAX_ITEM_WEIGHT_OZ) return undefined;
-  return Math.round(ounces * 10) / 10;
+  return Math.round(ounces * 100) / 100;
 }
 
-/** `20` → `"1 lb 4 oz"`, `6.5` → `"6.5 oz"`. For hints, never for storage. */
+/** Stored ounces as the pounds the field shows: `40` → `"2.5"`. */
+export function ouncesToPounds(ounces: number): string {
+  return String(Math.round((ounces / 16) * 100) / 100);
+}
+
+/** `40` → `"2.5 lb"`. For hints, never for storage. */
 export function formatWeight(ounces: number): string {
-  const pounds = Math.floor(ounces / 16);
-  const rest = Math.round((ounces - pounds * 16) * 10) / 10;
-  if (pounds === 0) return `${rest} oz`;
-  return rest === 0 ? `${pounds} lb` : `${pounds} lb ${rest} oz`;
+  return `${ouncesToPounds(ounces)} lb`;
 }

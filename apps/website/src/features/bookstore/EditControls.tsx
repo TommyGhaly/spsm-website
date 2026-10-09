@@ -16,6 +16,7 @@ import {
   MAX_SECTION_LABEL,
   UNSORTED_LABEL,
   formatWeight,
+  ouncesToPounds,
   parseWeight,
   sectionId,
   MAX_HANDLING_CENTS,
@@ -358,8 +359,9 @@ export function ProductSettings({
  * The two facts live postage needs about a book, for the settings panel and the
  * add form alike.
  *
- * The weight box keeps its own text, because what somebody is halfway through
- * typing — `1 lb` on the way to `1 lb 4 oz` — is not yet a weight, and pushing
+ * Weighed in pounds, stored in ounces. The box keeps its own text, because what
+ * somebody is halfway through typing — `1.` on the way to `1.5` — is not yet a
+ * weight, and pushing
  * every keystroke through the parser would rewrite the box under their fingers.
  * Only text that reads as a weight, or an emptied box, is passed up.
  */
@@ -376,19 +378,19 @@ export function ShippingFields({
   busy: boolean;
   onChange: (next: { weightOz: number | null; mediaMail: boolean }) => void;
 }) {
-  const [text, setText] = useState(weightOz === null ? '' : String(weightOz));
+  const [text, setText] = useState(weightOz === null ? '' : ouncesToPounds(weightOz));
   const parsed = parseWeight(text);
   const wrong = parsed === undefined;
 
   return (
     <div className="bkship">
       <label className="bkship__weight">
-        <span className="visually-hidden">Shipping weight of {name}, in ounces</span>
+        <span className="visually-hidden">Shipping weight of {name}, in pounds</span>
         <input
           type="text"
           className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
           inputMode="decimal"
-          placeholder="Weight, oz"
+          placeholder="Weight, lb"
           value={text}
           disabled={busy}
           onChange={(event) => {
@@ -409,7 +411,7 @@ export function ShippingFields({
       </label>
       <p className={wrong ? 'bkpanel__aside bkpanel__aside--wrong' : 'bkpanel__aside'}>
         {wrong
-          ? 'Type ounces, like 12 or 1 lb 4 oz.'
+          ? 'Type pounds, like 2 or 1.5.'
           : parsed === null
             ? 'Not weighed — a delivery with this in it is charged the flat rate.'
             : `${formatWeight(parsed)} a copy, before the box.`}
@@ -2091,12 +2093,16 @@ function ShippingSettings({
           </span>
         </label>
         <label>
-          <span>Empty box weight (oz)</span>
+          <span>Empty box weight (lb)</span>
           <input
             className="bkrename__input"
             inputMode="decimal"
-            value={draft.box.tareOz}
-            onChange={(event) => setBox('tareOz', event.target.value)}
+            defaultValue={ouncesToPounds(draft.box.tareOz)}
+            key={shipping.box.tareOz}
+            onChange={(event) => {
+              const pounds = Number(event.target.value);
+              if (Number.isFinite(pounds) && pounds >= 0) setBox('tareOz', String(Math.round(pounds * 1600) / 100));
+            }}
           />
         </label>
       </fieldset>
