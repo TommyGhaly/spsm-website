@@ -220,7 +220,10 @@ export interface ShippingOption {
   service: ShippingService;
   label: string;
   days: string;
+  /** What is charged: postage plus handling. The signed figure. */
   cents: number;
+  /** The handling part of `cents`, so the page can show the two separately. */
+  handlingCents: number;
 }
 
 /** What `/api/shipping/quote` answers. `fallbackCents` alone means "flat delivery". */

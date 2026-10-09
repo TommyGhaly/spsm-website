@@ -181,6 +181,7 @@ export async function liveOptions(
         label: SERVICE_LABELS[service],
         days: SERVICE_DAYS[service],
         cents,
+        handlingCents: settings.handlingCents,
       });
     });
     return options;

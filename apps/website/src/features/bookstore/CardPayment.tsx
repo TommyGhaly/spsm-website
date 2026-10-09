@@ -69,7 +69,16 @@ export function CardPayment({
    * someone what actually happens next. Both live in this component's state and
    * are gone by the time the basket re-renders.
    */
-  onPaid: (orderId: string, detail: { email: string; shipping: boolean; paid: number }) => void;
+  onPaid: (
+    orderId: string,
+    detail: {
+      email: string;
+      shipping: boolean;
+      paid: number;
+      /** The delivery line for the receipt; null on a collection. */
+      postage: { label: string; cents: number } | null;
+    },
+  ) => void;
 }) {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +180,8 @@ export function CardPayment({
   // not one anybody has been shown.
   const quoting = shipping && liveShipping && Boolean(usableZip(address.postalCode)) && quote.status === 'loading';
   const charge = total + postage;
+  // Live postage with no ZIP yet, or a quote in flight: no total is settled.
+  const awaitingPostage = shipping && liveShipping && (!usableZip(address.postalCode) || quoting);
 
   /*
    * Apple Pay and Google Pay, on every fulfilment.
@@ -286,7 +297,12 @@ export function CardPayment({
       }
 
       setStatus('done');
-      onPaid(body.orderId, { email: email.trim(), shipping, paid: charge });
+      onPaid(body.orderId, {
+        email: email.trim(),
+        shipping,
+        paid: charge,
+        postage: shipping ? { label: chosen ? chosen.label : 'Delivery', cents: postage } : null,
+      });
       return true;
     } catch {
       // Deliberately says nothing about whether the charge went through,
@@ -542,6 +558,60 @@ export function CardPayment({
           {error ?? wallets.error}
         </p>
       )}
+
+      {/*
+        The breakdown, directly above the one button that charges it.
+
+        Every figure here is one the server will charge — the books Square
+        prices, and the postage inside the signed quote or the flat charge — so
+        these lines always add up to the number on the button. While a quote is
+        on its way the delivery line says so rather than showing a figure that
+        is about to change.
+      */}
+      <dl className="pay__sum" aria-live="polite">
+        <div>
+          <dt>Books</dt>
+          <dd>{money(total)}</dd>
+        </div>
+        {!shipping ? (
+          <div>
+            <dt>Collect at the church</dt>
+            <dd>Free</dd>
+          </div>
+        ) : quoting ? (
+          <div>
+            <dt>Delivery</dt>
+            <dd>Pricing…</dd>
+          </div>
+        ) : chosen ? (
+          <>
+            <div>
+              <dt>{chosen.label}</dt>
+              <dd>{money(chosen.cents - chosen.handlingCents)}</dd>
+            </div>
+            {chosen.handlingCents > 0 && (
+              <div>
+                <dt>Packing &amp; handling</dt>
+                <dd>{money(chosen.handlingCents)}</dd>
+              </div>
+            )}
+          </>
+        ) : liveShipping && !usableZip(address.postalCode) ? (
+          <div>
+            <dt>Delivery</dt>
+            <dd>Enter your ZIP code</dd>
+          </div>
+        ) : (
+          <div>
+            <dt>Delivery</dt>
+            <dd>{money(flatCents)}</dd>
+          </div>
+        )}
+        <div className="pay__sum-total">
+          <dt>Total</dt>
+          <dd>{awaitingPostage ? '—' : money(charge)}</dd>
+        </div>
+      </dl>
 
       <button type="button" className="pay__submit" disabled={blocked} onClick={pay}>
         {status === 'paying' ? 'Taking payment…' : `Pay ${money(charge)}`}

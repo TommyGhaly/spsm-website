@@ -5910,6 +5910,46 @@ main {
   color: var(--color-ink, #1c1614);
 }
 
+/*
+ * The breakdown above the Pay button: books, delivery, total. Figures in a
+ * right-aligned column with tabular digits, so they read as a sum.
+ */
+.pay__sum {
+  display: grid;
+  gap: 0.3rem;
+  margin: var(--space-md, 1rem) 0 var(--space-sm, 0.7rem);
+  padding-top: var(--space-sm, 0.7rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+}
+
+.pay__sum > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pay__sum dt {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.pay__sum dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink, #1c1614);
+}
+
+.pay__sum-total {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--color-rule, #e0cac3);
+  font-weight: 600;
+}
+
+.pay__sum-total dt {
+  color: var(--color-ink, #1c1614);
+}
+
 /* A stock number, shown where somebody might read it out to the office. */
 .sku {
   font-family: var(--font-ui, system-ui, sans-serif);

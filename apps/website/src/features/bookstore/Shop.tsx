@@ -191,6 +191,7 @@ export function Shop({
     email: string;
     shipping: boolean;
     lines: { name: string; sku: string | null; quantity: number; amount: number }[];
+    postage: { label: string; cents: number } | null;
     total: number;
   } | null>(null);
   /*
@@ -863,6 +864,14 @@ export function Shop({
                     <span className="done__sum">{money(line.amount)}</span>
                   </li>
                 ))}
+                {/* So the lines add up to "Paid" below. */}
+                {receipt.postage && (
+                  <li>
+                    <span className="done__qty" />
+                    <span className="done__name">{receipt.postage.label}</span>
+                    <span className="done__sum">{money(receipt.postage.cents)}</span>
+                  </li>
+                )}
               </ul>
 
               <p className="done__total">
@@ -1133,6 +1142,7 @@ export function Shop({
                     // What was charged, postage included — not the books'
                     // subtotal, which is what `total` is.
                     total: detail.paid,
+                    postage: detail.postage,
                   });
                   // Cleared here rather than on the server's word alone: the
                   // order exists in Firestore by this point, so a basket that
