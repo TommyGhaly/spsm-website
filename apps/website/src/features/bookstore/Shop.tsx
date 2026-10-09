@@ -190,7 +190,7 @@ export function Shop({
     orderId: string;
     email: string;
     shipping: boolean;
-    lines: { name: string; quantity: number; amount: number }[];
+    lines: { name: string; sku: string | null; quantity: number; amount: number }[];
     total: number;
   } | null>(null);
   /*
@@ -339,7 +339,7 @@ export function Shop({
   );
 
   /*
-   * Matched on the title and the description, both lowercased, on every
+   * Matched on the title, the description and the SKU, lowercased, on every
    * keystroke. Eleven books need no index, no debounce and no request — the
    * whole catalog is already in memory, and a search that waits 300ms to filter
    * a list this size only feels broken.
@@ -349,7 +349,9 @@ export function Shop({
     ? products.filter(
         (product) =>
           product.name.toLowerCase().includes(needle) ||
-          product.description.toLowerCase().includes(needle),
+          product.description.toLowerCase().includes(needle) ||
+          // So "spsm-0007", or just "0007", finds the book the office named.
+          (product.sku?.toLowerCase().includes(needle) ?? false),
       )
     : products;
 
@@ -854,7 +856,10 @@ export function Shop({
                 {receipt.lines.map((line) => (
                   <li key={line.name}>
                     <span className="done__qty">{line.quantity}×</span>
-                    <span className="done__name">{line.name}</span>
+                    <span className="done__name">
+                      {line.name}
+                      {line.sku && <span className="sku"> · {line.sku}</span>}
+                    </span>
                     <span className="done__sum">{money(line.amount)}</span>
                   </li>
                 ))}
@@ -939,6 +944,7 @@ export function Shop({
                         against the line total is what one of them costs. */}
                     <p className="basket__each">
                       {money(product.amount, product.currency)} each
+                      {product.sku && <span className="sku"> · {product.sku}</span>}
                     </p>
 
                     {/* The controls and the line total share a row, so the
@@ -1106,6 +1112,7 @@ export function Shop({
                  * two disagreeing is the parish charging more than it displayed.
                  */
                 deliveryCents={live.deliveryCents ?? settings.deliveryCents}
+                liveShipping={(live.shipping ?? settings.shipping).mode === 'usps'}
                 applicationId={square.applicationId}
                 locationId={square.locationId}
                 sandbox={square.sandbox}
@@ -1119,10 +1126,13 @@ export function Shop({
                     shipping: detail.shipping,
                     lines: lines.map(({ product, quantity }) => ({
                       name: product.name,
+                      sku: product.sku,
                       quantity,
                       amount: product.amount * quantity,
                     })),
-                    total,
+                    // What was charged, postage included — not the books'
+                    // subtotal, which is what `total` is.
+                    total: detail.paid,
                   });
                   // Cleared here rather than on the server's word alone: the
                   // order exists in Firestore by this point, so a basket that
@@ -1157,6 +1167,8 @@ export function Shop({
               label: group.label || UNSORTED_LABEL,
               count: group.items.length,
             }))}
+            shipping={live.shipping ?? settings.shipping}
+            products={products}
             onDone={() => setEditing(false)}
             onSelect={setSelected}
             onChanged={refresh}
@@ -1643,6 +1655,10 @@ function Detail({
             >
               {soldOut ? "Out of stock" : "In stock at the church bookstore"}
             </p>
+
+            {/* Under the stock line, small: the number someone reads out when
+                they call the office about a book, and the one on the till. */}
+            {product.sku && <p className="sku">SKU {product.sku}</p>}
 
             {!soldOut && (
               <>

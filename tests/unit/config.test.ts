@@ -370,6 +370,9 @@ describe('parseBookstoreConfig', () => {
       // Absent from the document means no divisions, which is the ordinary
       // state — `parseSections` has its own tests in shopSections.test.ts.
       sections: [],
+      // Absent means the defaults, which are flat delivery — live postage is
+      // something the parish turns on, never something a deploy turns on.
+      shipping: DEFAULT_BOOKSTORE_CONFIG.shipping,
     });
   });
 

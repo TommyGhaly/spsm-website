@@ -35,6 +35,10 @@
         "function": "squareCheckout"
       },
       {
+        "source": "/api/shipping/quote",
+        "function": "shippingQuote"
+      },
+      {
         "source": "/api/square/webhook",
         "function": "squareWebhook"
       },

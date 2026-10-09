@@ -5,6 +5,9 @@ import {
   CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
   DEFAULT_BOOKSTORE_CONFIG,
+  FLAT_SHIPPING_LABEL,
+  SERVICE_LABELS,
+  basketKey,
   buildOrderEmail,
   buildSquareOrder,
   cleanName,
@@ -12,8 +15,10 @@ import {
   looksLikeEmail,
   normalizeEmail,
   parseBookstoreConfig,
+  usableZip,
+  verifyQuote,
   type BookstoreConfig,
-  type Product,
+  type ShippingQuoteResponse,
 } from '@spsm/shared';
 import { callerOf } from './httpAuth.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
@@ -25,6 +30,15 @@ import {
   SQUARE_VERSION,
   squareHost,
 } from './square.js';
+import {
+  SHIPPING_QUOTE_SECRET,
+  USPS_CLIENT_ID,
+  USPS_CLIENT_SECRET,
+  liveOptions,
+  parcelLines,
+  productsFor,
+  quoteHmac,
+} from './shipping.js';
 
 /*
  * Square's host, token pair, and location now live in ./square.ts, imported
@@ -51,9 +65,11 @@ import {
  * postage on every delivered order — which is the failure mode that costs money
  * quietly.
  *
- * Flat, either way, because it is the only honest option available: not one item
- * in the parish's Square catalog carries a weight or a dimension, so no carrier
- * can quote a rate for a parcel nobody has described.
+ * Flat was once the only honest option, because nothing in the catalog carried
+ * a weight. Weights are now the parish's own field on the mirror and live USPS
+ * postage is quoted from them (see shipping.ts), but flat remains what a basket
+ * pays whenever it cannot be quoted — an unweighed book, the switch off, USPS
+ * down.
  * ---------------------------------------------------------------------------
  */
 const SHIPPING_FLAT_CENTS = defineString('SHIPPING_FLAT_CENTS', { default: '700' });
@@ -124,7 +140,13 @@ async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<Books
  */
 export const squareCheckout = onRequest(
   {
-    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    secrets: [
+      SQUARE_ACCESS_TOKEN,
+      SQUARE_SANDBOX_ACCESS_TOKEN,
+      USPS_CLIENT_ID,
+      USPS_CLIENT_SECRET,
+      SHIPPING_QUOTE_SECRET,
+    ],
     maxInstances: CAPS.squareCheckout,
     // Same origin through the Hosting rewrite, so no cross-origin access is
     // needed or wanted: this endpoint moves money and should not be callable
@@ -189,6 +211,8 @@ export const squareCheckout = onRequest(
       fulfillment?: unknown;
       address?: Record<string, string>;
       idempotencyKey?: unknown;
+      /** A signed quote from `/api/shipping/quote`. Optional: absent means flat. */
+      shippingOptionId?: unknown;
     };
 
     const sourceId = typeof body.sourceId === 'string' ? body.sourceId : '';
@@ -237,18 +261,60 @@ export const squareCheckout = onRequest(
     }
 
     const slugs = [...new Set(cart.map((l: { slug?: unknown }) => String(l?.slug ?? '')).filter(Boolean))].slice(0, 40);
-    const catalog = new Map<string, Product>();
-    await Promise.all(
-      slugs.map(async (slug) => {
-        const doc = await db.collection(COLLECTIONS.products).doc(slug).get();
-        if (doc.exists) catalog.set(slug, doc.data() as Product);
-      }),
-    );
+    const catalog = await productsFor(db, slugs);
 
     const built = buildSquareOrder(cart, catalog);
     if (built.lines.length === 0) {
       res.status(409).json({ error: 'Nothing in the basket is available.', rejected: built.rejected });
       return;
+    }
+
+    /*
+     * What delivery costs, decided here and only here.
+     *
+     * The browser may carry a signed quote from `/api/shipping/quote`. It is
+     * honoured only if the signature holds, it has not expired, and it was
+     * issued for *this* basket going to *this* ZIP — so the browser carries a
+     * price it cannot choose.
+     *
+     * Three outcomes, and each keeps the rule that the amount the buyer saw is
+     * the amount charged:
+     *
+     *   - a valid token: its cents.
+     *   - a token that does not verify: refused with `quote-expired`, and the
+     *     page fetches a fresh quote and shows it before trying again.
+     *     Re-quoting silently here would charge a figure nobody was shown.
+     *   - no token: the flat charge. That is what the page shows when USPS
+     *     could not quote, and what the App Clip's Apple Pay sheet shows, since
+     *     it does not ask for live rates yet.
+     *
+     * The last one means a hand-built request can choose flat over a live
+     * price. Accepted knowingly: flat is a figure the parish set itself, and
+     * requiring a token would break the clip until it learns to fetch one.
+     *
+     * The basket key comes from `parcelLines`, the same cleaning the quote
+     * endpoint applied, so an honest token for an unchanged basket matches.
+     */
+    let postage = { cents: settings.deliveryCents, label: FLAT_SHIPPING_LABEL };
+    if (shipping && body.shippingOptionId !== undefined && body.shippingOptionId !== null) {
+      const zip = usableZip(body.address?.['postalCode']);
+      const hmac = quoteHmac();
+      const quoted =
+        zip && hmac
+          ? verifyQuote(body.shippingOptionId, hmac, {
+              zip,
+              basket: basketKey(parcelLines(cart)),
+              now: Date.now(),
+            })
+          : null;
+      if (!quoted) {
+        res.status(409).json({
+          error: 'The postage quote has expired. Please check the delivery price and try again.',
+          code: 'quote-expired',
+        });
+        return;
+      }
+      postage = { cents: quoted.cents, label: SERVICE_LABELS[quoted.service] };
     }
 
     const host = squareHost(environment);
@@ -272,9 +338,11 @@ export const squareCheckout = onRequest(
                 // appear as stock sold.
                 service_charges: [
                   {
-                    name: 'Shipping',
+                    // Square shows this name on its receipt and dashboard, so
+                    // whoever posts the parcel can see which service was paid for.
+                    name: `Shipping: ${postage.label}`,
                     amount_money: {
-                      amount: settings.deliveryCents,
+                      amount: postage.cents,
                       currency: 'USD',
                     },
                     calculation_phase: 'TOTAL_PHASE',
@@ -395,6 +463,13 @@ export const squareCheckout = onRequest(
         }
       }
 
+      // Square's line items carry names, not SKUs; `built.names` is the bridge.
+      const skuByName = new Map<string, string>();
+      for (const [slug, name] of Object.entries(built.names)) {
+        const sku = catalog.get(slug)?.sku;
+        if (sku) skuByName.set(name, sku);
+      }
+
       await db
         .collection(COLLECTIONS.orders)
         .doc(orderId)
@@ -434,6 +509,7 @@ export const squareCheckout = onRequest(
                   name,
                   quantity: Number(l.quantity),
                   unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
+                  sku: catalog.get(String(l.slug))?.sku ?? null,
                 };
               }),
             total: { amount: total, currency: 'USD' },
@@ -441,6 +517,7 @@ export const squareCheckout = onRequest(
             fulfillment: 'unfulfilled',
             shipping,
             shippingAddress: shipping ? (body.address ?? null) : null,
+            ...(shipping ? { shippingService: postage.label } : {}),
             idempotencyKey,
             // The webhook fills this as events arrive; starting it empty means
             // the first one is never mistaken for a replay.
@@ -504,7 +581,9 @@ export const squareCheckout = onRequest(
                 name: item.name ?? 'Book',
                 quantity: Number(item.quantity ?? '1'),
                 amount: item.total_money?.amount ?? 0,
+                sku: (item.name && skuByName.get(item.name)) || null,
               })),
+              ...(shipping ? { shippingService: postage.label, shippingCents: postage.cents } : {}),
               total,
               ...(settings.orderEmail ? { parishEmail: settings.orderEmail } : {}),
             }),
@@ -529,3 +608,65 @@ export const squareCheckout = onRequest(
   },
 );
 
+
+/**
+ * `POST /api/shipping/quote` — `{ cart: [{slug, quantity}], postalCode }`.
+ *
+ * Here rather than in shipping.ts so that it reads the shop's settings through
+ * `bookstoreSettings`, the same function `squareCheckout` uses: the flat charge
+ * this returns is then the flat charge checkout takes, including when the
+ * settings document is missing and the deploy-time fallback applies.
+ *
+ * Answers with the live options and the flat charge together, so the page can
+ * show the flat line without a second round trip when `options` is empty. Never
+ * an error for "could not quote" — that is the flat charge, and a buyer must be
+ * able to pay it.
+ */
+export const shippingQuote = onRequest(
+  {
+    secrets: [USPS_CLIENT_ID, USPS_CLIENT_SECRET, SHIPPING_QUOTE_SECRET],
+    maxInstances: CAPS.shippingQuote,
+    cors: false,
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'POST only.' });
+      return;
+    }
+    if (
+      throttled(req, res, {
+        bucket: 'shippingQuote',
+        max: BUDGETS.shippingQuote,
+        message: 'Too many postage quotes from here. Please wait a minute and try again.',
+      })
+    ) {
+      return;
+    }
+
+    const body = (req.body ?? {}) as { cart?: unknown; postalCode?: unknown };
+    const zip = usableZip(body.postalCode);
+    const lines = parcelLines(body.cart);
+    if (!zip || lines.length === 0) {
+      res.status(400).json({ error: 'A basket and a five-digit ZIP code are needed.' });
+      return;
+    }
+
+    const db = getFirestore();
+    const [settings, catalog] = await Promise.all([
+      bookstoreSettings(db),
+      productsFor(
+        db,
+        lines.map((line) => line.slug),
+      ),
+    ]);
+
+    const options = await liveOptions(lines, zip, catalog, settings.shipping);
+    const answer: ShippingQuoteResponse = {
+      // Cheapest first, which is also the one preselected.
+      options: options.sort((a, b) => a.cents - b.cents),
+      fallbackCents: settings.deliveryCents,
+    };
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json(answer);
+  },
+);

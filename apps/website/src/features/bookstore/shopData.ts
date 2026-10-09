@@ -71,6 +71,11 @@ export interface ShopProduct {
    * The parish's field, not Square's — see the note on `Product.section`.
    */
   section: string | null;
+  /** `SPSM-0007`, or null until the sync has numbered it. Square's, like the price. */
+  sku: string | null;
+  /** Ounces per copy, or null when not weighed. The parish's, like `section`. */
+  weightOz: number | null;
+  mediaMail: boolean;
 }
 
 /**
@@ -121,6 +126,9 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
           : null,
       stockCount: product.stockCount,
       section: product.section ?? null,
+      sku: product.sku ?? null,
+      weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
+      mediaMail: product.mediaMail === true,
     };
   });
 }

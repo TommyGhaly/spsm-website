@@ -570,3 +570,88 @@ describe('products — filing a book into a section', () => {
     );
   });
 });
+
+describe('products — shipping weight and Media Mail', () => {
+  const weigh = (uid: string, over: Record<string, unknown> = {}) => ({
+    weightOz: 12,
+    mediaMail: true,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+    ...over,
+  });
+
+  it('lets the shop weigh a book, and clear the weight', async () => {
+    const db = asBookstore(env).firestore();
+    await assertSucceeds(updateDoc(doc(db, 'products/holy-bible'), weigh('bookstore-1')));
+    await assertSucceeds(updateDoc(doc(db, 'products/holy-bible'), weigh('bookstore-1', { weightOz: null })));
+  });
+
+  it('refuses a weight that is not a weight', async () => {
+    const db = asBookstore(env).firestore();
+    for (const weightOz of [0, -4, 1121, '12']) {
+      await assertFails(updateDoc(doc(db, 'products/holy-bible'), weigh('bookstore-1', { weightOz })));
+    }
+    await assertFails(updateDoc(doc(db, 'products/holy-bible'), weigh('bookstore-1', { mediaMail: 'yes' })));
+  });
+
+  it('does not let a price ride along with a weight', async () => {
+    await assertFails(
+      updateDoc(
+        doc(asBookstore(env).firestore(), 'products/holy-bible'),
+        weigh('bookstore-1', { price: { amount: 1, currency: 'USD' } }),
+      ),
+    );
+  });
+
+  it('does not let a member with no grant weigh anything', async () => {
+    await assertFails(updateDoc(doc(asSignedIn(env).firestore(), 'products/holy-bible'), weigh('member-1')));
+  });
+});
+
+describe('config/bookstore — live postage settings', () => {
+  const valid = {
+    mode: 'usps',
+    originZip: '01778',
+    handlingCents: 150,
+    box: { lengthIn: 12, widthIn: 9, heightIn: 4, tareOz: 6 },
+    services: ['USPS_GROUND_ADVANTAGE', 'MEDIA_MAIL'],
+  };
+  const write = (shipping: unknown, uid = 'bookstore-1') =>
+    setDoc(
+      doc(asBookstore(env).firestore(), 'config/bookstore'),
+      { shipping, updatedAt: serverTimestamp(), updatedBy: uid },
+      { merge: true },
+    );
+
+  it('lets the shop save them', async () => {
+    await assertSucceeds(write(valid));
+  });
+
+  it('refuses a handling fee with a stray zero, a bad ZIP, or a service that does not exist', async () => {
+    await assertFails(write({ ...valid, handlingCents: 15000 }));
+    await assertFails(write({ ...valid, handlingCents: 1.5 }));
+    await assertFails(write({ ...valid, originZip: '1778' }));
+    await assertFails(write({ ...valid, mode: 'free' }));
+    await assertFails(write({ ...valid, services: ['FEDEX'] }));
+    await assertFails(write({ ...valid, box: { ...valid.box, lengthIn: 400 } }));
+    await assertFails(write({ ...valid, extra: true }));
+  });
+
+  it('does not let a member with no grant change them', async () => {
+    await assertFails(
+      setDoc(
+        doc(asSignedIn(env).firestore(), 'config/bookstore'),
+        { shipping: valid, updatedAt: serverTimestamp(), updatedBy: 'member-1' },
+        { merge: true },
+      ),
+    );
+  });
+});
+
+describe('config/skuCounter', () => {
+  it('cannot be written from a browser by the shop, or anyone without the superadmin grant', async () => {
+    await assertFails(setDoc(doc(asBookstore(env).firestore(), 'config/skuCounter'), { last: 0 }));
+    await assertFails(setDoc(doc(asSignedIn(env).firestore(), 'config/skuCounter'), { last: 0 }));
+    await assertFails(setDoc(doc(asAnon(env).firestore(), 'config/skuCounter'), { last: 0 }));
+  });
+});

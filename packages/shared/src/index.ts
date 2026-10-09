@@ -55,6 +55,8 @@ export * from './payments/squareCheckout.js';
 export * from './payments/orderEmail.js';
 export * from './payments/orderLookup.js';
 export * from './payments/shopSections.js';
+export * from './payments/sku.js';
+export * from './payments/shipping.js';
 
 /*
  * The superadmin's own delete acknowledgement. Shared because the browser

@@ -5845,6 +5845,80 @@ main {
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/*
+ * The USPS options, once a ZIP code has priced them. Rows rather than the two
+ * big panels above: the choice is between figures, and a row puts the figure
+ * where the eye runs down a column of them. The same accent ring marks the
+ * chosen one, so the two choices on this step read as one kind of control.
+ */
+.pay__postage {
+  margin-top: var(--space-sm, 0.7rem);
+}
+
+.postage {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.postage__opt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'pick name sum' 'pick days sum';
+  column-gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem var(--space-md, 0.85rem);
+  background: var(--color-paper-raised, #fdf7f4);
+  border: 1px solid var(--color-rule, #e0cac3);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+
+.postage__opt.is-on {
+  border-color: var(--color-accent, #992a21);
+  box-shadow: inset 0 0 0 1px var(--color-accent, #992a21);
+}
+
+.postage__opt input {
+  grid-area: pick;
+  accent-color: var(--color-accent, #992a21);
+}
+
+.postage__name {
+  grid-area: name;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.postage__days {
+  grid-area: days;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.postage__sum {
+  grid-area: sum;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+/* A stock number, shown where somebody might read it out to the office. */
+.sku {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
 /* Worth saying plainly at the moment a card number is being typed. */
 .pay__hint--secure::before {
   content: '·';
@@ -28257,6 +28331,89 @@ span.fxa__row-title {
 
 .bkpanel__aside--wrong {
   color: var(--color-accent, #992a21);
+}
+
+/*
+ * Weight and Media Mail, side by side where there is room. The box is narrow on
+ * purpose — a weight is a few characters — and the checkbox wraps beneath it in
+ * the 12rem add-form slot rather than squeezing it.
+ */
+.bkship {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+  width: 100%;
+}
+
+.bkship__weight {
+  flex: 0 1 7.5rem;
+  min-width: 0;
+}
+
+.bkship__media {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.bkship .bkpanel__aside {
+  flex: 1 1 100%;
+}
+
+/* The shop-wide postage settings: two columns of small labelled boxes. */
+.bkshipcfg {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.bkshipcfg fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.bkshipcfg__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.bkshipcfg__grid label {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkshipcfg__box {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.bkshipcfg__services {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.bkshipcfg__go {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+/* The add form's inputs are styled by `.bknew input`; keep the checkbox native. */
+.bknew .bkship__media input {
+  flex: none;
+  padding: 0;
 }
 
 .bkdetails__go {

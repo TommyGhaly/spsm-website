@@ -114,4 +114,24 @@ describe('buildOrderEmail', () => {
     expect(mail.message.text).toContain('1 x Holy Bible — $15.00');
     expect(mail.message.text).toContain('Total paid: $15.00');
   });
+
+  it('names each SKU and lists postage, so the lines add up to what was paid', () => {
+    const mail = buildOrderEmail({
+      ...base,
+      shipping: true,
+      lines: [{ name: 'Holy Bible', quantity: 1, amount: 1500, sku: 'SPSM-0007' }],
+      total: 2335,
+      shippingService: 'USPS Ground Advantage',
+      shippingCents: 835,
+    });
+    expect(mail.message.text).toContain('1 x Holy Bible (SPSM-0007) — $15.00');
+    expect(mail.message.text).toContain('USPS Ground Advantage — $8.35');
+    expect(mail.message.html).toContain('SPSM-0007');
+    expect(mail.message.html).toContain('USPS Ground Advantage');
+  });
+
+  it('has no postage line on a collection', () => {
+    const mail = buildOrderEmail({ ...base, shipping: false, shippingService: 'x', shippingCents: 835 });
+    expect(mail.message.text).not.toContain('$8.35');
+  });
 });

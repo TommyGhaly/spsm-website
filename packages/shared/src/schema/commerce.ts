@@ -77,6 +77,31 @@ export interface Product extends AuditFields, Publishable {
    * ---------------------------------------------------------------------------
    */
   section?: string | null;
+
+  /**
+   * `SPSM-0001`. Mirrored from the first Square variation's own `sku`, so it is
+   * the same number the register shows. Assigned by Functions only — see
+   * `payments/sku.ts`. Optional because rows written before SKUs existed have
+   * none until the next sync gives them one.
+   */
+  sku?: string | null;
+
+  /**
+   * Shipping weight of one copy, in ounces, packaging excluded (the box's own
+   * weight is a shop setting). Owned by the parish like `section`, and for the
+   * same reason kept out of the sync's field mask: Square holds no weights.
+   *
+   * Null or absent means "not weighed", and a basket containing one cannot be
+   * quoted — checkout falls back to the flat delivery charge rather than guess.
+   */
+  weightOz?: number | null;
+
+  /**
+   * Whether USPS Media Mail may carry this — books and recorded media only.
+   * Media Mail is offered for a basket only when every line says yes, because
+   * USPS can inspect and surcharge a parcel that is not entirely media.
+   */
+  mediaMail?: boolean;
 }
 
 /**
@@ -141,6 +166,13 @@ export interface Order extends AuditFields {
   shipping: boolean;
   /** Only set on a shipped order. Null for collection, always. */
   shippingAddress: Record<string, string> | null;
+  /**
+   * What the buyer paid for postage, as the service they chose — "USPS Ground
+   * Advantage", or "Flat delivery" when no live quote was used. Tells whoever
+   * takes the parcel to the post office which service to buy. Absent on
+   * collections and on orders from before live rates.
+   */
+  shippingService?: string;
 
   /**
    * Idempotency key we sent to Square. Kept so a retry after a network failure
@@ -192,6 +224,8 @@ export interface OrderLineItem {
    */
   unitPrice?: Money | null;
   quantity: number;
+  /** The product's SKU when the order was taken. Absent on older orders. */
+  sku?: string | null;
 }
 
 /** Mirrors the subset of Square payment states we care about. */

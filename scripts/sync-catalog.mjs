@@ -373,8 +373,12 @@ if (!skipImages) {
 /*
  * Exactly the fields Square owns on a product document.
  *
- * `section` is deliberately absent — see the note at the PATCH below, and the
- * field's own note in packages/shared/src/schema/commerce.ts.
+ * `section`, `weightOz` and `mediaMail` are deliberately absent — see the note
+ * at the PATCH below, and their notes in packages/shared/src/schema/commerce.ts.
+ *
+ * `sku` is present: it is Square's, read off the variation. This script copies
+ * SKUs and never assigns them — the catalog-sync Function does that, so there is
+ * one numbering and not two (see packages/shared/src/payments/sku.ts).
  */
 const MIRRORED_FIELDS = [
   'slug',
@@ -386,6 +390,7 @@ const MIRRORED_FIELDS = [
   'squareVariationId',
   'stockCount',
   'category',
+  'sku',
   'published',
   'publishAt',
   'syncedAt',

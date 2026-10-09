@@ -78,6 +78,10 @@ export interface PendingEdit {
   stockCount?: number | null;
   /** A category id, or `null` for none. Absent means untouched. */
   section?: string | null;
+  /** Ounces per copy, or `null` for not weighed. The parish's, like `section`. */
+  weightOz?: number | null;
+  /** Media Mail eligible. Held together with `weightOz` — see `setShipping`. */
+  mediaMail?: boolean;
   /** Photographs chosen here and not yet uploaded, in the order chosen. */
   addImages?: PendingImage[];
   /** Already-saved Square URLs marked to come off. */
@@ -88,6 +92,34 @@ export interface PendingEdit {
 export interface ActualValues {
   stockCount: number | null;
   section: string | null;
+  /** Optional so callers that never show the shipping fields need not pass them. */
+  weightOz?: number | null;
+  mediaMail?: boolean;
+}
+
+/** The held fields that are plain values — everything but the pictures. */
+const FIELDS = ['stockCount', 'section', 'weightOz', 'mediaMail'] as const;
+type Field = (typeof FIELDS)[number];
+
+function actualOf(actual: ActualValues, key: Field): unknown {
+  if (key === 'weightOz') return actual.weightOz ?? null;
+  if (key === 'mediaMail') return actual.mediaMail ?? false;
+  return actual[key];
+}
+
+/** What a field reads as with this edit held over the real value. */
+function heldOf(edit: PendingEdit | undefined, actual: ActualValues, key: Field): unknown {
+  if (edit && key in edit) return key === 'mediaMail' ? (edit[key] ?? false) : (edit[key] ?? null);
+  return actualOf(actual, key);
+}
+
+/**
+ * True when every plain field of this edit is back to what is saved. One test
+ * for all of them, because the failure this file keeps guarding against is a
+ * check that forgot the *other* field and released a book with a change held.
+ */
+function fieldsMatch(edit: PendingEdit | undefined, actual: ActualValues): boolean {
+  return FIELDS.every((key) => heldOf(edit, actual, key) === actualOf(actual, key));
 }
 
 interface PendingEditsValue {
@@ -124,10 +156,7 @@ export function settle(
   edit: PendingEdit,
   actual: ActualValues,
 ): Record<string, PendingEdit> {
-  const stock = 'stockCount' in edit ? edit.stockCount ?? null : actual.stockCount;
-  const section = 'section' in edit ? edit.section ?? null : actual.section;
-
-  if (stock === actual.stockCount && section === actual.section && !hasImageEdits(edit)) {
+  if (fieldsMatch(edit, actual) && !hasImageEdits(edit)) {
     if (!(slug in was)) return was;
     const next = { ...was };
     delete next[slug];
@@ -162,21 +191,16 @@ export function nextEditsAfterNudge(
   if (heldStock === null) return was;
 
   const nextStock = Math.max(0, Math.min(99_999, heldStock + by));
-  const heldSection = held && 'section' in held ? held.section ?? null : actual.section;
 
   /*
    * Back where it started, and nothing else held: stop calling it an edit.
    *
-   * `hasImageEdits` is part of that test for the same reason `heldSection` is —
+   * `hasImageEdits` is part of that test for the same reason the other fields are —
    * releasing the whole book the moment its count matched again would silently
    * drop a picture added a second earlier, and the card would look clean and be
    * sent as nothing. That failure already happened once with the category.
    */
-  if (
-    nextStock === actual.stockCount &&
-    heldSection === actual.section &&
-    !hasImageEdits(held)
-  ) {
+  if (fieldsMatch({ ...held, stockCount: nextStock }, actual) && !hasImageEdits(held)) {
     if (!(slug in was)) return was;
     const next = { ...was };
     delete next[slug];
@@ -332,8 +356,13 @@ export function PendingEditsProvider({
        writes that already succeeded. */
     const saved: string[] = [];
     try {
-      const { setProductStock, setProductSection, uploadProductImage, removeProductImage } =
-        await import('./adminData');
+      const {
+        setProductStock,
+        setProductSection,
+        setProductShipping,
+        uploadProductImage,
+        removeProductImage,
+      } = await import('./adminData');
 
       /*
        * Sequential, not `Promise.all`. Each stock change is a write to Square's
@@ -348,6 +377,13 @@ export function PendingEditsProvider({
       for (const [slug, edit] of pending) {
         if ('stockCount' in edit) await setProductStock(slug, edit.stockCount ?? null);
         if ('section' in edit) await setProductSection(slug, edit.section ?? null);
+        // Both fields in one write; `setShipping` always holds them together.
+        if ('weightOz' in edit || 'mediaMail' in edit) {
+          await setProductShipping(slug, {
+            weightOz: edit.weightOz ?? null,
+            mediaMail: edit.mediaMail ?? false,
+          });
+        }
 
         /*
          * Removals before additions, so the result matches the tiles you were
@@ -463,31 +499,28 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     usePendingEdits();
   const edit = edits[slug];
 
-  const stockCount = edit && 'stockCount' in edit ? edit.stockCount ?? null : actual.stockCount;
-  const section = edit && 'section' in edit ? edit.section ?? null : actual.section;
+  const stockCount = heldOf(edit, actual, 'stockCount') as number | null;
+  const section = heldOf(edit, actual, 'section') as string | null;
+  const weightOz = heldOf(edit, actual, 'weightOz') as number | null;
+  const mediaMail = heldOf(edit, actual, 'mediaMail') as boolean;
   const addedImages = edit?.addImages ?? EMPTY_ADDS;
   const removedImages = edit?.removeImages ?? EMPTY_REMOVES;
-  const dirty =
-    stockCount !== actual.stockCount ||
-    section !== actual.section ||
-    addedImages.length > 0 ||
-    removedImages.length > 0;
+  const dirty = !fieldsMatch(edit, actual) || addedImages.length > 0 || removedImages.length > 0;
 
   /*
-   * One writer for both fields, because the "back to where it started" case has
+   * One writer for every field, because the "back to where it started" case has
    * to consider the *other* field too. Releasing the whole book the moment its
    * count matched again would silently drop a category change made a second
    * earlier — the book would look clean and be sent as nothing.
    */
   const setField = useCallback(
     (patch: PendingEdit) => {
-      const nextStock = 'stockCount' in patch ? patch.stockCount ?? null : stockCount;
-      const nextSection = 'section' in patch ? patch.section ?? null : section;
-
-      if (nextStock === actual.stockCount && nextSection === actual.section) release(slug);
+      if (fieldsMatch({ ...edit, ...patch }, actual) && !hasImageEdits(edit)) release(slug);
       else hold(slug, patch);
     },
-    [slug, stockCount, section, actual.stockCount, actual.section, hold, release],
+    // `actual` is a fresh object each render; its fields are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slug, edit, actual.stockCount, actual.section, actual.weightOz, actual.mediaMail, hold, release],
   );
 
   const setStock = useCallback(
@@ -497,6 +530,12 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
 
   const setSection = useCallback(
     (next: string | null) => setField({ section: next }),
+    [setField],
+  );
+
+  /* Always both together, so Save sends one complete shipping write. */
+  const setShipping = useCallback(
+    (next: { weightOz: number | null; mediaMail: boolean }) => setField(next),
     [setField],
   );
 
@@ -535,9 +574,12 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   return {
     stockCount,
     section,
+    weightOz,
+    mediaMail,
     dirty,
     setStock,
     setSection,
+    setShipping,
     nudge,
     addedImages,
     removedImages,

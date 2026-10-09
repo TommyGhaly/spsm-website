@@ -724,6 +724,40 @@ export interface BookstoreConfig {
    * gets one undivided shelf, exactly as before this existed.
    */
   sections: BookstoreSection[];
+
+  /** How delivered orders are priced — see `BookstoreShipping`. */
+  shipping: BookstoreShipping;
+}
+
+/** The USPS services the shop can offer, by USPS's own `mailClass` names. */
+export const SHIPPING_SERVICES = ['USPS_GROUND_ADVANTAGE', 'PRIORITY_MAIL', 'MEDIA_MAIL'] as const;
+export type ShippingService = (typeof SHIPPING_SERVICES)[number];
+
+/**
+ * Live postage, and the switch back to the flat charge.
+ *
+ * ---------------------------------------------------------------------------
+ * `mode: 'flat'` is today's behaviour — `deliveryCents` on every delivery — and
+ * it is the default, so deploying this changes nothing until the parish has
+ * weighed its books and turned it on. It stays the fallback afterwards: a
+ * basket with an unweighed item, or a USPS outage, is charged `deliveryCents`
+ * rather than refused.
+ *
+ * One box for every parcel. The parish posts a few books at a time, and asking
+ * staff to choose a carton per order is a decision nobody at the bookstore table
+ * wants to make. USPS prices Ground Advantage and Priority on weight and zone at
+ * these sizes, so the box mostly matters through its own weight.
+ * ---------------------------------------------------------------------------
+ */
+export interface BookstoreShipping {
+  mode: 'usps' | 'flat';
+  /** Where parcels are posted from. Five digits. */
+  originZip: string;
+  /** Added to every live quote, once per order — packing, the drive to the post office. */
+  handlingCents: number;
+  box: { lengthIn: number; widthIn: number; heightIn: number; tareOz: number };
+  /** Offered in this order. Media Mail only ever appears for an all-media basket. */
+  services: ShippingService[];
 }
 
 /** Section ids are generated from the label and then frozen. */
@@ -771,7 +805,19 @@ export const DEFAULT_BOOKSTORE_CONFIG: BookstoreConfig = {
    * as it did before sections existed.
    */
   sections: [],
+  shipping: {
+    mode: 'flat',
+    originZip: '01778',
+    handlingCents: 150,
+    box: { lengthIn: 12, widthIn: 9, heightIn: 4, tareOz: 6 },
+    services: ['USPS_GROUND_ADVANTAGE', 'PRIORITY_MAIL', 'MEDIA_MAIL'],
+  },
 };
+
+/** Guards on the shipping settings, against a typo becoming a charge. */
+export const MAX_HANDLING_CENTS = 20_00;
+export const MAX_BOX_INCHES = 36;
+export const MAX_BOX_TARE_OZ = 80;
 
 /** The most the parish can charge for postage, as a guard against a typo. */
 export const MAX_DELIVERY_CENTS = 100_00;
@@ -810,6 +856,51 @@ export function parseBookstoreConfig(raw: unknown): BookstoreConfig {
     fulfilmentNote: str(doc?.['fulfilmentNote']) || fallback.fulfilmentNote,
     returnsNotice: str(doc?.['returnsNotice']) || fallback.returnsNotice,
     sections: parseSections(doc?.['sections']),
+    shipping: parseShipping(doc?.['shipping']),
+  };
+}
+
+/**
+ * The shipping block, each field falling back on its own — the same rule as the
+ * document around it, and for the same reason. Out-of-range numbers fall back
+ * rather than clamp: `handlingCents` becomes part of a charge.
+ */
+export function parseShipping(raw: unknown): BookstoreShipping {
+  const doc = asRecord(raw);
+  const fallback = DEFAULT_BOOKSTORE_CONFIG.shipping;
+
+  const inRange = (value: unknown, min: number, max: number): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+
+  const handling = doc?.['handlingCents'];
+  const zip = str(doc?.['originZip']);
+  const box = asRecord(doc?.['box']);
+  const dimension = (key: 'lengthIn' | 'widthIn' | 'heightIn'): number => {
+    const value = box?.[key];
+    return inRange(value, 1, MAX_BOX_INCHES) ? value : fallback.box[key];
+  };
+  const tare = box?.['tareOz'];
+
+  const listed = doc?.['services'];
+  const services = Array.isArray(listed)
+    ? SHIPPING_SERVICES.filter((service) => listed.includes(service))
+    : fallback.services;
+
+  return {
+    mode: doc?.['mode'] === 'usps' ? 'usps' : 'flat',
+    originZip: zip && /^\d{5}$/.test(zip) ? zip : fallback.originZip,
+    handlingCents:
+      inRange(handling, 0, MAX_HANDLING_CENTS) && Number.isInteger(handling)
+        ? handling
+        : fallback.handlingCents,
+    box: {
+      lengthIn: dimension('lengthIn'),
+      widthIn: dimension('widthIn'),
+      heightIn: dimension('heightIn'),
+      tareOz: inRange(tare, 0, MAX_BOX_TARE_OZ) ? tare : fallback.box.tareOz,
+    },
+    // An emptied list is "no live services", which means flat — not "all of them".
+    services,
   };
 }
 

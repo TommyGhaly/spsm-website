@@ -30,6 +30,8 @@ export interface OrderEmailLine {
   quantity: number;
   /** Line total in integer minor units — quantity already applied. */
   amount: number;
+  /** `SPSM-0007`, so a buyer writing about a book can name it exactly. */
+  sku?: string | null;
 }
 
 export interface OrderEmailInput {
@@ -45,6 +47,9 @@ export interface OrderEmailInput {
   currency?: string;
   /** Where to send someone who has a question. Omitted from the copy if unset. */
   parishEmail?: string;
+  /** Delivered orders: the service paid for and what it cost, shown as its own line. */
+  shippingService?: string;
+  shippingCents?: number;
 }
 
 /** The shape the Trigger Email extension reads out of the `mail` collection. */
@@ -117,6 +122,12 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
    */
   const unmonitored = 'This address is not monitored.';
 
+  // The postage line, when there was postage — so the lines add up to the total.
+  const postage =
+    input.shipping && typeof input.shippingCents === 'number'
+      ? { label: input.shippingService ?? 'Delivery', cents: input.shippingCents }
+      : null;
+
   const question = input.parishEmail
     ? `${unmonitored} If anything is wrong with this order, write to ${input.parishEmail} and quote the reference above.`
     : `${unmonitored} If anything is wrong with this order, contact the church office and quote the reference above.`;
@@ -127,7 +138,10 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
     fulfilment,
     ...(filedUnder ? [filedUnder] : []),
     '',
-    ...input.lines.map((l) => `${l.quantity} x ${l.name} — ${money(l.amount)}`),
+    ...input.lines.map(
+      (l) => `${l.quantity} x ${l.name}${l.sku ? ` (${l.sku})` : ''} — ${money(l.amount)}`,
+    ),
+    ...(postage ? [`${postage.label} — ${money(postage.cents)}`] : []),
     '',
     `Total paid: ${money(input.total)}`,
     `Reference: ${input.orderId}`,
@@ -145,15 +159,25 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
    * routinely stripped. Kept to a few colours and no images so it degrades to
    * something legible wherever the stylesheet does not survive.
    */
-  const rows = input.lines
-    .map(
-      (l) => `
+  const rows =
+    input.lines
+      .map(
+        (l) => `
           <tr>
-            <td style="padding:6px 0;color:#4b413e;">${l.quantity} &times; ${escapeHtml(l.name)}</td>
+            <td style="padding:6px 0;color:#4b413e;">${l.quantity} &times; ${escapeHtml(l.name)}${
+              l.sku ? ` <span style="color:#6f5f5a;font-size:12px;">${escapeHtml(l.sku)}</span>` : ''
+            }</td>
             <td style="padding:6px 0;text-align:right;color:#1c1614;white-space:nowrap;">${money(l.amount)}</td>
           </tr>`,
-    )
-    .join('');
+      )
+      .join('') +
+    (postage
+      ? `
+          <tr>
+            <td style="padding:6px 0;color:#4b413e;">${escapeHtml(postage.label)}</td>
+            <td style="padding:6px 0;text-align:right;color:#1c1614;white-space:nowrap;">${money(postage.cents)}</td>
+          </tr>`
+      : '');
 
   const html = `<!doctype html>
 <html>

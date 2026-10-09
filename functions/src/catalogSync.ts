@@ -16,6 +16,7 @@ import {
   squareClient,
   type SquareClient,
 } from './square.js';
+import { reserveSkus, writeSkusToSquare } from './sku.js';
 
 /**
  * Mirroring the Square catalog into Firestore, on a schedule.
@@ -76,6 +77,8 @@ interface MirrorFields {
   squareVariationId: string | null;
   stockCount?: number | null;
   category: string | null;
+  /** Square's, like the rest — see `assignMissingSkus`. */
+  sku: string | null;
   published: boolean;
   publishAt: null;
   syncedAt: Date;
@@ -170,6 +173,60 @@ async function readInventory(
 }
 
 /**
+ * Give every bookstore product without a SKU its `SPSM-####`, in Square.
+ *
+ * This is what numbers the books that predate SKUs, and anything a volunteer
+ * adds at the register rather than on the website. Products made on the site
+ * already have one — `squareCreateProduct` assigns it at creation.
+ *
+ * Written to Square first and copied into `products` only once Square accepts
+ * it, so the mirror never shows a number the register does not. A refused
+ * upsert leaves those products without one until the next run; the numbers it
+ * reserved become a gap, which is harmless.
+ *
+ * Mutates `products` in place, so the mirror write below carries the new SKUs.
+ */
+async function assignMissingSkus(
+  db: FirebaseFirestore.Firestore,
+  square: SquareClient,
+  objects: readonly unknown[],
+  products: { squareVariationId: string | null; sku: string | null }[],
+): Promise<void> {
+  const missing = products.filter((product) => !product.sku && product.squareVariationId);
+  if (missing.length === 0) return;
+
+  // Every variation in the catalog, by id, as Square sent it — the whole object
+  // goes back with only `sku` changed.
+  const variations = new Map<string, Record<string, unknown>>();
+  const everySku: string[] = [];
+  for (const raw of objects) {
+    const item = raw as { type?: string; item_data?: { variations?: Record<string, unknown>[] } };
+    if (item?.type !== 'ITEM') continue;
+    for (const variation of item.item_data?.variations ?? []) {
+      if (typeof variation['id'] === 'string') variations.set(variation['id'], variation);
+      const sku = (variation['item_variation_data'] as { sku?: unknown } | undefined)?.sku;
+      if (typeof sku === 'string') everySku.push(sku);
+    }
+  }
+
+  try {
+    const skus = await reserveSkus(db, missing.length, everySku);
+    const assignments = missing.flatMap((product, i) => {
+      const variation = variations.get(product.squareVariationId as string);
+      return variation ? [{ product, variation, sku: skus[i]! }] : [];
+    });
+    const accepted = await writeSkusToSquare(square, assignments);
+    for (const { product, variation, sku } of assignments) {
+      if (accepted.has(variation['id'] as string)) product.sku = sku;
+    }
+    console.log(`[catalog-sync] assigned ${accepted.size} SKU(s)`);
+  } catch (error) {
+    // A numbering failure must not stop the shop being mirrored.
+    console.error('[catalog-sync] could not assign SKUs this run', error);
+  }
+}
+
+/**
  * Read Square, write the mirror. Safe to run as often as you like.
  *
  * ---------------------------------------------------------------------------
@@ -219,6 +276,8 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
   }
 
   const db = getFirestore();
+  await assignMissingSkus(db, square, objects, products);
+
   const collection = db.collection(COLLECTIONS.products);
   const existing = await collection.get();
   const present = new Set(existing.docs.map((doc) => doc.id));
@@ -251,6 +310,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
       squareCatalogObjectId: product.squareCatalogObjectId,
       squareVariationId: product.squareVariationId,
       category: product.category,
+      sku: product.sku,
       /*
        * Every mirrored row is published, which is the decision taken on
        * 2026-08-17: show the whole category and ignore Square's

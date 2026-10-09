@@ -186,6 +186,10 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/squareCheckout`,
       },
       {
+        source: '/api/shipping/quote',
+        destination: `${origin}/${project}/${region}/shippingQuote`,
+      },
+      {
         source: '/api/square/webhook',
         destination: `${origin}/${project}/${region}/squareWebhook`,
       },

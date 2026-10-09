@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { looksLikeEmail } from '@spsm/shared';
+import { looksLikeEmail, usableZip } from '@spsm/shared';
 import { money } from './Shop';
 import { squarePayments, type SquareCard } from './squareSdk';
 import { useSquareWallets, type WalletKind } from './useSquareWallets';
 import { WalletButtons } from './WalletButtons';
+import { useShippingQuote } from './useShippingQuote';
 
 /**
  * The card form, and the request that charges it.
@@ -39,6 +40,7 @@ export function CardPayment({
   cart,
   total,
   deliveryCents,
+  liveShipping,
   applicationId,
   locationId,
   sandbox,
@@ -57,6 +59,8 @@ export function CardPayment({
    * that is not the amount is not something to ship.
    */
   deliveryCents: number;
+  /** Whether the shop quotes USPS postage, which changes what step 2 promises. */
+  liveShipping: boolean;
   applicationId: string;
   locationId: string;
   sandbox: boolean;
@@ -65,7 +69,7 @@ export function CardPayment({
    * someone what actually happens next. Both live in this component's state and
    * are gone by the time the basket re-renders.
    */
-  onPaid: (orderId: string, detail: { email: string; shipping: boolean }) => void;
+  onPaid: (orderId: string, detail: { email: string; shipping: boolean; paid: number }) => void;
 }) {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +88,8 @@ export function CardPayment({
   const [email, setEmail] = useState('');
   const [shipping, setShipping] = useState(false);
   const [address, setAddress] = useState({ line1: '', line2: '', city: '', state: '', postalCode: '' });
+  const quote = useShippingQuote({ enabled: shipping, cart, postalCode: address.postalCode });
+  const [chosenService, setChosenService] = useState<string | null>(null);
 
   const holder = useRef<HTMLDivElement>(null);
   const card = useRef<SquareCard | null>(null);
@@ -150,7 +156,21 @@ export function CardPayment({
    * the money. This is the number on the button and the number in the wallet
    * sheet, and there is deliberately no other total on this screen.
    */
-  const charge = total + (shipping ? deliveryCents : 0);
+  /*
+   * Postage, as the server quoted it. A live option's cents are inside its
+   * signed id, and checkout charges exactly those; with no live option (or no
+   * quote at all) the flat figure is shown and no id is sent, which is the flat
+   * charge on both sides. Cheapest first, and preselected — the same option
+   * the list shows at the top.
+   */
+  const options = quote.status === 'ready' ? quote.options : [];
+  const chosen = options.find((option) => option.service === chosenService) ?? options[0] ?? null;
+  const flatCents = quote.status === 'ready' ? quote.fallbackCents : deliveryCents;
+  const postage = !shipping ? 0 : chosen ? chosen.cents : flatCents;
+  // Only a settled answer can be paid against; a figure still being fetched is
+  // not one anybody has been shown.
+  const quoting = shipping && liveShipping && Boolean(usableZip(address.postalCode)) && quote.status === 'loading';
+  const charge = total + postage;
 
   /*
    * Apple Pay and Google Pay, on every fulfilment.
@@ -187,7 +207,8 @@ export function CardPayment({
     wallets.status === 'working' ||
     !looksLikeEmail(email) ||
     !named ||
-    shippingIncomplete;
+    shippingIncomplete ||
+    quoting;
 
   /**
    * Post the basket with whatever minted the token, and say whether it landed.
@@ -215,6 +236,7 @@ export function CardPayment({
           fulfillment: shipping ? 'ship' : 'pickup',
           address: shipping ? address : undefined,
           idempotencyKey: idempotencyKey.current,
+          ...(shipping && chosen ? { shippingOptionId: chosen.id } : {}),
         }),
       });
       /*
@@ -230,16 +252,19 @@ export function CardPayment({
        * about their card at all.
        */
       const raw = await response.text();
-      let body: { orderId?: string; error?: string } = {};
+      let body: { orderId?: string; error?: string; code?: string } = {};
       let wasJson = false;
       try {
-        body = JSON.parse(raw) as { orderId?: string; error?: string };
+        body = JSON.parse(raw) as { orderId?: string; error?: string; code?: string };
         wasJson = true;
       } catch {
         // Left as `{}`; `wasJson` is what the message below turns on.
       }
 
       if (!response.ok || !body.orderId) {
+        // The quote outlived its thirty minutes. Fetch a fresh one so the new
+        // figure is on screen before anybody presses Pay again.
+        if (body.code === 'quote-expired') quote.refresh();
         if (!wasJson) {
           // Worth a line in the console: whoever sees this is a developer on an
           // origin where the rewrite is missing, not a parishioner.
@@ -261,7 +286,7 @@ export function CardPayment({
       }
 
       setStatus('done');
-      onPaid(body.orderId, { email: email.trim(), shipping });
+      onPaid(body.orderId, { email: email.trim(), shipping, paid: charge });
       return true;
     } catch {
       // Deliberately says nothing about whether the charge went through,
@@ -409,10 +434,12 @@ export function CardPayment({
               >
                 <span className="choice__name">Deliver to me</span>
                 <span className="choice__note">
-                  {/* The figure, not the promise of one. It is `config/bookstore`
-                      as of this page load, which is the same document the
-                      checkout Function reads when it charges. */}
-                  {money(deliveryCents)} delivery, added to the total below.
+                  {/* The figure, not the promise of one, when there is a single
+                      figure. With live postage there is not until a ZIP code is
+                      known, so it says where the price will come from. */}
+                  {liveShipping
+                    ? 'USPS postage for your ZIP code, added to the total below.'
+                    : `${money(deliveryCents)} delivery, added to the total below.`}
                 </span>
               </button>
             </div>
@@ -437,6 +464,36 @@ export function CardPayment({
                     />
                   </label>
                 ))}
+              </div>
+            )}
+
+            {shipping && liveShipping && usableZip(address.postalCode) && (
+              <div className="pay__postage" aria-live="polite">
+                {quote.status === 'loading' && <p className="pay__hint">Pricing postage…</p>}
+                {options.length > 0 && (
+                  <fieldset className="postage">
+                    <legend className="pay__label pay__label--stacked">Postage</legend>
+                    {options.map((option) => (
+                      <label
+                        key={option.service}
+                        className={option === chosen ? 'postage__opt is-on' : 'postage__opt'}
+                      >
+                        <input
+                          type="radio"
+                          name="postage"
+                          checked={option === chosen}
+                          onChange={() => setChosenService(option.service)}
+                        />
+                        <span className="postage__name">{option.label}</span>
+                        <span className="postage__days">{option.days}</span>
+                        <span className="postage__sum">{money(option.cents)}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                {(quote.status === 'error' || (quote.status === 'ready' && options.length === 0)) && (
+                  <p className="pay__hint">{money(flatCents)} delivery.</p>
+                )}
               </div>
             )}
           </div>
@@ -464,7 +521,7 @@ export function CardPayment({
             */}
             <WalletButtons
               wallets={wallets}
-              disabled={!named || !looksLikeEmail(email) || status !== 'ready'}
+              disabled={!named || !looksLikeEmail(email) || status !== 'ready' || quoting}
               disabledHint="Add your name and email above first — the order is put aside under that name."
               onPay={payWithWallet}
             />

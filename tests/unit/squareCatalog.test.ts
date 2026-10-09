@@ -119,6 +119,29 @@ describe('mapSquareCatalog', () => {
     expect(mapSquareCatalog(CATALOG, '  BOOKSTORE  ').products).toHaveLength(2);
   });
 
+  it('reads the SKU off the first variation, and null when there is none', () => {
+    const withSku = [
+      CATALOG[0],
+      {
+        type: 'ITEM',
+        id: 'ITEM_SKU',
+        item_data: {
+          name: 'Be Prepared',
+          categories: [{ id: 'CAT_BOOK' }],
+          variations: [
+            {
+              id: 'V1',
+              // Square keeps whatever was typed, padding included.
+              item_variation_data: { sku: ' SPSM-0007 ', price_money: { amount: 800, currency: 'USD' } },
+            },
+          ],
+        },
+      },
+    ];
+    expect(mapSquareCatalog(withSku, 'Bookstore').products[0]?.sku).toBe('SPSM-0007');
+    expect(mapSquareCatalog(CATALOG, 'Bookstore').products.every((p) => p.sku === null)).toBe(true);
+  });
+
   it('reads the older category_id shape as well as categories[]', () => {
     const legacy = [
       CATALOG[0],

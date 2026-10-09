@@ -5,6 +5,7 @@ import {
   decodeFirestoreFields,
   parseBookstoreConfig,
   type BookstoreSection,
+  type BookstoreShipping,
   type Product,
 } from '@spsm/shared';
 import type { ShopProduct } from './shopData';
@@ -64,6 +65,8 @@ export interface LiveCatalog {
    * number against a card statement that says another.
    */
   deliveryCents: number | null;
+  /** Live-postage settings, read from the same document for the same reason. */
+  shipping: BookstoreShipping | null;
 }
 
 interface RestDocument {
@@ -171,6 +174,9 @@ function toShopProduct(
     bakedFrom: baked?.bakedFrom ?? null,
     stockCount: product.stockCount ?? null,
     section: product.section ?? null,
+    sku: product.sku ?? null,
+    weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
+    mediaMail: product.mediaMail === true,
   };
 }
 
@@ -190,6 +196,7 @@ export function useLiveCatalog(
     products: null,
     sections: null,
     deliveryCents: null,
+    shipping: null,
   });
 
   /*
@@ -263,6 +270,7 @@ export function useLiveCatalog(
          */
         let sections: BookstoreSection[] = [];
         let deliveryCents: number | null = null;
+        let shipping: BookstoreShipping | null = null;
         if (configRes.ok) {
           const doc = (await configRes.json()) as RestDocument;
           /*
@@ -274,13 +282,14 @@ export function useLiveCatalog(
           const config = parseBookstoreConfig(decodeFirestoreFields(doc.fields));
           sections = config.sections;
           deliveryCents = config.deliveryCents;
+          shipping = config.shipping;
         }
 
         // An empty result is treated as a failed read, not as an emptied shop.
         // A transient permission or network fault must never blank the catalog.
         if (products.length === 0) return;
 
-        setLive({ products, sections, deliveryCents });
+        setLive({ products, sections, deliveryCents, shipping });
       } catch {
         /* Baked copy stays. See the header. */
       }

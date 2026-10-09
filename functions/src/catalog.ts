@@ -4,6 +4,7 @@ import { defineString } from 'firebase-functions/params';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
+  MAX_ITEM_WEIGHT_OZ,
   slugify,
   trackInventoryPatch,
   tracksInventory,
@@ -15,6 +16,7 @@ import {
   SQUARE_SANDBOX_ACCESS_TOKEN,
   squareClient,
 } from './square.js';
+import { reserveSkus } from './sku.js';
 
 /**
  * Adding a book to the shop, and putting a photograph on it.
@@ -156,6 +158,11 @@ export const squareCreateProduct = onRequest(
       typeof body['description'] === 'string' ? body['description'].trim().slice(0, MAX_DESCRIPTION) : '';
     const priceCents = Number(body['priceCents']);
     const section = typeof body['section'] === 'string' ? body['section'].trim().slice(0, 40) : '';
+    // The parish's shipping fields, set on the same form. Out of range is
+    // "not weighed" rather than an error: a book can be weighed later.
+    const weight = Number(body['weightOz']);
+    const weightOz = Number.isFinite(weight) && weight > 0 && weight <= MAX_ITEM_WEIGHT_OZ ? weight : null;
+    const mediaMail = body['mediaMail'] === true;
 
     if (!name) {
       res.status(400).json({ error: 'A name is needed.' });
@@ -199,6 +206,19 @@ export const squareCreateProduct = onRequest(
     }
 
     try {
+      /*
+       * The SKU, reserved before Square is asked so it goes in with the item.
+       * The mirror's SKUs stand in for the catalog's here — every bookstore
+       * product is mirrored, and a full catalog read per create is not worth it.
+       */
+      const db = getFirestore();
+      const mirrored = await db.collection(COLLECTIONS.products).select('sku').get();
+      const [sku] = await reserveSkus(
+        db,
+        1,
+        mirrored.docs.map((doc) => doc.get('sku') as string | undefined),
+      );
+
       const response = await fetch(`${square.host}/v2/catalog/object`, {
         method: 'POST',
         headers: square.headers,
@@ -236,6 +256,7 @@ export const squareCreateProduct = onRequest(
                     name: 'Regular',
                     pricing_type: 'FIXED_PRICING',
                     price_money: { amount: priceCents, currency: 'USD' },
+                    sku,
                   },
                 },
               ],
@@ -288,7 +309,6 @@ export const squareCreateProduct = onRequest(
        * join that eventually disagrees.
        */
       const slug = slugify(name);
-      const db = getFirestore();
       await db
         .collection(COLLECTIONS.products)
         .doc(slug)
@@ -303,9 +323,12 @@ export const squareCreateProduct = onRequest(
             squareVariationId: variationId,
             stockCount: null,
             category: wanted,
-            // The parish's own field, and the reason the sync now uses a field
+            sku: sku ?? null,
+            // The parish's own fields, and the reason the sync now uses a field
             // mask — see scripts/sync-catalog.mjs.
             ...(section ? { section } : {}),
+            weightOz,
+            mediaMail,
             published: true,
             publishAt: null,
             syncedAt: FieldValue.serverTimestamp(),
@@ -316,7 +339,7 @@ export const squareCreateProduct = onRequest(
           { merge: true },
         );
 
-      res.status(200).json({ ok: true, slug, squareId, variationId });
+      res.status(200).json({ ok: true, slug, squareId, variationId, sku: sku ?? null });
     } catch (error) {
       console.error('[catalog] unexpected failure creating a product', error);
       res.status(500).json({ error: 'The product could not be created.' });

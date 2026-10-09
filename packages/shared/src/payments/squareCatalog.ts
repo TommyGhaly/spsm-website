@@ -42,6 +42,11 @@ export interface MappedProduct {
   squareVariationId: string | null;
   stockCount: number | null;
   category: string | null;
+  /**
+   * The first variation's SKU, as Square holds it. Null until one is assigned —
+   * see `sku.ts` for who assigns them and why only one place does.
+   */
+  sku: string | null;
 }
 
 /** Why an item in the requested category did not become a product. */
@@ -171,6 +176,7 @@ export function mapSquareCatalog(
        */
       stockCount: stockOf(variation, counts),
       category,
+      sku: variation?.sku ?? null,
     });
   }
 
@@ -228,7 +234,7 @@ function itemCategoryId(data: Record<string, unknown> | null): string | null {
 
 function firstVariation(
   data: Record<string, unknown> | null,
-): { id: string | null; price: unknown; tracked: boolean } | null {
+): { id: string | null; price: unknown; tracked: boolean; sku: string | null } | null {
   const list = data?.['variations'];
   if (!Array.isArray(list) || list.length === 0) return null;
 
@@ -238,6 +244,7 @@ function firstVariation(
     id: str(variation?.['id']),
     price: variationData?.['price_money'],
     tracked: tracksInventory(variationData),
+    sku: str(variationData?.['sku']),
   };
 }
 

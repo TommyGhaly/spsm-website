@@ -72,6 +72,12 @@ export const BUDGETS = {
   /** Checkout. Every call creates a Square order and costs a Square API call. */
   squareCheckout: 12,
   /**
+   * Postage quotes. The page asks once per ZIP typed and again when the basket
+   * changes, so a shopper fiddling with quantities makes several in a minute.
+   * Each one costs up to three USPS calls, which is what bounds it.
+   */
+  shippingQuote: 30,
+  /**
    * Square's own deliveries. High because Square redelivers in bursts after any
    * outage and being throttled would make it redeliver harder; the point here
    * is only to bound what an unsigned flood can spend on HMAC verification.
@@ -197,6 +203,7 @@ export const CAPS = {
   formUpload: 5,
   /** Must not shed during a rush; a refused checkout is a lost sale. */
   squareCheckout: 20,
+  shippingQuote: 10,
   squareWebhook: 10,
   /** Signed-in editing. A handful of volunteers, never a crowd. */
   bookstoreEdit: 10,

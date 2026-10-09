@@ -15,8 +15,15 @@ import {
   MAX_SECTIONS,
   MAX_SECTION_LABEL,
   UNSORTED_LABEL,
+  formatWeight,
+  parseWeight,
   sectionId,
+  MAX_HANDLING_CENTS,
+  SERVICE_LABELS,
+  SHIPPING_SERVICES,
   type BookstoreSection,
+  type BookstoreShipping,
+  type ShippingService,
   type DocOf,
   type Product,
 } from '@spsm/shared';
@@ -237,6 +244,8 @@ export function ProductSettings({
   const pending = usePendingEdit(product.slug, {
     stockCount: product.stockCount ?? null,
     section: product.section ?? null,
+    weightOz: product.weightOz,
+    mediaMail: product.mediaMail,
   });
 
   useEffect(() => setConfirming(false), [product.slug]);
@@ -251,8 +260,9 @@ export function ProductSettings({
       )}
 
       <p className="bkpanel__note">
-        Stock, category and pictures are saved with the bar at the foot of the
-        shop. The title, price and description go straight to Square.
+        Stock, category, shipping and pictures are saved with the bar at the
+        foot of the shop. The title, price and description go straight to
+        Square.
       </p>
 
       {/* No block heading: every field inside carries its own label, and a
@@ -311,6 +321,19 @@ export function ProductSettings({
         </div>
       )}
 
+      <div className="bkpanel__block">
+        <h4 className="bkpanel__label">Shipping</h4>
+        <ShippingFields
+          key={product.slug}
+          name={product.name}
+          weightOz={pending.weightOz}
+          mediaMail={pending.mediaMail}
+          busy={busy}
+          onChange={pending.setShipping}
+        />
+        {product.sku && <p className="bkpanel__aside">SKU {product.sku}</p>}
+      </div>
+
       <div className="bkpanel__block bkpanel__block--last">
         <RemoveProduct
           product={product}
@@ -323,6 +346,74 @@ export function ProductSettings({
           onDone={onRemoved}
         />
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shipping: weight and Media Mail                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The two facts live postage needs about a book, for the settings panel and the
+ * add form alike.
+ *
+ * The weight box keeps its own text, because what somebody is halfway through
+ * typing — `1 lb` on the way to `1 lb 4 oz` — is not yet a weight, and pushing
+ * every keystroke through the parser would rewrite the box under their fingers.
+ * Only text that reads as a weight, or an emptied box, is passed up.
+ */
+export function ShippingFields({
+  name,
+  weightOz,
+  mediaMail,
+  busy,
+  onChange,
+}: {
+  name: string;
+  weightOz: number | null;
+  mediaMail: boolean;
+  busy: boolean;
+  onChange: (next: { weightOz: number | null; mediaMail: boolean }) => void;
+}) {
+  const [text, setText] = useState(weightOz === null ? '' : String(weightOz));
+  const parsed = parseWeight(text);
+  const wrong = parsed === undefined;
+
+  return (
+    <div className="bkship">
+      <label className="bkship__weight">
+        <span className="visually-hidden">Shipping weight of {name}, in ounces</span>
+        <input
+          type="text"
+          className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+          inputMode="decimal"
+          placeholder="Weight, oz"
+          value={text}
+          disabled={busy}
+          onChange={(event) => {
+            setText(event.target.value);
+            const next = parseWeight(event.target.value);
+            if (next !== undefined) onChange({ weightOz: next, mediaMail });
+          }}
+        />
+      </label>
+      <label className="bkship__media">
+        <input
+          type="checkbox"
+          checked={mediaMail}
+          disabled={busy}
+          onChange={(event) => onChange({ weightOz, mediaMail: event.target.checked })}
+        />
+        Book or media (Media Mail)
+      </label>
+      <p className={wrong ? 'bkpanel__aside bkpanel__aside--wrong' : 'bkpanel__aside'}>
+        {wrong
+          ? 'Type ounces, like 12 or 1 lb 4 oz.'
+          : parsed === null
+            ? 'Not weighed — a delivery with this in it is charged the flat rate.'
+            : `${formatWeight(parsed)} a copy, before the box.`}
+      </p>
     </div>
   );
 }
@@ -1594,6 +1685,11 @@ function NewProduct({
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [section, setSection] = useState('');
+  const [shipping, setShipping] = useState<{ weightOz: number | null; mediaMail: boolean }>({
+    weightOz: null,
+    // Most of what the shop sells is books, so the box starts ticked.
+    mediaMail: true,
+  });
   const [busy, setBusy] = useState(false);
   /*
    * Pictures chosen for a book that does not exist yet.
@@ -1652,6 +1748,8 @@ function NewProduct({
         description: description.trim(),
         priceCents: cents,
         section: section || null,
+        weightOz: shipping.weightOz,
+        mediaMail: shipping.mediaMail,
       });
 
       /*
@@ -1728,6 +1826,13 @@ function NewProduct({
           ))}
         </select>
       )}
+      <ShippingFields
+        name={name.trim() || 'this book'}
+        weightOz={shipping.weightOz}
+        mediaMail={shipping.mediaMail}
+        busy={busy}
+        onChange={setShipping}
+      />
       {/*
         The pictures, on the add form.
         Same tiles as a saved card so the two read as one control, and the same
@@ -1877,12 +1982,181 @@ async function downscale(file: File, max = 1600): Promise<string> {
  * `config/bookstore` and are edited in the Firebase console.
  * ---------------------------------------------------------------------------
  */
+/**
+ * How delivered orders are priced, edited for the whole shop.
+ *
+ * ---------------------------------------------------------------------------
+ * Saved with its own button, not the bar. The bar holds per-book edits made in
+ * a run across the shelf; this is one decision about money, made once, and an
+ * explicit Save is the honest control for it — the same reasoning as a book's
+ * title and price.
+ *
+ * The weights that live postage needs are not here. They are per book, in each
+ * book's own Shipping block, and the warning below lists the ones still
+ * missing, because every delivery containing one of them falls back to the
+ * flat charge and nothing else on the page would say so.
+ * ---------------------------------------------------------------------------
+ */
+function ShippingSettings({
+  shipping,
+  onChanged,
+  onError,
+}: {
+  shipping: BookstoreShipping;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const { busy, saved, write } = useWriter(onChanged, onError);
+  const [draft, setDraft] = useState(shipping);
+  const [handling, setHandling] = useState((shipping.handlingCents / 100).toFixed(2));
+  // Re-seed when a save comes back, so the button goes quiet once it has landed.
+  useEffect(() => {
+    setDraft(shipping);
+    setHandling((shipping.handlingCents / 100).toFixed(2));
+  }, [shipping]);
+
+  const handlingCents = (() => {
+    const trimmed = handling.trim().replace(/^\$/, '');
+    if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
+    const value = Math.round(Number(trimmed) * 100);
+    return value <= MAX_HANDLING_CENTS ? value : null;
+  })();
+  const zipOk = /^\d{5}$/.test(draft.originZip);
+  const boxOk = (['lengthIn', 'widthIn', 'heightIn'] as const).every(
+    (key) => draft.box[key] > 0 && draft.box[key] <= 36,
+  ) && draft.box.tareOz >= 0 && draft.box.tareOz <= 80;
+  const next: BookstoreShipping = { ...draft, handlingCents: handlingCents ?? draft.handlingCents };
+  const changed = JSON.stringify(next) !== JSON.stringify(shipping);
+  const valid = handlingCents !== null && zipOk && boxOk;
+
+  const setBox = (key: keyof BookstoreShipping['box'], value: string) =>
+    setDraft((was) => ({ ...was, box: { ...was.box, [key]: Number(value) || 0 } }));
+  const toggleService = (service: ShippingService, on: boolean) =>
+    setDraft((was) => ({
+      ...was,
+      // Kept in the canonical order, which is the order the shopper sees.
+      services: SHIPPING_SERVICES.filter((one) => (one === service ? on : was.services.includes(one))),
+    }));
+
+  return (
+    <div className="bkshipcfg">
+      <label className="bkship__media">
+        <input
+          type="checkbox"
+          checked={draft.mode === 'usps'}
+          disabled={busy}
+          onChange={(event) => setDraft((was) => ({ ...was, mode: event.target.checked ? 'usps' : 'flat' }))}
+        />
+        Live USPS postage
+      </label>
+      <p className="bkpanel__aside">
+        {draft.mode === 'usps'
+          ? 'Buyers see USPS prices for their ZIP code, plus handling. A basket with an unweighed book pays the flat delivery charge.'
+          : 'Every delivery pays the flat delivery charge.'}
+      </p>
+
+      <fieldset className="bkshipcfg__grid" disabled={busy}>
+        <label>
+          <span>Posted from (ZIP)</span>
+          <input
+            className={zipOk ? 'bkrename__input' : 'bkrename__input is-wrong'}
+            inputMode="numeric"
+            maxLength={5}
+            value={draft.originZip}
+            onChange={(event) => setDraft((was) => ({ ...was, originZip: event.target.value.trim() }))}
+          />
+        </label>
+        <label>
+          <span>Handling, per order ($)</span>
+          <input
+            className={handlingCents === null ? 'bkrename__input is-wrong' : 'bkrename__input'}
+            inputMode="decimal"
+            value={handling}
+            onChange={(event) => setHandling(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>Box (in): L × W × H</span>
+          <span className="bkshipcfg__box">
+            {(['lengthIn', 'widthIn', 'heightIn'] as const).map((key) => (
+              <input
+                key={key}
+                className="bkrename__input"
+                inputMode="decimal"
+                aria-label={`Box ${key.replace('In', '')} in inches`}
+                value={draft.box[key] || ''}
+                onChange={(event) => setBox(key, event.target.value)}
+              />
+            ))}
+          </span>
+        </label>
+        <label>
+          <span>Empty box weight (oz)</span>
+          <input
+            className="bkrename__input"
+            inputMode="decimal"
+            value={draft.box.tareOz}
+            onChange={(event) => setBox('tareOz', event.target.value)}
+          />
+        </label>
+      </fieldset>
+
+      <fieldset className="bkshipcfg__services" disabled={busy}>
+        <legend className="visually-hidden">Services offered</legend>
+        {SHIPPING_SERVICES.map((service) => (
+          <label key={service} className="bkship__media">
+            <input
+              type="checkbox"
+              checked={draft.services.includes(service)}
+              onChange={(event) => toggleService(service, event.target.checked)}
+            />
+            {SERVICE_LABELS[service]}
+            {service === 'MEDIA_MAIL' && ' (all-book orders only)'}
+          </label>
+        ))}
+      </fieldset>
+
+      <div className="bkshipcfg__go">
+        <button
+          type="button"
+          className="button button--small"
+          disabled={busy || !changed || !valid}
+          onClick={() => {
+            const save = async () => {
+              const { writeShipping } = await import('./adminData');
+              await writeShipping(next);
+            };
+            void write(save);
+          }}
+        >
+          Save shipping
+        </button>
+        <SaveState busy={busy} saved={saved} dirty={changed} />
+      </div>
+    </div>
+  );
+}
+
+/** The books that would send a delivery to the flat charge. */
+function UnweighedWarning({ products }: { products: readonly ShopProduct[] }) {
+  const missing = products.filter((product) => product.weightOz === null);
+  if (missing.length === 0) return null;
+  return (
+    <p className="bkpanel__aside bkpanel__aside--wrong">
+      Not weighed yet, so a delivery with {missing.length === 1 ? 'it' : 'any of them'} in it pays
+      the flat charge: {missing.map((product) => product.name).join(', ')}.
+    </p>
+  );
+}
+
 export function ShopInspector({
   editing,
   product,
   doc,
   sections,
   groups,
+  shipping,
+  products,
   onDone,
   onSelect,
   onChanged,
@@ -1896,6 +2170,10 @@ export function ShopInspector({
   sections: BookstoreSection[];
   /** How many books sit under each category, for the shop-wide view. */
   groups: { id: string; label: string; count: number }[];
+  /** The live-postage settings, as `config/bookstore` holds them. */
+  shipping: BookstoreShipping;
+  /** Every book on the shelf, to say which are still unweighed. */
+  products: readonly ShopProduct[];
   onDone: () => void;
   onSelect: (slug: string | null) => void;
   onChanged: () => void;
@@ -1965,6 +2243,12 @@ export function ShopInspector({
             <p className="bkpanel__aside">
               Rename, reorder and add categories on the pills above the shelf.
             </p>
+          </div>
+
+          <div className="bkpanel__block">
+            <h4 className="bkpanel__label">Shipping</h4>
+            <ShippingSettings shipping={shipping} onChanged={onChanged} onError={onError} />
+            {shipping.mode === 'usps' && <UnweighedWarning products={products} />}
           </div>
 
           {children && (

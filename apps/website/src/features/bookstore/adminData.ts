@@ -38,6 +38,7 @@ import {
   COLLECTIONS,
   parseSections,
   type BookstoreSection,
+  type BookstoreShipping,
   type BookstoreStats,
   type DocOf,
   type FulfillmentStatus,
@@ -208,6 +209,40 @@ export async function setProductSection(slug: string, section: string | null): P
 }
 
 /**
+ * A product's shipping weight and Media Mail eligibility.
+ *
+ * The parish's fields, like `section`, and written the same way. They price
+ * only delivery, and only through the quote Function — so a wrong weight costs
+ * a few cents of postage, never the price of a book.
+ */
+export async function setProductShipping(
+  slug: string,
+  shipping: { weightOz: number | null; mediaMail: boolean },
+): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await updateDoc(doc(db(), COLLECTIONS.products, slug), {
+    weightOz: shipping.weightOz,
+    mediaMail: shipping.mediaMail,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/** Save the live-postage settings. Same `merge` reasoning as `writeSections`. */
+export async function writeShipping(shipping: BookstoreShipping): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await setDoc(
+    doc(db(), COLLECTIONS.config, CONFIG_DOC_BOOKSTORE),
+    { shipping, updatedAt: serverTimestamp(), updatedBy: uid },
+    { merge: true },
+  );
+}
+
+/**
  * Save the shop's divisions.
  *
  * `setDoc(..., { merge: true })` because the document may not exist — nothing
@@ -282,6 +317,8 @@ export interface NewProduct {
   description: string;
   priceCents: number;
   section: string | null;
+  weightOz: number | null;
+  mediaMail: boolean;
 }
 
 /**

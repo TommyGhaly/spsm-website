@@ -317,7 +317,8 @@ service cloud.firestore {
      * editor, and was removed with that editor because an open write path kept
      * for a caller that no longer exists is pure attack surface. It is back for
      * a caller that does exist: the section editor in the admin drawer. The
-     * difference is the key set — `sections` only. The delivery charge, the
+     * difference is the key set — `sections`, and since live postage
+     * `shipping`, whose shape is checked by `isShippingSettings`. The delivery charge, the
      * order email and the two pieces of shop copy are **not** writable here and
      * remain admin-only through the rule above, because nothing in a browser
      * writes them.
@@ -461,14 +462,16 @@ service cloud.firestore {
        * key set instead, which is the same guarantee without the dereference.
        */
       allow create: if hasScreen('bookstore')
-        && request.resource.data.keys().hasOnly(['sections', 'updatedAt', 'updatedBy'])
-        && isSectionList(request.resource.data.sections)
+        && request.resource.data.keys().hasOnly(['sections', 'shipping', 'updatedAt', 'updatedBy'])
+        && (!('sections' in request.resource.data) || isSectionList(request.resource.data.sections))
+        && (!('shipping' in request.resource.data) || isShippingSettings(request.resource.data.shipping))
         && request.resource.data.updatedBy == request.auth.uid;
 
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['sections', 'updatedAt', 'updatedBy'])
-        && isSectionList(request.resource.data.sections)
+             .hasOnly(['sections', 'shipping', 'updatedAt', 'updatedBy'])
+        && (!('sections' in request.resource.data) || isSectionList(request.resource.data.sections))
+        && (!('shipping' in request.resource.data) || isShippingSettings(request.resource.data.shipping))
         && request.resource.data.updatedBy == request.auth.uid;
 
       // Never. The shop's divisions going missing wholesale is not an edit.
@@ -477,6 +480,29 @@ service cloud.firestore {
 
     function isSectionList(sections) {
       return sections is list && sections.size() <= 12;
+    }
+
+    /*
+     * Live postage settings. Shape and bounds only — `parseShipping` falls any
+     * out-of-range field back to its default, so this is the guard against a
+     * document that is the wrong *kind* of thing, and against a handling fee
+     * with a stray zero. Matches MAX_HANDLING_CENTS and MAX_BOX_* in
+     * packages/shared/src/schema/config.ts.
+     */
+    function isShippingSettings(shipping) {
+      return shipping is map
+        && shipping.keys().hasOnly(['mode', 'originZip', 'handlingCents', 'box', 'services'])
+        && shipping.mode in ['usps', 'flat']
+        && shipping.originZip is string && shipping.originZip.matches('[0-9]{5}')
+        && shipping.handlingCents is int && shipping.handlingCents >= 0 && shipping.handlingCents <= 2000
+        && shipping.box is map
+        && shipping.box.keys().hasOnly(['lengthIn', 'widthIn', 'heightIn', 'tareOz'])
+        && shipping.box.lengthIn is number && shipping.box.lengthIn > 0 && shipping.box.lengthIn <= 36
+        && shipping.box.widthIn is number && shipping.box.widthIn > 0 && shipping.box.widthIn <= 36
+        && shipping.box.heightIn is number && shipping.box.heightIn > 0 && shipping.box.heightIn <= 36
+        && shipping.box.tareOz is number && shipping.box.tareOz >= 0 && shipping.box.tareOz <= 80
+        && shipping.services is list && shipping.services.size() <= 3
+        && shipping.services.hasOnly(['USPS_GROUND_ADVANTAGE', 'PRIORITY_MAIL', 'MEDIA_MAIL']);
     }
 
     /*
@@ -758,8 +784,8 @@ service cloud.firestore {
        * catalogue.
        *
        * So the broad line went instead. Nothing needs it. The only browser
-       * write to this collection is `setProductSection` in
-       * features/bookstore/adminData.ts, and everything else — the Square
+       * writes to this collection are `setProductSection` and
+       * `setProductShipping` in features/bookstore/adminData.ts, and everything else — the Square
        * mirror, the 15-minute refresh — runs through the Admin SDK, which
        * bypasses this file entirely. Square owns the price, the name, the stock
        * and whether a book is listed at all; `hasOnly` admits three keys and
@@ -771,12 +797,27 @@ service cloud.firestore {
        * That path is `squareCreateProduct`, which re-checks the grant
        * server-side.
        */
+      /*
+       * `weightOz` and `mediaMail` joined `section` with live postage: like it,
+       * they are the parish's (Square holds no weights) and only price
+       * *delivery*, which the checkout Function quotes from them server-side.
+       * A wrong weight costs the parish a few cents of postage either way; it
+       * cannot change what a book costs. Bounded at USPS's 70 lb limit.
+       */
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['section', 'updatedAt', 'updatedBy'])
-        && (request.resource.data.section == null
+             .hasOnly(['section', 'weightOz', 'mediaMail', 'updatedAt', 'updatedBy'])
+        && (!('section' in request.resource.data)
+            || request.resource.data.section == null
             || (request.resource.data.section is string
                 && request.resource.data.section.size() <= 40))
+        && (!('weightOz' in request.resource.data)
+            || request.resource.data.weightOz == null
+            || (request.resource.data.weightOz is number
+                && request.resource.data.weightOz > 0
+                && request.resource.data.weightOz <= 1120))
+        && (!('mediaMail' in request.resource.data)
+            || request.resource.data.mediaMail is bool)
         && request.resource.data.updatedBy == request.auth.uid;
     }
 

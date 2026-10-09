@@ -188,3 +188,27 @@ describe('holding pictures', () => {
     });
   });
 });
+
+describe('holding a shipping edit', () => {
+  const weighed: ActualValues = { stockCount: 4, section: null, weightOz: 12, mediaMail: true };
+
+  it('keeps a held weight when the count returns to where it started', () => {
+    // The same failure the category once had: a check that forgot a field.
+    const held = { 'holy-bible': { weightOz: 14, mediaMail: true } };
+    const back = press(1, -1, weighed, press(1, 1, weighed, held));
+    expect(back['holy-bible']).toEqual({ weightOz: 14, mediaMail: true, stockCount: 4 });
+  });
+
+  it('drops the book once its weight is back to what is saved', () => {
+    const held = { 'holy-bible': { weightOz: 14, mediaMail: true } };
+    expect(settle(held, 'holy-bible', { weightOz: 12, mediaMail: true }, weighed)).toEqual({});
+  });
+
+  it('reads a book with no shipping fields as unweighed and not media', () => {
+    // Callers that never show the shipping block pass only stock and section.
+    expect(settle({}, 'holy-bible', { weightOz: null, mediaMail: false }, BOOK)).toEqual({});
+    expect(settle({}, 'holy-bible', { mediaMail: true }, BOOK)).toEqual({
+      'holy-bible': { mediaMail: true },
+    });
+  });
+});

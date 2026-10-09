@@ -20,7 +20,8 @@ initializeApp();
 export { enforceTenantOnCreate, mirrorGrantsToClaims } from './auth.js';
 
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
-export { squareCheckout } from './checkout.js';
+// Live USPS postage for delivered orders, signed so checkout can trust it.
+export { squareCheckout, shippingQuote } from './checkout.js';
 
 // A buyer finding their own orders with no account, because on this site they
 // cannot have one. The credential is a receipt: order number plus the email it
