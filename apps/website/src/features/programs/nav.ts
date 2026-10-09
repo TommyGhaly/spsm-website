@@ -1,5 +1,5 @@
-import { SUMMARY_COVERS } from '@spsm/shared';
-import { getProgramMedia, getPrograms } from './data';
+import { SUMMARY_COVERS, hasRenderableFile, spreadAcross } from '@spsm/shared';
+import { COVER_WINDOW, getProgramMedia, getPrograms } from './data';
 import { programHref } from './route';
 
 /**
@@ -32,8 +32,8 @@ export type ProgramNavChild = {
   href: string;
   label: string;
   /**
-   * Up to `SUMMARY_COVERS` photographs for the tile to cycle through, in
-   * gallery order. Empty for a program with no approved pictures yet.
+   * Up to `SUMMARY_COVERS` photographs for the tile to cycle through, spread
+   * across the ministry. Empty for a program with no approved pictures yet.
    *
    * Paths rather than URLs: the bucket host differs between production and
    * the emulators, and only the browser knows which it is talking to. `media.ts`
@@ -60,9 +60,20 @@ export async function programNavChildren(): Promise<ProgramNavChild[]> {
    */
   const covers = await Promise.all(
     programs.map(async (program) =>
-      (await getProgramMedia(program.id, SUMMARY_COVERS))
-        .map((media) => media.renditionPath)
-        .filter((path): path is string => path !== null),
+      /*
+       * A wider window than the tile shows, spread through, so the menu's
+       * handful is a cross-section of the ministry rather than its first five
+       * pictures — see `gallery/sample.ts`. Once per build, so the extra reads
+       * are paid by the deploy and not by visitors. `NavTile` shuffles them in
+       * the browser so it does not open on the same one every time.
+       */
+      spreadAcross(
+        (await getProgramMedia(program.id, COVER_WINDOW))
+          .filter((media) => media.kind === 'photo' && hasRenderableFile(media))
+          .map((media) => media.renditionPath)
+          .filter((path): path is string => path !== null),
+        SUMMARY_COVERS,
+      ),
     ),
   );
 

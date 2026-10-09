@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
 import { galleryPathUrl } from '@/features/programs/media';
+import { useShuffled } from '@/lib/useShuffled';
 
 /**
  * The main navigation, in two forms.
@@ -471,7 +472,17 @@ function NavTile({
   const [loaded, setLoaded] = useState<readonly number[]>([]);
 
   const paths = child.coverPaths ?? [];
-  const showing = loaded.length > 0 ? loaded[shot % loaded.length] : -1;
+  /*
+   * The order the tile walks them in, shuffled once per visit so it does not
+   * open on the same picture every time — see `useShuffled`. Indices rather
+   * than the paths themselves, so the stacked images and the `loaded` set keep
+   * their positions and only the walk changes.
+   */
+  const walk = useShuffled(
+    paths.map((_, index) => index),
+    String,
+  ).filter((index) => loaded.includes(index));
+  const showing = walk.length > 0 ? walk[shot % walk.length]! : -1;
 
   const markLoaded = (index: number) =>
     setLoaded((was) => (was.includes(index) ? was : [...was, index].sort((a, b) => a - b)));

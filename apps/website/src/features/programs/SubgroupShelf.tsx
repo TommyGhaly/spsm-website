@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SUMMARY_COVERS, type DocOf, type GalleryMedia, type ProgramEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
+import { useShuffled } from '@/lib/useShuffled';
 import { galleryPathUrl } from './media';
 
 /**
@@ -679,7 +680,8 @@ function Tile({
   shot: number;
   readOnly: boolean;
 }) {
-  const shots = item.coverPaths ?? (item.coverPath ? [item.coverPath] : []);
+  // Shuffled once per visit so the tile does not always open on the same one.
+  const shots = useShuffled(item.coverPaths ?? (item.coverPath ? [item.coverPath] : []), String);
   const current = shots.length > 0 ? shot % shots.length : 0;
 
   const className = `subshelf__tile${item.selected ? ' is-selected' : ''}${

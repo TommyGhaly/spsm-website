@@ -32,6 +32,7 @@ export * from './schema/programs.js';
 export * from './schema/sectionLayout.js';
 export * from './gallery/layout.js';
 export * from './gallery/tree.js';
+export * from './gallery/sample.js';
 export * from './gallery/urls.js';
 export * from './gallery/submissionLimits.js';
 export * from './schema/servants.js';

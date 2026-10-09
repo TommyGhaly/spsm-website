@@ -14,6 +14,7 @@ import {
   buildGalleryTree,
   hasRenderableFile,
   resolveTrail,
+  spreadAcross,
   subtreeIds,
   type DocOf,
   type Event,
@@ -532,7 +533,14 @@ export function programTileMedia(
   const ready = media.filter(hasRenderableFile);
   const showcase = ready.filter((item) => item.placement.homepage);
   const rest = ready.filter((item) => !item.placement.homepage && item.placement.onPage);
-  return [...showcase, ...rest].slice(0, max);
+  /*
+   * Spread through the set rather than its first few, so the tile is an
+   * overview of the ministry and not its opening morning — see
+   * `gallery/sample.ts`. Showcase pictures still come first in priority: they
+   * fill the tile when there are enough of them, and the rest top it up.
+   */
+  const fromShowcase = spreadAcross(showcase, max);
+  return [...fromShowcase, ...spreadAcross(rest, max - fromShowcase.length)];
 }
 
 /**
@@ -570,9 +578,10 @@ export function programFallbackShot(
  * How many items the rail reads per program to fill an uncurated tile.
  *
  * More than one, because the first may be mid-transcode — but nowhere near the
- * archive, because this runs once per program on the section's front page. Twelve
- * is enough to get past a batch that is still processing and more than the five a
- * tile cycles.
+ * archive, because this runs once per program on the section's front page.
+ * Forty-eight, so the tile's handful is spread across a real stretch of the
+ * ministry (`spreadAcross`) instead of being its first twelve — the reads are
+ * small documents, and only the pictures the tile picks are ever downloaded.
  *
  * It used to need slack for a second reason as well: an administrator's chosen
  * cover was not necessarily the earliest, so the window had to be wide enough to
@@ -580,4 +589,4 @@ export function programFallbackShot(
  * ministry that *is* curated no longer uses this window at all; it gets the same
  * read its own page does, because a featured id can point anywhere under it.
  */
-export const COVER_WINDOW = 12;
+export const COVER_WINDOW = 48;

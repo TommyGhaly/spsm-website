@@ -42,6 +42,7 @@ import { BackLink } from '@/components/BackLink';
 import { Icon } from '@/components/Icon';
 import { Grow, Plain } from '@/components/Inline';
 import { formatDateSpan, formatEventWhen } from '@/lib/dates';
+import { useShuffled } from '@/lib/useShuffled';
 import {
   getGalleryLevel,
   getLinkedCalendarEvent,
@@ -3293,7 +3294,8 @@ function LevelCard({
    * twelve identically named weeks apart, which is as true of somebody filing
    * photographs into them as of somebody looking at them.
    */
-  const shots = clip ? [] : shelfCovers(summary?.covers);
+  // Shuffled once per visit so the card does not always open on the same one.
+  const shots = useShuffled(clip ? [] : shelfCovers(summary?.covers), String);
   const shot = useCycle(shots.length);
   const when = formatDateSpan(node.startAt, node.endAt, node.timeZone);
   const photos = summary?.photos ?? 0;

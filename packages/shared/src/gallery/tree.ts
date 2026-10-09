@@ -34,6 +34,7 @@
  */
 import type { Timestamped } from '../schema/common.js';
 import { toDate } from '../schema/common.js';
+import { spreadAcross } from './sample.js';
 
 /**
  * The least a node has to be for anything here to work.
@@ -688,7 +689,7 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
 export interface NodeSummary<M extends SummaryMedia> {
   cover: M | null;
   /**
-   * A handful from the same subtree, `cover` first, for a tile that cycles.
+   * A handful spread across the same subtree, for a tile that cycles.
    *
    * The side menu on a gallery page shows its levels the way `/events` shows the
    * ministries — a photograph with the name over it, cross-fading to the next
@@ -714,14 +715,14 @@ export interface NodeSummary<M extends SummaryMedia> {
  * a cut — so the count is a page-weight decision, not a taste one. A level with
  * fewer cycles between however many it has.
  */
-export const SUMMARY_COVERS = 5;
+export const SUMMARY_COVERS = 8;
 
 /**
  * Summarise every child of a level, for the cards on its page.
  *
  * The cover is the first photograph in the child's subtree that is cleared for a
- * page and has a file, and `covers` is that one followed by the rest — a card
- * cycles, so "the cover" is only which lap it starts on.
+ * page and has a file, and `covers` is a spread of the whole subtree's — a card
+ * cycles, and opens on a random one of them.
  *
  * **Nothing is chosen here any more.** `coverMediaId` used to win over the
  * automatic pick, with a chooser in the panel for it at Tommy's direction
@@ -760,23 +761,20 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
       null;
 
     /*
-     * The cycle's pictures: the cover first, then the rest of the subtree's
-     * page-cleared photographs in order.
+     * The cycle's pictures, spread across the whole subtree rather than its
+     * first few, so a week's card shows the week and not its first hour — see
+     * `gallery/sample.ts`. Which one a tile *opens* on is decided in the
+     * browser by `useShuffled`, so `cover` (the single picture other cards
+     * draw) is no longer forced to the head of the cycle.
      *
      * Same `hasRenderableFile` guard as the cover above, and for the same
      * reason — a mid-transcode file in the cycle is a tile that blinks to blank
-     * once per lap. The cover is put at the head rather than deduplicated after,
-     * so the one picture the cards elsewhere on the page draw is also the one
-     * the cycle opens on.
+     * once per lap.
      */
-    const rest = mine.filter(
-      (item) =>
-        item.id !== cover?.id &&
-        item.kind === 'photo' &&
-        item.placement.onPage &&
-        hasRenderableFile(item),
+    const eligible = mine.filter(
+      (item) => item.kind === 'photo' && item.placement.onPage && hasRenderableFile(item),
     );
-    const covers = (cover ? [cover, ...rest] : rest).slice(0, SUMMARY_COVERS);
+    const covers = spreadAcross(eligible, SUMMARY_COVERS);
 
     summaries.set(child.id, {
       cover,
