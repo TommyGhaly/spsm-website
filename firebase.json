@@ -75,6 +75,14 @@
         "function": "squareArchiveProduct"
       },
       {
+        "source": "/api/square/category",
+        "function": "squareCategory"
+      },
+      {
+        "source": "/api/square/product-categories",
+        "function": "squareProductCategories"
+      },
+      {
         "source": "/api/square/catalog-refresh",
         "function": "refreshSquareCatalog"
       },

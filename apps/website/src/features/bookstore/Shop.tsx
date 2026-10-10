@@ -15,6 +15,7 @@ import { useBookstoreAdmin } from "./useBookstoreAdmin";
 import { useLiveCatalog } from "./useLiveCatalog";
 import { useCatalogDocs } from "./useCatalogDocs";
 import {
+  childSections,
   groupProducts,
   salesTaxCents,
   taxLabel,
@@ -429,9 +430,10 @@ export function Shop({
    * unfiled, because a "Everything else (0)" pill describes nothing.
    * ---------------------------------------------------------------------------
    */
+  const countOf = useMemo(() => new Map(pills.map((group) => [group.id, group.items.length])), [pills]);
   const rowPills = useMemo(() => {
-    const countOf = new Map(pills.map((group) => [group.id, group.items.length]));
-    const row = sections.map((section) => ({
+    // The top level only; a chosen category's subcategories get their own row.
+    const row = childSections(sections, null).map((section) => ({
       id: section.id as string | null,
       label: section.label,
       count: countOf.get(section.id) ?? 0,
@@ -442,10 +444,34 @@ export function Shop({
       row.push({ id: null, label: UNSORTED_LABEL, count: unfiled.items.length });
     }
     return row;
-  }, [pills, sections]);
+  }, [pills, sections, countOf]);
 
   /** Which pill is chosen. `undefined` is "All", which is not a section id. */
   const [pill, setPill] = useState<string | null | undefined>(undefined);
+
+  /*
+   * The second row: Square nests categories, so choosing one that has
+   * subcategories opens a row of them beneath ("Books" → "Arabic books",
+   * "English books"). Choosing a subcategory keeps its siblings showing, so
+   * moving between them is one press. `topOf` is which top-level pill stays lit.
+   */
+  const parentOf = (id: string) => sections.find((one) => one.id === id)?.parentId ?? null;
+  const topOf = (id: string): string => {
+    let at = id;
+    for (let hops = 0; parentOf(at) && hops < 16; hops += 1) at = parentOf(at)!;
+    return at;
+  };
+  const subParent =
+    typeof pill === 'string'
+      ? childSections(sections, pill).length > 0
+        ? pill
+        : parentOf(pill)
+      : null;
+  const subPills = subParent
+    ? childSections(sections, subParent)
+        .map((section) => ({ id: section.id, label: section.label, count: countOf.get(section.id) ?? 0 }))
+        .filter((one) => one.count > 0)
+    : [];
 
   /*
    * A pill that stops existing — its category deleted, or its last product
@@ -605,6 +631,20 @@ export function Shop({
             onChanged={refresh}
             onError={setEditError}
           />
+          {subParent && (
+            <div className="shop-filters--sub">
+              <CategoryPills
+                parentId={subParent}
+                groups={pills}
+                sections={sections}
+                total={products.length}
+                active={pill}
+                onPick={setPill}
+                onChanged={refresh}
+                onError={setEditError}
+              />
+            </div>
+          )}
         </Suspense>
       ) : (
         rowPills.length > 0 && (
@@ -623,7 +663,11 @@ export function Shop({
               <button
                 key={group.id ?? '__unfiled'}
                 type="button"
-                className={pill === group.id ? 'shop-filter is-on' : 'shop-filter'}
+                className={
+                  pill === group.id || (typeof pill === 'string' && group.id === topOf(pill))
+                    ? 'shop-filter is-on'
+                    : 'shop-filter'
+                }
                 aria-pressed={pill === group.id}
                 onClick={() => setPill(group.id)}
               >
@@ -633,6 +677,32 @@ export function Shop({
             ))}
           </div>
         )
+      )}
+
+      {!editing && subParent && subPills.length > 0 && (
+        <div className="shop-filters shop-filters--sub" role="group" aria-label="Filter by subcategory">
+          <button
+            type="button"
+            className={pill === subParent ? 'shop-filter is-on' : 'shop-filter'}
+            aria-pressed={pill === subParent}
+            onClick={() => setPill(subParent)}
+          >
+            All
+            <span className="shop-filter__n">{countOf.get(subParent) ?? 0}</span>
+          </button>
+          {subPills.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              className={pill === group.id ? 'shop-filter is-on' : 'shop-filter'}
+              aria-pressed={pill === group.id}
+              onClick={() => setPill(group.id)}
+            >
+              {group.label}
+              <span className="shop-filter__n">{group.count}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {/*

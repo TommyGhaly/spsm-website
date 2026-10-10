@@ -20,7 +20,7 @@ import {
   ouncesToPounds,
   taxPercentage,
   parseWeight,
-  sectionId,
+  childSections,
   MAX_HANDLING_CENTS,
   SERVICE_DAYS,
   SERVICE_LABELS,
@@ -247,7 +247,7 @@ export function ProductSettings({
   const { busy, saved, write } = useWriter(onChanged, onError);
   const pending = usePendingEdit(product.slug, {
     stockCount: product.stockCount ?? null,
-    section: product.section ?? null,
+    categoryIds: product.categoryIds,
     weightOz: product.weightOz,
     mediaMail: product.mediaMail,
     taxable: product.taxable,
@@ -308,21 +308,14 @@ export function ProductSettings({
 
       {sections.length > 0 && (
         <div className="bkpanel__block">
-          <h4 className="bkpanel__label">Category</h4>
-          <select
-            className="bkedit__select bkpanel__select"
-            value={pending.section ?? ''}
-            aria-label={`Category for ${product.name}`}
-            disabled={busy}
-            onChange={(event) => pending.setSection(event.target.value || null)}
-          >
-            <option value="">— none —</option>
-            {sections.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.label}
-              </option>
-            ))}
-          </select>
+          <h4 className="bkpanel__label">Categories</h4>
+          <CategoryChecklist
+            name={product.name}
+            sections={sections}
+            chosen={pending.categoryIds}
+            busy={busy}
+            onChange={pending.setCategories}
+          />
         </div>
       )}
 
@@ -361,6 +354,69 @@ export function ProductSettings({
         />
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Categories — Square's subcategories of the Bookstore                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which categories an item is filed in, as a checklist of the whole tree.
+ *
+ * Checkboxes rather than the dropdown this replaced, because an item can be in
+ * several — Square allows it and the parish asked for it. Indented by depth so
+ * "Arabic books" reads as part of "Books". Ticking a subcategory does not tick
+ * its parent: the shop already shows a subcategory's items under the parent.
+ */
+function CategoryChecklist({
+  name,
+  sections,
+  chosen,
+  busy,
+  onChange,
+}: {
+  name: string;
+  sections: readonly BookstoreSection[];
+  chosen: readonly string[];
+  busy: boolean;
+  onChange: (next: readonly string[]) => void;
+}) {
+  // Tree order: each category followed by its own children, at any depth.
+  const rows: { section: BookstoreSection; depth: number }[] = [];
+  const walk = (parentId: string | null, depth: number) => {
+    for (const section of childSections(sections, parentId)) {
+      rows.push({ section, depth });
+      if (depth < 8) walk(section.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+
+  return (
+    <fieldset className="bkcatlist" disabled={busy}>
+      <legend className="visually-hidden">Categories for {name}</legend>
+      {rows.map(({ section, depth }) => (
+        <label key={section.id} className="bkship__media" style={{ paddingInlineStart: `${depth * 1.1}rem` }}>
+          <input
+            type="checkbox"
+            checked={chosen.includes(section.id)}
+            onChange={(event) =>
+              onChange(
+                event.target.checked
+                  ? [...chosen, section.id]
+                  : chosen.filter((id) => id !== section.id),
+              )
+            }
+          />
+          {section.label}
+        </label>
+      ))}
+      <p className="bkpanel__aside">
+        {chosen.length === 0
+          ? 'In no category — it shows under \u201CEverything else\u201D.'
+          : 'Saved to Square too, so the register files it the same way.'}
+      </p>
+    </fieldset>
   );
 }
 
@@ -834,7 +890,7 @@ function StockStepper({
 }) {
   const { stockCount, setStock, nudge } = usePendingEdit(product.slug, {
     stockCount: product.stockCount ?? null,
-    section: product.section ?? null,
+    categoryIds: product.categoryIds,
   });
 
   if (stockCount === null) {
@@ -950,7 +1006,7 @@ function Pictures({
     unmarkImageRemoved,
   } = usePendingEdit(product.slug, {
     stockCount: product.stockCount ?? null,
-    section: product.section ?? null,
+    categoryIds: product.categoryIds,
   });
 
   const saved = doc?.imagePaths ?? [];
@@ -1175,6 +1231,7 @@ export function CategoryPills({
   onPick,
   onChanged,
   onError,
+  parentId = null,
 }: {
   /** What `groupProducts` made: the categories with something in them. */
   groups: readonly { id: string | null; label: string; items: readonly unknown[] }[];
@@ -1185,8 +1242,16 @@ export function CategoryPills({
   onPick: (id: string | null | undefined) => void;
   onChanged: () => void;
   onError: (message: string) => void;
+  /**
+   * Which level of the tree this row edits: null for the top-level categories,
+   * or a category's id for the subcategories inside it. Shop draws a second row
+   * for the chosen category's children.
+   */
+  parentId?: string | null;
 }) {
   const row = useRef<HTMLDivElement>(null);
+  /** The categories on this row, in the parish's order. */
+  const level = childSections(sections, parentId);
   const [drag, setDrag] = useState<Drag | null>(null);
   /*
    * When the last drag ended, so the click it produces can be ignored.
@@ -1216,11 +1281,11 @@ export function CategoryPills({
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const save = async (next: BookstoreSection[]) => {
+  /** One change, with the row held busy and the shop refreshed after. */
+  const run = async (task: (data: typeof import('./adminData')) => Promise<unknown>) => {
     setBusy(true);
     try {
-      const { writeSections } = await import('./adminData');
-      await writeSections(next);
+      await task(await import('./adminData'));
       onChanged();
     } catch (cause) {
       onError(cause instanceof Error ? cause.message : 'The categories could not be saved.');
@@ -1230,10 +1295,25 @@ export function CategoryPills({
   };
 
   /*
+   * A new order for this row, written into the whole list.
+   *
+   * The order is the parish's and is kept on the site — Square has none for
+   * categories — so this is the one change here that is a Firestore write. The
+   * row's categories take the slots they already held in the full list, in
+   * their new order, so the other levels do not move.
+   */
+  const save = (nextLevel: BookstoreSection[]) =>
+    run(async ({ writeSections }) => {
+      const ids = new Set(nextLevel.map((one) => one.id));
+      const queue = [...nextLevel];
+      await writeSections(sections.map((one) => (ids.has(one.id) ? queue.shift()! : one)));
+    });
+
+  /*
    * The order being edited is the one in `sections`, which is every category the
    * parish has. `groups` is the shopper's view and omits the empty ones.
    */
-  const orderOf = (id: string) => sections.findIndex((row) => row.id === id);
+  const orderOf = (id: string) => level.findIndex((row) => row.id === id);
 
   /**
    * How many products are in each category.
@@ -1269,12 +1349,12 @@ export function CategoryPills({
   const preview =
     drag !== null && drag.moved
       ? (() => {
-          const next = [...sections];
+          const next = [...level];
           const [lifted] = next.splice(drag.from, 1);
           if (lifted) next.splice(drag.to, 0, lifted);
           return next;
         })()
-      : sections;
+      : level;
 
   /**
    * Pick a category up.
@@ -1308,7 +1388,7 @@ export function CategoryPills({
     // that drag competes with this one.
     event.preventDefault();
 
-    const order = sections;
+    const order = level;
     const start: Drag = {
       id,
       from,
@@ -1397,8 +1477,8 @@ export function CategoryPills({
   const shift = (id: string, by: number) => {
     const from = orderOf(id);
     const to = from + by;
-    if (from < 0 || to < 0 || to >= sections.length) return;
-    const next = [...sections];
+    if (from < 0 || to < 0 || to >= level.length) return;
+    const next = [...level];
     const [lifted] = next.splice(from, 1);
     if (!lifted) return;
     next.splice(to, 0, lifted);
@@ -1412,10 +1492,9 @@ export function CategoryPills({
     // rather than written.
     if (!clean) return;
     if (sections.some((row) => row.id === id && row.label === clean)) return;
-    // The label changes; the id never does. That is what makes renaming a
-    // category a one-field edit rather than a migration across every product
-    // filed under it.
-    void save(sections.map((row) => (row.id === id ? { ...row, label: clean } : row)));
+    // Renamed in Square — so on the register and in its reports too. The id
+    // never changes, so every item filed under it stays filed.
+    void run(({ renameCategory }) => renameCategory(id, clean));
   };
 
   const add = (label: string) => {
@@ -1423,14 +1502,13 @@ export function CategoryPills({
     setAdding(false);
     if (!clean || sections.length >= MAX_SECTIONS) return;
 
-    const id = sectionId(clean);
-    // A second category with the same id would swallow the first one's products,
-    // so a repeated name is refused rather than merged.
-    if (sections.some((row) => row.id === id)) {
-      onError(`There is already a category called \u201C${clean}\u201D.`);
+    // A repeated name on the same level is refused rather than made twice.
+    if (level.some((row) => row.label.toLowerCase() === clean.toLowerCase())) {
+      onError(`There is already a category called \u201C${clean}\u201D here.`);
       return;
     }
-    void save([...sections, { id, label: clean }]);
+    // Made in Square, under the Bookstore or under this row's parent.
+    void run(({ createCategory }) => createCategory(clean, parentId));
   };
 
   return (
@@ -1438,16 +1516,17 @@ export function CategoryPills({
       className={drag?.moved ? 'shop-filters is-editing is-dragging' : 'shop-filters is-editing'}
       ref={row}
       role="group"
-      aria-label="Categories — drag to reorder"
+      aria-label={parentId === null ? 'Categories — drag to reorder' : 'Subcategories — drag to reorder'}
     >
+      {/* On a subcategory row, "All" is everything in the parent category. */}
       <button
         type="button"
-        className={active === undefined ? 'shop-filter is-on' : 'shop-filter'}
-        aria-pressed={active === undefined}
-        onClick={() => onPick(undefined)}
+        className={active === (parentId ?? undefined) ? 'shop-filter is-on' : 'shop-filter'}
+        aria-pressed={active === (parentId ?? undefined)}
+        onClick={() => onPick(parentId ?? undefined)}
       >
         All
-        <span className="shop-filter__n">{total}</span>
+        <span className="shop-filter__n">{parentId === null ? total : (countOf.get(parentId) ?? 0)}</span>
       </button>
 
       {preview.map((section) => (
@@ -1474,14 +1553,15 @@ export function CategoryPills({
           onShift={(by) => shift(section.id, by)}
           onRenameStart={() => setEditingId(section.id)}
           onRename={(next) => rename(section.id, next)}
-          onRemove={() => void save(sections.filter((row) => row.id !== section.id))}
+          // Deleted in Square. Refused there while anything is still in it.
+          onRemove={() => void run(({ removeCategory }) => removeCategory(section.id))}
         />
       ))}
 
       {/* The catch-all, last. Not a category — there is nothing stored to drag,
           rename or remove — so it stays a plain filter, and it is absent when
           everything has been filed. */}
-      {unfiled && (
+      {parentId === null && unfiled && (
         <button
           type="button"
           className={active === null ? 'shop-filter is-on' : 'shop-filter'}
@@ -1505,7 +1585,7 @@ export function CategoryPills({
             disabled={busy}
             onClick={() => setAdding(true)}
           >
-            + Category
+            {parentId === null ? '+ Category' : '+ Subcategory'}
           </button>
         ))}
     </div>
@@ -1806,7 +1886,7 @@ function NewProduct({
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [section, setSection] = useState('');
+  const [categoryIds, setCategoryIds] = useState<readonly string[]>([]);
   const [shipping, setShipping] = useState<{ weightOz: number | null; mediaMail: boolean }>({
     weightOz: null,
     // Most of what the shop sells is books, so the box starts ticked.
@@ -1871,7 +1951,7 @@ function NewProduct({
         name: name.trim(),
         description: description.trim(),
         priceCents: cents,
-        section: section || null,
+        categoryIds: [...categoryIds],
         weightOz: shipping.weightOz,
         mediaMail: shipping.mediaMail,
         taxable,
@@ -1937,19 +2017,13 @@ function NewProduct({
         onChange={(event) => setDescription(event.target.value)}
       />
       {sections.length > 0 && (
-        <select
-          value={section}
-          aria-label="Category"
-          disabled={busy}
-          onChange={(event) => setSection(event.target.value)}
-        >
-          <option value="">— no category —</option>
-          {sections.map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.label}
-            </option>
-          ))}
-        </select>
+        <CategoryChecklist
+          name={name.trim() || 'this item'}
+          sections={sections}
+          chosen={categoryIds}
+          busy={busy}
+          onChange={setCategoryIds}
+        />
       )}
       <ShippingFields
         name={name.trim() || 'this book'}

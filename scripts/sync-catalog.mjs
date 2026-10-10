@@ -390,6 +390,7 @@ const MIRRORED_FIELDS = [
   'squareVariationId',
   'stockCount',
   'category',
+  'categoryIds',
   'sku',
   'published',
   'publishAt',

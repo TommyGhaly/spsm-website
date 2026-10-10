@@ -1,10 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { onRequest } from 'firebase-functions/v2/https';
+import { onRequest, type Request } from 'firebase-functions/v2/https';
 import { defineString } from 'firebase-functions/params';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {
+  CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
   MAX_ITEM_WEIGHT_OZ,
+  MAX_SECTION_LABEL,
+  mapSquareCategoryTree,
+  orderSections,
+  parseSections,
   slugify,
   trackInventoryPatch,
   tracksInventory,
@@ -75,25 +80,42 @@ interface SquareErrorBody {
   errors?: { detail?: string; code?: string }[];
 }
 
+/**
+ * Every CATEGORY in the catalog, following Square's cursor to the end.
+ *
+ * Paged, and that is a fix: the first version read one page and returned the
+ * gate category only because "Bookstore" happened to be on it. A parish with a
+ * hundred categories — the festival menu has dozens — would one day have it on
+ * page two, and every create would be refused with "Square has no Bookstore
+ * category".
+ */
+async function listCategories(
+  host: string,
+  headers: Record<string, string>,
+): Promise<Record<string, unknown>[] | null> {
+  const objects: Record<string, unknown>[] = [];
+  let cursor: string | undefined;
+  do {
+    const url = new URL(`${host}/v2/catalog/list`);
+    url.searchParams.set('types', 'CATEGORY');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetch(url, { headers });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { objects?: Record<string, unknown>[]; cursor?: string };
+    objects.push(...(body.objects ?? []));
+    cursor = body.cursor;
+  } while (cursor);
+  return objects;
+}
+
 /** The category's Square id, or null when the parish has not made one. */
 async function categoryId(
   host: string,
   headers: Record<string, string>,
   wanted: string,
 ): Promise<string | null> {
-  const response = await fetch(`${host}/v2/catalog/list?types=CATEGORY`, { headers });
-  if (!response.ok) return null;
-
-  const body = (await response.json()) as { objects?: Record<string, unknown>[] };
-  const target = wanted.trim().toLowerCase();
-
-  for (const object of body.objects ?? []) {
-    const data = object['category_data'] as { name?: string } | undefined;
-    if (typeof data?.name === 'string' && data.name.trim().toLowerCase() === target) {
-      return String(object['id']);
-    }
-  }
-  return null;
+  const objects = await listCategories(host, headers);
+  return objects ? (mapSquareCategoryTree(objects, wanted)?.gateId ?? null) : null;
 }
 
 /**
@@ -164,6 +186,9 @@ export const squareCreateProduct = onRequest(
     const weightOz = Number.isFinite(weight) && weight > 0 && weight <= MAX_ITEM_WEIGHT_OZ ? weight : null;
     const mediaMail = body['mediaMail'] === true;
     const taxable = body['taxable'] === true;
+    const askedCategories = Array.isArray(body['categoryIds'])
+      ? (body['categoryIds'] as unknown[]).filter((id): id is string => typeof id === 'string').slice(0, 20)
+      : [];
 
     if (!name) {
       res.status(400).json({ error: 'A name is needed.' });
@@ -191,7 +216,13 @@ export const squareCreateProduct = onRequest(
     }
 
     const wanted = SQUARE_CATEGORY.value();
-    const category = await categoryId(square.host, square.headers, wanted);
+    const allCategories = await listCategories(square.host, square.headers);
+    const tree = allCategories ? mapSquareCategoryTree(allCategories, wanted) : null;
+    const category = tree?.gateId ?? null;
+    // Only subcategories of the Bookstore, whatever the request names.
+    const chosenCategories = askedCategories.filter((id) =>
+      tree?.categories.some((one) => one.id === id),
+    );
     if (!category) {
       /*
        * Refused rather than created uncategorised. An item with no category is
@@ -233,7 +264,8 @@ export const squareCreateProduct = onRequest(
             item_data: {
               name,
               description,
-              categories: [{ id: category }],
+              // The Bookstore itself — the gate — and the subcategories chosen.
+              categories: [{ id: category }, ...chosenCategories.map((id) => ({ id }))],
               /*
                * The same category again, as the reporting one.
                *
@@ -331,6 +363,7 @@ export const squareCreateProduct = onRequest(
             weightOz,
             mediaMail,
             taxable,
+            categoryIds: chosenCategories,
             published: true,
             publishAt: null,
             syncedAt: FieldValue.serverTimestamp(),
@@ -1413,6 +1446,320 @@ export const squareArchiveProduct = onRequest(
     } catch (error) {
       console.error('[catalog] unexpected failure archiving a product', error);
       res.status(500).json({ error: 'The product could not be removed.' });
+    }
+  },
+);
+
+/* ---------------------------------------------------------------------------
+ * Categories — Square's subcategories of the Bookstore
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The staff gate every category endpoint shares: POST, the address bump, a
+ * signed-in member of the bookstore group, and the per-person budget. Returns
+ * the caller, or null after it has already answered.
+ */
+async function categoryCaller(
+  req: Request,
+  res: Parameters<typeof throttled>[1],
+): Promise<{ uid: string } | null> {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'POST only.' });
+    return null;
+  }
+  if (throttled(req, res, { bucket: 'catalog:address', max: BUDGETS.adminAddress })) return null;
+  const caller = await callerOf(req);
+  if (!(await mayManageOrders(caller))) {
+    res.status(caller ? 403 : 401).json({
+      error: caller
+        ? 'Changing categories is limited to the bookstore group and church staff.'
+        : 'Sign in again — your session has expired.',
+    });
+    return null;
+  }
+  if (
+    throttled(req, res, {
+      bucket: 'catalogCategory',
+      max: BUDGETS.bookstoreEdit,
+      identity: caller!.uid,
+      message: 'That is a lot of category changes at once. Please wait a minute.',
+    })
+  ) {
+    return null;
+  }
+  return caller as { uid: string };
+}
+
+/** The tree as Square has it now, or a reason it could not be read. */
+async function bookstoreTree(square: { host: string; headers: Record<string, string> }) {
+  const objects = await listCategories(square.host, square.headers);
+  if (!objects) return { error: 'Square could not be read.' } as const;
+  const tree = mapSquareCategoryTree(objects, SQUARE_CATEGORY.value());
+  if (!tree) return { error: `Square has no "${SQUARE_CATEGORY.value()}" category.` } as const;
+  return { tree } as const;
+}
+
+/**
+ * Write Square's tree into the shop's categories now, rather than waiting for
+ * the next sync — so the pill a volunteer just added is there when the page
+ * reloads. Same ordering rule as the sync: see `orderSections`.
+ */
+async function mirrorTree(
+  db: FirebaseFirestore.Firestore,
+  categories: { id: string; label: string; parentId: string | null }[],
+  uid: string,
+): Promise<void> {
+  const ref = db.collection(COLLECTIONS.config).doc(CONFIG_DOC_BOOKSTORE);
+  const previous = parseSections((await ref.get()).get('sections'));
+  await ref.set(
+    { sections: orderSections(categories, previous), updatedAt: FieldValue.serverTimestamp(), updatedBy: uid },
+    { merge: true },
+  );
+}
+
+/**
+ * `POST /api/square/category` — make, rename or remove a Bookstore subcategory.
+ *
+ *   { action: 'create', name, parentId? }   parentId omitted ⇒ directly under Bookstore
+ *   { action: 'rename', id, name }
+ *   { action: 'delete', id }                refused while anything is filed in it
+ *
+ * Square first, every time; the shop's list follows. Removal is refused while
+ * a product or a subcategory is inside — Tommy's rule, so deleting a pill can
+ * never leave items in Square pointing at a category that is gone.
+ */
+export const squareCategory = onRequest(
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
+  async (req, res) => {
+    const caller = await categoryCaller(req, res);
+    if (!caller) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const action = body['action'];
+    const id = typeof body['id'] === 'string' ? body['id'].trim() : '';
+    const name = typeof body['name'] === 'string' ? body['name'].trim().replace(/\s+/g, ' ') : '';
+
+    const square = squareClient();
+    if (!square) {
+      res.status(503).json({ error: 'Square is not configured.' });
+      return;
+    }
+    const read = await bookstoreTree(square);
+    if ('error' in read) {
+      res.status(502).json({ error: read.error });
+      return;
+    }
+    const { tree } = read;
+    const known = (one: string) => tree.categories.some((category) => category.id === one);
+    const db = getFirestore();
+
+    try {
+      if (action === 'create' || action === 'rename') {
+        if (!name || name.length > MAX_SECTION_LABEL) {
+          res.status(400).json({ error: `A name of 1–${MAX_SECTION_LABEL} characters is needed.` });
+          return;
+        }
+      }
+
+      if (action === 'create') {
+        const parentId = typeof body['parentId'] === 'string' && body['parentId'] ? body['parentId'] : null;
+        if (parentId && !known(parentId)) {
+          res.status(400).json({ error: 'That parent category is not in the bookstore.' });
+          return;
+        }
+        const siblings = tree.categories.filter((one) => one.parentId === parentId);
+        if (siblings.some((one) => one.label.toLowerCase() === name.toLowerCase())) {
+          res.status(409).json({ error: `There is already a "${name}" there.` });
+          return;
+        }
+        const response = await fetch(`${square.host}/v2/catalog/object`, {
+          method: 'POST',
+          headers: square.headers,
+          body: JSON.stringify({
+            idempotency_key: squareIdempotencyKey('cat'),
+            object: {
+              id: '#category',
+              type: 'CATEGORY',
+              category_data: {
+                name,
+                category_type: 'REGULAR_CATEGORY',
+                parent_category: { id: parentId ?? tree.gateId },
+                online_visibility: true,
+              },
+            },
+          }),
+        });
+        const json = (await response.json().catch(() => ({}))) as SquareErrorBody & {
+          catalog_object?: { id?: string };
+        };
+        const newId = json.catalog_object?.id;
+        if (!response.ok || !newId) {
+          console.error('[catalog] Square refused the category', JSON.stringify(json.errors));
+          res.status(502).json({ error: json.errors?.[0]?.detail ?? 'Square would not create the category.' });
+          return;
+        }
+        await mirrorTree(db, [...tree.categories, { id: newId, label: name, parentId }], caller.uid);
+        res.status(200).json({ ok: true, id: newId });
+        return;
+      }
+
+      if (action === 'rename') {
+        if (!known(id)) {
+          res.status(404).json({ error: 'No such category in the bookstore.' });
+          return;
+        }
+        const object = await readCatalogObject(square, id);
+        if (!object) {
+          res.status(502).json({ error: 'Square no longer has this category.' });
+          return;
+        }
+        const data = { ...((object['category_data'] ?? {}) as Record<string, unknown>), name };
+        const refused = await upsertCatalogObject(
+          square,
+          { ...object, category_data: data },
+          squareIdempotencyKey('ren'),
+        );
+        if (refused) {
+          res.status(502).json({ error: refused });
+          return;
+        }
+        await mirrorTree(
+          db,
+          tree.categories.map((one) => (one.id === id ? { ...one, label: name } : one)),
+          caller.uid,
+        );
+        res.status(200).json({ ok: true });
+        return;
+      }
+
+      if (action === 'delete') {
+        if (!known(id)) {
+          res.status(404).json({ error: 'No such category in the bookstore.' });
+          return;
+        }
+        if (tree.categories.some((one) => one.parentId === id)) {
+          res.status(409).json({ error: 'Move or remove the categories inside this one first.' });
+          return;
+        }
+        const filed = await db.collection(COLLECTIONS.products).where('categoryIds', 'array-contains', id).get();
+        const live = filed.docs.filter((doc) => doc.get('published') !== false);
+        if (live.length > 0) {
+          res.status(409).json({
+            error: `${live.length} ${live.length === 1 ? 'item is' : 'items are'} still in this category. Move ${live.length === 1 ? 'it' : 'them'} out first.`,
+          });
+          return;
+        }
+        const response = await fetch(`${square.host}/v2/catalog/object/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: square.headers,
+        });
+        if (!response.ok) {
+          const json = (await response.json().catch(() => ({}))) as SquareErrorBody;
+          console.error('[catalog] Square refused the category delete', JSON.stringify(json.errors));
+          res.status(502).json({ error: json.errors?.[0]?.detail ?? 'Square would not remove the category.' });
+          return;
+        }
+        await mirrorTree(db, tree.categories.filter((one) => one.id !== id), caller.uid);
+        res.status(200).json({ ok: true });
+        return;
+      }
+
+      res.status(400).json({ error: 'Unknown action.' });
+    } catch (error) {
+      console.error('[catalog] category change failed', error);
+      res.status(500).json({ error: 'The category could not be changed.' });
+    }
+  },
+);
+
+/**
+ * `POST /api/square/product-categories` — `{ slug, categoryIds }`.
+ *
+ * Files an item into exactly these Bookstore subcategories, in Square. The
+ * Bookstore category itself is always kept (it is what puts the item in the
+ * online shop), and categories *outside* the Bookstore — a festival menu
+ * section, say — are left exactly as they were: this edits the shop's part of
+ * the item and nothing else.
+ */
+export const squareProductCategories = onRequest(
+  {
+    secrets: [SQUARE_ACCESS_TOKEN, SQUARE_SANDBOX_ACCESS_TOKEN],
+    cors: false,
+    maxInstances: CAPS.bookstoreEdit,
+  },
+  async (req, res) => {
+    const caller = await categoryCaller(req, res);
+    if (!caller) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const slug = typeof body['slug'] === 'string' ? body['slug'].trim() : '';
+    const asked = Array.isArray(body['categoryIds'])
+      ? [...new Set((body['categoryIds'] as unknown[]).filter((id): id is string => typeof id === 'string'))]
+      : null;
+    if (!slug || !asked || asked.length > 20) {
+      res.status(400).json({ error: 'A product and a list of categories are needed.' });
+      return;
+    }
+
+    const square = squareClient();
+    if (!square) {
+      res.status(503).json({ error: 'Square is not configured.' });
+      return;
+    }
+    const read = await bookstoreTree(square);
+    if ('error' in read) {
+      res.status(502).json({ error: read.error });
+      return;
+    }
+    const { tree } = read;
+    const inShop = new Set([tree.gateId, ...tree.categories.map((one) => one.id)]);
+    const chosen = asked.filter((id) => inShop.has(id) && id !== tree.gateId);
+    if (chosen.length !== asked.length) {
+      res.status(400).json({ error: 'One of those categories is not in the bookstore any more. Reload and try again.' });
+      return;
+    }
+
+    const db = getFirestore();
+    const ref = db.collection(COLLECTIONS.products).doc(slug);
+    const snapshot = await ref.get();
+    const squareId = snapshot.get('squareCatalogObjectId') as string | undefined;
+    if (!snapshot.exists || !squareId) {
+      res.status(404).json({ error: 'No such product in Square.' });
+      return;
+    }
+
+    try {
+      const item = await readCatalogObject(square, squareId);
+      if (!item) {
+        res.status(502).json({ error: 'Square no longer has this product.' });
+        return;
+      }
+      const data = { ...((item['item_data'] ?? {}) as Record<string, unknown>) };
+      const outside = (Array.isArray(data['categories']) ? (data['categories'] as { id?: string }[]) : []).filter(
+        (one) => typeof one?.id === 'string' && !inShop.has(one.id),
+      );
+      data['categories'] = [...outside, { id: tree.gateId }, ...chosen.map((id) => ({ id }))];
+      const refused = await upsertCatalogObject(
+        square,
+        { ...item, item_data: data },
+        squareIdempotencyKey('cats'),
+      );
+      if (refused) {
+        res.status(502).json({ error: refused });
+        return;
+      }
+      await ref.set(
+        { categoryIds: chosen, updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid },
+        { merge: true },
+      );
+      res.status(200).json({ ok: true, categoryIds: chosen });
+    } catch (error) {
+      console.error('[catalog] filing a product failed', error);
+      res.status(500).json({ error: 'The categories could not be saved.' });
     }
   },
 );

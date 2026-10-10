@@ -68,9 +68,10 @@ export interface ShopProduct {
    * Which division of the shop this belongs in. Null means unfiled, which the
    * shop shows in its own group rather than hiding.
    *
-   * The parish's field, not Square's — see the note on `Product.section`.
+   * Square's subcategories of the Bookstore, by id — see `Product.categoryIds`.
+   * Several allowed; empty means unfiled.
    */
-  section: string | null;
+  categoryIds: string[];
   /** `SPSM-0007`, or null until the sync has numbered it. Square's, like the price. */
   sku: string | null;
   /** Ounces per copy, or null when not weighed. The parish's, like `section`. */
@@ -127,7 +128,7 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
           ? product.imagePaths
           : null,
       stockCount: product.stockCount,
-      section: product.section ?? null,
+      categoryIds: Array.isArray(product.categoryIds) ? product.categoryIds : [],
       sku: product.sku ?? null,
       weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
       mediaMail: product.mediaMail === true,

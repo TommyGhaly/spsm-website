@@ -325,7 +325,7 @@ service cloud.firestore {
      *
      * `config` is world-readable, so a writer cannot leak anything they could
      * not already read; the risk is a malformed document breaking the shop, and
-     * the shape check below is what bounds that. Twelve sections, forty
+     * the shape check below is what bounds that. Sixty sections, forty
      * characters of label. `parseSections` drops anything that gets through.
      * -----------------------------------------------------------------------
      */
@@ -486,7 +486,8 @@ service cloud.firestore {
     }
 
     function isSectionList(sections) {
-      return sections is list && sections.size() <= 12;
+      // Matches MAX_SECTIONS. The list is Square's category tree now, nested.
+      return sections is list && sections.size() <= 60;
     }
 
     /*

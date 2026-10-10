@@ -444,7 +444,7 @@ describe('config/bookstore — the sections list', () => {
     await assertFails(
       setDoc(doc(db, 'config/bookstore'), sections('staff-1', 'books'), { merge: true }),
     );
-    const thirteen = Array.from({ length: 13 }, (_, i) => ({ id: `s${i}`, label: `S${i}` }));
+    const thirteen = Array.from({ length: 61 }, (_, i) => ({ id: `s${i}`, label: `S${i}` }));
     await assertFails(
       setDoc(doc(db, 'config/bookstore'), sections('staff-1', thirteen), { merge: true }),
     );

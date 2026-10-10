@@ -204,21 +204,28 @@ export async function listProducts(): Promise<DocOf<Product>[]> {
 }
 
 /**
- * File a product into a section, or clear it.
- *
- * A direct Firestore write, not a Function: nothing about it touches Square.
- * `firestore.rules` admits exactly `section`, `updatedAt`, and `updatedBy` from
- * the bookstore group, so a change here cannot carry a price with it.
+ * File a product into these categories — Square's subcategories of the
+ * Bookstore — or none. Through the Function, which writes Square first and
+ * then the mirror, so the register and the shop agree.
  */
-export async function setProductSection(slug: string, section: string | null): Promise<void> {
-  const uid = auth().currentUser?.uid;
-  if (!uid) throw new Error('Your session has expired. Sign in again.');
+export async function setProductCategories(slug: string, categoryIds: string[]): Promise<void> {
+  await callCatalog('product-categories', { slug, categoryIds });
+}
 
-  await updateDoc(doc(db(), COLLECTIONS.products, slug), {
-    section,
-    updatedAt: serverTimestamp(),
-    updatedBy: uid,
-  });
+/** Make a category in Square, directly under the Bookstore or inside `parentId`. */
+export async function createCategory(name: string, parentId: string | null): Promise<string> {
+  const json = await callCatalog('category', { action: 'create', name, parentId });
+  return String(json['id']);
+}
+
+/** Rename a category, in Square and so on the register and in its reports. */
+export async function renameCategory(id: string, name: string): Promise<void> {
+  await callCatalog('category', { action: 'rename', id, name });
+}
+
+/** Remove an empty category from Square. Refused while anything is in it. */
+export async function removeCategory(id: string): Promise<void> {
+  await callCatalog('category', { action: 'delete', id });
 }
 
 /**
@@ -356,7 +363,7 @@ export interface NewProduct {
   name: string;
   description: string;
   priceCents: number;
-  section: string | null;
+  categoryIds: string[];
   weightOz: number | null;
   mediaMail: boolean;
   taxable: boolean;

@@ -5973,6 +5973,23 @@ main {
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/* The categories an item is filed in: a column of checkboxes, indented by depth. */
+.bkcatlist {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* The second row of pills: a chosen category's subcategories, a step in. */
+.shop-filters--sub {
+  margin-top: -0.25rem;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--color-rule, #e0cac3);
+}
+
 /* A stock number, shown where somebody might read it out to the office. */
 .sku {
   font-family: var(--font-ui, system-ui, sans-serif);

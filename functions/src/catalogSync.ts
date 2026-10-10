@@ -3,8 +3,12 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { defineString } from 'firebase-functions/params';
 import {
+  CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
   mapSquareCatalog,
+  mapSquareCategoryTree,
+  orderSections,
+  parseSections,
   mirrorDocumentId,
   parseInventoryCounts,
 } from '@spsm/shared';
@@ -79,6 +83,8 @@ interface MirrorFields {
   category: string | null;
   /** Square's, like the rest — see `assignMissingSkus`. */
   sku: string | null;
+  /** The Bookstore subcategories it is filed in, from Square. */
+  categoryIds: string[];
   published: boolean;
   publishAt: null;
   syncedAt: Date;
@@ -170,6 +176,34 @@ async function readInventory(
   }
 
   return parseInventoryCounts(counts);
+}
+
+/**
+ * Square's Bookstore subcategories, written as the shop's categories.
+ *
+ * Square is where they are made, renamed and removed — from the register, or
+ * from the site through `squareCategory`, which writes Square first — and this
+ * brings the site into line within a sync. The *order* of the pills is the
+ * parish's and stays in Firestore: `orderSections` keeps it for categories
+ * that already have a place and adds new ones after.
+ *
+ * A failed tree read (no Bookstore category found) writes nothing, for the
+ * same reason the product mirror refuses an empty catalog.
+ */
+async function mirrorCategories(
+  db: FirebaseFirestore.Firestore,
+  objects: readonly unknown[],
+  categoryName: string,
+): Promise<void> {
+  const tree = mapSquareCategoryTree(objects, categoryName);
+  if (!tree) return;
+  const ref = db.collection(COLLECTIONS.config).doc(CONFIG_DOC_BOOKSTORE);
+  const snapshot = await ref.get();
+  const previous = parseSections(snapshot.get('sections'));
+  const sections = orderSections(tree.categories, previous);
+  if (JSON.stringify(sections) === JSON.stringify(previous)) return;
+  await ref.set({ sections, updatedAt: new Date(), updatedBy: null }, { merge: true });
+  console.log(`[catalog-sync] categories: ${sections.map((one) => one.label).join(', ')}`);
 }
 
 /**
@@ -277,6 +311,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
 
   const db = getFirestore();
   await assignMissingSkus(db, square, objects, products);
+  await mirrorCategories(db, objects, category);
 
   const collection = db.collection(COLLECTIONS.products);
   const existing = await collection.get();
@@ -311,6 +346,7 @@ export async function mirrorCatalog(): Promise<MirrorResult> {
       squareVariationId: product.squareVariationId,
       category: product.category,
       sku: product.sku,
+      categoryIds: product.categoryIds,
       /*
        * Every mirrored row is published, which is the decision taken on
        * 2026-08-17: show the whole category and ignore Square's

@@ -24,7 +24,7 @@ import {
  * ---------------------------------------------------------------------------
  */
 
-const BOOK: ActualValues = { stockCount: 4, section: null };
+const BOOK: ActualValues = { stockCount: 4, categoryIds: [] };
 
 /** A run of presses, each one applied to what the last one returned. */
 function press(
@@ -69,21 +69,21 @@ describe('holding a stock edit', () => {
      * reintroduce: the category change made a moment earlier would vanish, the
      * card would look clean, and Save would send nothing.
      */
-    const withSection = { 'holy-bible': { section: 'icons' } as PendingEdit };
-    const up = press(2, 1, { ...BOOK, section: null }, withSection);
-    const back = press(2, -1, { ...BOOK, section: null }, up);
+    const withSection = { 'holy-bible': { categoryIds: ['icons'] } as PendingEdit };
+    const up = press(2, 1, { ...BOOK, categoryIds: [] }, withSection);
+    const back = press(2, -1, { ...BOOK, categoryIds: [] }, up);
 
-    expect(back['holy-bible']).toEqual({ section: 'icons', stockCount: 4 });
+    expect(back['holy-bible']).toEqual({ categoryIds: ['icons'], stockCount: 4 });
   });
 
   it('leaves an untracked book alone — the arrows are not how that is changed', () => {
-    const untracked: ActualValues = { stockCount: null, section: null };
+    const untracked: ActualValues = { stockCount: null, categoryIds: [] };
     expect(press(4, 1, untracked)).toEqual({});
   });
 
   it('does not disturb other books', () => {
     const first = press(2, 1, BOOK, {}, 'holy-bible');
-    const both = press(1, 1, { stockCount: 0, section: null }, first, 'the-eucharist');
+    const both = press(1, 1, { stockCount: 0, categoryIds: [] }, first, 'the-eucharist');
 
     expect(both).toEqual({
       'holy-bible': { stockCount: 6 },
@@ -113,7 +113,7 @@ describe('holding a stock edit', () => {
  * why every case below is about the discard and not about the pictures.
  */
 describe('holding pictures', () => {
-  const actual: ActualValues = { stockCount: 3, section: 'theology' };
+  const actual: ActualValues = { stockCount: 3, categoryIds: ['theology'] };
   const picture = { id: 'p1', dataUrl: 'data:image/webp;base64,AAAA' };
 
   describe('hasImageEdits', () => {
@@ -145,10 +145,10 @@ describe('holding pictures', () => {
 
     it('keeps a held category when the last removal is put back', () => {
       const was: Record<string, PendingEdit> = {
-        'holy-bible': { section: 'lives', removeImages: ['https://items.sq/a.jpg'] },
+        'holy-bible': { categoryIds: ['lives'], removeImages: ['https://items.sq/a.jpg'] },
       };
-      const next = settle(was, 'holy-bible', { section: 'lives', removeImages: [] }, actual);
-      expect(next['holy-bible']).toEqual({ section: 'lives', removeImages: [] });
+      const next = settle(was, 'holy-bible', { categoryIds: ['lives'], removeImages: [] }, actual);
+      expect(next['holy-bible']).toEqual({ categoryIds: ['lives'], removeImages: [] });
     });
 
     it('keeps the book when a picture is still held but the count is unchanged', () => {
@@ -190,7 +190,7 @@ describe('holding pictures', () => {
 });
 
 describe('holding a shipping edit', () => {
-  const weighed: ActualValues = { stockCount: 4, section: null, weightOz: 12, mediaMail: true };
+  const weighed: ActualValues = { stockCount: 4, categoryIds: [], weightOz: 12, mediaMail: true };
 
   it('keeps a held weight when the count returns to where it started', () => {
     // The same failure the category once had: a check that forgot a field.
@@ -205,10 +205,25 @@ describe('holding a shipping edit', () => {
   });
 
   it('reads a book with no shipping fields as unweighed and not media', () => {
-    // Callers that never show the shipping block pass only stock and section.
+    // Callers that never show the shipping block pass only stock and categories.
     expect(settle({}, 'holy-bible', { weightOz: null, mediaMail: false }, BOOK)).toEqual({});
     expect(settle({}, 'holy-bible', { mediaMail: true }, BOOK)).toEqual({
       'holy-bible': { mediaMail: true },
     });
   });
 });
+
+describe('holding a category edit', () => {
+  const filed: ActualValues = { stockCount: 4, categoryIds: ['books', 'arabic'] };
+
+  it('treats the same categories in another order as no change', () => {
+    expect(settle({}, 'holy-bible', { categoryIds: ['arabic', 'books'] }, filed)).toEqual({});
+  });
+
+  it('holds a category added or taken away', () => {
+    expect(settle({}, 'holy-bible', { categoryIds: ['books'] }, filed)).toEqual({
+      'holy-bible': { categoryIds: ['books'] },
+    });
+  });
+});
+

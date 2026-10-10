@@ -227,6 +227,14 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/squareArchiveProduct`,
       },
       {
+        source: '/api/square/category',
+        destination: `${origin}/${project}/${region}/squareCategory`,
+      },
+      {
+        source: '/api/square/product-categories',
+        destination: `${origin}/${project}/${region}/squareProductCategories`,
+      },
+      {
         source: '/api/square/catalog-refresh',
         destination: `${origin}/${project}/${region}/refreshSquareCatalog`,
       },

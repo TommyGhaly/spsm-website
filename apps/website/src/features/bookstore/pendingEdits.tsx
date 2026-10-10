@@ -76,13 +76,16 @@ export interface PendingImage {
 export interface PendingEdit {
   /** A number, or `null` for "not counted". Absent means untouched. */
   stockCount?: number | null;
-  /** A category id, or `null` for none. Absent means untouched. */
-  section?: string | null;
-  /** Ounces per copy, or `null` for not weighed. The parish's, like `section`. */
+  /**
+   * The Square subcategories the item is filed in — several allowed, empty for
+   * none. Absent means untouched. Saved through Square, see `setProductCategories`.
+   */
+  categoryIds?: readonly string[];
+  /** Ounces per copy, or `null` for not weighed. The parish's own field. */
   weightOz?: number | null;
   /** Media Mail eligible. Held together with `weightOz` — see `setShipping`. */
   mediaMail?: boolean;
-  /** Sales tax applies. The parish's field, like `section`. */
+  /** Sales tax applies. The parish's own field. */
   taxable?: boolean;
   /** Photographs chosen here and not yet uploaded, in the order chosen. */
   addImages?: PendingImage[];
@@ -93,7 +96,8 @@ export interface PendingEdit {
 /** What one book currently *is*, so a held edit can be compared against it. */
 export interface ActualValues {
   stockCount: number | null;
-  section: string | null;
+  /** Optional so callers that never show the categories need not pass them. */
+  categoryIds?: readonly string[];
   /** Optional so callers that never show the shipping fields need not pass them. */
   weightOz?: number | null;
   mediaMail?: boolean;
@@ -101,10 +105,19 @@ export interface ActualValues {
 }
 
 /** The held fields that are plain values — everything but the pictures. */
-const FIELDS = ['stockCount', 'section', 'weightOz', 'mediaMail', 'taxable'] as const;
+const FIELDS = ['stockCount', 'categoryIds', 'weightOz', 'mediaMail', 'taxable'] as const;
 type Field = (typeof FIELDS)[number];
 
+/**
+ * A category list as one comparable value. Order does not matter — ticking A
+ * then B is the same filing as B then A — so it is sorted before it is joined.
+ */
+function categoryKey(ids: readonly string[] | undefined): string {
+  return [...(ids ?? [])].sort().join('\n');
+}
+
 function actualOf(actual: ActualValues, key: Field): unknown {
+  if (key === 'categoryIds') return categoryKey(actual.categoryIds);
   if (key === 'weightOz') return actual.weightOz ?? null;
   if (key === 'mediaMail' || key === 'taxable') return actual[key] ?? false;
   return actual[key];
@@ -113,6 +126,7 @@ function actualOf(actual: ActualValues, key: Field): unknown {
 /** What a field reads as with this edit held over the real value. */
 function heldOf(edit: PendingEdit | undefined, actual: ActualValues, key: Field): unknown {
   if (edit && key in edit) {
+    if (key === 'categoryIds') return categoryKey(edit.categoryIds);
     return key === 'mediaMail' || key === 'taxable' ? (edit[key] ?? false) : (edit[key] ?? null);
   }
   return actualOf(actual, key);
@@ -363,7 +377,7 @@ export function PendingEditsProvider({
     try {
       const {
         setProductStock,
-        setProductSection,
+        setProductCategories,
         setProductShipping,
         setProductTaxable,
         uploadProductImage,
@@ -382,7 +396,7 @@ export function PendingEditsProvider({
        */
       for (const [slug, edit] of pending) {
         if ('stockCount' in edit) await setProductStock(slug, edit.stockCount ?? null);
-        if ('section' in edit) await setProductSection(slug, edit.section ?? null);
+        if ('categoryIds' in edit) await setProductCategories(slug, [...(edit.categoryIds ?? [])]);
         // Both fields in one write; `setShipping` always holds them together.
         if ('taxable' in edit) await setProductTaxable(slug, edit.taxable ?? false);
         if ('weightOz' in edit || 'mediaMail' in edit) {
@@ -507,7 +521,9 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   const edit = edits[slug];
 
   const stockCount = heldOf(edit, actual, 'stockCount') as number | null;
-  const section = heldOf(edit, actual, 'section') as string | null;
+  // The list itself, not the comparison key `heldOf` returns for it.
+  const categoryIds: readonly string[] =
+    edit && 'categoryIds' in edit ? (edit.categoryIds ?? []) : (actual.categoryIds ?? []);
   const weightOz = heldOf(edit, actual, 'weightOz') as number | null;
   const mediaMail = heldOf(edit, actual, 'mediaMail') as boolean;
   const taxable = heldOf(edit, actual, 'taxable') as boolean;
@@ -528,7 +544,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     },
     // `actual` is a fresh object each render; its fields are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slug, edit, actual.stockCount, actual.section, actual.weightOz, actual.mediaMail, actual.taxable, hold, release],
+    [slug, edit, actual.stockCount, categoryKey(actual.categoryIds), actual.weightOz, actual.mediaMail, actual.taxable, hold, release],
   );
 
   const setStock = useCallback(
@@ -536,8 +552,8 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     [setField],
   );
 
-  const setSection = useCallback(
-    (next: string | null) => setField({ section: next }),
+  const setCategories = useCallback(
+    (next: readonly string[]) => setField({ categoryIds: next }),
     [setField],
   );
 
@@ -552,7 +568,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   /* Relative, so a fast run of presses accumulates rather than collapsing. */
   const nudge = useCallback(
     (by: number) => nudgeStock(slug, by, actual),
-    [nudgeStock, slug, actual.stockCount, actual.section], // eslint-disable-line react-hooks/exhaustive-deps
+    [nudgeStock, slug, actual.stockCount, categoryKey(actual.categoryIds)], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /*
@@ -568,7 +584,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
 
   const unholdImage = useCallback(
     (id: string) => dropAddedImage(slug, id, actual),
-    [dropAddedImage, slug, actual.stockCount, actual.section], // eslint-disable-line react-hooks/exhaustive-deps
+    [dropAddedImage, slug, actual.stockCount, categoryKey(actual.categoryIds)], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const markImageRemoved = useCallback(
@@ -578,19 +594,19 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
 
   const unmarkImageRemoved = useCallback(
     (url: string) => keepImage(slug, url, actual),
-    [keepImage, slug, actual.stockCount, actual.section], // eslint-disable-line react-hooks/exhaustive-deps
+    [keepImage, slug, actual.stockCount, categoryKey(actual.categoryIds)], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return {
     stockCount,
-    section,
+    categoryIds,
     weightOz,
     mediaMail,
     taxable,
     setTaxable,
     dirty,
     setStock,
-    setSection,
+    setCategories,
     setShipping,
     nudge,
     addedImages,

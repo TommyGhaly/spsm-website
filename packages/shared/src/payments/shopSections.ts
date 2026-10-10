@@ -15,48 +15,60 @@ import type { BookstoreSection } from '../schema/config.js';
 /** The least this needs to know about a product. Deliberately not `Product`. */
 export interface Sortable {
   slug: string;
-  section?: string | null;
+  /** Square subcategory ids this product is filed in. See `Product.categoryIds`. */
+  categoryIds?: readonly string[] | null;
 }
 
 export interface ShopGroup<T> {
-  /** The section's id, or null for the unsorted group. */
   id: string | null;
   label: string;
   items: T[];
 }
 
-/**
- * What the unsorted group is called.
- *
- * It gets a name like the others rather than being silently appended, because a
- * book that nobody has filed is still for sale and a shopper should not have to
- * work out why it is missing from every category.
- *
- * Short, because this is a *pill* now rather than a heading over a shelf — it
- * sits in a row with "All", "Books" and "Icons", and "More from the bookstore"
- * was three times the width of its neighbours.
- */
 export const UNSORTED_LABEL = 'Everything else';
 
+/** A section and every section beneath it, at any depth. */
+export function subtreeOf(sections: readonly BookstoreSection[], id: string): Set<string> {
+  const ids = new Set([id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const section of sections) {
+      if (section.parentId && ids.has(section.parentId) && !ids.has(section.id)) {
+        ids.add(section.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** The sections directly inside `parentId` (null for the top level), in order. */
+export function childSections(
+  sections: readonly BookstoreSection[],
+  parentId: string | null,
+): BookstoreSection[] {
+  const known = new Set(sections.map((section) => section.id));
+  return sections.filter((section) => {
+    const parent = section.parentId && known.has(section.parentId) ? section.parentId : null;
+    return parent === parentId;
+  });
+}
+
 /**
- * Group products under their sections, in the parish's chosen order.
+ * Group the products by section, for the pills and the shelf.
  *
  * ---------------------------------------------------------------------------
- * Three rules, and each exists because the alternative loses a book.
+ * A product can be in several sections (Square allows it, and the parish asked
+ * for it), so it appears in every group it belongs to. And sections nest, so a
+ * group holds what is filed in it *or anywhere beneath it* — "Books" includes
+ * "Arabic books". Three rules are unchanged from the flat version:
  *
- *  1. **An empty section is dropped.** A heading with nothing under it is a
- *     heading that reads as a loading failure. The section still exists in the
- *     config and comes back the moment something is filed into it.
+ *   - an empty section is dropped,
+ *   - a product filed only in sections that no longer exist is unsorted,
+ *   - with no sections at all, the shop is one undivided shelf.
  *
- *  2. **A product whose section was deleted is not lost.** It keeps a dangling
- *     id, matches no section, and falls into the unsorted group — where it is
- *     visible and can be re-filed. Dropping it instead would take a book off the
- *     shop as a side effect of renaming a heading.
- *
- *  3. **No sections at all means one undivided list, with no heading.** That is
- *     the state every parish starts in, and it must render exactly as the shop
- *     did before sections existed rather than growing a "More from the
- *     bookstore" heading over the entire catalog.
+ * Groups come out in section order (parents before their children, as the
+ * list is kept), with "Everything else" last.
  * ---------------------------------------------------------------------------
  */
 export function groupProducts<T extends Sortable>(
@@ -68,69 +80,58 @@ export function groupProducts<T extends Sortable>(
   }
 
   const known = new Set(sections.map((section) => section.id));
-  const byId = new Map<string, T[]>();
-  const unsorted: T[] = [];
-
-  for (const product of products) {
-    const id = product.section;
-    if (id && known.has(id)) {
-      const bucket = byId.get(id);
-      if (bucket) bucket.push(product);
-      else byId.set(id, [product]);
-    } else {
-      unsorted.push(product);
-    }
-  }
-
   const groups: ShopGroup<T>[] = [];
   for (const section of sections) {
-    const items = byId.get(section.id);
-    if (items && items.length > 0) {
-      groups.push({ id: section.id, label: section.label, items });
-    }
+    const tree = subtreeOf(sections, section.id);
+    const items = products.filter((product) => (product.categoryIds ?? []).some((id) => tree.has(id)));
+    if (items.length > 0) groups.push({ id: section.id, label: section.label, items });
   }
 
+  const unsorted = products.filter((product) => !(product.categoryIds ?? []).some((id) => known.has(id)));
   if (unsorted.length > 0) {
-    /*
-     * Only headed when there is something above it to be distinguished from. If
-     * every product is unsorted, the sections that exist are all empty and the
-     * shop is effectively undivided — so it gets the same bare list as a shop
-     * with no sections at all.
-     */
-    groups.push({
-      id: null,
-      label: groups.length > 0 ? UNSORTED_LABEL : '',
-      items: unsorted,
-    });
+    groups.push({ id: null, label: groups.length > 0 ? UNSORTED_LABEL : '', items: unsorted });
   }
-
   return groups;
 }
 
-/** How many products sit in each section, for the admin's counts. */
+/** How many products each section holds (subtree included), and how many none. */
 export function countBySection<T extends Sortable>(
   products: readonly T[],
   sections: readonly BookstoreSection[],
 ): Map<string | null, number> {
-  const known = new Set(sections.map((section) => section.id));
   const counts = new Map<string | null, number>();
+  const groups = groupProducts(products, sections);
   for (const section of sections) counts.set(section.id, 0);
   counts.set(null, 0);
-
-  for (const product of products) {
-    const id = product.section && known.has(product.section) ? product.section : null;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
+  for (const group of groups) counts.set(group.id, group.items.length);
   return counts;
 }
 
 /**
- * Move a section within the list, returning a new array.
+ * Square's category tree, in the order the parish arranged the pills.
  *
- * Clamped rather than wrapped: pressing Up on the first section should do
- * nothing, not send it to the bottom. A control that teleports the thing you
- * are nudging is one nobody trusts the second time.
+ * The catalog sync calls this. Square has no order for categories, so the order
+ * is the parish's and lives in Firestore: categories already in `previous` keep
+ * their places, new ones join after them (alphabetically, as Square lists
+ * them), and ones Square no longer has are dropped. Labels and nesting always
+ * come from Square.
  */
+export function orderSections(
+  fromSquare: readonly { id: string; label: string; parentId: string | null }[],
+  previous: readonly BookstoreSection[],
+): BookstoreSection[] {
+  const place = new Map(previous.map((section, index) => [section.id, index]));
+  const known = fromSquare
+    .filter((category) => place.has(category.id))
+    .sort((a, b) => place.get(a.id)! - place.get(b.id)!);
+  const added = fromSquare.filter((category) => !place.has(category.id));
+  return [...known, ...added].map((category) => ({
+    id: category.id,
+    label: category.label,
+    ...(category.parentId ? { parentId: category.parentId } : {}),
+  }));
+}
+
 export function moveSection(
   sections: readonly BookstoreSection[],
   id: string,

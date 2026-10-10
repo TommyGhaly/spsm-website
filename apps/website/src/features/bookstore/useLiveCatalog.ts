@@ -175,7 +175,7 @@ function toShopProduct(
        later refresh must be able to make the same comparison. */
     bakedFrom: baked?.bakedFrom ?? null,
     stockCount: product.stockCount ?? null,
-    section: product.section ?? null,
+    categoryIds: Array.isArray(product.categoryIds) ? product.categoryIds : [],
     sku: product.sku ?? null,
     weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
     mediaMail: product.mediaMail === true,

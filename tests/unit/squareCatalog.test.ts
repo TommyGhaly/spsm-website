@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   mapSquareCatalog,
+  mapSquareCategoryTree,
   mirrorDocumentId,
   parseInventoryCounts,
   slugify,
@@ -572,5 +573,66 @@ describe('trackInventoryPatch', () => {
       price_money: { amount: 100, currency: 'USD' },
       track_inventory: true,
     });
+  });
+});
+
+describe('the Bookstore\'s subcategories', () => {
+  const objects = [
+    { type: 'CATEGORY', id: 'CAT_BOOK', category_data: { name: 'Bookstore' } },
+    { type: 'CATEGORY', id: 'CAT_MUGS', category_data: { name: 'Drinkware', parent_category: { id: 'CAT_BOOK' } } },
+    { type: 'CATEGORY', id: 'CAT_AR', category_data: { name: 'Arabic books', parent_category: { id: 'CAT_BOOKS' } } },
+    { type: 'CATEGORY', id: 'CAT_BOOKS', category_data: { name: 'Books', parent_category: { id: 'CAT_BOOK' } } },
+    { type: 'CATEGORY', id: 'CAT_FOOD', category_data: { name: 'Festival Food' } },
+    {
+      type: 'ITEM',
+      id: 'ITEM_MUG',
+      item_data: {
+        name: 'Saint Mug',
+        categories: [{ id: 'CAT_BOOK' }, { id: 'CAT_MUGS' }],
+        variations: [{ id: 'V1', item_variation_data: { price_money: { amount: 1200, currency: 'USD' } } }],
+      },
+    },
+    {
+      type: 'ITEM',
+      id: 'ITEM_AR',
+      // Filed only in a nested subcategory — still the shop's.
+      item_data: {
+        name: 'Diaries',
+        categories: [{ id: 'CAT_AR' }],
+        variations: [{ id: 'V2', item_variation_data: { price_money: { amount: 900, currency: 'USD' } } }],
+      },
+    },
+    {
+      type: 'ITEM',
+      id: 'ITEM_LAMB',
+      item_data: {
+        name: 'Lamb Dinner',
+        categories: [{ id: 'CAT_FOOD' }],
+        variations: [{ id: 'V3', item_variation_data: { price_money: { amount: 1699, currency: 'USD' } } }],
+      },
+    },
+  ];
+
+  it('takes items filed anywhere under the Bookstore, with their subcategories', () => {
+    const { products } = mapSquareCatalog(objects, 'Bookstore');
+    expect(products.map((p) => [p.name, p.categoryIds])).toEqual([
+      ['Diaries', ['CAT_AR']],
+      ['Saint Mug', ['CAT_MUGS']],
+    ]);
+  });
+
+  it('reads the tree, parents before children, and no further than the Bookstore', () => {
+    expect(mapSquareCategoryTree(objects, 'Bookstore')).toEqual({
+      gateId: 'CAT_BOOK',
+      categories: [
+        { id: 'CAT_BOOKS', label: 'Books', parentId: null },
+        { id: 'CAT_MUGS', label: 'Drinkware', parentId: null },
+        { id: 'CAT_AR', label: 'Arabic books', parentId: 'CAT_BOOKS' },
+      ],
+    });
+  });
+
+  it('says it could not find the Bookstore rather than returning no categories', () => {
+    expect(mapSquareCategoryTree(objects, 'Shop')).toBeNull();
   });
 });

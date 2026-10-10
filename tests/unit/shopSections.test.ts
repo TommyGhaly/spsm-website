@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  childSections,
+  orderSections,
+  subtreeOf,
   UNSORTED_LABEL,
   countBySection,
   groupProducts,
@@ -23,7 +26,8 @@ const sections: BookstoreSection[] = [
   { id: 'gifts', label: 'Gifts' },
 ];
 
-const p = (slug: string, section?: string | null) => ({ slug, section });
+// One category each, the common case; the multi and nested cases are below.
+const p = (slug: string, section?: string | null) => ({ slug, categoryIds: section ? [section] : [] });
 
 describe('groupProducts', () => {
   it('groups under the sections, in the parish’s order', () => {
@@ -169,5 +173,49 @@ describe('parseSections', () => {
       { id: 'books', label: 'Books again' },
     ]);
     expect(parsed).toHaveLength(1);
+  });
+});
+
+describe('categories from Square — several per item, and nested', () => {
+  const tree: BookstoreSection[] = [
+    { id: 'books', label: 'Books' },
+    { id: 'gifts', label: 'Gifts' },
+    { id: 'arabic', label: 'Arabic books', parentId: 'books' },
+    { id: 'children', label: 'Children books', parentId: 'books' },
+  ];
+
+  it('puts an item in every category it is filed in', () => {
+    const groups = groupProducts([{ slug: 'mug', categoryIds: ['gifts', 'children'] }], tree);
+    expect(groups.map((g) => g.id)).toEqual(['books', 'gifts', 'children']);
+  });
+
+  it('counts a subcategory\'s items in its parent too', () => {
+    const groups = groupProducts([{ slug: 'a', categoryIds: ['arabic'] }, { slug: 'b', categoryIds: ['books'] }], tree);
+    expect(groups.find((g) => g.id === 'books')?.items.map((i) => i.slug)).toEqual(['a', 'b']);
+    expect(groups.find((g) => g.id === 'arabic')?.items.map((i) => i.slug)).toEqual(['a']);
+  });
+
+  it('knows a category\'s children and its whole subtree', () => {
+    expect(childSections(tree, null).map((s) => s.id)).toEqual(['books', 'gifts']);
+    expect(childSections(tree, 'books').map((s) => s.id)).toEqual(['arabic', 'children']);
+    expect([...subtreeOf(tree, 'books')].sort()).toEqual(['arabic', 'books', 'children']);
+  });
+
+  it('keeps the parish\'s order, adds new categories after, and drops removed ones', () => {
+    const previous: BookstoreSection[] = [
+      { id: 'gifts', label: 'Gifts' },
+      { id: 'books', label: 'Old name' },
+      { id: 'gone', label: 'Gone' },
+    ];
+    const fromSquare = [
+      { id: 'books', label: 'Books', parentId: null },
+      { id: 'gifts', label: 'Gifts', parentId: null },
+      { id: 'arabic', label: 'Arabic books', parentId: 'books' },
+    ];
+    expect(orderSections(fromSquare, previous)).toEqual([
+      { id: 'gifts', label: 'Gifts' },
+      { id: 'books', label: 'Books' },
+      { id: 'arabic', label: 'Arabic books', parentId: 'books' },
+    ]);
   });
 });

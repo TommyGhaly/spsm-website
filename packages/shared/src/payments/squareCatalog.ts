@@ -43,6 +43,13 @@ export interface MappedProduct {
   stockCount: number | null;
   category: string | null;
   /**
+   * The Square subcategories of the Bookstore this item is filed in — at any
+   * depth, the Bookstore category itself excluded. Square lets an item sit in
+   * several, and so does the shop. Empty means "not filed": the shop shows it
+   * under "Everything else".
+   */
+  categoryIds: string[];
+  /**
    * The first variation's SKU, as Square holds it. Null until one is assigned —
    * see `sku.ts` for who assigns them and why only one place does.
    */
@@ -91,6 +98,7 @@ export function mapSquareCatalog(
   const wanted = categoryName.trim().toLowerCase();
 
   const categories = new Map<string, string>();
+  const parents = new Map<string, string | null>();
   const images = new Map<string, string>();
   const items: Record<string, unknown>[] = [];
 
@@ -102,8 +110,10 @@ export function mapSquareCatalog(
 
     switch (object['type']) {
       case 'CATEGORY': {
-        const name = str(asRecord(object['category_data'])?.['name']);
+        const categoryData = asRecord(object['category_data']);
+        const name = str(categoryData?.['name']);
         if (name) categories.set(id, name);
+        parents.set(id, str(asRecord(categoryData?.['parent_category'])?.['id']));
         break;
       }
       case 'IMAGE': {
@@ -116,6 +126,19 @@ export function mapSquareCatalog(
         break;
     }
   }
+
+  /*
+   * The Bookstore category and everything under it. An item belongs to the shop
+   * if *any* of its categories is in this set — so a mug filed in Bookstore and
+   * Drinkware, or in Drinkware alone, is the shop's either way.
+   */
+  const gate = [...categories].find(([, name]) => name.trim().toLowerCase() === wanted)?.[0] ?? null;
+  const inTree = (id: string): boolean => {
+    for (let at: string | null | undefined = id, hops = 0; at && hops < 16; at = parents.get(at), hops += 1) {
+      if (at === gate) return true;
+    }
+    return false;
+  };
 
   const products: MappedProduct[] = [];
   const skipped: SkippedItem[] = [];
@@ -134,9 +157,10 @@ export function mapSquareCatalog(
       continue;
     }
 
-    const categoryId = itemCategoryId(data);
-    const category = categoryId ? categories.get(categoryId) : undefined;
-    if (!category || category.trim().toLowerCase() !== wanted) continue;
+    const itemCategories = itemCategoryIds(data);
+    if (!gate || !itemCategories.some(inTree)) continue;
+    const category = categories.get(gate) ?? categoryName;
+    const categoryIds = itemCategories.filter((one) => one !== gate && inTree(one));
 
     // Archived means staff have retired it in Square. Publishing it anyway
     // would make the archive button do nothing, which is worse than the item
@@ -176,6 +200,7 @@ export function mapSquareCatalog(
        */
       stockCount: stockOf(variation, counts),
       category,
+      categoryIds,
       sku: variation?.sku ?? null,
     });
   }
@@ -223,13 +248,72 @@ export function slugify(name: string): string {
  * in the API depending on `Square-Version`, and reading only one of them is a
  * silent "no products" the day that changes.
  */
-function itemCategoryId(data: Record<string, unknown> | null): string | null {
+function itemCategoryIds(data: Record<string, unknown> | null): string[] {
+  const ids: string[] = [];
   const list = data?.['categories'];
   if (Array.isArray(list)) {
-    const first = str(asRecord(list[0])?.['id']);
-    if (first) return first;
+    for (const entry of list) {
+      const id = str(asRecord(entry)?.['id']);
+      if (id && !ids.includes(id)) ids.push(id);
+    }
   }
-  return str(data?.['category_id']);
+  const legacy = str(data?.['category_id']);
+  if (legacy && !ids.includes(legacy)) ids.push(legacy);
+  return ids;
+}
+
+/** One category under the Bookstore, as the shop shows it. */
+export interface MappedCategory {
+  /** Square's category id — also what a product's `categoryIds` hold. */
+  id: string;
+  label: string;
+  /** The parent category, or null for one directly under Bookstore. */
+  parentId: string | null;
+}
+
+/**
+ * The Bookstore's subcategories, at every depth, from a catalog listing.
+ *
+ * Null — not an empty list — when the Bookstore category itself cannot be
+ * found, so a caller does not mistake "Square was not read properly" for "the
+ * parish deleted every category" and wipe the shop's pills.
+ */
+export function mapSquareCategoryTree(
+  objects: readonly unknown[],
+  categoryName: string,
+): { gateId: string; categories: MappedCategory[] } | null {
+  const wanted = categoryName.trim().toLowerCase();
+  const rows: { id: string; name: string; parent: string | null }[] = [];
+  for (const raw of objects) {
+    const object = asRecord(raw);
+    if (object?.['type'] !== 'CATEGORY' || object['is_deleted'] === true) continue;
+    const id = str(object['id']);
+    const data = asRecord(object['category_data']);
+    const name = str(data?.['name']);
+    if (!id || !name) continue;
+    rows.push({ id, name, parent: str(asRecord(data?.['parent_category'])?.['id']) });
+  }
+
+  const gate = rows.find((row) => row.name.toLowerCase() === wanted);
+  if (!gate) return null;
+
+  // Breadth-first from the gate, so a parent is always listed before its children.
+  const categories: MappedCategory[] = [];
+  let level = [gate.id];
+  for (let depth = 0; level.length > 0 && depth < 16; depth += 1) {
+    const next: string[] = [];
+    for (const parent of level) {
+      const children = rows
+        .filter((row) => row.parent === parent)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      for (const child of children) {
+        categories.push({ id: child.id, label: child.name, parentId: parent === gate.id ? null : parent });
+        next.push(child.id);
+      }
+    }
+    level = next;
+  }
+  return { gateId: gate.id, categories };
 }
 
 function firstVariation(

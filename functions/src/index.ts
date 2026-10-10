@@ -41,6 +41,10 @@ export {
   squareProductStock,
   squareProductDetails,
   squareArchiveProduct,
+  // Square's subcategories of the Bookstore are the shop's categories; these
+  // make, rename and remove them, and file an item into them — Square first.
+  squareCategory,
+  squareProductCategories,
 } from './catalog.js';
 
 // Keeping the mirror in step with Square without anybody running a script.

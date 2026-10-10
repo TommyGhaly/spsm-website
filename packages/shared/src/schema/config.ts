@@ -697,6 +697,14 @@ export const CONFIG_DOC_BOOKSTORE = 'bookstore';
 export interface BookstoreSection {
   id: string;
   label: string;
+  /**
+   * The category this one sits inside, or null/absent for a top-level one.
+   *
+   * The shop's categories are Square's subcategories of "Bookstore" now —
+   * mirrored here by the catalog sync, `id` being Square's category id — and
+   * Square nests them. See `mapSquareCategoryTree`.
+   */
+  parentId?: string | null;
 }
 
 export interface BookstoreConfig {
@@ -767,7 +775,7 @@ export interface BookstoreShipping {
 }
 
 /** Section ids are generated from the label and then frozen. */
-export const MAX_SECTIONS = 12;
+export const MAX_SECTIONS = 60;
 export const MAX_SECTION_LABEL = 40;
 
 /**
@@ -945,7 +953,8 @@ export function parseSections(raw: unknown): BookstoreSection[] {
     if (!id || !label) continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    sections.push({ id, label: label.slice(0, MAX_SECTION_LABEL) });
+    const parentId = str(record?.['parentId']);
+    sections.push({ id, label: label.slice(0, MAX_SECTION_LABEL), ...(parentId ? { parentId } : {}) });
     if (sections.length >= MAX_SECTIONS) break;
   }
 

@@ -79,6 +79,14 @@ export interface Product extends AuditFields, Publishable {
   section?: string | null;
 
   /**
+   * Square subcategories of the Bookstore this product is filed in, by Square
+   * category id — mirrored by the sync, and changed from the site through
+   * `squareProductCategories`, which writes Square first. Supersedes `section`,
+   * which was the parish's own single field and is no longer read.
+   */
+  categoryIds?: string[];
+
+  /**
    * `SPSM-0001`. Mirrored from the first Square variation's own `sku`, so it is
    * the same number the register shows. Assigned by Functions only — see
    * `payments/sku.ts`. Optional because rows written before SKUs existed have
