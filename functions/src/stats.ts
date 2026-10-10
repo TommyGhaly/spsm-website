@@ -101,6 +101,12 @@ export async function rollupDay(day: string): Promise<void> {
       total: order.total ?? { amount: 0 },
       lineItems: order.lineItems ?? [],
       day,
+      // The parts, where the order recorded them — see `splitOrderTotal`.
+      subtotal: order.subtotal ?? null,
+      tax: order.tax ?? null,
+      shippingCents: order.shippingCents ?? null,
+      handlingCents: order.handlingCents ?? null,
+      shippingService: order.shippingService ?? null,
     };
   });
 

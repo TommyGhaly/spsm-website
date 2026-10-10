@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { toDate, type DocOf, type FulfillmentStatus, type Order } from '@spsm/shared';
+import {
+  FLAT_SHIPPING_LABEL,
+  splitOrderTotal, toDate, type DocOf, type FulfillmentStatus, type Order } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { money } from './money';
 
@@ -243,6 +245,23 @@ function OrderRow({
   const name = [order.buyerFirstName, order.buyerLastName].filter(Boolean).join(' ');
   const refunded = order.status === 'refunded';
   const units = (order.lineItems ?? []).reduce((sum, line) => sum + (line.quantity || 0), 0);
+  /*
+   * The total's parts, the same split the metrics and the finance page use —
+   * recorded on newer orders, reconstructed for older ones. See
+   * `splitOrderTotal`.
+   */
+  const parts = splitOrderTotal({
+    contactEmail: order.contactEmail ?? '',
+    status: order.status,
+    shipping: Boolean(order.shipping),
+    total: order.total ?? { amount: 0 },
+    lineItems: order.lineItems ?? [],
+    day: '',
+    subtotal: order.subtotal ?? null,
+    tax: order.tax ?? null,
+    shippingCents: order.shippingCents ?? null,
+    handlingCents: order.handlingCents ?? null,
+  });
 
   /*
    * Whether there is anything to do to this order at all.
@@ -281,9 +300,27 @@ function OrderRow({
         {(order.lineItems ?? []).map((line, index) => (
           <li key={`${order.id}-${index}`}>
             <span className="bkorder__qty">{line.quantity}×</span> {line.name}
+            {line.sku && <span className="sku"> · {line.sku}</span>}
+            {line.unitPrice && (
+              <span className="bkorder__each"> · {money(line.unitPrice.amount)} each</span>
+            )}
           </li>
         ))}
       </ul>
+
+      {/* What the total was made of, so a refund or a question about a charge
+          can be answered from here rather than from the Square dashboard. */}
+      <p className="bkorder__money">
+        <span>Books {money(parts.salesCents)}</span>
+        {order.shipping && (
+          <span>
+            {order.shippingService ?? FLAT_SHIPPING_LABEL} {money(parts.postageCents + parts.handlingCents)}
+            {parts.handlingCents > 0 && ` (incl. ${money(parts.handlingCents)} handling)`}
+          </span>
+        )}
+        {parts.taxCents > 0 && <span>Sales tax {money(parts.taxCents)}</span>}
+        <span className="bkorder__money-total">Total {money(order.total?.amount ?? 0)}</span>
+      </p>
 
       {/* Only on a delivery, and only when there is one. It is the one piece of
           personal data on this screen, so it is not drawn where it is not used. */}

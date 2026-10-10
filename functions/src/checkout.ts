@@ -301,7 +301,7 @@ export const squareCheckout = onRequest(
      * The basket key comes from `parcelLines`, the same cleaning the quote
      * endpoint applied, so an honest token for an unchanged basket matches.
      */
-    let postage = { cents: settings.deliveryCents, label: FLAT_SHIPPING_LABEL };
+    let postage = { cents: settings.deliveryCents, label: FLAT_SHIPPING_LABEL, handling: 0 };
     if (shipping && body.shippingOptionId !== undefined && body.shippingOptionId !== null) {
       const zip = usableZip(body.address?.['postalCode']);
       const hmac = quoteHmac();
@@ -320,7 +320,11 @@ export const squareCheckout = onRequest(
         });
         return;
       }
-      postage = { cents: quoted.cents, label: SERVICE_LABELS[quoted.service] };
+      postage = {
+        cents: quoted.cents,
+        label: SERVICE_LABELS[quoted.service],
+        handling: Math.min(quoted.cents, Math.max(0, Number(quoted.handling) || 0)),
+      };
     }
 
     const host = squareHost(environment);
@@ -594,6 +598,15 @@ export const squareCheckout = onRequest(
             shipping,
             shippingAddress: shipping ? (body.address ?? null) : null,
             ...(shipping ? { shippingService: postage.label } : {}),
+            /*
+             * The total's parts, recorded so the metrics and the finance page
+             * can show books, tax and delivery separately rather than working
+             * them back out of the total. All from Square's priced order except
+             * delivery, which is the figure this Function put on it.
+             */
+            subtotal: { amount: total - taxCharged - (shipping ? postage.cents : 0), currency: 'USD' },
+            shippingCents: shipping ? postage.cents : 0,
+            handlingCents: shipping ? postage.handling : 0,
             idempotencyKey,
             // The webhook fills this as events arrive; starting it empty means
             // the first one is never mistaken for a replay.

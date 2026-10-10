@@ -19,6 +19,7 @@
  */
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
+  withStatsDefaults,
   COLLECTIONS,
   parseFinanceRollup,
   type BookstoreStats,
@@ -103,7 +104,8 @@ export async function readFinance(sources: readonly FinanceSource[]): Promise<Fi
  */
 export async function readBookstoreMonth(month: string): Promise<BookstoreStats | null> {
   const snapshot = await getDoc(doc(db(), COLLECTIONS.bookstoreStats, `month-${month}`));
-  return snapshot.exists() ? (snapshot.data() as BookstoreStats) : null;
+  // Filled out, so a month rolled up before the money split existed reads as 0.
+  return snapshot.exists() ? withStatsDefaults(snapshot.data()) : null;
 }
 
 /**

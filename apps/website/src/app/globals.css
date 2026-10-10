@@ -5950,6 +5950,29 @@ main {
   color: var(--color-ink, #1c1614);
 }
 
+/* An order's total, split: books, delivery, tax, total — a line of figures. */
+.bkorder__money {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  margin: 0.35rem 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkorder__money-total {
+  font-weight: 600;
+  color: var(--color-ink, #1c1614);
+}
+
+.bkorder__each {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
 /* A stock number, shown where somebody might read it out to the office. */
 .sku {
   font-family: var(--font-ui, system-ui, sans-serif);

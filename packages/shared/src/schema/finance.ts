@@ -662,6 +662,19 @@ export interface FinanceMonth {
   bookstoreCents: number;
   /** Refunded in the same month. Already counted in the line above. */
   bookstoreRefundedCents: number;
+  /*
+   * `bookstoreCents` divided into what it is: the books, the sales tax, and
+   * delivery (postage and handling). The three add up to `bookstoreCents`.
+   */
+  bookstoreSalesCents: number;
+  bookstoreTaxCents: number;
+  bookstoreDeliveryCents: number;
+  /**
+   * Sales tax collected this month less the tax on refunded orders — what the
+   * parish holds for the Commonwealth and has to pay over. Inside `netCents`,
+   * so it is shown beside it rather than subtracted silently.
+   */
+  salesTaxDueCents: number;
   /** Camp payments recorded as received in this month, refunds netted out. */
   campCents: number;
   /** Form charges Square took in this month. */
@@ -674,12 +687,24 @@ export interface FinanceMonth {
 
 export function financeMonth(input: {
   month: string;
-  bookstore: { revenue: number; refunded: number } | null;
+  bookstore: {
+    revenue: number;
+    refunded: number;
+    /* The split, from `bookstoreStats.totals`. Absent ⇒ all of it is books. */
+    salesCents?: number;
+    taxCents?: number;
+    postageCents?: number;
+    handlingCents?: number;
+    refundedTaxCents?: number;
+  } | null;
   camp: readonly Pick<CampFinanceRollup, 'byMonth'>[];
   forms: readonly Pick<FormFinanceRollup, 'byMonth'>[];
 }): FinanceMonth {
   const bookstoreCents = input.bookstore?.revenue ?? 0;
   const bookstoreRefundedCents = input.bookstore?.refunded ?? 0;
+  const bookstoreTaxCents = input.bookstore?.taxCents ?? 0;
+  const bookstoreDeliveryCents =
+    (input.bookstore?.postageCents ?? 0) + (input.bookstore?.handlingCents ?? 0);
   const campCents = input.camp.reduce((sum, one) => sum + (one.byMonth[input.month] ?? 0), 0);
   const formsCents = input.forms.reduce((sum, one) => sum + (one.byMonth[input.month] ?? 0), 0);
 
@@ -689,6 +714,11 @@ export function financeMonth(input: {
     month: input.month,
     bookstoreCents,
     bookstoreRefundedCents,
+    // Whatever is left of the revenue, so the three always sum to it.
+    bookstoreSalesCents: bookstoreCents - bookstoreTaxCents - bookstoreDeliveryCents,
+    bookstoreTaxCents,
+    bookstoreDeliveryCents,
+    salesTaxDueCents: Math.max(0, bookstoreTaxCents - (input.bookstore?.refundedTaxCents ?? 0)),
     campCents,
     formsCents,
     receivedCents,

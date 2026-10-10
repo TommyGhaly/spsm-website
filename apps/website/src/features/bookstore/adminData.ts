@@ -37,6 +37,7 @@ import {
   CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
   parseSections,
+  withStatsDefaults,
   type BookstoreSection,
   type BookstoreShipping,
   type BookstoreStats,
@@ -124,7 +125,8 @@ export async function refundOrder(orderId: string, reason: string): Promise<void
  */
 export async function readStats(period: 'day' | 'month', key: string): Promise<BookstoreStats | null> {
   const snapshot = await getDoc(doc(db(), COLLECTIONS.bookstoreStats, `${period}-${key}`));
-  return snapshot.exists() ? (snapshot.data() as BookstoreStats) : null;
+  // Filled out, so a document rolled up before a total existed reads as 0.
+  return snapshot.exists() ? withStatsDefaults(snapshot.data()) : null;
 }
 
 /**
@@ -161,13 +163,24 @@ export async function refreshStats(): Promise<string[]> {
  * copies last month, and leaving it as a bare slug in the report helps nobody.
  */
 export async function productNames(): Promise<Map<string, string>> {
+  return (await productDirectory()).names;
+}
+
+/** Names and SKUs together, from one read — for reports that print both. */
+export async function productDirectory(): Promise<{
+  names: Map<string, string>;
+  skus: Map<string, string>;
+}> {
   const snapshot = await getDocs(collection(db(), COLLECTIONS.products));
   const names = new Map<string, string>();
+  const skus = new Map<string, string>();
   for (const entry of snapshot.docs) {
     const product = entry.data() as Product;
-    if (product.slug) names.set(product.slug, product.name);
+    if (!product.slug) continue;
+    names.set(product.slug, product.name);
+    if (product.sku) skus.set(product.slug, product.sku);
   }
-  return names;
+  return { names, skus };
 }
 
 

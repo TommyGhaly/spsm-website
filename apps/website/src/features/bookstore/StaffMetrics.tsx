@@ -61,7 +61,12 @@ function periods(): Period[] {
 
 type Load =
   | { kind: 'loading' }
-  | { kind: 'ready'; stats: BookstoreStats | null; names: Map<string, string> }
+  | {
+      kind: 'ready';
+      stats: BookstoreStats | null;
+      names: Map<string, string>;
+      skus: Map<string, string>;
+    }
   | { kind: 'failed'; message: string };
 
 export function StaffMetrics() {
@@ -74,12 +79,12 @@ export function StaffMetrics() {
   const read = useCallback(async (chosen: Period) => {
     setLoad({ kind: 'loading' });
     try {
-      const { readStats, productNames } = await import('./adminData');
-      const [stats, names] = await Promise.all([
+      const { readStats, productDirectory } = await import('./adminData');
+      const [stats, { names, skus }] = await Promise.all([
         readStats(chosen.kind, chosen.key),
-        productNames(),
+        productDirectory(),
       ]);
-      setLoad({ kind: 'ready', stats, names });
+      setLoad({ kind: 'ready', stats, names, skus });
     } catch (cause) {
       setLoad({
         kind: 'failed',
@@ -164,7 +169,7 @@ export function StaffMetrics() {
       )}
 
       {load.kind === 'ready' && load.stats && (
-        <Report stats={load.stats} names={load.names} period={period} />
+        <Report stats={load.stats} names={load.names} skus={load.skus} period={period} />
       )}
     </div>
   );
@@ -173,13 +178,18 @@ export function StaffMetrics() {
 function Report({
   stats,
   names,
+  skus,
   period,
 }: {
   stats: BookstoreStats;
   names: Map<string, string>;
+  skus: Map<string, string>;
   period: Period;
 }) {
   const t = stats.totals;
+  const services = Object.entries(stats.shippingByService ?? {}).sort(
+    (a, b) => b[1].cents - a[1].cents || a[0].localeCompare(b[0]),
+  );
   const computed = toDate(stats.computedAt);
   const nameOf = (slug: string) => names.get(slug) ?? slug;
 
@@ -230,7 +240,36 @@ function Report({
   return (
     <>
       <div className="bkstats__tiles">
-        <Tile label="Sold" value={money(t.revenue)} note={`${t.orders} ${t.orders === 1 ? 'order' : 'orders'}, ${t.unitsSold} books`} />
+        <Tile label="Taken" value={money(t.revenue)} note={`${t.orders} ${t.orders === 1 ? 'order' : 'orders'}, ${t.unitsSold} books`} />
+        {/*
+          What "Taken" is made of. Only once something has been taken — four
+          tiles of $0.00 above an empty shop are furniture. The three add up to
+          "Taken"; see `splitOrderTotal` for orders from before the split was
+          recorded.
+        */}
+        {t.revenue > 0 && (
+          <>
+            <Tile label="Books & goods" value={money(t.salesCents)} note="before tax" />
+            <Tile
+              label="Sales tax"
+              value={money(t.taxCents)}
+              note={
+                t.refundedTaxCents > 0
+                  ? `${money(t.taxCents - t.refundedTaxCents)} after refunds · owed to the state`
+                  : 'collected for the state'
+              }
+            />
+            <Tile
+              label="Delivery"
+              value={money(t.postageCents + t.handlingCents)}
+              note={
+                t.handlingCents > 0
+                  ? `${money(t.postageCents)} postage + ${money(t.handlingCents)} handling`
+                  : `${t.shippedOrders} delivered ${t.shippedOrders === 1 ? 'order' : 'orders'}`
+              }
+            />
+          </>
+        )}
         {/* Net is shown only when there is something to net off. A permanent
             "refunded $0.00" tile is furniture. */}
         {t.refunded > 0 && (
@@ -308,9 +347,25 @@ function Report({
             key: row.slug,
             name: nameOf(row.slug),
             value: `${row.value}`,
-            note: row.stats.revenue > 0 ? money(row.stats.revenue) : '',
+            note: [skus.get(row.slug) ?? '', row.stats.revenue > 0 ? money(row.stats.revenue) : '']
+              .filter(Boolean)
+              .join(' · '),
           }))}
         />
+
+        {services.length > 0 && (
+          <Table
+            title="Delivery by service"
+            hint="What buyers paid for postage and handling, by the service they chose."
+            empty=""
+            rows={services.map(([service, row]) => ({
+              key: service,
+              name: service,
+              value: money(row.cents),
+              note: `${row.orders} ${row.orders === 1 ? 'order' : 'orders'}`,
+            }))}
+          />
+        )}
 
         <Table
           title="Most looked at"

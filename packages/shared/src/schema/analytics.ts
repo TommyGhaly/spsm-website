@@ -139,7 +139,31 @@ export interface BookstoreStats {
     pickupOrders: number;
     /** Orders whose email had ordered before, within this period's input. */
     repeatBuyers: number;
+
+    /*
+     * `revenue` split into what it is made of — so a treasurer can see what was
+     * books, what was the state's, and what was postage. The four add up to
+     * `revenue`. All cents, all from what Square charged (see `rollupBookstore`
+     * for how orders taken before these were recorded are split).
+     */
+    /** The books and goods themselves, before tax. */
+    salesCents: number;
+    /** Sales tax collected — the Commonwealth's money, held until it is paid over. */
+    taxCents: number;
+    /** USPS postage (or the flat delivery charge) collected. */
+    postageCents: number;
+    /** The handling fee collected on delivered orders. */
+    handlingCents: number;
+    /** The tax part of `refunded`, so the tax owed can be netted. */
+    refundedTaxCents: number;
   };
+
+  /**
+   * Delivered orders by the service the buyer paid for — "USPS Ground
+   * Advantage", "Flat delivery" — and what was collected for each, handling
+   * included. Optional: documents written before it have none.
+   */
+  shippingByService?: Record<string, { orders: number; cents: number }>;
 
   /** When the rollup last ran. Staleness is visible rather than assumed. */
   computedAt: Timestamped;
@@ -161,6 +185,37 @@ export function emptyTotals(): BookstoreStats['totals'] {
     shippedOrders: 0,
     pickupOrders: 0,
     repeatBuyers: 0,
+    salesCents: 0,
+    taxCents: 0,
+    postageCents: 0,
+    handlingCents: 0,
+    refundedTaxCents: 0,
+  };
+}
+
+/**
+ * A stats document as read from Firestore, with every total present.
+ *
+ * Documents rolled up before a field existed simply lack it, and an absent
+ * number in arithmetic is `NaN` on a treasurer's screen. Every reader goes
+ * through this rather than casting.
+ */
+export function withStatsDefaults(raw: unknown): BookstoreStats | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const doc = raw as Partial<BookstoreStats>;
+  const totals = { ...emptyTotals() };
+  const given = (doc.totals ?? {}) as Record<string, unknown>;
+  for (const key of Object.keys(totals) as (keyof BookstoreStats['totals'])[]) {
+    const value = given[key];
+    if (typeof value === 'number' && Number.isFinite(value)) totals[key] = value;
+  }
+  return {
+    ...(doc as BookstoreStats),
+    products: doc.products ?? {},
+    searches: doc.searches ?? {},
+    zeroResultSearches: doc.zeroResultSearches ?? {},
+    shippingByService: doc.shippingByService ?? {},
+    totals,
   };
 }
 

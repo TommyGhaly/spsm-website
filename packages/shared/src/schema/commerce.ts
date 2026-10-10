@@ -155,13 +155,12 @@ export interface Order extends AuditFields {
 
   lineItems: OrderLineItem[];
   /**
-   * Square's own breakdown, where we have it.
+   * The total's parts: `subtotal` is the goods before tax, `tax` is what
+   * Square charged as sales tax. With `shippingCents` they add up to `total`.
    *
-   * Optional because the checkout Function does not currently ask for it:
-   * Square prices the order and returns a total, and the total is what gets
-   * charged. Declaring these required described an order document that has
-   * never existed, which is worse than admitting the gap — `total` is the
-   * number that is always true, and every report is built on it.
+   * Optional because orders taken before they were recorded have only the
+   * total — `splitOrderTotal` in the analytics rollup reconstructs the split
+   * for those. `total` remains the number that is always true.
    */
   subtotal?: Money | null;
   tax?: Money | null;
@@ -181,6 +180,10 @@ export interface Order extends AuditFields {
    * collections and on orders from before live rates.
    */
   shippingService?: string;
+  /** Everything charged for delivery, handling included. 0 on a collection. */
+  shippingCents?: number;
+  /** The handling part of `shippingCents`. */
+  handlingCents?: number;
 
   /**
    * Idempotency key we sent to Square. Kept so a retry after a network failure

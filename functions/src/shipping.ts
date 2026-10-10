@@ -180,7 +180,7 @@ export async function liveOptions(
       const cents = quoteCents(prices[i] ?? NaN, settings.handlingCents);
       if (cents === null) return;
       options.push({
-        id: signQuote({ service, cents, zip, basket, expires }, hmac),
+        id: signQuote({ service, cents, zip, basket, expires, handling: settings.handlingCents }, hmac),
         service,
         label: SERVICE_LABELS[service],
         days: SERVICE_DAYS[service],

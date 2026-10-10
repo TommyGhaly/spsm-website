@@ -17,6 +17,7 @@ import {
   type ProductStats,
 } from '../schema/analytics.js';
 import type { NormalizedBookstoreEvent } from './bookstoreEvents.js';
+import { FLAT_SHIPPING_LABEL } from '../payments/shipping.js';
 
 /**
  * The slice of an order the rollup needs.
@@ -33,6 +34,71 @@ export interface RollupOrder {
   lineItems: { productId: string; quantity: number; unitPrice?: { amount: number } | null }[];
   /** `YYYY-MM-DD` in the parish's zone, computed by the caller from createdAt. */
   day: string;
+  /*
+   * The parts of `total`, where the order recorded them. Optional because
+   * orders taken before they were written have only the total — see
+   * `splitOrderTotal` for how those are divided.
+   */
+  subtotal?: { amount: number } | null;
+  tax?: { amount: number } | null;
+  /** Everything charged for delivery, handling included. */
+  shippingCents?: number | null;
+  /** The handling part of `shippingCents`. */
+  handlingCents?: number | null;
+  shippingService?: string | null;
+}
+
+/**
+ * An order's total, divided into goods, tax, postage and handling.
+ *
+ * ---------------------------------------------------------------------------
+ * Exact for orders that recorded their parts; reconstructed for older ones,
+ * always so the four add up to the total Square charged:
+ *
+ *   - tax is what the order says, or 0 — nothing was taxed before tax existed.
+ *   - delivery is the recorded charge, else — on a delivered order — whatever
+ *     the total leaves after the lines' prices and tax. That is exactly the old
+ *     flat charge, which was never written down anywhere else.
+ *   - handling is the recorded part, else 0 (there was no handling fee).
+ *   - goods is whatever is left, so the four always sum to what was charged.
+ * ---------------------------------------------------------------------------
+ */
+export function splitOrderTotal(order: RollupOrder): {
+  salesCents: number;
+  taxCents: number;
+  postageCents: number;
+  handlingCents: number;
+} {
+  const total = order.total.amount;
+  const tax = Math.max(0, order.tax?.amount ?? 0);
+  const recordedDelivery = typeof order.shippingCents === 'number' ? Math.max(0, order.shippingCents) : null;
+
+  let delivery = 0;
+  if (order.shipping) {
+    if (recordedDelivery !== null) {
+      delivery = recordedDelivery;
+    } else {
+      const priced =
+        order.lineItems.length > 0 &&
+        order.lineItems.every((line) => typeof line.unitPrice?.amount === 'number');
+      const goods =
+        order.subtotal?.amount ??
+        (priced
+          ? order.lineItems.reduce(
+              (sum, line) => sum + line.unitPrice!.amount * (Number(line.quantity) || 0),
+              0,
+            )
+          : null);
+      delivery = goods === null ? 0 : Math.max(0, total - goods - tax);
+    }
+  }
+  const handling = Math.min(delivery, Math.max(0, order.handlingCents ?? 0));
+  return {
+    salesCents: total - tax - delivery,
+    taxCents: tax,
+    postageCents: delivery - handling,
+    handlingCents: handling,
+  };
 }
 
 export interface RollupInput {
@@ -138,6 +204,7 @@ export function rollupBookstore(input: RollupInput): Omit<BookstoreStats, 'compu
    * would lose a sale from the report while the money sat in the bank.
    */
   const seenEmails = new Set(input.priorBuyerEmails ?? []);
+  const shippingByService: Record<string, { orders: number; cents: number }> = {};
 
   for (const order of input.orders) {
     if (!SOLD_STATUSES.has(order.status)) continue;
@@ -147,9 +214,25 @@ export function rollupBookstore(input: RollupInput): Omit<BookstoreStats, 'compu
     if (order.shipping) totals.shippedOrders += 1;
     else totals.pickupOrders += 1;
 
+    const parts = splitOrderTotal(order);
+    totals.salesCents += parts.salesCents;
+    totals.taxCents += parts.taxCents;
+    totals.postageCents += parts.postageCents;
+    totals.handlingCents += parts.handlingCents;
+    if (order.shipping) {
+      // An order with no service named is from before live postage, when every
+      // delivery paid the flat charge — so that is what it is called.
+      const service = order.shippingService?.trim() || FLAT_SHIPPING_LABEL;
+      const row = (shippingByService[service] ??= { orders: 0, cents: 0 });
+      row.orders += 1;
+      row.cents += parts.postageCents + parts.handlingCents;
+    }
+
     if (order.status === 'refunded') {
       totals.refundedOrders += 1;
       totals.refunded += order.total.amount;
+      // Refunds are whole-order, so the tax on it went back too.
+      totals.refundedTaxCents += parts.taxCents;
     }
 
     const email = order.contactEmail.trim().toLowerCase();
@@ -196,6 +279,7 @@ export function rollupBookstore(input: RollupInput): Omit<BookstoreStats, 'compu
     searches,
     zeroResultSearches,
     totals,
+    shippingByService,
   };
 }
 
@@ -224,6 +308,7 @@ export function mergeStats(
   const searches: Record<string, number> = {};
   const zeroResultSearches: Record<string, number> = {};
   const totals = emptyTotals();
+  const shippingByService: Record<string, { orders: number; cents: number }> = {};
 
   for (const part of parts) {
     for (const [slug, stats] of Object.entries(part.products)) {
@@ -242,15 +327,22 @@ export function mergeStats(
     }
 
     for (const field of Object.keys(totals) as (keyof typeof totals)[]) {
+      // `?? 0`: a day rolled up before a field existed lacks it.
+      const value = part.totals[field] ?? 0;
       if (field === 'visitors' || field === 'repeatBuyers') {
-        totals[field] = Math.max(totals[field], part.totals[field]);
+        totals[field] = Math.max(totals[field], value);
       } else {
-        totals[field] += part.totals[field];
+        totals[field] += value;
       }
+    }
+    for (const [service, row] of Object.entries(part.shippingByService ?? {})) {
+      const target = (shippingByService[service] ??= { orders: 0, cents: 0 });
+      target.orders += row.orders;
+      target.cents += row.cents;
     }
   }
 
-  return { period, key, products, searches, zeroResultSearches, totals };
+  return { period, key, products, searches, zeroResultSearches, totals, shippingByService };
 }
 
 /**

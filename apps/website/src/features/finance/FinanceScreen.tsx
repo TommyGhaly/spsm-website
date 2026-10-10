@@ -314,7 +314,8 @@ function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp
     () =>
       financeMonth({
         month,
-        bookstore: bookstore ? { revenue: bookstore.totals.revenue, refunded: bookstore.totals.refunded } : null,
+        // The whole split, so the month can show books, tax and delivery apart.
+        bookstore: bookstore ? { ...bookstore.totals } : null,
         camp,
         forms,
       }),
@@ -438,7 +439,13 @@ function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp
             <Tile
               label="Bookstore"
               cents={totals.bookstoreCents}
-              note={bookstoreReady ? undefined : 'reading…'}
+              note={
+                !bookstoreReady
+                  ? 'reading…'
+                  : totals.bookstoreTaxCents > 0
+                    ? `incl. ${money(totals.bookstoreTaxCents)} sales tax`
+                    : undefined
+              }
             />
           )}
           {seesCamp && <Tile label="Summer camp" cents={totals.campCents} />}
@@ -454,6 +461,18 @@ function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp
           thing this screen must not do. The lede names what the total is of, and
           that is the whole of the qualification anybody needs.
         */}
+
+        {/*
+          Sales tax is inside these figures but is not the church's money: it is
+          collected for the Commonwealth and paid over. Said here, under the
+          total it is part of, so nobody reads "Together" as all income.
+        */}
+        {seesShop && totals.salesTaxDueCents > 0 && (
+          <p className="fin__foot">
+            {money(totals.salesTaxDueCents)} of the bookstore&rsquo;s takings is sales tax, held
+            for the Massachusetts Department of Revenue rather than kept.
+          </p>
+        )}
 
         {totals.bookstoreRefundedCents > 0 && (
           <p className="fin__foot">
@@ -618,6 +637,44 @@ function FinanceBody({ sources, runsCamp }: { sources: FinanceSource[]; runsCamp
                 strong
               />
             </div>
+
+            {/*
+              What "Taken" is made of, as a ledger — the lines add up to it. The
+              sales tax line is the one a treasurer files from, so the amount to
+              pay over (after refunds) is its own line below the total.
+            */}
+            {bookstore.totals.revenue > 0 && (
+              <dl className="fin__ledger">
+                <Line label="Books & goods, before tax" cents={totals.bookstoreSalesCents} />
+                <Line
+                  label={
+                    bookstore.totals.handlingCents > 0
+                      ? `Delivery (${money(bookstore.totals.postageCents)} postage + ${money(bookstore.totals.handlingCents)} handling)`
+                      : 'Delivery'
+                  }
+                  cents={totals.bookstoreDeliveryCents}
+                />
+                <Line label="Sales tax collected" cents={totals.bookstoreTaxCents} />
+                <Line label="Taken" cents={totals.bookstoreCents} strong />
+                {totals.salesTaxDueCents > 0 && (
+                  <Line label="Sales tax to pay over (after refunds)" cents={totals.salesTaxDueCents} />
+                )}
+              </dl>
+            )}
+
+            {Object.keys(bookstore.shippingByService ?? {}).length > 0 && (
+              <p className="fin__foot">
+                Delivery by service:{' '}
+                {Object.entries(bookstore.shippingByService ?? {})
+                  .sort((a, b) => b[1].cents - a[1].cents)
+                  .map(
+                    ([service, row]) =>
+                      `${service} ${money(row.cents)} (${row.orders} ${row.orders === 1 ? 'order' : 'orders'})`,
+                  )
+                  .join(' · ')}
+                .
+              </p>
+            )}
             <p className="fin__foot">
               {bookstore.totals.orders} order{bookstore.totals.orders === 1 ? '' : 's'},{' '}
               {bookstore.totals.unitsSold} book{bookstore.totals.unitsSold === 1 ? '' : 's'}. What

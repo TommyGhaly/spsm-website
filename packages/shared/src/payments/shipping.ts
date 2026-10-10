@@ -139,6 +139,11 @@ export interface SignedQuote {
   basket: string;
   /** Epoch milliseconds. */
   expires: number;
+  /**
+   * The handling part of `cents`, signed with it so the order can record the
+   * split exactly. Optional: a token issued before it existed has none (0).
+   */
+  handling?: number;
 }
 
 export type Hmac = (message: string) => string;
