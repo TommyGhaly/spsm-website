@@ -50,6 +50,9 @@ export interface OrderEmailInput {
   /** Delivered orders: the service paid for and what it cost, shown as its own line. */
   shippingService?: string;
   shippingCents?: number;
+  /** Sales tax Square charged, with the label to print beside it. */
+  taxCents?: number;
+  taxLabel?: string;
 }
 
 /** The shape the Trigger Email extension reads out of the `mail` collection. */
@@ -127,6 +130,10 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
     input.shipping && typeof input.shippingCents === 'number'
       ? { label: input.shippingService ?? 'Delivery', cents: input.shippingCents }
       : null;
+  const tax =
+    typeof input.taxCents === 'number' && input.taxCents > 0
+      ? { label: input.taxLabel ?? 'Sales tax', cents: input.taxCents }
+      : null;
 
   const question = input.parishEmail
     ? `${unmonitored} If anything is wrong with this order, write to ${input.parishEmail} and quote the reference above.`
@@ -142,6 +149,7 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
       (l) => `${l.quantity} x ${l.name}${l.sku ? ` (${l.sku})` : ''} — ${money(l.amount)}`,
     ),
     ...(postage ? [`${postage.label} — ${money(postage.cents)}`] : []),
+    ...(tax ? [`${tax.label} — ${money(tax.cents)}`] : []),
     '',
     `Total paid: ${money(input.total)}`,
     `Reference: ${input.orderId}`,
@@ -171,13 +179,16 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
           </tr>`,
       )
       .join('') +
-    (postage
-      ? `
+    [postage, tax]
+      .filter((row): row is { label: string; cents: number } => row !== null)
+      .map(
+        (row) => `
           <tr>
-            <td style="padding:6px 0;color:#4b413e;">${escapeHtml(postage.label)}</td>
-            <td style="padding:6px 0;text-align:right;color:#1c1614;white-space:nowrap;">${money(postage.cents)}</td>
-          </tr>`
-      : '');
+            <td style="padding:6px 0;color:#4b413e;">${escapeHtml(row.label)}</td>
+            <td style="padding:6px 0;text-align:right;color:#1c1614;white-space:nowrap;">${money(row.cents)}</td>
+          </tr>`,
+      )
+      .join('');
 
   const html = `<!doctype html>
 <html>

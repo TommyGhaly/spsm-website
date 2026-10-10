@@ -76,6 +76,8 @@ export interface ShopProduct {
   /** Ounces per copy, or null when not weighed. The parish's, like `section`. */
   weightOz: number | null;
   mediaMail: boolean;
+  /** Sales tax applies. The parish's, like `section`. */
+  taxable: boolean;
 }
 
 /**
@@ -129,6 +131,7 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
       sku: product.sku ?? null,
       weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
       mediaMail: product.mediaMail === true,
+      taxable: product.taxable === true,
     };
   });
 }

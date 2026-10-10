@@ -727,6 +727,12 @@ export interface BookstoreConfig {
 
   /** How delivered orders are priced — see `BookstoreShipping`. */
   shipping: BookstoreShipping;
+
+  /**
+   * Sales tax, in basis points: 625 is Massachusetts' 6.25%. Applied only to
+   * products marked `taxable` — see `payments/salesTax.ts`. 0 means no tax.
+   */
+  taxRateBps: number;
 }
 
 /** The USPS services the shop can offer, by USPS's own `mailClass` names. */
@@ -812,6 +818,11 @@ export const DEFAULT_BOOKSTORE_CONFIG: BookstoreConfig = {
     box: { lengthIn: 12, widthIn: 9, heightIn: 4, tareOz: 6 },
     services: ['USPS_GROUND_ADVANTAGE', 'PRIORITY_MAIL', 'MEDIA_MAIL'],
   },
+  /*
+   * Massachusetts' rate. Harmless as a default: nothing is taxed until a
+   * product is marked taxable, and every product starts unmarked.
+   */
+  taxRateBps: 625,
 };
 
 /** Guards on the shipping settings, against a typo becoming a charge. */
@@ -857,6 +868,15 @@ export function parseBookstoreConfig(raw: unknown): BookstoreConfig {
     returnsNotice: str(doc?.['returnsNotice']) || fallback.returnsNotice,
     sections: parseSections(doc?.['sections']),
     shipping: parseShipping(doc?.['shipping']),
+    // Range-checked like the delivery charge, and for the same reason: it
+    // becomes part of a charge. Out of range is the default, not a clamp.
+    taxRateBps:
+      typeof doc?.['taxRateBps'] === 'number' &&
+      Number.isInteger(doc['taxRateBps']) &&
+      doc['taxRateBps'] >= 0 &&
+      doc['taxRateBps'] <= 2_000
+        ? doc['taxRateBps']
+        : fallback.taxRateBps,
   };
 }
 

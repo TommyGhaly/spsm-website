@@ -462,20 +462,27 @@ service cloud.firestore {
        * key set instead, which is the same guarantee without the dereference.
        */
       allow create: if hasScreen('bookstore')
-        && request.resource.data.keys().hasOnly(['sections', 'shipping', 'updatedAt', 'updatedBy'])
+        && request.resource.data.keys().hasOnly(['sections', 'shipping', 'taxRateBps', 'updatedAt', 'updatedBy'])
+        && (!('taxRateBps' in request.resource.data) || isTaxRate(request.resource.data.taxRateBps))
         && (!('sections' in request.resource.data) || isSectionList(request.resource.data.sections))
         && (!('shipping' in request.resource.data) || isShippingSettings(request.resource.data.shipping))
         && request.resource.data.updatedBy == request.auth.uid;
 
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['sections', 'shipping', 'updatedAt', 'updatedBy'])
+             .hasOnly(['sections', 'shipping', 'taxRateBps', 'updatedAt', 'updatedBy'])
+        && (!('taxRateBps' in request.resource.data) || isTaxRate(request.resource.data.taxRateBps))
         && (!('sections' in request.resource.data) || isSectionList(request.resource.data.sections))
         && (!('shipping' in request.resource.data) || isShippingSettings(request.resource.data.shipping))
         && request.resource.data.updatedBy == request.auth.uid;
 
       // Never. The shop's divisions going missing wholesale is not an edit.
       allow delete: if false;
+    }
+
+    // Basis points, 0–20%. Matches MAX_TAX_RATE_BPS in payments/salesTax.ts.
+    function isTaxRate(rate) {
+      return rate is int && rate >= 0 && rate <= 2000;
     }
 
     function isSectionList(sections) {
@@ -806,7 +813,7 @@ service cloud.firestore {
        */
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['section', 'weightOz', 'mediaMail', 'updatedAt', 'updatedBy'])
+             .hasOnly(['section', 'weightOz', 'mediaMail', 'taxable', 'updatedAt', 'updatedBy'])
         && (!('section' in request.resource.data)
             || request.resource.data.section == null
             || (request.resource.data.section is string
@@ -818,6 +825,10 @@ service cloud.firestore {
                 && request.resource.data.weightOz <= 1120))
         && (!('mediaMail' in request.resource.data)
             || request.resource.data.mediaMail is bool)
+        // Sales tax applies or not. Read by the checkout Function, which asks
+        // Square to tax the line; it can add tax to a sale, never lower a price.
+        && (!('taxable' in request.resource.data)
+            || request.resource.data.taxable is bool)
         && request.resource.data.updatedBy == request.auth.uid;
     }
 

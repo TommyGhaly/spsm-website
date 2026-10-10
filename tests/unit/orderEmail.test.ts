@@ -134,4 +134,11 @@ describe('buildOrderEmail', () => {
     const mail = buildOrderEmail({ ...base, shipping: false, shippingService: 'x', shippingCents: 835 });
     expect(mail.message.text).not.toContain('$8.35');
   });
+
+  it('lists sales tax as its own line when there was some', () => {
+    const mail = buildOrderEmail({ ...base, shipping: false, taxCents: 94, taxLabel: 'Sales tax (6.25%)' });
+    expect(mail.message.text).toContain('Sales tax (6.25%) — $0.94');
+    expect(mail.message.html).toContain('Sales tax (6.25%)');
+    expect(buildOrderEmail({ ...base, shipping: false, taxCents: 0 }).message.text).not.toContain('Sales tax');
+  });
 });

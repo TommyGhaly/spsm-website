@@ -655,3 +655,39 @@ describe('config/skuCounter', () => {
     await assertFails(setDoc(doc(asAnon(env).firestore(), 'config/skuCounter'), { last: 0 }));
   });
 });
+
+describe('sales tax — the product flag and the shop rate', () => {
+  it('lets the shop mark a product taxable, and refuses anything but a bool', async () => {
+    const db = asBookstore(env).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'products/holy-bible'), { taxable: true, updatedAt: serverTimestamp(), updatedBy: 'bookstore-1' }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'products/holy-bible'), { taxable: 'yes', updatedAt: serverTimestamp(), updatedBy: 'bookstore-1' }),
+    );
+  });
+
+  it('lets the shop set the rate within 0–20%', async () => {
+    const write = (taxRateBps: unknown) =>
+      setDoc(
+        doc(asBookstore(env).firestore(), 'config/bookstore'),
+        { taxRateBps, updatedAt: serverTimestamp(), updatedBy: 'bookstore-1' },
+        { merge: true },
+      );
+    await assertSucceeds(write(625));
+    await assertSucceeds(write(0));
+    await assertFails(write(62500));
+    await assertFails(write(6.25));
+    await assertFails(write('625'));
+  });
+
+  it('does not let a member with no grant change either', async () => {
+    const db = asSignedIn(env).firestore();
+    await assertFails(
+      updateDoc(doc(db, 'products/holy-bible'), { taxable: false, updatedAt: serverTimestamp(), updatedBy: 'member-1' }),
+    );
+    await assertFails(
+      setDoc(doc(db, 'config/bookstore'), { taxRateBps: 0, updatedAt: serverTimestamp(), updatedBy: 'member-1' }, { merge: true }),
+    );
+  });
+});

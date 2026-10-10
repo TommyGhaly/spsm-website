@@ -102,6 +102,14 @@ export interface Product extends AuditFields, Publishable {
    * USPS can inspect and surcharge a parcel that is not entirely media.
    */
   mediaMail?: boolean;
+
+  /**
+   * Whether Massachusetts sales tax applies. The parish's field, like `section`,
+   * and kept off the sync's field mask for the same reason. Absent is false:
+   * nothing is taxed until somebody says so. Books used in worship are exempt;
+   * gifts and goods generally are not — see `payments/salesTax.ts`.
+   */
+  taxable?: boolean;
 }
 
 /**

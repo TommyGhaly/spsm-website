@@ -41,6 +41,7 @@ export function CardPayment({
   total,
   deliveryCents,
   liveShipping,
+  tax,
   applicationId,
   locationId,
   sandbox,
@@ -61,6 +62,8 @@ export function CardPayment({
   deliveryCents: number;
   /** Whether the shop quotes USPS postage, which changes what step 2 promises. */
   liveShipping: boolean;
+  /** Sales tax on the books, or null when nothing in the basket is taxed. */
+  tax: { label: string; cents: number } | null;
   applicationId: string;
   locationId: string;
   sandbox: boolean;
@@ -77,6 +80,7 @@ export function CardPayment({
       paid: number;
       /** The delivery line for the receipt; null on a collection. */
       postage: { label: string; cents: number } | null;
+      tax: { label: string; cents: number } | null;
     },
   ) => void;
 }) {
@@ -179,7 +183,7 @@ export function CardPayment({
   // Only a settled answer can be paid against; a figure still being fetched is
   // not one anybody has been shown.
   const quoting = shipping && liveShipping && Boolean(usableZip(address.postalCode)) && quote.status === 'loading';
-  const charge = total + postage;
+  const charge = total + postage + (tax?.cents ?? 0);
   // Live postage with no ZIP yet, or a quote in flight: no total is settled.
   const awaitingPostage = shipping && liveShipping && (!usableZip(address.postalCode) || quoting);
 
@@ -302,6 +306,7 @@ export function CardPayment({
         shipping,
         paid: charge,
         postage: shipping ? { label: chosen ? chosen.label : 'Delivery', cents: postage } : null,
+        tax,
       });
       return true;
     } catch {
@@ -605,6 +610,12 @@ export function CardPayment({
           <div>
             <dt>Delivery</dt>
             <dd>{money(flatCents)}</dd>
+          </div>
+        )}
+        {tax && (
+          <div>
+            <dt>{tax.label}</dt>
+            <dd>{money(tax.cents)}</dd>
           </div>
         )}
         <div className="pay__sum-total">

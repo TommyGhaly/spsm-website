@@ -16,6 +16,8 @@ import { useLiveCatalog } from "./useLiveCatalog";
 import { useCatalogDocs } from "./useCatalogDocs";
 import {
   groupProducts,
+  salesTaxCents,
+  taxLabel,
   UNSORTED_LABEL,
   type BookstoreConfig,
   type BookstoreSection,
@@ -192,6 +194,7 @@ export function Shop({
     shipping: boolean;
     lines: { name: string; sku: string | null; quantity: number; amount: number }[];
     postage: { label: string; cents: number } | null;
+    tax: { label: string; cents: number } | null;
     total: number;
   } | null>(null);
   /*
@@ -865,12 +868,15 @@ export function Shop({
                   </li>
                 ))}
                 {/* So the lines add up to "Paid" below. */}
-                {receipt.postage && (
-                  <li>
-                    <span className="done__qty" />
-                    <span className="done__name">{receipt.postage.label}</span>
-                    <span className="done__sum">{money(receipt.postage.cents)}</span>
-                  </li>
+                {[receipt.postage, receipt.tax].map(
+                  (row) =>
+                    row && (
+                      <li key={row.label}>
+                        <span className="done__qty" />
+                        <span className="done__name">{row.label}</span>
+                        <span className="done__sum">{money(row.cents)}</span>
+                      </li>
+                    ),
                 )}
               </ul>
 
@@ -1122,6 +1128,23 @@ export function Shop({
                  */
                 deliveryCents={live.deliveryCents ?? settings.deliveryCents}
                 liveShipping={(live.shipping ?? settings.shipping).mode === 'usps'}
+                /*
+                 * Sales tax, worked out the way Square works it out — each
+                 * taxable line on its own, half-to-even — from the same flag and
+                 * rate the checkout Function reads, so this line is the figure
+                 * Square then charges. See payments/salesTax.ts.
+                 */
+                tax={(() => {
+                  const rate = live.taxRateBps ?? settings.taxRateBps;
+                  const cents = salesTaxCents(
+                    lines.map(({ product, quantity }) => ({
+                      amountCents: product.amount * quantity,
+                      taxable: product.taxable,
+                    })),
+                    rate,
+                  );
+                  return cents > 0 ? { label: taxLabel(rate), cents } : null;
+                })()}
                 applicationId={square.applicationId}
                 locationId={square.locationId}
                 sandbox={square.sandbox}
@@ -1143,6 +1166,7 @@ export function Shop({
                     // subtotal, which is what `total` is.
                     total: detail.paid,
                     postage: detail.postage,
+                    tax: detail.tax,
                   });
                   // Cleared here rather than on the server's word alone: the
                   // order exists in Firestore by this point, so a basket that
@@ -1179,6 +1203,8 @@ export function Shop({
             }))}
             shipping={live.shipping ?? settings.shipping}
             flatCents={live.deliveryCents ?? settings.deliveryCents}
+            taxRateBps={live.taxRateBps ?? settings.taxRateBps}
+            taxedCount={products.filter((one) => one.taxable).length}
             onDone={() => setEditing(false)}
             onSelect={setSelected}
             onChanged={refresh}

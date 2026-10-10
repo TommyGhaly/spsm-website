@@ -82,6 +82,8 @@ export interface PendingEdit {
   weightOz?: number | null;
   /** Media Mail eligible. Held together with `weightOz` — see `setShipping`. */
   mediaMail?: boolean;
+  /** Sales tax applies. The parish's field, like `section`. */
+  taxable?: boolean;
   /** Photographs chosen here and not yet uploaded, in the order chosen. */
   addImages?: PendingImage[];
   /** Already-saved Square URLs marked to come off. */
@@ -95,21 +97,24 @@ export interface ActualValues {
   /** Optional so callers that never show the shipping fields need not pass them. */
   weightOz?: number | null;
   mediaMail?: boolean;
+  taxable?: boolean;
 }
 
 /** The held fields that are plain values — everything but the pictures. */
-const FIELDS = ['stockCount', 'section', 'weightOz', 'mediaMail'] as const;
+const FIELDS = ['stockCount', 'section', 'weightOz', 'mediaMail', 'taxable'] as const;
 type Field = (typeof FIELDS)[number];
 
 function actualOf(actual: ActualValues, key: Field): unknown {
   if (key === 'weightOz') return actual.weightOz ?? null;
-  if (key === 'mediaMail') return actual.mediaMail ?? false;
+  if (key === 'mediaMail' || key === 'taxable') return actual[key] ?? false;
   return actual[key];
 }
 
 /** What a field reads as with this edit held over the real value. */
 function heldOf(edit: PendingEdit | undefined, actual: ActualValues, key: Field): unknown {
-  if (edit && key in edit) return key === 'mediaMail' ? (edit[key] ?? false) : (edit[key] ?? null);
+  if (edit && key in edit) {
+    return key === 'mediaMail' || key === 'taxable' ? (edit[key] ?? false) : (edit[key] ?? null);
+  }
   return actualOf(actual, key);
 }
 
@@ -360,6 +365,7 @@ export function PendingEditsProvider({
         setProductStock,
         setProductSection,
         setProductShipping,
+        setProductTaxable,
         uploadProductImage,
         removeProductImage,
       } = await import('./adminData');
@@ -378,6 +384,7 @@ export function PendingEditsProvider({
         if ('stockCount' in edit) await setProductStock(slug, edit.stockCount ?? null);
         if ('section' in edit) await setProductSection(slug, edit.section ?? null);
         // Both fields in one write; `setShipping` always holds them together.
+        if ('taxable' in edit) await setProductTaxable(slug, edit.taxable ?? false);
         if ('weightOz' in edit || 'mediaMail' in edit) {
           await setProductShipping(slug, {
             weightOz: edit.weightOz ?? null,
@@ -503,6 +510,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   const section = heldOf(edit, actual, 'section') as string | null;
   const weightOz = heldOf(edit, actual, 'weightOz') as number | null;
   const mediaMail = heldOf(edit, actual, 'mediaMail') as boolean;
+  const taxable = heldOf(edit, actual, 'taxable') as boolean;
   const addedImages = edit?.addImages ?? EMPTY_ADDS;
   const removedImages = edit?.removeImages ?? EMPTY_REMOVES;
   const dirty = !fieldsMatch(edit, actual) || addedImages.length > 0 || removedImages.length > 0;
@@ -520,7 +528,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     },
     // `actual` is a fresh object each render; its fields are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slug, edit, actual.stockCount, actual.section, actual.weightOz, actual.mediaMail, hold, release],
+    [slug, edit, actual.stockCount, actual.section, actual.weightOz, actual.mediaMail, actual.taxable, hold, release],
   );
 
   const setStock = useCallback(
@@ -538,6 +546,8 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     (next: { weightOz: number | null; mediaMail: boolean }) => setField(next),
     [setField],
   );
+
+  const setTaxable = useCallback((next: boolean) => setField({ taxable: next }), [setField]);
 
   /* Relative, so a fast run of presses accumulates rather than collapsing. */
   const nudge = useCallback(
@@ -576,6 +586,8 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     section,
     weightOz,
     mediaMail,
+    taxable,
+    setTaxable,
     dirty,
     setStock,
     setSection,

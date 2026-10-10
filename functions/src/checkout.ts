@@ -9,6 +9,9 @@ import {
   SERVICE_LABELS,
   basketKey,
   buildOrderEmail,
+  salesTaxCents,
+  taxLabel,
+  taxPercentage,
   buildSquareOrder,
   cleanName,
   isUsableAddress,
@@ -138,6 +141,9 @@ async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<Books
  * one-time token, which is all `source_id` below ever is.
  * ---------------------------------------------------------------------------
  */
+/** The one tax on an order, named so taxable lines can point at it. */
+const SALES_TAX_UID = 'sales-tax';
+
 export const squareCheckout = onRequest(
   {
     secrets: [
@@ -324,13 +330,50 @@ export const squareCheckout = onRequest(
       'Content-Type': 'application/json',
     };
 
+    /*
+     * Sales tax: which lines carry it is the parish's flag on each product,
+     * read here from Firestore — the request has no say. The shipping service
+     * charge is never taxed (Square leaves service charges untaxed unless told
+     * otherwise), which is Massachusetts' rule for a separately stated,
+     * avoidable delivery charge. See payments/salesTax.ts.
+     */
+    const byVariation = new Map(
+      [...catalog.values()].flatMap((product) =>
+        product.squareVariationId ? [[product.squareVariationId, product] as const] : [],
+      ),
+    );
+    const taxedLines = built.lines.map((line) =>
+      settings.taxRateBps > 0 && byVariation.get(line.catalog_object_id)?.taxable === true
+        ? { ...line, applied_taxes: [{ tax_uid: SALES_TAX_UID }] }
+        : line,
+    );
+    const taxing = taxedLines.some((line) => 'applied_taxes' in line);
+
     try {
       // ── 1. Square builds and prices the order ────────────────────────────
       const orderBody: Record<string, unknown> = {
         idempotency_key: `${idempotencyKey}-order`,
         order: {
           location_id: locationId,
-          line_items: built.lines,
+          line_items: taxedLines,
+          ...(taxing
+            ? {
+                /*
+                 * A real tax, not a fee, so it reaches Square's sales-tax
+                 * reports. LINE_ITEM scope: it applies only to the lines that
+                 * name it, which are the products marked taxable.
+                 */
+                taxes: [
+                  {
+                    uid: SALES_TAX_UID,
+                    name: 'Massachusetts sales tax',
+                    percentage: taxPercentage(settings.taxRateBps),
+                    type: 'ADDITIVE',
+                    scope: 'LINE_ITEM',
+                  },
+                ],
+              }
+            : {}),
           ...(shipping
             ? {
                 // Shipping as a service charge rather than a line item, so it
@@ -362,6 +405,7 @@ export const squareCheckout = onRequest(
         order?: {
           id?: string;
           total_money?: { amount?: number; currency?: string };
+          total_tax_money?: { amount?: number };
           /*
            * Read for the confirmation email, and read from *here* rather than
            * from the Firestore mirror on purpose. Square prices the order from
@@ -369,7 +413,14 @@ export const squareCheckout = onRequest(
            * a price — so the mirror can be stale by exactly the amount that
            * would make the email disagree with the card statement.
            */
-          line_items?: { name?: string; quantity?: string; total_money?: { amount?: number } }[];
+          line_items?: {
+            name?: string;
+            quantity?: string;
+            total_money?: { amount?: number };
+            // Before tax. `total_money` includes the line's tax now that there
+            // can be some, so prices and email lines read this one.
+            gross_sales_money?: { amount?: number };
+          }[];
           net_amounts?: unknown;
         };
         errors?: { detail?: string }[];
@@ -388,6 +439,28 @@ export const squareCheckout = onRequest(
       }
 
       const total = orderJson.order?.total_money?.amount ?? 0;
+      const taxCharged = orderJson.order?.total_tax_money?.amount ?? 0;
+
+      /*
+       * The page showed the buyer a tax figure computed the way Square computes
+       * it. If Square ever came to a different number, the charge is still
+       * Square's — but somebody should hear about the gap, because the page and
+       * the card statement would disagree by it.
+       */
+      if (taxing) {
+        const expected = salesTaxCents(
+          (orderJson.order?.line_items ?? []).map((item) => ({
+            amountCents: item.gross_sales_money?.amount ?? 0,
+            taxable: [...byVariation.values()].some(
+              (product) => product.taxable === true && product.name === item.name,
+            ),
+          })),
+          settings.taxRateBps,
+        );
+        if (expected !== taxCharged) {
+          console.warn(`[checkout] tax for ${orderId}: page arithmetic ${expected}, Square ${taxCharged}`);
+        }
+      }
       if (total <= 0) {
         // A zero total means the catalog priced everything at nothing, which is
         // a data fault rather than a free order. Charging $0 would "succeed"
@@ -457,7 +530,8 @@ export const squareCheckout = onRequest(
       const pricedByName = new Map<string, number>();
       for (const item of orderJson.order?.line_items ?? []) {
         const quantity = Number(item.quantity ?? '1') || 1;
-        const lineTotal = item.total_money?.amount;
+        // Before tax, so per-product revenue is the book's price, not price plus tax.
+        const lineTotal = item.gross_sales_money?.amount ?? item.total_money?.amount;
         if (item.name && typeof lineTotal === 'number') {
           pricedByName.set(item.name, Math.round(lineTotal / quantity));
         }
@@ -513,6 +587,8 @@ export const squareCheckout = onRequest(
                 };
               }),
             total: { amount: total, currency: 'USD' },
+            // What Square charged as tax, never our own arithmetic.
+            tax: { amount: taxCharged, currency: 'USD' },
             status,
             fulfillment: 'unfulfilled',
             shipping,
@@ -580,10 +656,11 @@ export const squareCheckout = onRequest(
               lines: (orderJson.order?.line_items ?? []).map((item) => ({
                 name: item.name ?? 'Book',
                 quantity: Number(item.quantity ?? '1'),
-                amount: item.total_money?.amount ?? 0,
+                amount: item.gross_sales_money?.amount ?? item.total_money?.amount ?? 0,
                 sku: (item.name && skuByName.get(item.name)) || null,
               })),
               ...(shipping ? { shippingService: postage.label, shippingCents: postage.cents } : {}),
+              ...(taxCharged > 0 ? { taxCents: taxCharged, taxLabel: taxLabel(settings.taxRateBps) } : {}),
               total,
               ...(settings.orderEmail ? { parishEmail: settings.orderEmail } : {}),
             }),

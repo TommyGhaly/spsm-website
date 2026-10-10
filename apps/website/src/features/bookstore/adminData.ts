@@ -230,6 +230,33 @@ export async function setProductShipping(
   });
 }
 
+/**
+ * Whether sales tax applies to a product. The parish's field, written like
+ * `section`; the checkout Function reads it and asks Square to tax the line.
+ */
+export async function setProductTaxable(slug: string, taxable: boolean): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await updateDoc(doc(db(), COLLECTIONS.products, slug), {
+    taxable,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/** The shop's sales-tax rate, in basis points (625 is 6.25%). */
+export async function writeTaxRate(taxRateBps: number): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await setDoc(
+    doc(db(), COLLECTIONS.config, CONFIG_DOC_BOOKSTORE),
+    { taxRateBps, updatedAt: serverTimestamp(), updatedBy: uid },
+    { merge: true },
+  );
+}
+
 /** Save the live-postage settings. Same `merge` reasoning as `writeSections`. */
 export async function writeShipping(shipping: BookstoreShipping): Promise<void> {
   const uid = auth().currentUser?.uid;
@@ -319,6 +346,7 @@ export interface NewProduct {
   section: string | null;
   weightOz: number | null;
   mediaMail: boolean;
+  taxable: boolean;
 }
 
 /**

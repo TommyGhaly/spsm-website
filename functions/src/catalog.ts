@@ -163,6 +163,7 @@ export const squareCreateProduct = onRequest(
     const weight = Number(body['weightOz']);
     const weightOz = Number.isFinite(weight) && weight > 0 && weight <= MAX_ITEM_WEIGHT_OZ ? weight : null;
     const mediaMail = body['mediaMail'] === true;
+    const taxable = body['taxable'] === true;
 
     if (!name) {
       res.status(400).json({ error: 'A name is needed.' });
@@ -329,6 +330,7 @@ export const squareCreateProduct = onRequest(
             ...(section ? { section } : {}),
             weightOz,
             mediaMail,
+            taxable,
             published: true,
             publishAt: null,
             syncedAt: FieldValue.serverTimestamp(),

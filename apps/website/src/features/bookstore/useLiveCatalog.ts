@@ -67,6 +67,8 @@ export interface LiveCatalog {
   deliveryCents: number | null;
   /** Live-postage settings, read from the same document for the same reason. */
   shipping: BookstoreShipping | null;
+  /** The sales-tax rate as the checkout Function will read it. */
+  taxRateBps: number | null;
 }
 
 interface RestDocument {
@@ -177,6 +179,7 @@ function toShopProduct(
     sku: product.sku ?? null,
     weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
     mediaMail: product.mediaMail === true,
+    taxable: product.taxable === true,
   };
 }
 
@@ -197,6 +200,7 @@ export function useLiveCatalog(
     sections: null,
     deliveryCents: null,
     shipping: null,
+    taxRateBps: null,
   });
 
   /*
@@ -271,6 +275,7 @@ export function useLiveCatalog(
         let sections: BookstoreSection[] = [];
         let deliveryCents: number | null = null;
         let shipping: BookstoreShipping | null = null;
+        let taxRateBps: number | null = null;
         if (configRes.ok) {
           const doc = (await configRes.json()) as RestDocument;
           /*
@@ -283,13 +288,14 @@ export function useLiveCatalog(
           sections = config.sections;
           deliveryCents = config.deliveryCents;
           shipping = config.shipping;
+          taxRateBps = config.taxRateBps;
         }
 
         // An empty result is treated as a failed read, not as an emptied shop.
         // A transient permission or network fault must never blank the catalog.
         if (products.length === 0) return;
 
-        setLive({ products, sections, deliveryCents, shipping });
+        setLive({ products, sections, deliveryCents, shipping, taxRateBps });
       } catch {
         /* Baked copy stays. See the header. */
       }

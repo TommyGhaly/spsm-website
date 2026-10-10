@@ -373,6 +373,7 @@ describe('parseBookstoreConfig', () => {
       // Absent means the defaults, which are flat delivery — live postage is
       // something the parish turns on, never something a deploy turns on.
       shipping: DEFAULT_BOOKSTORE_CONFIG.shipping,
+      taxRateBps: DEFAULT_BOOKSTORE_CONFIG.taxRateBps,
     });
   });
 

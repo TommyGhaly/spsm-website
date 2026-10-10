@@ -15,8 +15,10 @@ import {
   MAX_SECTIONS,
   MAX_SECTION_LABEL,
   UNSORTED_LABEL,
+  MAX_TAX_RATE_BPS,
   formatWeight,
   ouncesToPounds,
+  taxPercentage,
   parseWeight,
   sectionId,
   MAX_HANDLING_CENTS,
@@ -248,6 +250,7 @@ export function ProductSettings({
     section: product.section ?? null,
     weightOz: product.weightOz,
     mediaMail: product.mediaMail,
+    taxable: product.taxable,
   });
 
   useEffect(() => setConfirming(false), [product.slug]);
@@ -336,6 +339,15 @@ export function ProductSettings({
         {product.sku && <p className="bkpanel__aside">SKU {product.sku}</p>}
       </div>
 
+      <div className="bkpanel__block">
+        <h4 className="bkpanel__label">Sales tax</h4>
+        <TaxableField
+          taxable={pending.taxable}
+          busy={busy}
+          onChange={pending.setTaxable}
+        />
+      </div>
+
       <div className="bkpanel__block bkpanel__block--last">
         <RemoveProduct
           product={product}
@@ -347,6 +359,113 @@ export function ProductSettings({
              something the shop no longer has, with controls that all fail. */
           onDone={onRemoved}
         />
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sales tax                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether Massachusetts sales tax applies to this item.
+ *
+ * Off unless somebody turns it on. Books used in worship are exempt; gifts and
+ * goods generally are not — the hint says so in a line, because the person
+ * ticking it is a volunteer, not an accountant. The rate is the shop's, set
+ * once in the shop panel.
+ */
+function TaxableField({
+  taxable,
+  busy,
+  onChange,
+}: {
+  taxable: boolean;
+  busy: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="bkship">
+      <label className="bkship__media">
+        <input
+          type="checkbox"
+          checked={taxable}
+          disabled={busy}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        Charge sales tax on this item
+      </label>
+      <p className="bkpanel__aside">
+        {taxable
+          ? 'Tax is added at checkout and shown as its own line.'
+          : 'Not taxed. Leave off for books used in worship; tick for gifts and goods.'}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The shop's sales-tax rate, saved with its own button like the shipping
+ * settings — one decision about money, made once.
+ */
+function TaxSettings({
+  taxRateBps,
+  taxed,
+  onChanged,
+  onError,
+}: {
+  taxRateBps: number;
+  /** How many products are marked taxable, so the rate is not set in a vacuum. */
+  taxed: number;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const { busy, saved, write } = useWriter(onChanged, onError);
+  const [text, setText] = useState(taxPercentage(taxRateBps));
+  useEffect(() => setText(taxPercentage(taxRateBps)), [taxRateBps]);
+
+  const trimmed = text.trim().replace(/%$/, '').trim();
+  const value = /^\d{1,2}(\.\d{1,2})?$/.test(trimmed) ? Math.round(Number(trimmed) * 100) : null;
+  const valid = value !== null && value <= MAX_TAX_RATE_BPS;
+  const changed = valid && value !== taxRateBps;
+
+  return (
+    <div className="bkshipcfg">
+      <label className="bkshipcfg__field">
+        <span className="bkshipcfg__label">Tax rate</span>
+        <span className="bkunit">
+          <input
+            className={valid ? 'bkrename__input' : 'bkrename__input is-wrong'}
+            inputMode="decimal"
+            value={text}
+            disabled={busy}
+            onChange={(event) => setText(event.target.value)}
+          />
+          <span className="bkunit__post">%</span>
+        </span>
+        <span className="bkshipcfg__hint">
+          Massachusetts is 6.25%. Applied only to items marked taxable
+          {taxed > 0 ? ` — ${taxed} ${taxed === 1 ? 'item is' : 'items are'} now.` : ' — none are yet.'}{' '}
+          Delivery is never taxed.
+        </span>
+      </label>
+      <div className="bkshipcfg__go">
+        <button
+          type="button"
+          className="button button--small"
+          disabled={busy || !changed}
+          onClick={() => {
+            const save = async () => {
+              const { writeTaxRate } = await import('./adminData');
+              await writeTaxRate(value as number);
+            };
+            void write(save);
+          }}
+        >
+          Save tax rate
+        </button>
+        <SaveState busy={busy} saved={saved} dirty={changed} />
       </div>
     </div>
   );
@@ -1693,6 +1812,8 @@ function NewProduct({
     // Most of what the shop sells is books, so the box starts ticked.
     mediaMail: true,
   });
+  // Off, like every product: nothing is taxed until somebody says so.
+  const [taxable, setTaxable] = useState(false);
   const [busy, setBusy] = useState(false);
   /*
    * Pictures chosen for a book that does not exist yet.
@@ -1753,6 +1874,7 @@ function NewProduct({
         section: section || null,
         weightOz: shipping.weightOz,
         mediaMail: shipping.mediaMail,
+        taxable,
       });
 
       /*
@@ -1836,6 +1958,7 @@ function NewProduct({
         busy={busy}
         onChange={setShipping}
       />
+      <TaxableField taxable={taxable} busy={busy} onChange={setTaxable} />
       {/*
         The pictures, on the add form.
         Same tiles as a saved card so the two read as one control, and the same
@@ -2240,6 +2363,8 @@ export function ShopInspector({
   groups,
   shipping,
   flatCents,
+  taxRateBps,
+  taxedCount,
   onDone,
   onSelect,
   onChanged,
@@ -2257,6 +2382,10 @@ export function ShopInspector({
   shipping: BookstoreShipping;
   /** The flat delivery charge, for the shipping panel to show. */
   flatCents: number;
+  /** The sales-tax rate, in basis points. */
+  taxRateBps: number;
+  /** How many products are marked taxable, for the tax panel's hint. */
+  taxedCount: number;
   onDone: () => void;
   onSelect: (slug: string | null) => void;
   onChanged: () => void;
@@ -2333,6 +2462,16 @@ export function ShopInspector({
             <ShippingSettings
               shipping={shipping}
               flatCents={flatCents}
+              onChanged={onChanged}
+              onError={onError}
+            />
+          </div>
+
+          <div className="bkpanel__block">
+            <h4 className="bkpanel__label">Sales tax</h4>
+            <TaxSettings
+              taxRateBps={taxRateBps}
+              taxed={taxedCount}
               onChanged={onChanged}
               onError={onError}
             />
