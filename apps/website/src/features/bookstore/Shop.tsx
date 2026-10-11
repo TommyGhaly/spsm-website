@@ -6,7 +6,7 @@ import { CardPayment } from "./CardPayment";
 import { DragRail } from "@/components/DragRail";
 import { Icon } from "@/components/Icon";
 import { Cover } from "./Cover";
-import { PendingEditsProvider, SaveBar, usePendingEdits } from "./pendingEdits";
+import { PendingEditsProvider, usePendingEdits } from "./pendingEdits";
 import { money } from "./money";
 import { PriceTag } from "./PriceTag";
 import { track, trackProduct, trackSearch, trackViewOnce } from "./track";
@@ -166,6 +166,9 @@ export function Shop({
    */
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  /* The items holding unsaved changes, kept current by `HeldWatcher` — which
+     can read them because it renders inside the provider and this body cannot. */
+  const heldRef = useRef<string[]>([]);
 
   /*
    * What makes an edit show up on the shelf.
@@ -618,6 +621,14 @@ export function Shop({
    */
   const openProduct = (product: ShopProduct) => {
     if (editing) {
+      /* The item being edited has changes held: switching would leave them
+         behind, out of sight. Its panel's footer is where to settle them. */
+      const held = heldRef.current.find((slug) => slug === selected);
+      if (held && held !== product.slug) {
+        const name = products.find((one) => one.slug === held)?.name ?? 'this item';
+        setEditError(`Save or discard your changes to ${name} first.`);
+        return;
+      }
       setSelected((was) => (was === product.slug ? null : product.slug));
       return;
     }
@@ -851,9 +862,8 @@ export function Shop({
       */}
       {editing && (
         <p className="shop-hint">
-          Press a book to change it in the panel on the right. Title, price and
-          description go straight to Square; stock, category and pictures are
-          saved with the bar at the foot of the shop.
+          Press an item to change it in the panel on the right. Nothing is saved
+          until you press Save changes there.
         </p>
       )}
 
@@ -1414,7 +1424,7 @@ export function Shop({
         </Suspense>
       )}
 
-      {editing && <SaveBar />}
+      <HeldWatcher heldRef={heldRef} />
       </div>
     </PendingEditsProvider>
   );
@@ -1436,6 +1446,15 @@ export function Shop({
  * count nobody agreed to ends up in Square.
  * ---------------------------------------------------------------------------
  */
+/** Keeps `heldRef` pointing at the items with unsaved changes. Renders nothing. */
+function HeldWatcher({ heldRef }: { heldRef: { current: string[] } }) {
+  const { edits } = usePendingEdits();
+  useEffect(() => {
+    heldRef.current = Object.keys(edits);
+  }, [edits, heldRef]);
+  return null;
+}
+
 function EditToggle({
   editing,
   onToggle,
@@ -1457,8 +1476,8 @@ function EditToggle({
       onClick={() => {
         if (held) {
           onBlocked(
-            `${count} ${count === 1 ? 'book has' : 'books have'} changes that have not been ` +
-              'saved. Save or discard them before leaving edit mode.',
+            `${count} ${count === 1 ? 'item has' : 'items have'} changes that have not been ` +
+              'saved. Save or discard them in the panel before leaving edit mode.',
           );
           return;
         }

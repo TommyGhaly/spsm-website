@@ -191,37 +191,51 @@ function SaveState({
 }
 
 /* -------------------------------------------------------------------------- */
-/* The same four settings, enlarged                                            */
+/* One product's settings                                                     */
 /* -------------------------------------------------------------------------- */
 
+/** What one product currently *is*, in the shape the held edits compare against. */
+function productActual(product: ShopProduct) {
+  return {
+    name: product.name,
+    description: product.description,
+    priceCents: product.amount,
+    wasPriceCents: product.wasPriceCents,
+    stockCount: product.stockCount ?? null,
+    categoryIds: product.categoryIds,
+    weightOz: product.weightOz,
+    mediaMail: product.mediaMail,
+    taxable: product.taxable,
+    sizes: product.sizes,
+  };
+}
+
+type Tab = 'details' | 'price' | 'shipping';
+
+const TABS: { id: Tab; label: string; fields: readonly string[] }[] = [
+  { id: 'details', label: 'Details', fields: ['name', 'description', 'categoryIds'] },
+  { id: 'price', label: 'Price & stock', fields: ['priceCents', 'wasPriceCents', 'stockCount', 'sizes'] },
+  { id: 'shipping', label: 'Shipping', fields: ['weightOz', 'mediaMail', 'taxable'] },
+];
+
 /**
- * A single product's settings, at the size a photograph needs.
+ * A single product's settings, in the editing column.
  *
  * ---------------------------------------------------------------------------
- * Asked for directly: *"I also want to enlarge the settings by clicking on a
- * specific product and I should be able to remove pictures and add pictures as
- * necessary."*
+ * Three tabs and one Save, at Tommy's direction — the panel had grown to a
+ * 1,200px scroll with two ways of saving: the title, price, description and
+ * clearance each sent straight to Square from their own buttons, and everything
+ * else waited for a bar at the foot of the shop. Clothing sizes ticked and never
+ * saved were the result.
  *
- * This is **not** the properties column that was rejected as *"way too
- * confusing"*, and the difference is worth being exact about, because from a
- * distance they look like the same idea.
+ * Now every change to the item is held, the tab it is on carries a dot, and the
+ * footer's Save sends the lot (`saveOne` → `sendOne` in pendingEdits.tsx).
+ * Discard puts every field back. Leaving the item with changes held is refused
+ * by the column and the shelf, so nothing is lost by clicking elsewhere.
  *
- *   - That column stood permanently down the side of the window and described
- *     whichever card you had last clicked. You had to look away from the shelf
- *     to see it, and away from it to see what it was describing.
- *   - This is the product's own screen — the same dialog a shopper opens, which
- *     already shows this book at full size and nothing else. It is opened
- *     deliberately, it holds one book, and closing it puts you back on the
- *     shelf. There is no selection to keep track of and nothing is displaced.
- *
- * The card keeps its compact controls, which remain the fast path: adjusting a
- * count on six books in a row should not mean opening and closing six dialogs.
- * This is the slow path, for the one job the card genuinely cannot do — looking
- * at a photograph while deciding whether to keep it.
- *
- * The buybox is what this replaces in the dialog, which is right: a quantity
- * stepper and Add to basket are the shopper's question, and nobody arranging the
- * shop is also buying from it.
+ * A box whose text is not a value yet — a price of `12.` — blocks Save rather
+ * than being ignored: keeping the old price after somebody typed a new one is
+ * worse than asking them to finish typing.
  * ---------------------------------------------------------------------------
  */
 export function ProductSettings({
@@ -231,14 +245,6 @@ export function ProductSettings({
   onChanged,
   onError,
   onRemoved,
-  /**
-   * Inside the editing column, which supplies its own heading and saved state.
-   *
-   * Repeating them here would put the book's name twice within about 60px of
-   * itself, and two "Saved" indicators that could disagree — the column's is
-   * driven by the save bar, this one by the immediate writes.
-   */
-  bare = false,
 }: {
   product: ShopProduct;
   doc: DocOf<Product> | undefined;
@@ -247,149 +253,278 @@ export function ProductSettings({
   onError: (message: string) => void;
   /** Close the dialog, or clear the selection: the book is no longer on the shop. */
   onRemoved: () => void;
+  /** Kept for callers; the panel always sits inside the column now. */
   bare?: boolean | undefined;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const { busy, saved, write } = useWriter(onChanged, onError);
-  const pending = usePendingEdit(product.slug, {
-    stockCount: product.stockCount ?? null,
-    categoryIds: product.categoryIds,
-    weightOz: product.weightOz,
-    mediaMail: product.mediaMail,
-    taxable: product.taxable,
-    sizes: product.sizes,
-  });
+  const [tab, setTab] = useState<Tab>('details');
+  /* Boxes holding text that is not a value yet, by field. Any one blocks Save. */
+  const [broken, setBroken] = useState<Record<string, boolean>>({});
+  const { busy, write } = useWriter(onChanged, onError);
+  const { saveOne, saving, release } = usePendingEdits();
+  const pending = usePendingEdit(product.slug, productActual(product));
 
-  useEffect(() => setConfirming(false), [product.slug]);
+  useEffect(() => {
+    setConfirming(false);
+    setBroken({});
+  }, [product.slug]);
+
+  const markBroken = (field: string, is: boolean) =>
+    setBroken((was) => (Boolean(was[field]) === is ? was : { ...was, [field]: is }));
+
+  const onSale = pending.wasPriceCents !== null;
+  const saleWrong = onSale && !(pending.priceCents > 0 && pending.priceCents < (pending.wasPriceCents ?? 0));
+  const blocked = Object.values(broken).some(Boolean) || saleWrong;
+  const working = busy || saving;
+
+  const tabDirty = (one: (typeof TABS)[number]) =>
+    one.fields.some((field) => pending.changed.includes(field)) || (one.id === 'details' && pending.hasImageEdits);
 
   return (
-    <div className={busy ? 'bkpanel is-busy' : 'bkpanel'}>
-      {!bare && (
-        <div className="bkpanel__head">
-          <h3 className="bkpanel__title">Book settings</h3>
-          <SaveState busy={busy} saved={saved} dirty={pending.dirty} />
-        </div>
-      )}
-
-      <p className="bkpanel__note">
-        Stock, category, shipping and pictures are saved with the bar at the
-        foot of the shop. The title, price and description go straight to
-        Square.
-      </p>
-
-      {/* No block heading: every field inside carries its own label, and a
-          "Details" heading above three labelled boxes is a word doing nothing. */}
-      <div className="bkpanel__block">
-        <ProductDetailsForm product={product} busy={busy} onWrite={write} />
+    <div className={working ? 'bkpanel bkpanel--tabbed is-busy' : 'bkpanel bkpanel--tabbed'}>
+      <div className="bktabs" role="tablist" aria-label={`Settings for ${product.name}`}>
+        {TABS.map((one) => (
+          <button
+            key={one.id}
+            type="button"
+            role="tab"
+            id={`bktab-${one.id}`}
+            aria-selected={tab === one.id}
+            aria-controls={`bktabpanel-${one.id}`}
+            className={tab === one.id ? 'bktabs__tab is-on' : 'bktabs__tab'}
+            onClick={() => setTab(one.id)}
+          >
+            {one.label}
+            {tabDirty(one) && (
+              <span className="bktabs__dot" aria-label="unsaved changes" role="img" />
+            )}
+          </button>
+        ))}
       </div>
 
-      <div className="bkpanel__block">
-        <h4 className="bkpanel__label">Clearance</h4>
-        <ClearanceField key={product.slug} product={product} busy={busy} onWrite={write} />
-      </div>
+      <div className="bkpanel__body" role="tabpanel" id={`bktabpanel-${tab}`} aria-labelledby={`bktab-${tab}`}>
+        {tab === 'details' && (
+          <>
+            <div className="bkpanel__block bkdetails">
+              <TitleField
+                key={product.slug}
+                label={product.name}
+                value={pending.name}
+                busy={working}
+                onChange={(name) => pending.setDetails({ name })}
+                onBroken={(is) => markBroken('name', is)}
+              />
+              <label className="bkdetails__row">
+                <span className="bkdetails__label">Description</span>
+                <textarea
+                  className="bkdetails__text"
+                  value={pending.description}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder="A line about it — shown under the title on the shelf."
+                  disabled={working}
+                  onChange={(event) => pending.setDetails({ description: event.target.value })}
+                />
+              </label>
+            </div>
 
-      <div className="bkpanel__block">
-        <h4 className="bkpanel__label">Pictures</h4>
-        <Pictures
-          product={product}
-          doc={doc}
-          busy={busy}
-          variant="panel"
-          onError={onError}
-        />
-        {/*
-          Said here and not on the card, because here it is actionable: the
-          pictures are large enough to compare, so which one leads is a decision
-          somebody can actually make. Ordering them is Square's, for now.
-        */}
-        {doc && doc.imagePaths.length > 1 && (
-          <p className="bkpanel__aside">
-            The first picture is the one shown on the shelf. Reorder them in
-            Square.
-          </p>
+            <div className="bkpanel__block">
+              <h4 className="bkpanel__label">Pictures</h4>
+              <Pictures product={product} doc={doc} busy={working} variant="panel" onError={onError} />
+              {doc && doc.imagePaths.length > 1 && (
+                <p className="bkpanel__aside">The first picture is the one on the shelf.</p>
+              )}
+              {!doc && <p className="bkpanel__aside">Loading pictures…</p>}
+            </div>
+
+            {sections.length > 0 && (
+              <div className="bkpanel__block">
+                <h4 className="bkpanel__label">Categories</h4>
+                <CategoryChecklist
+                  name={product.name}
+                  sections={sections}
+                  chosen={pending.categoryIds}
+                  busy={working}
+                  onChange={pending.setCategories}
+                />
+              </div>
+            )}
+          </>
         )}
-        {!doc && (
-          <p className="bkpanel__aside">Loading pictures…</p>
+
+        {tab === 'price' && (
+          <>
+            <div className="bkpanel__block">
+              <div className="bkdetails">
+                <MoneyField
+                  key={`${product.slug}-regular`}
+                  label="Price"
+                  aria={`Price of ${product.name}, in dollars`}
+                  value={onSale ? (pending.wasPriceCents as number) : pending.priceCents}
+                  busy={working}
+                  onChange={(cents) => pending.setDetails(onSale ? { wasPriceCents: cents } : { priceCents: cents })}
+                  onBroken={(is) => markBroken('price', is)}
+                />
+
+                <label className="bkship__media">
+                  <input
+                    type="checkbox"
+                    checked={onSale}
+                    disabled={working}
+                    onChange={(event) =>
+                      pending.setDetails(
+                        event.target.checked
+                          ? // The sale price starts empty-ish: equal to the price, which Save refuses until it is lower.
+                            { wasPriceCents: pending.priceCents, priceCents: pending.priceCents }
+                          : { priceCents: pending.wasPriceCents ?? pending.priceCents, wasPriceCents: null },
+                      )
+                    }
+                  />
+                  On clearance
+                </label>
+
+                {onSale && (
+                  <>
+                    <MoneyField
+                      key={`${product.slug}-sale`}
+                      label="Sale price"
+                      aria={`Sale price of ${product.name}, in dollars`}
+                      value={pending.priceCents}
+                      blankWhen={pending.wasPriceCents ?? undefined}
+                      busy={working}
+                      onChange={(cents) => pending.setDetails({ priceCents: cents })}
+                      onBroken={(is) => markBroken('sale', is)}
+                    />
+                    <p className={saleWrong ? 'bkpanel__aside bkpanel__aside--wrong' : 'bkpanel__aside'}>
+                      {saleWrong
+                        ? `Type a sale price below ${money(pending.wasPriceCents ?? 0)}.`
+                        : `${money(pending.wasPriceCents ?? 0)} → ${money(pending.priceCents)}, ` +
+                          `${Math.round((((pending.wasPriceCents ?? 0) - pending.priceCents) / (pending.wasPriceCents ?? 1)) * 100)}% off. ` +
+                          'Shown under Clearance on the shop and the homepage.'}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="bkpanel__block">
+              <h4 className="bkpanel__label">Sold as</h4>
+              <div className="bkseg" role="radiogroup" aria-label="Sold as">
+                {[
+                  { label: 'One item', clothing: false },
+                  { label: 'By size (clothing)', clothing: true },
+                ].map((one) => (
+                  <button
+                    key={one.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={(pending.sizes !== null) === one.clothing}
+                    className={(pending.sizes !== null) === one.clothing ? 'bkseg__opt is-on' : 'bkseg__opt'}
+                    disabled={working}
+                    onClick={() => pending.setSizes(one.clothing ? (pending.sizes ?? []) : null)}
+                  >
+                    {one.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bkpanel__block">
+              <h4 className="bkpanel__label">{pending.sizes !== null ? 'Sizes in stock' : 'In stock'}</h4>
+              {pending.sizes !== null ? (
+                <ClothingField
+                  key={product.slug}
+                  name={product.name}
+                  priceCents={pending.priceCents}
+                  sizes={pending.sizes}
+                  busy={working}
+                  onChange={pending.setSizes}
+                />
+              ) : (
+                <StockStepper
+                  name={product.name}
+                  stockCount={pending.stockCount}
+                  busy={working}
+                  onSet={pending.setStock}
+                  onNudge={pending.nudge}
+                />
+              )}
+            </div>
+          </>
         )}
-      </div>
 
-      {/* Clothing is counted per size, below, so the single count would be a
-          second number for the same shelf. */}
-      {pending.sizes === null && (
-        <div className="bkpanel__block">
-          <h4 className="bkpanel__label">In stock</h4>
-          <StockStepper product={product} busy={busy} />
-        </div>
-      )}
+        {tab === 'shipping' && (
+          <>
+            <div className="bkpanel__block">
+              <h4 className="bkpanel__label">Shipping</h4>
+              <ShippingFields
+                key={product.slug}
+                name={product.name}
+                weightOz={pending.weightOz}
+                mediaMail={pending.mediaMail}
+                busy={working}
+                onChange={pending.setShipping}
+              />
+            </div>
+            <div className="bkpanel__block">
+              <h4 className="bkpanel__label">Sales tax</h4>
+              <TaxableField taxable={pending.taxable} busy={working} onChange={pending.setTaxable} />
+            </div>
+          </>
+        )}
 
-      <div className="bkpanel__block">
-        <h4 className="bkpanel__label">Clothing</h4>
-        <ClothingField
-          key={product.slug}
-          name={product.name}
-          priceCents={product.amount}
-          sizes={pending.sizes}
-          busy={busy}
-          onChange={pending.setSizes}
-        />
-      </div>
-
-      {sections.length > 0 && (
-        <div className="bkpanel__block">
-          <h4 className="bkpanel__label">Categories</h4>
-          <CategoryChecklist
-            name={product.name}
-            sections={sections}
-            chosen={pending.categoryIds}
-            busy={busy}
-            onChange={pending.setCategories}
+        <div className="bkpanel__block bkpanel__block--last">
+          {product.sku && <p className="bkpanel__aside">SKU {product.sku}</p>}
+          <RemoveProduct
+            product={product}
+            busy={working}
+            confirming={confirming}
+            onConfirming={setConfirming}
+            onWrite={write}
+            onDone={onRemoved}
           />
         </div>
-      )}
-
-      <div className="bkpanel__block">
-        <h4 className="bkpanel__label">Shipping</h4>
-        <ShippingFields
-          key={product.slug}
-          name={product.name}
-          weightOz={pending.weightOz}
-          mediaMail={pending.mediaMail}
-          busy={busy}
-          onChange={pending.setShipping}
-        />
-        {product.sku && <p className="bkpanel__aside">SKU {product.sku}</p>}
       </div>
 
-      <div className="bkpanel__block">
-        <h4 className="bkpanel__label">Sales tax</h4>
-        <TaxableField
-          taxable={pending.taxable}
-          busy={busy}
-          onChange={pending.setTaxable}
-        />
-      </div>
-
-      <div className="bkpanel__block bkpanel__block--last">
-        <RemoveProduct
-          product={product}
-          busy={busy}
-          confirming={confirming}
-          onConfirming={setConfirming}
-          onWrite={write}
-          /* Leaving the dialog open on an archived book would show a screen for
-             something the shop no longer has, with controls that all fail. */
-          onDone={onRemoved}
-        />
+      {/* Always there, so where to save is never a question. */}
+      <div className={pending.dirty ? 'bkfoot is-dirty' : 'bkfoot'}>
+        <span className="bkfoot__state" aria-live="polite">
+          {saving
+            ? 'Saving…'
+            : !pending.dirty
+              ? 'All changes saved'
+              : Object.values(broken).some(Boolean)
+                ? 'Fix the box marked in red to save'
+                : saleWrong
+                  ? `Type a sale price below ${money(pending.wasPriceCents ?? 0)} to save`
+                  : 'Unsaved changes'}
+        </span>
+        <button
+          type="button"
+          className="button button--quiet button--small"
+          disabled={!pending.dirty || working}
+          onClick={() => release(product.slug)}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          className="button button--small"
+          disabled={!pending.dirty || working || blocked}
+          onClick={() => void saveOne(product.slug)}
+        >
+          Save changes
+        </button>
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Clearance                                                                  */
+/* Boxes that keep what is being typed                                        */
 /* -------------------------------------------------------------------------- */
 
-/** Dollars as typed, cents when valid. `Math.round`, for the reason in `ProductDetailsForm`. */
+/** Dollars as typed, cents when valid. `Math.round`: `4.35 * 100` is `434.99999999999994`. */
 function parseDollars(text: string): number | null {
   const trimmed = text.trim().replace(/^\$/, '');
   if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
@@ -397,108 +532,127 @@ function parseDollars(text: string): number | null {
 }
 
 /**
- * Put an item on clearance, change its clearance price, or end it.
+ * A box's text, kept apart from the value it stands for.
  *
- * The clearance price is the real price — it goes to Square, so the till charges
- * it too — and the price before is kept on the parish's side to show crossed
- * out. Its own button, like the title and price above it, because it changes
- * what the item costs everywhere.
+ * What somebody is halfway through typing — `1.` on the way to `1.50` — is not a
+ * value, so only text that reads as one is passed up. The text takes the value
+ * back whenever the value changes from outside — Discard, a save coming back,
+ * another product — which is told apart from the box's own changes by
+ * remembering the last value it pushed.
  */
-function ClearanceField({
-  product,
-  busy,
-  onWrite,
-}: {
-  product: ShopProduct;
-  busy: boolean;
-  onWrite: (run: () => Promise<void>) => Promise<boolean>;
-}) {
-  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
-  const was = sale?.wasCents ?? product.amount;
-  const [text, setText] = useState(sale ? (sale.nowCents / 100).toFixed(2) : '');
+function useDraft<T>(value: T, format: (value: T) => string) {
+  const [text, setText] = useState(() => format(value));
+  const pushed = useRef(value);
   useEffect(() => {
-    setText(sale ? (sale.nowCents / 100).toFixed(2) : '');
-    // Re-seeded when the saved price comes back changed, as the details form is.
-  }, [product.amount, product.wasPriceCents]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!Object.is(value, pushed.current)) {
+      pushed.current = value;
+      setText(format(value));
+    }
+    // `format` is a pure function of the value.
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  return {
+    text,
+    setText,
+    push: (next: T) => {
+      pushed.current = next;
+    },
+  };
+}
 
-  const cents = parseDollars(text);
-  const valid = cents !== null && cents > 0 && cents < was;
-  const wrong = text.trim() !== '' && !valid;
-  const percent = valid ? Math.round(((was - cents) / was) * 100) : null;
-  const changed = valid && cents !== sale?.nowCents;
-
-  const go = (run: () => Promise<void>) => void onWrite(run);
+function TitleField({
+  label,
+  value,
+  busy,
+  onChange,
+  onBroken,
+}: {
+  label: string;
+  value: string;
+  busy: boolean;
+  onChange: (next: string) => void;
+  onBroken: (broken: boolean) => void;
+}) {
+  const draft = useDraft(value, (v) => v);
+  const clean = draft.text.trim().replace(/\s+/g, ' ');
+  const wrong = clean.length === 0;
+  useEffect(() => onBroken(wrong), [wrong]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="bkdetails">
-      {sale && (
-        <p className="bksale">
-          On clearance: <s>{money(sale.wasCents)}</s> <strong>{money(sale.nowCents)}</strong>{' '}
-          <span className="bksale__off">{sale.percentOff}% off</span>
-        </p>
-      )}
-
-      <label className="bkdetails__row">
-        <span className="bkdetails__label">Sale price</span>
-        <span className="bkdetails__money">
-          <span aria-hidden="true">$</span>
-          <input
-            type="text"
-            className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
-            value={text}
-            inputMode="decimal"
-            placeholder={`Less than ${money(was)}`}
-            aria-label={`Sale price of ${product.name} in dollars`}
-            aria-invalid={wrong}
-            disabled={busy}
-            onChange={(event) => setText(event.target.value)}
-          />
-        </span>
-      </label>
-
-      <p className={wrong ? 'bkpanel__aside bkpanel__aside--wrong' : 'bkpanel__aside'}>
-        {wrong
-          ? `A price below ${money(was)}, like 5 or 4.50.`
-          : percent !== null
-            ? `${money(was)} → ${money(cents as number)}, ${percent}% off. Shown in the Clearance section at the top of the shop.`
-            : sale
-              ? 'Change the price above to adjust the discount.'
-              : `Type the sale price. ${money(was)} is kept and shown crossed out beside it.`}
-      </p>
-
-      <div className="bkdetails__go">
-        <button
-          type="button"
-          className="button button--small"
-          disabled={busy || !changed}
-          onClick={() =>
-            go(async () => {
-              const { setClearance } = await import('./adminData');
-              await setClearance(product.slug, was, cents as number);
-            })
+    <label className="bkdetails__row">
+      <span className="bkdetails__label">Title</span>
+      <input
+        type="text"
+        className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+        value={draft.text}
+        aria-label={`Title of ${label}`}
+        aria-invalid={wrong}
+        disabled={busy}
+        maxLength={120}
+        onChange={(event) => {
+          draft.setText(event.target.value);
+          const next = event.target.value.trim().replace(/\s+/g, ' ');
+          if (next) {
+            draft.push(next);
+            onChange(next);
           }
-        >
-          {sale ? 'Update clearance price' : 'Put on clearance'}
-        </button>
-        {sale && (
-          <button
-            type="button"
-            className="button button--quiet button--small"
-            disabled={busy}
-            onClick={() =>
-              go(async () => {
-                const { endClearance } = await import('./adminData');
-                await endClearance(product.slug, sale.wasCents);
-              })
-            }
-          >
-            End clearance — back to {money(sale.wasCents)}
-          </button>
-        )}
-      </div>
+        }}
+      />
+      {wrong && <span className="bkpanel__aside bkpanel__aside--wrong">A title is needed.</span>}
+    </label>
+  );
+}
 
-      <p className="bkpanel__aside">Goes to Square, so the till charges the clearance price too.</p>
-    </div>
+/**
+ * A price in dollars. `blankWhen` shows an empty box for that value — the sale
+ * price starts out equal to the price, which is not a sale anybody chose.
+ */
+function MoneyField({
+  label,
+  aria,
+  value,
+  blankWhen,
+  busy,
+  onChange,
+  onBroken,
+}: {
+  label: string;
+  aria: string;
+  value: number;
+  blankWhen?: number | undefined;
+  busy: boolean;
+  onChange: (cents: number) => void;
+  onBroken: (broken: boolean) => void;
+}) {
+  const draft = useDraft(value, (cents) => (cents === blankWhen ? '' : (cents / 100).toFixed(2)));
+  const cents = parseDollars(draft.text);
+  const wrong = draft.text.trim() !== '' && (cents === null || cents <= 0 || cents > 100_000);
+  useEffect(() => onBroken(wrong), [wrong]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <label className="bkdetails__row">
+      <span className="bkdetails__label">{label}</span>
+      <span className="bkdetails__money">
+        <span aria-hidden="true">$</span>
+        <input
+          type="text"
+          className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+          value={draft.text}
+          inputMode="decimal"
+          aria-label={aria}
+          aria-invalid={wrong}
+          disabled={busy}
+          onChange={(event) => {
+            draft.setText(event.target.value);
+            const next = parseDollars(event.target.value);
+            if (next !== null && next > 0 && next <= 100_000) {
+              draft.push(next);
+              onChange(next);
+            }
+          }}
+        />
+      </span>
+      {wrong && <span className="bkpanel__aside bkpanel__aside--wrong">A price like 8 or 8.50, up to $1,000.</span>}
+    </label>
   );
 }
 
@@ -507,13 +661,11 @@ function ClearanceField({
 /* -------------------------------------------------------------------------- */
 
 /**
- * Whether this is clothing, and if so which sizes, how many of each, and what
- * a size adds to the price.
+ * Which sizes it comes in, how many of each are on hand, and what a size adds
+ * to the price. Shown when "Sold as" is By size.
  *
- * Held for the Save bar like the stock count it stands in for. The boxes keep
- * their own text, as the weight box does, so `1.` on the way to `1.50` is not
- * rewritten under somebody's fingers; only text that reads as a number is
- * passed up.
+ * The boxes keep their own text, as the weight box does; only text that reads
+ * as a number is passed up.
  */
 function ClothingField({
   name,
@@ -524,9 +676,9 @@ function ClothingField({
 }: {
   name: string;
   priceCents: number;
-  sizes: readonly ProductSize[] | null;
+  sizes: readonly ProductSize[];
   busy: boolean;
-  onChange: (next: readonly ProductSize[] | null) => void;
+  onChange: (next: readonly ProductSize[]) => void;
 }) {
   const [texts, setTexts] = useState<Record<string, { count: string; extra: string }>>(() =>
     Object.fromEntries(
@@ -582,17 +734,6 @@ function ClothingField({
 
   return (
     <div className="bkclothes">
-      <label className="bkship__media">
-        <input
-          type="checkbox"
-          checked={sizes !== null}
-          disabled={busy}
-          onChange={(event) => onChange(event.target.checked ? [] : null)}
-        />
-        This is clothing — sold by size
-      </label>
-
-      {sizes !== null && (
         <>
           <table className="bksizes">
             <caption className="visually-hidden">Sizes of {name}</caption>
@@ -690,7 +831,6 @@ function ClothingField({
                 'A size at 0 shows as sold out.'}
           </p>
         </>
-      )}
     </div>
   );
 }
@@ -935,182 +1075,6 @@ export function ShippingFields({
 }
 
 /* -------------------------------------------------------------------------- */
-/* The book's own details: title, price, description                          */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The three things Square owns, edited together and saved on demand.
- *
- * ---------------------------------------------------------------------------
- * Not held for the save bar, and not saved on blur either.
- *
- * The bar exists for the stepper, the category and the pictures — edits that are
- * cheap, reversible, and made across several books in a row. These are none of
- * those: they are one book at a time, they go to Square, and they change what
- * the book is called and what it costs on the till as well as on the shop. An
- * explicit button is the honest control for that.
- *
- * Saving on blur was the first attempt at the title and is worse than either:
- * tabbing past a field you only meant to read renames a book in Square, and
- * there is nothing to press to undo it.
- *
- * ## One button for the three
- *
- * They were going to be three controls with three buttons, which is three round
- * trips and — because `catalog.version.updated` triggers a mirror — three full
- * catalog syncs to change one book. `setProductDetails` sends only what
- * actually differs, so pressing Save once after editing all three is one write.
- *
- * The fields re-seed when the panel moves to a different book *or* when a saved
- * value comes back changed. `product` is the live document, so without the
- * second half a successful save would leave the boxes showing what you typed and
- * the button still lit as though nothing had happened.
- * ---------------------------------------------------------------------------
- */
-function ProductDetailsForm({
-  product,
-  busy,
-  onWrite,
-}: {
-  product: ShopProduct;
-  busy: boolean;
-  onWrite: (run: () => Promise<void>) => Promise<boolean>;
-}) {
-  /*
-   * Dollars as typed, cents when sent. `Math.round`, never `trunc`: `4.35 * 100`
-   * is `434.99999999999994` in binary floating point, and truncating charges a
-   * cent less than the parish set. Same arithmetic as the add form.
-   */
-  const asDollars = (cents: number) => (cents / 100).toFixed(2);
-
-  const [name, setName] = useState(product.name);
-  const [price, setPrice] = useState(asDollars(product.amount));
-  const [description, setDescription] = useState(product.description);
-
-  useEffect(() => {
-    setName(product.name);
-    setPrice(asDollars(product.amount));
-    setDescription(product.description);
-  }, [product.slug, product.name, product.amount, product.description]);
-
-  const title = name.trim().replace(/\s+/g, ' ');
-  const blurb = description.trim();
-
-  const cents = (() => {
-    const trimmed = price.trim().replace(/^\$/, '');
-    if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
-    const value = Math.round(Number(trimmed) * 100);
-    return value > 0 && value <= 100_000 ? value : null;
-  })();
-
-  const titleChanged = title.length > 0 && title !== product.name;
-  const priceChanged = cents !== null && cents !== product.amount;
-  const blurbChanged = blurb !== product.description;
-  /* A price box that cannot be parsed blocks Save rather than being ignored —
-     silently keeping the old price after somebody typed a new one is worse. */
-  const priceBroken = price.trim() !== '' && cents === null;
-  const changed = (titleChanged || priceChanged || blurbChanged) && !priceBroken && title.length > 0;
-
-  const save = async () => {
-    if (!changed || busy) return;
-    await onWrite(async () => {
-      const { setProductDetails } = await import('./adminData');
-      await setProductDetails(product.slug, {
-        ...(titleChanged ? { name: title } : {}),
-        ...(priceChanged ? { priceCents: cents } : {}),
-        ...(blurbChanged ? { description: blurb } : {}),
-      });
-    });
-  };
-
-  /* Enter saves from either single-line box, Escape abandons the lot. The
-     description is a textarea, where Enter is a newline and must stay one. */
-  const keys = (event: ReactKeyboardEvent) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      void save();
-    } else if (event.key === 'Escape') {
-      setName(product.name);
-      setPrice(asDollars(product.amount));
-      setDescription(product.description);
-    }
-  };
-
-  return (
-    <div className="bkdetails">
-      <label className="bkdetails__row">
-        <span className="bkdetails__label">Title</span>
-        <input
-          type="text"
-          className="bkrename__input"
-          value={name}
-          disabled={busy}
-          maxLength={120}
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={keys}
-        />
-      </label>
-
-      <label className="bkdetails__row">
-        <span className="bkdetails__label">Price</span>
-        <span className="bkdetails__money">
-          <span aria-hidden="true">$</span>
-          <input
-            type="text"
-            className={priceBroken ? 'bkrename__input is-wrong' : 'bkrename__input'}
-            value={price}
-            inputMode="decimal"
-            aria-label={`Price of ${product.name} in dollars`}
-            aria-invalid={priceBroken}
-            disabled={busy}
-            onChange={(event) => setPrice(event.target.value)}
-            onKeyDown={keys}
-          />
-        </span>
-      </label>
-
-      <label className="bkdetails__row">
-        <span className="bkdetails__label">Description</span>
-        <textarea
-          className="bkdetails__text"
-          value={description}
-          rows={3}
-          maxLength={2000}
-          placeholder="A line about it — shown under the title on the shelf."
-          disabled={busy}
-          onChange={(event) => setDescription(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') keys(event);
-          }}
-        />
-      </label>
-
-      {priceBroken && (
-        <p className="bkpanel__aside bkpanel__aside--wrong">
-          A price like 8 or 8.50, up to $1,000.00.
-        </p>
-      )}
-
-      <div className="bkdetails__go">
-        <button
-          type="button"
-          className="button button--small"
-          disabled={busy || !changed}
-          onClick={() => void save()}
-        >
-          Save to Square
-        </button>
-      </div>
-
-      <p className="bkpanel__aside">
-        Goes to Square, so the till shows it too. The web address stays as it is,
-        so nobody’s bookmark or past receipt breaks.
-      </p>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Taking a product off the shop                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1211,8 +1175,8 @@ function RemoveProduct({
  * **This no longer writes anything.** It used to debounce a call to Square's
  * inventory API ~700ms after the last press, which meant the card decided when
  * your edit was sent and a run of presses across several books was a run of
- * round trips. The number now changes here and waits on the bar at the foot of
- * the shop. See `pendingEdits.tsx` for what is held and what still acts at once.
+ * round trips. The number now changes here and waits for the item panel's Save.
+ * See `pendingEdits.tsx`.
  *
  * That also removes the whole class of bug the debounce needed guarding against
  * — stale closures, out-of-order responses, re-seeding from a document mid-press
@@ -1220,17 +1184,18 @@ function RemoveProduct({
  * ---------------------------------------------------------------------------
  */
 function StockStepper({
-  product,
+  name,
+  stockCount,
   busy,
+  onSet,
+  onNudge,
 }: {
-  product: ShopProduct;
+  name: string;
+  stockCount: number | null;
   busy: boolean;
+  onSet: (next: number | null) => void;
+  onNudge: (by: number) => void;
 }) {
-  const { stockCount, setStock, nudge } = usePendingEdit(product.slug, {
-    stockCount: product.stockCount ?? null,
-    categoryIds: product.categoryIds,
-  });
-
   if (stockCount === null) {
     return (
       <span className="bkedit__untracked">
@@ -1241,7 +1206,7 @@ function StockStepper({
           disabled={busy}
           title="Start tracking stock for this book"
           aria-label="Start tracking stock"
-          onClick={() => setStock(0)}
+          onClick={() => onSet(0)}
         >
           start counting
         </button>
@@ -1254,9 +1219,9 @@ function StockStepper({
       <button
         type="button"
         className="bkstep__btn"
-        aria-label={`One fewer ${product.name}`}
+        aria-label={`One fewer ${name}`}
         disabled={busy || stockCount === 0}
-        onClick={() => nudge(-1)}
+        onClick={() => onNudge(-1)}
       >
         −
       </button>
@@ -1266,9 +1231,9 @@ function StockStepper({
       <button
         type="button"
         className="bkstep__btn"
-        aria-label={`One more ${product.name}`}
+        aria-label={`One more ${name}`}
         disabled={busy}
-        onClick={() => nudge(1)}
+        onClick={() => onNudge(1)}
       >
         +
       </button>
@@ -1278,7 +1243,7 @@ function StockStepper({
         disabled={busy}
         title="Stop tracking stock for this book"
         aria-label="Stop tracking stock"
-        onClick={() => setStock(null)}
+        onClick={() => onSet(null)}
       >
         stop counting
       </button>
@@ -1342,10 +1307,7 @@ function Pictures({
     unholdImage,
     markImageRemoved,
     unmarkImageRemoved,
-  } = usePendingEdit(product.slug, {
-    stockCount: product.stockCount ?? null,
-    categoryIds: product.categoryIds,
-  });
+  } = usePendingEdit(product.slug, productActual(product));
 
   const saved = doc?.imagePaths ?? [];
 
@@ -2805,7 +2767,11 @@ export function ShopInspector({
   /** The Add-a-book form, passed in so the column does not own its state. */
   children?: ReactNode;
 }) {
-  const { count, saving } = usePendingEdits();
+  const { edits, saving } = usePendingEdits();
+  /* Leaving an item with changes held would leave them where nobody can see
+     them, so the way out says so instead. */
+  const held = product && edits[product.slug] ? product.name : null;
+  const refuse = () => onError(`Save or discard your changes to ${held} first.`);
 
   return (
     <EditColumn
@@ -2819,9 +2785,9 @@ export function ShopInspector({
        * exists to answer.
        */
       saving={saving}
-      onBack={product ? () => onSelect(null) : undefined}
+      onBack={product ? () => (held ? refuse() : onSelect(null)) : undefined}
       backLabel="Back to the shop"
-      onDone={onDone}
+      onDone={() => (held ? refuse() : onDone())}
     >
       {product ? (
         <ProductSettings
@@ -2838,9 +2804,7 @@ export function ShopInspector({
       ) : (
         <div className="bkpanel">
           <p className="bkpanel__note">
-            {count > 0
-              ? 'Pick a book to change it. Your held changes are on the bar at the foot of the shop.'
-              : 'Pick a book to change its title, price, description, pictures, stock or category.'}
+            Pick an item on the shelf to change it.
           </p>
 
           <div className="bkpanel__block">

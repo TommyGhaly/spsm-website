@@ -75,6 +75,14 @@ export interface PendingImage {
 }
 
 export interface PendingEdit {
+  /** Square's: the title. Saved with description and price in one catalog write. */
+  name?: string;
+  /** Square's: the description. */
+  description?: string;
+  /** Square's: what it costs now — the sale price while on clearance. */
+  priceCents?: number;
+  /** The price before clearance, or `null` for not on clearance. The parish's. */
+  wasPriceCents?: number | null;
   /** A number, or `null` for "not counted". Absent means untouched. */
   stockCount?: number | null;
   /**
@@ -98,6 +106,11 @@ export interface PendingEdit {
 
 /** What one book currently *is*, so a held edit can be compared against it. */
 export interface ActualValues {
+  /** Optional so callers that never show the details need not pass them. */
+  name?: string;
+  description?: string;
+  priceCents?: number;
+  wasPriceCents?: number | null;
   stockCount: number | null;
   /** Optional so callers that never show the categories need not pass them. */
   categoryIds?: readonly string[];
@@ -109,7 +122,18 @@ export interface ActualValues {
 }
 
 /** The held fields that are plain values — everything but the pictures. */
-const FIELDS = ['stockCount', 'categoryIds', 'weightOz', 'mediaMail', 'taxable', 'sizes'] as const;
+const FIELDS = [
+  'name',
+  'description',
+  'priceCents',
+  'wasPriceCents',
+  'stockCount',
+  'categoryIds',
+  'weightOz',
+  'mediaMail',
+  'taxable',
+  'sizes',
+] as const;
 type Field = (typeof FIELDS)[number];
 
 /**
@@ -128,7 +152,7 @@ function sizesKey(sizes: readonly ProductSize[] | null | undefined): string {
 function actualOf(actual: ActualValues, key: Field): unknown {
   if (key === 'categoryIds') return categoryKey(actual.categoryIds);
   if (key === 'sizes') return sizesKey(actual.sizes);
-  if (key === 'weightOz') return actual.weightOz ?? null;
+  if (key === 'weightOz' || key === 'wasPriceCents') return actual[key] ?? null;
   if (key === 'mediaMail' || key === 'taxable') return actual[key] ?? false;
   return actual[key];
 }
@@ -168,6 +192,8 @@ interface PendingEditsValue {
   release: (slug: string) => void;
   discardAll: () => void;
   save: () => Promise<void>;
+  /** Send one book's held edit — the item panel's Save. */
+  saveOne: (slug: string) => Promise<void>;
   /** How many *books* are waiting, not how many fields. */
   count: number;
   saving: boolean;
@@ -257,6 +283,58 @@ const EMPTY_REMOVES: readonly string[] = [];
  */
 function newImageId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `img-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Every write one book's held edit needs, in an order that never leaves the
+ * shop showing something untrue if a later write is refused.
+ */
+async function sendOne(
+  adminData: typeof import('./adminData'),
+  slug: string,
+  edit: PendingEdit,
+): Promise<void> {
+  /*
+   * The title, description and price in one catalog write — three would be
+   * three full catalog syncs.
+   *
+   * The pre-clearance price goes either side of it. Starting or changing a
+   * sale writes the old price first, so a refused Square write leaves the old
+   * price beside itself, which `clearanceOf` reads as no sale; ending one
+   * writes Square's price back first, so a refusal leaves the sale standing
+   * rather than a cut price with nothing to say it was cut.
+   */
+  const was = 'wasPriceCents' in edit ? (edit.wasPriceCents ?? null) : undefined;
+  if (was !== undefined && was !== null) await adminData.setWasPrice(slug, was);
+  if ('name' in edit || 'description' in edit || 'priceCents' in edit) {
+    await adminData.setProductDetails(slug, {
+      ...(edit.name !== undefined ? { name: edit.name } : {}),
+      ...(edit.description !== undefined ? { description: edit.description } : {}),
+      ...(edit.priceCents !== undefined ? { priceCents: edit.priceCents } : {}),
+    });
+  }
+  if (was === null) await adminData.setWasPrice(slug, null);
+
+  if ('stockCount' in edit) await adminData.setProductStock(slug, edit.stockCount ?? null);
+  if ('categoryIds' in edit) await adminData.setProductCategories(slug, [...(edit.categoryIds ?? [])]);
+  if ('taxable' in edit) await adminData.setProductTaxable(slug, edit.taxable ?? false);
+  if ('sizes' in edit) await adminData.setProductSizes(slug, edit.sizes ?? null);
+  // Both fields in one write; `setShipping` always holds them together.
+  if ('weightOz' in edit || 'mediaMail' in edit) {
+    await adminData.setProductShipping(slug, {
+      weightOz: edit.weightOz ?? null,
+      mediaMail: edit.mediaMail ?? false,
+    });
+  }
+
+  /*
+   * Removals before additions, so the result matches the tiles you were
+   * looking at when you pressed Save: Square's first picture is the cover, and
+   * the preview shows saved-minus-removed followed by the new ones.
+   * Sequential, because these are uploads.
+   */
+  for (const url of edit.removeImages ?? []) await adminData.removeProductImage(slug, url);
+  for (const image of edit.addImages ?? []) await adminData.uploadProductImage(slug, image.dataUrl);
 }
 
 const PendingEditsContext = createContext<PendingEditsValue | null>(null);
@@ -375,88 +453,55 @@ export function PendingEditsProvider({
     });
   }, []);
 
-  const save = useCallback(async () => {
-    const pending = Object.entries(edits);
-    if (pending.length === 0) return;
+  /**
+   * Send what is held for some books, one book at a time. The Save in the item
+   * panel sends one; `save` sends every book still holding something.
+   */
+  const send = useCallback(
+    async (slugs: string[]) => {
+      const pending = slugs.flatMap((slug) => (edits[slug] ? [[slug, edits[slug]] as const] : []));
+      if (pending.length === 0) return;
 
-    setSaving(true);
-    /* Hoisted out of the `try` so the failure path can release the books that
-       did land — otherwise a refusal on the fourth book leaves the first three
-       showing "Edited" and counted on the bar, and pressing Save again re-sends
-       writes that already succeeded. */
-    const saved: string[] = [];
-    try {
-      const {
-        setProductStock,
-        setProductCategories,
-        setProductShipping,
-        setProductTaxable,
-        setProductSizes,
-        uploadProductImage,
-        removeProductImage,
-      } = await import('./adminData');
-
-      /*
-       * Sequential, not `Promise.all`. Each stock change is a write to Square's
-       * inventory API, and firing ten at once is how a shop of any size meets
-       * Square's rate limit — at which point some of the ten have landed and
-       * some have not, which is the state this whole change exists to avoid.
-       *
-       * The failed book keeps its held edit so it is still on the bar and can be
-       * retried; the ones that landed are released. Stopping at the first
-       * failure rather than pressing on means the bar's count stays truthful.
-       */
-      for (const [slug, edit] of pending) {
-        if ('stockCount' in edit) await setProductStock(slug, edit.stockCount ?? null);
-        if ('categoryIds' in edit) await setProductCategories(slug, [...(edit.categoryIds ?? [])]);
-        // Both fields in one write; `setShipping` always holds them together.
-        if ('taxable' in edit) await setProductTaxable(slug, edit.taxable ?? false);
-        if ('sizes' in edit) await setProductSizes(slug, edit.sizes ?? null);
-        if ('weightOz' in edit || 'mediaMail' in edit) {
-          await setProductShipping(slug, {
-            weightOz: edit.weightOz ?? null,
-            mediaMail: edit.mediaMail ?? false,
-          });
-        }
+      setSaving(true);
+      /* Hoisted out of the `try` so the failure path can release the books that
+         did land — otherwise a refusal on the fourth book leaves the first three
+         showing "Edited", and pressing Save again re-sends writes that already
+         succeeded. */
+      const saved: string[] = [];
+      try {
+        const adminData = await import('./adminData');
 
         /*
-         * Removals before additions, so the result matches the tiles you were
-         * looking at when you pressed Save.
+         * Sequential, not `Promise.all`. Each stock change is a write to
+         * Square's inventory API, and firing ten at once is how a shop of any
+         * size meets Square's rate limit — at which point some of the ten have
+         * landed and some have not.
          *
-         * The preview renders saved-minus-removed followed by the pending adds,
-         * and Square's first picture is the cover — so doing it the other way
-         * round would briefly make a new photograph the cover and then not, and
-         * on a book where every old picture was removed it would settle on a
-         * different one than the preview showed.
-         *
-         * Still sequential, and now for a second reason beyond Square's rate
-         * limit: these are uploads, and firing a book's worth at once is how a
-         * slow connection turns into several half-finished ones.
+         * The failed book keeps its held edit so it can be retried; the ones
+         * that landed are released.
          */
-        for (const url of edit.removeImages ?? []) await removeProductImage(slug, url);
-        for (const image of edit.addImages ?? []) await uploadProductImage(slug, image.dataUrl);
+        for (const [slug, edit] of pending) {
+          await sendOne(adminData, slug, edit);
+          saved.push(slug);
+        }
 
-        saved.push(slug);
+        releaseSaved(saved);
+        onSaved();
+      } catch (cause) {
+        /* `onSaved` even on a failure: the books before the one that broke did
+           land, and the shelf is stale for them. */
+        releaseSaved(saved);
+        onSaved();
+        onError(cause instanceof Error ? cause.message : 'That change was refused.');
+      } finally {
+        setSaving(false);
       }
+    },
+    [edits, releaseSaved, onSaved, onError],
+  );
 
-      releaseSaved(saved);
-      onSaved();
-    } catch (cause) {
-      /*
-       * `onSaved` is called even on a failure, because the books before the one
-       * that broke did land and the shelf is now stale for them.
-       */
-      releaseSaved(saved);
-      onSaved();
-      onError(
-        cause instanceof Error
-          ? `${cause.message} Nothing after that book was sent.`
-          : 'That change was refused. Nothing after that book was sent.',
-      );
-    } finally {
-      setSaving(false);
-    }
-  }, [edits, releaseSaved, onSaved, onError]);
+  const save = useCallback(() => send(Object.keys(edits)), [send, edits]);
+  const saveOne = useCallback((slug: string) => send([slug]), [send]);
 
   const value = useMemo<PendingEditsValue>(
     () => ({
@@ -470,6 +515,7 @@ export function PendingEditsProvider({
       release,
       discardAll,
       save,
+      saveOne,
       count: Object.keys(edits).length,
       saving,
     }),
@@ -484,6 +530,7 @@ export function PendingEditsProvider({
       release,
       discardAll,
       save,
+      saveOne,
       saving,
     ],
   );
@@ -513,6 +560,7 @@ export function usePendingEdits(): PendingEditsValue {
       release: () => {},
       discardAll: () => {},
       save: async () => {},
+      saveOne: async () => {},
       count: 0,
       saving: false,
     }
@@ -540,6 +588,10 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   const weightOz = heldOf(edit, actual, 'weightOz') as number | null;
   const mediaMail = heldOf(edit, actual, 'mediaMail') as boolean;
   const taxable = heldOf(edit, actual, 'taxable') as boolean;
+  const name = (edit && 'name' in edit ? edit.name : actual.name) ?? '';
+  const description = (edit && 'description' in edit ? edit.description : actual.description) ?? '';
+  const priceCents = (edit && 'priceCents' in edit ? edit.priceCents : actual.priceCents) ?? 0;
+  const wasPriceCents = heldOf(edit, actual, 'wasPriceCents') as number | null;
   // The list itself, like `categoryIds`.
   const sizes: readonly ProductSize[] | null =
     edit && 'sizes' in edit ? (edit.sizes ?? null) : (actual.sizes ?? null);
@@ -560,7 +612,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     },
     // `actual` is a fresh object each render; its fields are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slug, edit, actual.stockCount, categoryKey(actual.categoryIds), actual.weightOz, actual.mediaMail, actual.taxable, sizesKey(actual.sizes), hold, release],
+    [slug, edit, actual.stockCount, categoryKey(actual.categoryIds), actual.weightOz, actual.mediaMail, actual.taxable, sizesKey(actual.sizes), actual.name, actual.description, actual.priceCents, actual.wasPriceCents, hold, release],
   );
 
   const setStock = useCallback(
@@ -580,6 +632,12 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   );
 
   const setTaxable = useCallback((next: boolean) => setField({ taxable: next }), [setField]);
+
+  /** Any of the details at once — the price and the clearance price move together. */
+  const setDetails = useCallback(
+    (patch: Pick<PendingEdit, 'name' | 'description' | 'priceCents' | 'wasPriceCents'>) => setField(patch),
+    [setField],
+  );
 
   const setSizes = useCallback(
     (next: readonly ProductSize[] | null) => setField({ sizes: next }),
@@ -627,6 +685,14 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     setTaxable,
     sizes,
     setSizes,
+    name,
+    description,
+    priceCents,
+    wasPriceCents,
+    setDetails,
+    /** Which held fields differ, so a tab can say it has unsaved changes. */
+    changed: FIELDS.filter((key) => heldOf(edit, actual, key) !== actualOf(actual, key)) as readonly string[],
+    hasImageEdits: addedImages.length > 0 || removedImages.length > 0,
     dirty,
     setStock,
     setCategories,
@@ -639,64 +705,4 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     markImageRemoved,
     unmarkImageRemoved,
   };
-}
-
-/**
- * The bar that sends them.
- *
- * ---------------------------------------------------------------------------
- * Fixed to the foot of the window rather than placed above the shelf, for the
- * same reason the orders drawer is an overlay: a bar in the flow moves the
- * books when it appears, so the card you were about to press is somewhere else
- * by the time you press it. This one is out of the layout entirely and the
- * shelf never shifts.
- *
- * It renders nothing at all until something is held. A permanently visible
- * "Save" with nothing to save is furniture, and worse, it trains people to
- * press it out of habit and wonder whether it worked.
- *
- * The count is books, not fields: "2 books" is what somebody can check against
- * the two cards showing "Edited". A field count could read "3 changes" across
- * two cards and match nothing on screen.
- */
-export function SaveBar() {
-  const { count, save, discardAll, saving } = usePendingEdits();
-
-  if (count === 0) return null;
-
-  return (
-    <div className="bksave" role="region" aria-label="Unsaved shop changes">
-      <p className="bksave__count">
-        <strong>
-          {count} {count === 1 ? 'book' : 'books'}
-        </strong>{' '}
-        edited but not saved
-        {/* Said here because this is where somebody is deciding whether they
-            are finished — not in a note further up the page they scrolled past
-            several minutes ago. */}
-        <span className="bksave__aside">
-          Renaming and removing a book save on their own.
-        </span>
-      </p>
-
-      <div className="bksave__actions">
-        <button
-          type="button"
-          className="bksave__discard"
-          disabled={saving}
-          onClick={discardAll}
-        >
-          Discard
-        </button>
-        <button
-          type="button"
-          className="bksave__go"
-          disabled={saving}
-          onClick={() => void save()}
-        >
-          {saving ? 'Saving…' : `Save ${count === 1 ? 'change' : 'changes'}`}
-        </button>
-      </div>
-    </div>
-  );
 }

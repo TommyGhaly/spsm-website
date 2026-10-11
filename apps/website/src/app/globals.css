@@ -4956,6 +4956,126 @@ main {
   font-weight: 600;
 }
 
+/*
+ * The item panel: tabs along the top, the tab's settings, and a footer that is
+ * always there — sticky to the foot of the column, so Save is never a scroll
+ * away.
+ */
+.bkpanel--tabbed {
+  padding-bottom: 0;
+}
+
+.bktabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: var(--space-sm, 0.75rem);
+  border-bottom: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bktabs__tab {
+  position: relative;
+  flex: 1 1 auto;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.3rem;
+  margin-bottom: -1px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  white-space: nowrap;
+  color: var(--color-ink-faint, #6f5f5a);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.bktabs__tab:hover {
+  color: var(--color-ink, #1c1614);
+}
+
+.bktabs__tab.is-on {
+  color: var(--color-accent, #992a21);
+  border-bottom-color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+/* Unsaved changes on this tab. */
+.bktabs__dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--color-accent, #992a21);
+}
+
+.bkpanel__body {
+  display: grid;
+  gap: 0;
+}
+
+/* The title and description run the width of the panel. */
+.bkpanel__block.bkdetails {
+  justify-items: stretch;
+}
+
+/* "Sold as": two choices side by side, the chosen one filled. */
+.bkseg {
+  display: inline-flex;
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-full, 999px);
+  overflow: hidden;
+}
+
+.bkseg__opt {
+  padding: 0.35rem 0.85rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-soft, #4b413e);
+  background: var(--color-paper, #fffefb);
+  border: 0;
+  cursor: pointer;
+}
+
+.bkseg__opt + .bkseg__opt {
+  border-left: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bkseg__opt.is-on {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+}
+
+.bkfoot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: var(--space-sm, 0.75rem) calc(-1 * var(--space-md, 1rem)) 0;
+  padding: 0.75rem var(--space-md, 1rem);
+  background: var(--color-paper-raised, #fffefb);
+  border-top: 1px solid var(--color-rule, #e4dbd2);
+}
+
+.bkfoot.is-dirty {
+  box-shadow: 0 -8px 16px -12px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
+}
+
+.bkfoot__state {
+  flex: 1 1 auto;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkfoot.is-dirty .bkfoot__state {
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
 .bkclothes {
   display: grid;
   gap: 0.5rem;
@@ -20435,23 +20555,6 @@ body.is-editing {
   transition: padding-right 120ms ease;
 }
 
-/*
- * Room at the foot, only when something is actually down there.
- *
- * This was an unconditional `padding-bottom: 5rem`, which is 80px of empty
- * scroll below the footer for the whole of edit mode — Tommy's *"it scrolls too
- * far longer than the page itself"*. The galleries never had a bottom bar at
- * all, so it was dead there in every state; the shop has one only while edits
- * are held, and `SaveBar` renders nothing until then.
- *
- * `:has()` rather than a class React toggles, because the bar's own presence is
- * already the exact condition — a second flag saying "the bar is showing" is one
- * more thing that can disagree with it.
- */
-body.is-editing:has(.bksave) {
-  padding-bottom: 5rem;
-}
-
 /* No transition while the handle is being dragged — the page would lag a frame
    behind the panel edge, which reads as the two coming apart. */
 body.is-editing:has(.inspector-col.is-dragging) {
@@ -25973,137 +26076,6 @@ body.is-editing:has(.inspector-col.is-dragging) {
   color: var(--color-ink-faint, #6f5f5a);
   font-style: italic;
   opacity: 1;
-}
-
-/*
- * The save bar.
- *
- * ---------------------------------------------------------------------------
- * Fixed rather than sticky, and out of the document flow entirely, because the
- * shelf must not move when it appears. A bar that pushes the grid down by its
- * own height relocates the card you were about to press at the exact moment you
- * decided to press it — the same fault that sent the orders panel into a drawer.
- *
- * Centred and narrow rather than full-bleed: it is a decision about a handful of
- * books, not a system-wide mode, and a bar spanning the whole window reads as
- * the latter. `max-width` keeps it to a readable measure on a desktop and the
- * `calc` keeps it clear of the edges on a phone.
- *
- * z-index 70 puts it over the masthead's 50. It does not need to beat the
- * dialogs: those are native `<dialog>` elements in the top layer, which no
- * z-index can reach and none should try to.
- */
-.bksave {
-  position: fixed;
-  z-index: 70;
-  left: 50%;
-  bottom: max(1rem, env(safe-area-inset-bottom, 0));
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 1.25rem;
-  align-items: center;
-  justify-content: space-between;
-  width: calc(100vw - 2rem);
-  max-width: 34rem;
-  padding: 0.7rem 0.9rem 0.7rem 1.1rem;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.875rem);
-  color: var(--color-ink, #1c1614);
-  background: var(--color-paper-raised, #fffefb);
-  border: 1px solid var(--color-rule, #e4d8d2);
-  border-radius: var(--radius-md, 0.6rem);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--color-ink, #1c1614) 10%, transparent),
-    0 14px 30px -12px color-mix(in srgb, var(--color-ink, #1c1614) 42%, transparent);
-}
-
-.bksave__count {
-  margin: 0;
-  min-width: 0;
-}
-
-/* On its own line under the count, not in parentheses after it: it answers a
-   different question — "what about the picture I just added?" — and a clause
-   inside the sentence about stock makes both harder to read. */
-.bksave__aside {
-  display: block;
-  color: var(--color-ink-faint, #6f5f5a);
-  font-size: var(--type-micro, 0.8125rem);
-}
-
-.bksave__actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-left: auto;
-}
-
-/* Discard is a real choice, so it is a button rather than a link — but it is
-   the recessive one, and giving it the same weight as Save would make throwing
-   work away as easy as keeping it. */
-.bksave__discard {
-  padding: 0.4rem 0.9rem;
-  font: inherit;
-  color: var(--color-ink-faint, #6f5f5a);
-  background: none;
-  border: 1px solid var(--color-rule, #e4d8d2);
-  border-radius: var(--radius-full, 999px);
-  cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease;
-}
-
-.bksave__discard:hover:not(:disabled) {
-  color: var(--color-ink, #1c1614);
-  border-color: var(--color-ink-faint, #6f5f5a);
-}
-
-.bksave__go {
-  padding: 0.4rem 1.1rem;
-  font: inherit;
-  white-space: nowrap;
-  color: var(--color-ink-inverse, #fdf7f4);
-  background: var(--color-accent, #992a21);
-  border: 0;
-  border-radius: var(--radius-full, 999px);
-  cursor: pointer;
-  transition: background-color 160ms ease, transform 120ms ease;
-}
-
-.bksave__go:hover:not(:disabled) {
-  background: var(--color-accent-strong, #731d16);
-}
-
-.bksave__go:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.bksave__go:disabled,
-.bksave__discard:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* Under about 30rem the count and the buttons each want the full width, and
-   side by side they wrap into a ragged two-and-a-bit lines. */
-@media (max-width: 30rem) {
-  .bksave {
-    justify-content: stretch;
-  }
-
-  .bksave__actions {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  /* Full 44px targets on a phone. At the desktop padding these came out at 38
-     and 40px, which is under the size a thumb reliably hits — and Discard
-     missing by a few pixels means pressing Save instead. */
-  .bksave__discard,
-  .bksave__go {
-    flex: 1 1 auto;
-    min-height: 2.75rem;
-  }
 }
 
 .bkedit__field {
