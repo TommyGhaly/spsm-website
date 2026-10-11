@@ -37,7 +37,7 @@ describe('buildSquareOrder', () => {
   it('sends catalog ids and quantities, never an amount', () => {
     const built = buildSquareOrder([{ slug: 'holy-bible', quantity: 2 }], catalog);
 
-    expect(built.lines).toEqual([{ catalog_object_id: 'VAR_BIBLE', quantity: '2' }]);
+    expect(built.lines).toEqual([{ uid: 'line-0', catalog_object_id: 'VAR_BIBLE', quantity: '2' }]);
     // The whole security property, asserted directly.
     expect(JSON.stringify(built.lines)).not.toMatch(/amount|price|money/i);
     expect(built.names).toEqual({ 'holy-bible': 'Holy Bible' });
@@ -48,7 +48,7 @@ describe('buildSquareOrder', () => {
       [{ slug: 'holy-bible', quantity: 1, price: { amount: 1 } } as never],
       catalog,
     );
-    expect(built.lines).toEqual([{ catalog_object_id: 'VAR_BIBLE', quantity: '1' }]);
+    expect(built.lines).toEqual([{ uid: 'line-0', catalog_object_id: 'VAR_BIBLE', quantity: '1' }]);
   });
 
   it('refuses a product that is not published', () => {
@@ -90,7 +90,7 @@ describe('buildSquareOrder', () => {
       ],
       catalog,
     );
-    expect(built.lines).toEqual([{ catalog_object_id: 'VAR_BIBLE', quantity: '1' }]);
+    expect(built.lines).toEqual([{ uid: 'line-0', catalog_object_id: 'VAR_BIBLE', quantity: '1' }]);
   });
 
   it('keeps the good lines and reports the bad ones, rather than failing the basket', () => {
@@ -103,6 +103,71 @@ describe('buildSquareOrder', () => {
     );
     expect(built.lines).toHaveLength(1);
     expect(built.rejected).toHaveLength(1);
+  });
+
+  describe('clothing', () => {
+    const tee = product({
+      name: 'Parish Tee',
+      squareVariationId: 'VAR_TEE',
+      // Square's count is not the one that matters for clothing.
+      stockCount: 0,
+      sizes: [
+        { label: 'M', count: 3, extraCents: 0 },
+        { label: '2XL', count: 1, extraCents: 200 },
+        { label: 'L', count: 0, extraCents: 0 },
+      ],
+    });
+    const clothes = new Map([['tee', tee]]);
+
+    it('sends the size as a note, and its add-on as a modifier from the size list', () => {
+      const built = buildSquareOrder(
+        [
+          { slug: 'tee', quantity: 2, size: 'M' },
+          { slug: 'tee', quantity: 1, size: '2XL' },
+        ],
+        clothes,
+      );
+      expect(built.rejected).toEqual([]);
+      expect(built.lines).toEqual([
+        { uid: 'line-0', catalog_object_id: 'VAR_TEE', quantity: '2', note: 'Size M' },
+        {
+          uid: 'line-1',
+          catalog_object_id: 'VAR_TEE',
+          quantity: '1',
+          note: 'Size 2XL',
+          modifiers: [{ uid: 'line-1-size', name: 'Size 2XL', base_price_money: { amount: 200, currency: 'USD' } }],
+        },
+      ]);
+      expect(built.items.map((item) => [item.uid, item.slug, item.size, item.quantity])).toEqual([
+        ['line-0', 'tee', 'M', 2],
+        ['line-1', 'tee', '2XL', 1],
+      ]);
+    });
+
+    it('ignores an add-on the request tries to name', () => {
+      const built = buildSquareOrder([{ slug: 'tee', quantity: 1, size: 'M', extraCents: 1 } as never], clothes);
+      expect(JSON.stringify(built.lines)).not.toMatch(/amount|price|money/i);
+    });
+
+    it('refuses no size, an unknown size, a sold-out size and more than are left', () => {
+      const reason = (line: object) => buildSquareOrder([{ slug: 'tee', quantity: 1, ...line }], clothes).rejected[0];
+      expect(reason({})?.reason).toBe('no-size');
+      expect(reason({ size: 'XS' })?.reason).toBe('no-size');
+      expect(reason({ size: 'L' })).toEqual({ slug: 'tee', reason: 'sold-out', size: 'L' });
+      expect(reason({ size: '2XL', quantity: 2 })).toEqual({ slug: 'tee', reason: 'not-enough', size: '2XL' });
+    });
+
+    it('collapses a repeated product-and-size, but not two sizes', () => {
+      const built = buildSquareOrder(
+        [
+          { slug: 'tee', quantity: 1, size: 'M' },
+          { slug: 'tee', quantity: 3, size: 'M' },
+        ],
+        clothes,
+      );
+      expect(built.lines).toHaveLength(1);
+      expect(built.lines[0]?.quantity).toBe('1');
+    });
   });
 
   it('survives junk without throwing', () => {

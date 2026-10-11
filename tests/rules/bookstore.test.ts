@@ -691,3 +691,29 @@ describe('sales tax — the product flag and the shop rate', () => {
     );
   });
 });
+
+describe('clearance and clothing — the parish fields beside the price', () => {
+  const write = (fields: Record<string, unknown>, as = asBookstore(env), uid = 'bookstore-1') =>
+    updateDoc(doc(as.firestore(), 'products/holy-bible'), { ...fields, updatedAt: serverTimestamp(), updatedBy: uid });
+
+  it('lets the shop keep a pre-clearance price, and clear it', async () => {
+    await assertSucceeds(write({ wasPriceCents: 2000 }));
+    await assertSucceeds(write({ wasPriceCents: null }));
+    await assertFails(write({ wasPriceCents: 0 }));
+    await assertFails(write({ wasPriceCents: 19.99 }));
+    await assertFails(write({ wasPriceCents: 100001 }));
+  });
+
+  it('lets the shop set sizes or clear them, and refuses anything but a short list', async () => {
+    await assertSucceeds(write({ sizes: [{ label: 'M', count: 3, extraCents: 0 }] }));
+    await assertSucceeds(write({ sizes: [] }));
+    await assertSucceeds(write({ sizes: null }));
+    await assertFails(write({ sizes: 'M' }));
+    await assertFails(write({ sizes: Array.from({ length: 14 }, () => ({ label: 'M', count: 1, extraCents: 0 })) }));
+  });
+
+  it('does not let a member with no grant change either', async () => {
+    await assertFails(write({ wasPriceCents: 2000 }, asSignedIn(env), 'member-1'));
+    await assertFails(write({ sizes: [] }, asSignedIn(env), 'member-1'));
+  });
+});

@@ -4775,6 +4775,11 @@ main {
   color: var(--color-accent, #992a21);
 }
 
+/* A question, not a status: no size chosen yet. */
+.buybox__stock--ask {
+  color: var(--color-ink-soft, #4b413e);
+}
+
 .buybox__qty {
   display: flex;
   align-items: center;
@@ -4812,6 +4817,196 @@ main {
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.875rem);
   color: var(--color-ink-faint, #6f5f5a);
+}
+
+/* A size not chosen yet, or none left: the button says why rather than
+   doing nothing when pressed. */
+.buybox__add:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--color-accent, #992a21) 45%, var(--color-paper-sunken, #eeddd7));
+}
+
+/* ---- clothing sizes ------------------------------------------------------ */
+
+/*
+ * A row of size buttons, like the category pills: outlined, filled when
+ * chosen. A sold-out size stays in the row, struck through, so its absence is
+ * an answer rather than a question.
+ */
+.sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sizes__pick {
+  min-width: 2.75rem;
+  padding: 0.35rem 0.7rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink, #1c1614);
+  background: var(--color-paper, #fffefb);
+  border: 1px solid var(--color-rule, #e4dbd2);
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.sizes__pick:hover:not(:disabled) {
+  border-color: var(--color-accent, #992a21);
+}
+
+.sizes__pick.is-on {
+  color: var(--color-ink-inverse, #fffefb);
+  background: var(--color-accent, #992a21);
+  border-color: var(--color-accent, #992a21);
+}
+
+.sizes__pick:disabled {
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration: line-through;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- clearance ----------------------------------------------------------- */
+
+/* The old price, quieter than the new one and struck through. */
+.price__was {
+  font-size: 0.85em;
+  color: var(--color-ink-faint, #6f5f5a);
+  text-decoration-thickness: 1px;
+}
+
+.price__now {
+  color: var(--color-accent, #992a21);
+}
+
+.item__sale {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.05em);
+  text-transform: uppercase;
+  color: var(--color-accent, #992a21);
+}
+
+/* The discount, top right of the cover — the other corner from "in basket". */
+.book__sale {
+  position: absolute;
+  top: var(--space-sm, 0.6rem);
+  right: 0;
+  padding: 0.2rem 0.7rem 0.2rem 0.55rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.05em);
+  text-transform: uppercase;
+  color: var(--color-ink-inverse, #fdf7f4);
+  background: var(--color-accent, #992a21);
+  border-radius: var(--radius-full, 999px) 0 0 var(--radius-full, 999px);
+}
+
+/*
+ * The clearance section: a band above the shelf, on a faint wash of the
+ * accent so it reads as an announcement rather than as the first row of the
+ * shelf. Its cards are the shelf's own.
+ */
+.clearance {
+  margin: 0 0 var(--space-xl, 2.5rem);
+  padding: var(--space-md, 1.1rem) var(--space-md, 1.1rem) var(--space-lg, 1.6rem);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 6%, var(--color-paper, #fffefb));
+  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 22%, transparent);
+  border-radius: var(--radius-md, 8px);
+}
+
+.clearance__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: var(--space-md, 1rem);
+}
+
+.clearance__title {
+  margin: 0;
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  color: var(--color-accent, #992a21);
+}
+
+.clearance__lede {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink-soft, #4b413e);
+}
+
+/* ---- editing: clearance and sizes --------------------------------------- */
+
+.bksale {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  color: var(--color-ink, #1c1614);
+}
+
+.bksale s {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bksale__off {
+  color: var(--color-accent, #992a21);
+  font-weight: 600;
+}
+
+.bkclothes {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.bksizes {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+}
+
+.bksizes th,
+.bksizes td {
+  padding: 0.2rem 0.25rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.bksizes thead th {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bksizes tbody th {
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+/* A size not offered is dimmed, so the ticked ones read as the list. */
+.bksizes tbody tr:not(.is-on) {
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bksizes .bkrename__input {
+  width: 100%;
+  min-width: 2.75rem;
+  max-width: 4.5rem;
+}
+
+.bksizes__price {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .buybox__in {

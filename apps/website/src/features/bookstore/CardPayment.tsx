@@ -34,6 +34,8 @@ type Status = 'loading' | 'ready' | 'paying' | 'done' | 'unavailable';
 interface CartLine {
   slug: string;
   quantity: number;
+  /** For clothing, which size. */
+  size?: string;
 }
 
 export function CardPayment({

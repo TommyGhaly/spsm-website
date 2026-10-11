@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { ProductSize } from '@spsm/shared';
 
 /*
  * Held edits, and the one Save that sends them.
@@ -87,6 +88,8 @@ export interface PendingEdit {
   mediaMail?: boolean;
   /** Sales tax applies. The parish's own field. */
   taxable?: boolean;
+  /** Clothing sizes, or `null` for not clothing. The parish's own field. */
+  sizes?: readonly ProductSize[] | null;
   /** Photographs chosen here and not yet uploaded, in the order chosen. */
   addImages?: PendingImage[];
   /** Already-saved Square URLs marked to come off. */
@@ -102,10 +105,11 @@ export interface ActualValues {
   weightOz?: number | null;
   mediaMail?: boolean;
   taxable?: boolean;
+  sizes?: readonly ProductSize[] | null;
 }
 
 /** The held fields that are plain values — everything but the pictures. */
-const FIELDS = ['stockCount', 'categoryIds', 'weightOz', 'mediaMail', 'taxable'] as const;
+const FIELDS = ['stockCount', 'categoryIds', 'weightOz', 'mediaMail', 'taxable', 'sizes'] as const;
 type Field = (typeof FIELDS)[number];
 
 /**
@@ -116,8 +120,14 @@ function categoryKey(ids: readonly string[] | undefined): string {
   return [...(ids ?? [])].sort().join('\n');
 }
 
+/** A size list as one comparable value. Order is fixed by `cleanSizes`, so it matters. */
+function sizesKey(sizes: readonly ProductSize[] | null | undefined): string {
+  return JSON.stringify(sizes ? sizes.map(({ label, count, extraCents }) => [label, count, extraCents]) : null);
+}
+
 function actualOf(actual: ActualValues, key: Field): unknown {
   if (key === 'categoryIds') return categoryKey(actual.categoryIds);
+  if (key === 'sizes') return sizesKey(actual.sizes);
   if (key === 'weightOz') return actual.weightOz ?? null;
   if (key === 'mediaMail' || key === 'taxable') return actual[key] ?? false;
   return actual[key];
@@ -127,6 +137,7 @@ function actualOf(actual: ActualValues, key: Field): unknown {
 function heldOf(edit: PendingEdit | undefined, actual: ActualValues, key: Field): unknown {
   if (edit && key in edit) {
     if (key === 'categoryIds') return categoryKey(edit.categoryIds);
+    if (key === 'sizes') return sizesKey(edit.sizes);
     return key === 'mediaMail' || key === 'taxable' ? (edit[key] ?? false) : (edit[key] ?? null);
   }
   return actualOf(actual, key);
@@ -380,6 +391,7 @@ export function PendingEditsProvider({
         setProductCategories,
         setProductShipping,
         setProductTaxable,
+        setProductSizes,
         uploadProductImage,
         removeProductImage,
       } = await import('./adminData');
@@ -399,6 +411,7 @@ export function PendingEditsProvider({
         if ('categoryIds' in edit) await setProductCategories(slug, [...(edit.categoryIds ?? [])]);
         // Both fields in one write; `setShipping` always holds them together.
         if ('taxable' in edit) await setProductTaxable(slug, edit.taxable ?? false);
+        if ('sizes' in edit) await setProductSizes(slug, edit.sizes ?? null);
         if ('weightOz' in edit || 'mediaMail' in edit) {
           await setProductShipping(slug, {
             weightOz: edit.weightOz ?? null,
@@ -527,6 +540,9 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   const weightOz = heldOf(edit, actual, 'weightOz') as number | null;
   const mediaMail = heldOf(edit, actual, 'mediaMail') as boolean;
   const taxable = heldOf(edit, actual, 'taxable') as boolean;
+  // The list itself, like `categoryIds`.
+  const sizes: readonly ProductSize[] | null =
+    edit && 'sizes' in edit ? (edit.sizes ?? null) : (actual.sizes ?? null);
   const addedImages = edit?.addImages ?? EMPTY_ADDS;
   const removedImages = edit?.removeImages ?? EMPTY_REMOVES;
   const dirty = !fieldsMatch(edit, actual) || addedImages.length > 0 || removedImages.length > 0;
@@ -544,7 +560,7 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     },
     // `actual` is a fresh object each render; its fields are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slug, edit, actual.stockCount, categoryKey(actual.categoryIds), actual.weightOz, actual.mediaMail, actual.taxable, hold, release],
+    [slug, edit, actual.stockCount, categoryKey(actual.categoryIds), actual.weightOz, actual.mediaMail, actual.taxable, sizesKey(actual.sizes), hold, release],
   );
 
   const setStock = useCallback(
@@ -564,6 +580,11 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
   );
 
   const setTaxable = useCallback((next: boolean) => setField({ taxable: next }), [setField]);
+
+  const setSizes = useCallback(
+    (next: readonly ProductSize[] | null) => setField({ sizes: next }),
+    [setField],
+  );
 
   /* Relative, so a fast run of presses accumulates rather than collapsing. */
   const nudge = useCallback(
@@ -604,6 +625,8 @@ export function usePendingEdit(slug: string, actual: ActualValues) {
     mediaMail,
     taxable,
     setTaxable,
+    sizes,
+    setSizes,
     dirty,
     setStock,
     setCategories,

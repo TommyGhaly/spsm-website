@@ -16,7 +16,9 @@ import { useLiveCatalog } from "./useLiveCatalog";
 import { useCatalogDocs } from "./useCatalogDocs";
 import {
   childSections,
+  clearanceOf,
   groupProducts,
+  sizesSoldOut,
   salesTaxCents,
   taxLabel,
   UNSORTED_LABEL,
@@ -64,10 +66,48 @@ const ShopInspector = lazy(() =>
 
 export { money };
 
-/** slug → quantity. Kept flat so it survives `JSON.stringify` unchanged. */
+/**
+ * Basket key → quantity. Kept flat so it survives `JSON.stringify` unchanged.
+ *
+ * The key is the slug, or for clothing the slug and the size — `tee|M` — so two
+ * sizes of one shirt are two lines. A basket saved before sizes existed is all
+ * plain slugs and reads exactly as it did.
+ */
 type Cart = Record<string, number>;
 
 const CART_KEY = "spsm.bookstore.cart";
+
+function cartKey(slug: string, size: string | null): string {
+  return size ? `${slug}|${size}` : slug;
+}
+
+function splitKey(key: string): { slug: string; size: string | null } {
+  const at = key.indexOf('|');
+  return at < 0 ? { slug: key, size: null } : { slug: key.slice(0, at), size: key.slice(at + 1) };
+}
+
+/** Every size of it in the basket, added up — what "in basket" on a card means. */
+function inCartOf(cart: Cart, slug: string): number {
+  return Object.entries(cart).reduce(
+    (sum, [key, quantity]) => (splitKey(key).slug === slug ? sum + quantity : sum),
+    0,
+  );
+}
+
+/** Nothing left to sell: no stock, or for clothing, no size with any. */
+function soldOutOf(product: ShopProduct): boolean {
+  return product.sizes ? sizesSoldOut(product.sizes) : product.stockCount === 0;
+}
+
+/** One of it, in this size — the price plus whatever the size adds. */
+function unitOf(product: ShopProduct, size: string | null): number {
+  return product.amount + (product.sizes?.find((one) => one.label === size)?.extraCents ?? 0);
+}
+
+/** A basket line's name, with its size when it has one. */
+function lineName(name: string, size: string | null): string {
+  return size ? `${name} — size ${size}` : name;
+}
 
 /**
  * The bookstore: a grid, a detail dialog, and a basket.
@@ -290,8 +330,8 @@ export function Shop({
     cartRef.current = updated;
 
     const delta = bounded - before;
-    if (delta > 0) trackProduct('cartAdd', slug, delta);
-    else trackProduct('cartRemove', slug, -delta);
+    if (delta > 0) trackProduct('cartAdd', splitKey(slug).slug, delta);
+    else trackProduct('cartRemove', splitKey(slug).slug, -delta);
 
     setCart(updated);
   }, []);
@@ -311,12 +351,22 @@ export function Shop({
   const lines = useMemo(
     () =>
       Object.entries(cart)
-        .map(([slug, quantity]) => {
+        .map(([key, quantity]) => {
+          const { slug, size } = splitKey(key);
           const product = products.find((p) => p.slug === slug);
-          return product ? { product, quantity } : null;
+          if (!product) return null;
+          /*
+           * A size the shirt no longer comes in, or a size on something that is
+           * not clothing (any more), is a line checkout would refuse — so it is
+           * not shown as one. Clothing with no size is the same.
+           */
+          if (product.sizes ? !product.sizes.some((one) => one.label === size) : size !== null) return null;
+          return { key, product, size, quantity, unit: unitOf(product, size) };
         })
         .filter(
-          (line): line is { product: ShopProduct; quantity: number } =>
+          (
+            line,
+          ): line is { key: string; product: ShopProduct; size: string | null; quantity: number; unit: number } =>
             line !== null,
         ),
     [cart, products],
@@ -338,7 +388,8 @@ export function Shop({
   const alsoBuy = useMemo(
     () =>
       products
-        .filter((product) => !cart[product.slug] && product.stockCount !== 0)
+        // Not clothing: one tap here cannot choose a size.
+        .filter((product) => !inCartOf(cart, product.slug) && !soldOutOf(product) && !product.sizes)
         .slice(0, 6),
     [cart, products],
   );
@@ -502,10 +553,52 @@ export function Shop({
   }, [shown, pills, pill]);
 
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
-  const total = lines.reduce(
-    (sum, line) => sum + line.product.amount * line.quantity,
+  const total = lines.reduce((sum, line) => sum + line.unit * line.quantity, 0);
+
+  /*
+   * The clearance section: everything marked down that can still be bought,
+   * deepest discount first. Shown above the shelf only while the whole shop is
+   * — a search or a category is somebody looking for something in particular.
+   * The items stay in the shelf below too, with their crossed-out price.
+   */
+  const onSale = useMemo(
+    () =>
+      products
+        .map((product) => ({
+          product,
+          sale: clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount }),
+        }))
+        .filter((one) => one.sale && !soldOutOf(one.product))
+        .sort((a, b) => (b.sale?.percentOff ?? 0) - (a.sale?.percentOff ?? 0))
+        .map((one) => one.product),
+    [products],
+  );
+  const deepest = onSale.reduce(
+    (most, product) =>
+      Math.max(most, clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount })?.percentOff ?? 0),
     0,
   );
+
+  /*
+   * Pressing a card. While editing it selects the book into the column
+   * instead of opening the shopper's enlarged view; pressing the selected one
+   * again goes back to the shop's own settings, so the card is a toggle rather
+   * than a one-way trip.
+   */
+  const openProduct = (product: ShopProduct) => {
+    if (editing) {
+      setSelected((was) => (was === product.slug ? null : product.slug));
+      return;
+    }
+    trackProduct('detail', product.slug);
+    setOpen(product);
+  };
+
+  /** A card's Add: straight into the basket, or for clothing, to the size picker. */
+  const addFromCard = (product: ShopProduct) => {
+    if (product.sizes) openProduct(product);
+    else bumpQuantity(product.slug, 1);
+  };
 
   return (
     <PendingEditsProvider onSaved={refresh} onError={setEditError}>
@@ -767,31 +860,40 @@ export function Shop({
         One grid, whatever the categories are. The pills above narrow it; nothing
         below is ever split into a second shelf.
       */}
+      {!needle && pill === undefined && onSale.length > 0 && (
+        <section className="clearance" aria-labelledby="clearance-title">
+          <div className="clearance__head">
+            <h3 id="clearance-title" className="clearance__title">Clearance</h3>
+            <p className="clearance__lede">
+              {deepest > 0 ? `Up to ${deepest}% off` : 'Marked down'} — while they last.
+            </p>
+          </div>
+          <ul className={editing ? 'shelf clearance__shelf is-editing' : 'shelf clearance__shelf'}>
+            {onSale.map((product) => (
+              <Book
+                key={product.id}
+                product={product}
+                inCart={inCartOf(cart, product.slug)}
+                editing={editing}
+                selected={editing && selected === product.slug}
+                onOpen={() => openProduct(product)}
+                onAdd={() => addFromCard(product)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
       <ul className={editing ? 'shelf is-editing' : 'shelf'}>
         {shownHere.map((product) => (
           <Book
             key={product.id}
             product={product}
-            inCart={cart[product.slug] ?? 0}
+            inCart={inCartOf(cart, product.slug)}
             editing={editing}
             selected={editing && selected === product.slug}
-            onOpen={() => {
-              /*
-               * While editing, pressing a card selects it into the column
-               * instead of opening the shopper's enlarged view. Pressing the
-               * selected one again goes back to the shop's own settings, so the
-               * card is a toggle rather than a one-way trip — the column's
-               * "Back to the shop" says the same thing, but the card is where
-               * the hand already is.
-               */
-              if (editing) {
-                setSelected((was) => (was === product.slug ? null : product.slug));
-                return;
-              }
-              trackProduct('detail', product.slug);
-              setOpen(product);
-            }}
-            onAdd={() => bumpQuantity(product.slug, 1)}
+            onOpen={() => openProduct(product)}
+            onAdd={() => addFromCard(product)}
           />
         ))}
 
@@ -852,7 +954,8 @@ export function Shop({
            * the dialog closing.
            */
           product={products.find((p) => p.slug === open.slug) ?? open}
-          inCart={cart[open.slug] ?? 0}
+          inCart={inCartOf(cart, open.slug)}
+          cart={cart}
           others={products.filter((p) => p.slug !== open.slug)}
           editing={editing}
           doc={docs.get(open.slug)}
@@ -864,8 +967,8 @@ export function Shop({
             setOpen(product);
           }}
           onClose={() => setOpen(null)}
-          onAdd={(quantity) => {
-            bumpQuantity(open.slug, quantity);
+          onAdd={(quantity, size) => {
+            bumpQuantity(cartKey(open.slug, size), quantity);
             setOpen(null);
             setBasketOpen(true);
           }}
@@ -927,8 +1030,8 @@ export function Shop({
               </p>
 
               <ul className="done__lines">
-                {receipt.lines.map((line) => (
-                  <li key={line.name}>
+                {receipt.lines.map((line, index) => (
+                  <li key={`${index}-${line.name}`}>
                     <span className="done__qty">{line.quantity}×</span>
                     <span className="done__name">
                       {line.name}
@@ -1017,18 +1120,18 @@ export function Shop({
              */
             <div className="basket">
               <ul className="basket__lines">
-                {lines.map(({ product, quantity }) => (
-                  <li key={product.slug} className="basket__line">
+                {lines.map(({ key, product, size, quantity, unit }) => (
+                  <li key={key} className="basket__line">
                     <Cover product={product} className="basket__cover" />
 
-                    <p className="basket__name">{product.name}</p>
+                    <p className="basket__name">{lineName(product.name, size)}</p>
 
                     {/* The unit price, not "In stock". Every line said in
                         stock, which is true of everything in the shop and so
                         tells the reader nothing; what they want to check
                         against the line total is what one of them costs. */}
                     <p className="basket__each">
-                      {money(product.amount, product.currency)} each
+                      {money(unit, product.currency)} each
                       {product.sku && <span className="sku"> · {product.sku}</span>}
                     </p>
 
@@ -1040,7 +1143,7 @@ export function Shop({
                       <div className="stepper stepper--sm">
                         <button
                           type="button"
-                          onClick={() => bumpQuantity(product.slug, -1)}
+                          onClick={() => bumpQuantity(key, -1)}
                           aria-label={`One fewer ${product.name}`}
                         >
                           −
@@ -1048,9 +1151,13 @@ export function Shop({
                         <span aria-live="polite">{quantity}</span>
                         <button
                           type="button"
-                          onClick={() => bumpQuantity(product.slug, 1)}
+                          onClick={() => bumpQuantity(key, 1)}
                           aria-label={`One more ${product.name}`}
-                          disabled={quantity >= 20}
+                          // No more of a size than there are on hand.
+                          disabled={
+                            quantity >= 20 ||
+                            quantity >= (product.sizes?.find((one) => one.label === size)?.count ?? Infinity)
+                          }
                         >
                           +
                         </button>
@@ -1062,13 +1169,13 @@ export function Shop({
                       <button
                         type="button"
                         className="basket__remove"
-                        onClick={() => setQuantity(product.slug, 0)}
+                        onClick={() => setQuantity(key, 0)}
                       >
                         Remove
                       </button>
 
                       <p className="basket__sum">
-                        {money(product.amount * quantity, product.currency)}
+                        {money(unit * quantity, product.currency)}
                       </p>
                     </div>
                   </li>
@@ -1079,7 +1186,7 @@ export function Shop({
                 <span className="basket__totallabel">Subtotal</span>
                 <strong className="basket__totalsum">{money(total)}</strong>
                 <span className="basket__totalnote">
-                  {count} {count === 1 ? 'book' : 'books'} · delivery, if you
+                  {count} {count === 1 ? 'item' : 'items'} · delivery, if you
                   choose it, is added at the next step
                 </span>
               </div>
@@ -1136,7 +1243,7 @@ export function Shop({
                             <Cover product={product} className="addmore__cover" />
                             <span className="addmore__name">{product.name}</span>
                             <span className="addmore__price">
-                              {money(product.amount, product.currency)}
+                              <PriceTag product={product} />
                             </span>
                             <span className="addmore__add" aria-hidden="true">
                               Add
@@ -1159,12 +1266,12 @@ export function Shop({
                   changing the total mid-payment. */}
               <div className="recap">
                 <ul className="recap__lines">
-                  {lines.map(({ product, quantity }) => (
-                    <li key={product.slug}>
+                  {lines.map(({ key, product, size, quantity, unit }) => (
+                    <li key={key}>
                       <span className="recap__qty">{quantity}×</span>
-                      <span className="recap__name">{product.name}</span>
+                      <span className="recap__name">{lineName(product.name, size)}</span>
                       <span className="recap__sum">
-                        {money(product.amount * quantity, product.currency)}
+                        {money(unit * quantity, product.currency)}
                       </span>
                     </li>
                   ))}
@@ -1184,6 +1291,7 @@ export function Shop({
                 cart={lines.map((line) => ({
                   slug: line.product.slug,
                   quantity: line.quantity,
+                  ...(line.size ? { size: line.size } : {}),
                 }))}
                 total={total}
                 /*
@@ -1207,8 +1315,8 @@ export function Shop({
                 tax={(() => {
                   const rate = live.taxRateBps ?? settings.taxRateBps;
                   const cents = salesTaxCents(
-                    lines.map(({ product, quantity }) => ({
-                      amountCents: product.amount * quantity,
+                    lines.map(({ product, quantity, unit }) => ({
+                      amountCents: unit * quantity,
                       taxable: product.taxable,
                     })),
                     rate,
@@ -1226,11 +1334,11 @@ export function Shop({
                     orderId,
                     email: detail.email,
                     shipping: detail.shipping,
-                    lines: lines.map(({ product, quantity }) => ({
-                      name: product.name,
+                    lines: lines.map(({ product, size, quantity, unit }) => ({
+                      name: lineName(product.name, size),
                       sku: product.sku,
                       quantity,
-                      amount: product.amount * quantity,
+                      amount: unit * quantity,
                     })),
                     // What was charged, postage included — not the books'
                     // subtotal, which is what `total` is.
@@ -1398,7 +1506,8 @@ function Book({
   onOpen: () => void;
   onAdd: () => void;
 }) {
-  const soldOut = product.stockCount === 0;
+  const soldOut = soldOutOf(product);
+  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
 
   /*
    * "Was this card actually on screen?", answered by the browser.
@@ -1480,6 +1589,8 @@ function Book({
           ) : (
             inCart > 0 && <span className="book__flag">{inCart} in basket</span>
           )}
+          {/* The other corner from the basket flag, so both can be said at once. */}
+          {sale && !soldOut && <span className="book__sale">{sale.percentOff}% off</span>}
         </span>
 
         <span className="book__title">{product.name}</span>
@@ -1495,20 +1606,51 @@ function Book({
             costs what it costs, and the flag on the cover is what says it is
             gone. It also stays while editing — it is what Square charges, and
             seeing it is how you notice it is wrong. */}
-        <p className="book__price">{money(product.amount, product.currency)}</p>
+        <p className="book__price">
+          <PriceTag product={product} />
+        </p>
 
         {soldOut ? (
           <span className="book__gone">Unavailable</span>
         ) : (
           !editing && (
             <button type="button" className="book__add" onClick={onAdd}>
-              {inCart > 0 ? "Add another" : "Add to basket"}
+              {product.sizes ? "Choose size" : inCart > 0 ? "Add another" : "Add to basket"}
             </button>
           )
         )}
       </div>
 
     </li>
+  );
+}
+
+/**
+ * A price as the shop shows it: crossed out beside the clearance price when it
+ * is on clearance, and for clothing with sizes that cost more, the range — or
+ * the one size's price once a size is chosen.
+ */
+function PriceTag({ product, size = null }: { product: ShopProduct; size?: string | null }) {
+  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
+  const chosen = size ? product.sizes?.find((one) => one.label === size) : undefined;
+  const extras = chosen ? [chosen.extraCents] : product.sizes?.length ? product.sizes.map((one) => one.extraCents) : [0];
+  const low = Math.min(...extras);
+  const high = Math.max(...extras);
+  const span = (base: number) =>
+    low === high ? money(base + low, product.currency) : `${money(base + low)}–${money(base + high)}`;
+
+  if (!sale) return <>{span(product.amount)}</>;
+  return (
+    <>
+      <s className="price__was">
+        <span className="visually-hidden">Was </span>
+        {span(sale.wasCents)}
+      </s>{' '}
+      <span className="price__now">
+        <span className="visually-hidden">now </span>
+        {span(sale.nowCents)}
+      </span>
+    </>
   );
 }
 
@@ -1690,6 +1832,7 @@ function Gallery({ product }: { product: ShopProduct }) {
 function Detail({
   product,
   inCart,
+  cart,
   others,
   editing,
   doc,
@@ -1702,6 +1845,8 @@ function Detail({
 }: {
   product: ShopProduct;
   inCart: number;
+  /** The whole basket, so a size already in it counts against what is left. */
+  cart: Cart;
   /** The rest of the shelf, for the cross-sell below. */
   others: ShopProduct[];
   /** Staff are arranging the shop, so this screen holds the settings instead. */
@@ -1713,10 +1858,28 @@ function Detail({
   onError: (message: string) => void;
   onPick: (product: ShopProduct) => void;
   onClose: () => void;
-  onAdd: (quantity: number) => void;
+  onAdd: (quantity: number, size: string | null) => void;
 }) {
   const [quantity, setQuantity] = useState(1);
-  const soldOut = product.stockCount === 0;
+  const [size, setSize] = useState<string | null>(null);
+  const soldOut = soldOutOf(product);
+  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
+
+  // A different item picked from the strip below starts over.
+  useEffect(() => {
+    setSize(null);
+    setQuantity(1);
+  }, [product.slug]);
+
+  const clothing = product.sizes !== null;
+  const chosen = size ? product.sizes?.find((one) => one.label === size) : undefined;
+  /* How many more of this size can go in the basket: what is on hand, less what
+     is already there. Twenty is the basket's own ceiling for anything. */
+  const room = chosen ? Math.max(0, chosen.count - (cart[cartKey(product.slug, chosen.label)] ?? 0)) : 20;
+  const most = Math.min(20, room);
+  useEffect(() => {
+    setQuantity((q) => Math.max(1, Math.min(q, most)));
+  }, [most]);
 
   return (
     <Dialog title={product.name} onClose={onClose}>
@@ -1729,8 +1892,13 @@ function Detail({
           </h2>
 
           <p className="item__price">
-            {money(product.amount, product.currency)}
+            <PriceTag product={product} size={size} />
           </p>
+          {sale && (
+            <p className="item__sale">
+              Clearance — {sale.percentOff}% off
+            </p>
+          )}
 
           {product.description ? (
             <p className="item__blurb">{product.description}</p>
@@ -1751,15 +1919,53 @@ function Detail({
           */}
           <div className="buybox">
             <p className="buybox__price">
-              {money(product.amount, product.currency)}
+              <PriceTag product={product} size={size} />
             </p>
+
+            {/*
+              Sizes, as a row of buttons. One with none left stays on the row,
+              struck through, so somebody looking for their size learns it is
+              gone rather than wondering whether it was ever made.
+            */}
+            {clothing && !soldOut && (
+              <div className="sizes" role="radiogroup" aria-label="Size">
+                {product.sizes?.map((one) => (
+                  <button
+                    key={one.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={size === one.label}
+                    className={size === one.label ? 'sizes__pick is-on' : 'sizes__pick'}
+                    disabled={one.count <= 0}
+                    title={one.count <= 0 ? `${one.label} is sold out` : undefined}
+                    onClick={() => setSize(one.label)}
+                  >
+                    {one.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <p
               className={
-                soldOut ? "buybox__stock buybox__stock--out" : "buybox__stock"
+                soldOut || (chosen && room === 0)
+                  ? "buybox__stock buybox__stock--out"
+                  : clothing && !chosen
+                    ? "buybox__stock buybox__stock--ask"
+                    : "buybox__stock"
               }
             >
-              {soldOut ? "Out of stock" : "In stock at the church bookstore"}
+              {soldOut
+                ? "Out of stock"
+                : !clothing
+                  ? "In stock at the church bookstore"
+                  : !chosen
+                    ? "Choose a size"
+                    : room === 0
+                      ? `Every ${chosen.label} left is in your basket`
+                      : chosen.count <= 5
+                        ? `Only ${chosen.count} left in ${chosen.label}`
+                        : `${chosen.label} in stock`}
             </p>
 
             {/* Under the stock line, small: the number someone reads out when
@@ -1785,9 +1991,9 @@ function Detail({
                     <span aria-live="polite">{quantity}</span>
                     <button
                       type="button"
-                      onClick={() => setQuantity((q) => Math.min(20, q + 1))}
+                      onClick={() => setQuantity((q) => Math.min(most, q + 1))}
                       aria-label="One more"
-                      disabled={quantity >= 20}
+                      disabled={quantity >= most}
                     >
                       +
                     </button>
@@ -1797,9 +2003,10 @@ function Detail({
                 <button
                   type="button"
                   className="buybox__add"
-                  onClick={() => onAdd(quantity)}
+                  disabled={clothing && (!chosen || room === 0)}
+                  onClick={() => onAdd(quantity, chosen?.label ?? null)}
                 >
-                  Add to basket
+                  {clothing && !chosen ? "Choose a size" : "Add to basket"}
                 </button>
 
                 <p className="buybox__note">
@@ -1835,7 +2042,9 @@ function Detail({
                   <button type="button" className="alsoin__book" onClick={() => onPick(other)}>
                     <Cover product={other} className="alsoin__cover" />
                     <span className="alsoin__name">{other.name}</span>
-                    <span className="alsoin__price">{money(other.amount, other.currency)}</span>
+                    <span className="alsoin__price">
+                      <PriceTag product={other} />
+                    </span>
                   </button>
                 </li>
               ))}

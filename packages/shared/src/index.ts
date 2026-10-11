@@ -58,6 +58,7 @@ export * from './payments/orderLookup.js';
 export * from './payments/shopSections.js';
 export * from './payments/sku.js';
 export * from './payments/salesTax.js';
+export * from './payments/clothing.js';
 export * from './payments/shipping.js';
 
 /*

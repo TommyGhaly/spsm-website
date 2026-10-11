@@ -115,7 +115,7 @@ export function toPublicOrderView(
     shipping: Boolean(order.shipping),
     total: order.total,
     lineItems: (order.lineItems ?? []).map((line: OrderLineItem) => ({
-      name: line.name,
+      name: line.size ? `${line.name} — size ${line.size}` : line.name,
       quantity: line.quantity,
       amount:
         typeof line.unitPrice?.amount === 'number' ? line.unitPrice.amount * line.quantity : null,

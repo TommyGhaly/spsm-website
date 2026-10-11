@@ -35,7 +35,7 @@ export function useShippingQuote({
   postalCode,
 }: {
   enabled: boolean;
-  cart: readonly { slug: string; quantity: number }[];
+  cart: readonly { slug: string; quantity: number; size?: string }[];
   postalCode: string;
 }): QuoteState & { refresh: () => void } {
   const [state, setState] = useState<QuoteState>({ status: 'idle' });
@@ -43,7 +43,9 @@ export function useShippingQuote({
 
   const zip = usableZip(postalCode);
   // The basket as a string, so a new array with the same lines is not a change.
-  const basket = JSON.stringify(cart.map((line) => [line.slug, line.quantity]));
+  // Sizes included: the server adds a shirt's sizes together, and has to be
+  // sent each of them to do it.
+  const basket = JSON.stringify(cart.map((line) => [line.slug, line.quantity, line.size ?? '']));
 
   useEffect(() => {
     if (!enabled || !zip) {
@@ -61,9 +63,10 @@ export function useShippingQuote({
             headers: { 'Content-Type': 'application/json' },
             signal: controller.signal,
             body: JSON.stringify({
-              cart: (JSON.parse(basket) as [string, number][]).map(([slug, quantity]) => ({
+              cart: (JSON.parse(basket) as [string, number, string][]).map(([slug, quantity, size]) => ({
                 slug,
                 quantity,
+                ...(size ? { size } : {}),
               })),
               postalCode: zip,
             }),

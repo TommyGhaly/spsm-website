@@ -126,19 +126,26 @@ async function uspsPrice(
   return typeof json.totalBasePrice === 'number' ? json.totalBasePrice : null;
 }
 
-/** The shop's request lines, cleaned the way `buildSquareOrder` cleans them. */
+/**
+ * The shop's request lines, cleaned the way `buildSquareOrder` cleans them, one
+ * per product: two sizes of one shirt weigh as two shirts, so their quantities
+ * are added together. The quote endpoint and checkout both build the basket key
+ * from this, so they agree.
+ */
 export function parcelLines(cart: unknown): ParcelLine[] {
   if (!Array.isArray(cart)) return [];
   const seen = new Set<string>();
-  const lines: ParcelLine[] = [];
-  for (const entry of cart.slice(0, 40) as { slug?: unknown; quantity?: unknown }[]) {
+  const bySlug = new Map<string, number>();
+  for (const entry of cart.slice(0, 40) as { slug?: unknown; quantity?: unknown; size?: unknown }[]) {
     const slug = typeof entry?.slug === 'string' ? entry.slug.trim() : '';
+    const size = typeof entry?.size === 'string' ? entry.size.trim() : '';
     const quantity = Number(entry?.quantity);
-    if (!slug || seen.has(slug) || !Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) continue;
-    seen.add(slug);
-    lines.push({ slug, quantity });
+    const key = `${slug}\n${size}`;
+    if (!slug || seen.has(key) || !Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) continue;
+    seen.add(key);
+    bySlug.set(slug, (bySlug.get(slug) ?? 0) + quantity);
   }
-  return lines;
+  return [...bySlug].map(([slug, quantity]) => ({ slug, quantity }));
 }
 
 /**

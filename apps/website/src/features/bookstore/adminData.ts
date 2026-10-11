@@ -45,6 +45,7 @@ import {
   type FulfillmentStatus,
   type Order,
   type Product,
+  type ProductSize,
 } from '@spsm/shared';
 import { db } from '@/lib/firebase';
 import { auth } from '@/lib/auth';
@@ -263,6 +264,56 @@ export async function setProductTaxable(slug: string, taxable: boolean): Promise
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   });
+}
+
+/**
+ * Clothing sizes, or null to stop treating it as clothing. The parish's field;
+ * the checkout Function reads it through `cleanSizes` and lowers the counts as
+ * sizes sell.
+ */
+export async function setProductSizes(slug: string, sizes: readonly ProductSize[] | null): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await updateDoc(doc(db(), COLLECTIONS.products, slug), {
+    sizes: sizes ? sizes.map(({ label, count, extraCents }) => ({ label, count, extraCents })) : null,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/** The crossed-out price, written alone. */
+async function writeWasPrice(slug: string, wasPriceCents: number | null): Promise<void> {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('Your session has expired. Sign in again.');
+
+  await updateDoc(doc(db(), COLLECTIONS.products, slug), {
+    wasPriceCents,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/**
+ * Put a product on clearance, or change its clearance price.
+ *
+ * Two writes: the old price kept on the mirror, then the new one to Square,
+ * which is what checkout charges. In that order so a refused Square write
+ * leaves the old price standing beside itself — which `clearanceOf` shows as no
+ * sale at all — rather than a cut price with nothing to say it was cut.
+ *
+ * `wasCents` is the price before clearance: the current price the first time,
+ * and the remembered one when only the clearance price is being changed.
+ */
+export async function setClearance(slug: string, wasCents: number, nowCents: number): Promise<void> {
+  await writeWasPrice(slug, wasCents);
+  await setProductDetails(slug, { priceCents: nowCents });
+}
+
+/** Take it off clearance: the old price back in Square, then the memory of it cleared. */
+export async function endClearance(slug: string, wasCents: number): Promise<void> {
+  await setProductDetails(slug, { priceCents: wasCents });
+  await writeWasPrice(slug, null);
 }
 
 /** The shop's sales-tax rate, in basis points (625 is 6.25%). */

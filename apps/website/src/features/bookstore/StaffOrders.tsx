@@ -300,6 +300,8 @@ function OrderRow({
         {(order.lineItems ?? []).map((line, index) => (
           <li key={`${order.id}-${index}`}>
             <span className="bkorder__qty">{line.quantity}×</span> {line.name}
+            {/* The size, bold: it is what whoever packs the order has to pull. */}
+            {line.size && <strong> — size {line.size}</strong>}
             {line.sku && <span className="sku"> · {line.sku}</span>}
             {line.unitPrice && (
               <span className="bkorder__each"> · {money(line.unitPrice.amount)} each</span>

@@ -118,6 +118,39 @@ export interface Product extends AuditFields, Publishable {
    * gifts and goods generally are not — see `payments/salesTax.ts`.
    */
   taxable?: boolean;
+
+  /**
+   * What it cost before it went on clearance, in cents. The parish's field,
+   * like `taxable`, and off the sync's field mask: Square holds only the price
+   * charged now, which is the clearance price. Shown crossed out beside it, and
+   * only while it is the higher of the two — so a price raised in Square past it
+   * simply stops reading as a sale. Null or absent means not on clearance.
+   * See `payments/clothing.ts` for `clearanceOf`.
+   */
+  wasPriceCents?: number | null;
+
+  /**
+   * Clothing: the sizes it comes in, how many of each are on hand, and what a
+   * size adds to the price. Null or absent means it is not clothing and sells
+   * the ordinary way.
+   *
+   * Counted here, not in Square — the parish's choice, so the counts are the
+   * website's alone and an in-person sale on the register does not lower them.
+   * The checkout Function lowers a size's count when it sells online and refuses
+   * a size at zero; `stockCount` is not consulted for these. A size's add-on is
+   * charged as a modifier on the Square line — see `buildSquareOrder`.
+   */
+  sizes?: ProductSize[] | null;
+}
+
+/** One size of a piece of clothing. */
+export interface ProductSize {
+  /** `M`, `Youth S` — one of `SIZE_PRESETS`. */
+  label: string;
+  /** On hand. 0 shows the size as sold out. */
+  count: number;
+  /** Added to the item's price for this size, in cents. 0 for most sizes. */
+  extraCents: number;
 }
 
 /**
@@ -199,6 +232,12 @@ export interface Order extends AuditFields {
    */
   idempotencyKey: string;
 
+  /**
+   * Set once checkout has lowered the clothing size counts for this order, so a
+   * retried request cannot lower them twice. Absent on orders with no sizes.
+   */
+  sizesCounted?: boolean;
+
   /** Raw webhook event ids we've already applied, newest last. */
   appliedEventIds: string[];
 
@@ -245,6 +284,8 @@ export interface OrderLineItem {
   quantity: number;
   /** The product's SKU when the order was taken. Absent on older orders. */
   sku?: string | null;
+  /** The size bought, for clothing. Absent for everything else. */
+  size?: string | null;
 }
 
 /** Mirrors the subset of Square payment states we care about. */

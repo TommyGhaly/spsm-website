@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  cleanSizes,
   decodeFirestoreFields,
   parseBookstoreConfig,
   type BookstoreSection,
@@ -180,6 +181,8 @@ function toShopProduct(
     weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
     mediaMail: product.mediaMail === true,
     taxable: product.taxable === true,
+    wasPriceCents: typeof product.wasPriceCents === 'number' ? product.wasPriceCents : null,
+    sizes: cleanSizes(product.sizes),
   };
 }
 

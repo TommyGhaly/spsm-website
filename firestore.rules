@@ -814,7 +814,8 @@ service cloud.firestore {
        */
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['section', 'weightOz', 'mediaMail', 'taxable', 'updatedAt', 'updatedBy'])
+             .hasOnly(['section', 'weightOz', 'mediaMail', 'taxable', 'wasPriceCents', 'sizes',
+                       'updatedAt', 'updatedBy'])
         && (!('section' in request.resource.data)
             || request.resource.data.section == null
             || (request.resource.data.section is string
@@ -830,6 +831,21 @@ service cloud.firestore {
         // Square to tax the line; it can add tax to a sale, never lower a price.
         && (!('taxable' in request.resource.data)
             || request.resource.data.taxable is bool)
+        // The pre-clearance price, shown crossed out. Display only: what a
+        // buyer pays is still Square's price. Bounded like the price itself.
+        && (!('wasPriceCents' in request.resource.data)
+            || request.resource.data.wasPriceCents == null
+            || (request.resource.data.wasPriceCents is int
+                && request.resource.data.wasPriceCents > 0
+                && request.resource.data.wasPriceCents <= 100000))
+        // Clothing sizes, null for not clothing. Rules cannot look inside the
+        // entries; the checkout Function reads them through `cleanSizes`,
+        // which drops anything malformed and caps a size's add-on at $100.
+        // An add-on can only raise a price, never lower it.
+        && (!('sizes' in request.resource.data)
+            || request.resource.data.sizes == null
+            || (request.resource.data.sizes is list
+                && request.resource.data.sizes.size() <= 13))
         && request.resource.data.updatedBy == request.auth.uid;
     }
 

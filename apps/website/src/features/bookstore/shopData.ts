@@ -1,4 +1,4 @@
-import type { DocOf, Product } from '@spsm/shared';
+import { cleanSizes, type DocOf, type Product, type ProductSize } from '@spsm/shared';
 import { bundledCover, bundledCovers } from './covers';
 
 /**
@@ -79,6 +79,10 @@ export interface ShopProduct {
   mediaMail: boolean;
   /** Sales tax applies. The parish's, like `section`. */
   taxable: boolean;
+  /** The price before clearance, or null. See `Product.wasPriceCents`. */
+  wasPriceCents: number | null;
+  /** Clothing sizes, cleaned; null for anything that is not clothing. */
+  sizes: ProductSize[] | null;
 }
 
 /**
@@ -133,6 +137,8 @@ export function toShopProducts(products: DocOf<Product>[]): ShopProduct[] {
       weightOz: typeof product.weightOz === 'number' ? product.weightOz : null,
       mediaMail: product.mediaMail === true,
       taxable: product.taxable === true,
+      wasPriceCents: typeof product.wasPriceCents === 'number' ? product.wasPriceCents : null,
+      sizes: cleanSizes(product.sizes),
     };
   });
 }

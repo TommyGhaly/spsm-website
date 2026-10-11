@@ -16,6 +16,10 @@ import {
   MAX_SECTION_LABEL,
   UNSORTED_LABEL,
   MAX_TAX_RATE_BPS,
+  MAX_SIZE_COUNT,
+  MAX_SIZE_EXTRA_CENTS,
+  SIZE_PRESETS,
+  clearanceOf,
   formatWeight,
   ouncesToPounds,
   taxPercentage,
@@ -30,9 +34,11 @@ import {
   type ShippingService,
   type DocOf,
   type Product,
+  type ProductSize,
 } from '@spsm/shared';
 import type { ShopProduct } from './shopData';
 import { usePendingEdit, usePendingEdits } from './pendingEdits';
+import { money } from './money';
 
 /** A category being dragged: which one, where it would land, and how far. */
 interface Drag {
@@ -251,6 +257,7 @@ export function ProductSettings({
     weightOz: product.weightOz,
     mediaMail: product.mediaMail,
     taxable: product.taxable,
+    sizes: product.sizes,
   });
 
   useEffect(() => setConfirming(false), [product.slug]);
@@ -274,6 +281,11 @@ export function ProductSettings({
           "Details" heading above three labelled boxes is a word doing nothing. */}
       <div className="bkpanel__block">
         <ProductDetailsForm product={product} busy={busy} onWrite={write} />
+      </div>
+
+      <div className="bkpanel__block">
+        <h4 className="bkpanel__label">Clearance</h4>
+        <ClearanceField key={product.slug} product={product} busy={busy} onWrite={write} />
       </div>
 
       <div className="bkpanel__block">
@@ -301,9 +313,25 @@ export function ProductSettings({
         )}
       </div>
 
+      {/* Clothing is counted per size, below, so the single count would be a
+          second number for the same shelf. */}
+      {pending.sizes === null && (
+        <div className="bkpanel__block">
+          <h4 className="bkpanel__label">In stock</h4>
+          <StockStepper product={product} busy={busy} />
+        </div>
+      )}
+
       <div className="bkpanel__block">
-        <h4 className="bkpanel__label">In stock</h4>
-        <StockStepper product={product} busy={busy} />
+        <h4 className="bkpanel__label">Clothing</h4>
+        <ClothingField
+          key={product.slug}
+          name={product.name}
+          priceCents={product.amount}
+          sizes={pending.sizes}
+          busy={busy}
+          onChange={pending.setSizes}
+        />
       </div>
 
       {sections.length > 0 && (
@@ -353,6 +381,316 @@ export function ProductSettings({
           onDone={onRemoved}
         />
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Clearance                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Dollars as typed, cents when valid. `Math.round`, for the reason in `ProductDetailsForm`. */
+function parseDollars(text: string): number | null {
+  const trimmed = text.trim().replace(/^\$/, '');
+  if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
+  return Math.round(Number(trimmed) * 100);
+}
+
+/**
+ * Put an item on clearance, change its clearance price, or end it.
+ *
+ * The clearance price is the real price — it goes to Square, so the till charges
+ * it too — and the price before is kept on the parish's side to show crossed
+ * out. Its own button, like the title and price above it, because it changes
+ * what the item costs everywhere.
+ */
+function ClearanceField({
+  product,
+  busy,
+  onWrite,
+}: {
+  product: ShopProduct;
+  busy: boolean;
+  onWrite: (run: () => Promise<void>) => Promise<boolean>;
+}) {
+  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
+  const was = sale?.wasCents ?? product.amount;
+  const [text, setText] = useState(sale ? (sale.nowCents / 100).toFixed(2) : '');
+  useEffect(() => {
+    setText(sale ? (sale.nowCents / 100).toFixed(2) : '');
+    // Re-seeded when the saved price comes back changed, as the details form is.
+  }, [product.amount, product.wasPriceCents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cents = parseDollars(text);
+  const valid = cents !== null && cents > 0 && cents < was;
+  const wrong = text.trim() !== '' && !valid;
+  const percent = valid ? Math.round(((was - cents) / was) * 100) : null;
+  const changed = valid && cents !== sale?.nowCents;
+
+  const go = (run: () => Promise<void>) => void onWrite(run);
+
+  return (
+    <div className="bkdetails">
+      {sale && (
+        <p className="bksale">
+          On clearance: <s>{money(sale.wasCents)}</s> <strong>{money(sale.nowCents)}</strong>{' '}
+          <span className="bksale__off">{sale.percentOff}% off</span>
+        </p>
+      )}
+
+      <label className="bkdetails__row">
+        <span className="bkdetails__label">Sale price</span>
+        <span className="bkdetails__money">
+          <span aria-hidden="true">$</span>
+          <input
+            type="text"
+            className={wrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+            value={text}
+            inputMode="decimal"
+            placeholder={`Less than ${money(was)}`}
+            aria-label={`Sale price of ${product.name} in dollars`}
+            aria-invalid={wrong}
+            disabled={busy}
+            onChange={(event) => setText(event.target.value)}
+          />
+        </span>
+      </label>
+
+      <p className={wrong ? 'bkpanel__aside bkpanel__aside--wrong' : 'bkpanel__aside'}>
+        {wrong
+          ? `A price below ${money(was)}, like 5 or 4.50.`
+          : percent !== null
+            ? `${money(was)} → ${money(cents as number)}, ${percent}% off. Shown in the Clearance section at the top of the shop.`
+            : sale
+              ? 'Change the price above to adjust the discount.'
+              : `Type the sale price. ${money(was)} is kept and shown crossed out beside it.`}
+      </p>
+
+      <div className="bkdetails__go">
+        <button
+          type="button"
+          className="button button--small"
+          disabled={busy || !changed}
+          onClick={() =>
+            go(async () => {
+              const { setClearance } = await import('./adminData');
+              await setClearance(product.slug, was, cents as number);
+            })
+          }
+        >
+          {sale ? 'Update clearance price' : 'Put on clearance'}
+        </button>
+        {sale && (
+          <button
+            type="button"
+            className="button button--quiet button--small"
+            disabled={busy}
+            onClick={() =>
+              go(async () => {
+                const { endClearance } = await import('./adminData');
+                await endClearance(product.slug, sale.wasCents);
+              })
+            }
+          >
+            End clearance — back to {money(sale.wasCents)}
+          </button>
+        )}
+      </div>
+
+      <p className="bkpanel__aside">Goes to Square, so the till charges the clearance price too.</p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Clothing sizes                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether this is clothing, and if so which sizes, how many of each, and what
+ * a size adds to the price.
+ *
+ * Held for the Save bar like the stock count it stands in for. The boxes keep
+ * their own text, as the weight box does, so `1.` on the way to `1.50` is not
+ * rewritten under somebody's fingers; only text that reads as a number is
+ * passed up.
+ */
+function ClothingField({
+  name,
+  priceCents,
+  sizes,
+  busy,
+  onChange,
+}: {
+  name: string;
+  priceCents: number;
+  sizes: readonly ProductSize[] | null;
+  busy: boolean;
+  onChange: (next: readonly ProductSize[] | null) => void;
+}) {
+  const [texts, setTexts] = useState<Record<string, { count: string; extra: string }>>(() =>
+    Object.fromEntries(
+      (sizes ?? []).map((size) => [
+        size.label,
+        { count: String(size.count), extra: size.extraCents ? (size.extraCents / 100).toFixed(2) : '' },
+      ]),
+    ),
+  );
+
+  const byLabel = new Map((sizes ?? []).map((size) => [size.label, size]));
+  /** The list with one size replaced, added or removed, kept in preset order. */
+  const put = (label: string, next: ProductSize | null) => {
+    const merged = new Map(byLabel);
+    if (next) merged.set(label, next);
+    else merged.delete(label);
+    onChange(SIZE_PRESETS.flatMap((one) => merged.get(one) ?? []));
+  };
+
+  const textOf = (label: string) => texts[label] ?? { count: '0', extra: '' };
+  const setText = (label: string, patch: Partial<{ count: string; extra: string }>) =>
+    setTexts((was) => ({ ...was, [label]: { ...(was[label] ?? { count: '0', extra: '' }), ...patch } }));
+
+  /*
+   * A box whose text reads as a number other than the held value has been
+   * overtaken — Discard on the bar, or a save coming back — so it takes the
+   * value. Text that does not read as a number yet is somebody mid-typing and
+   * is left alone.
+   */
+  useEffect(() => {
+    setTexts((was) => {
+      let next = was;
+      for (const size of sizes ?? []) {
+        const text = was[size.label];
+        if (!text) continue;
+        const count = /^\d+$/.test(text.count.trim()) ? Number(text.count) : null;
+        const extra = text.extra.trim() === '' ? 0 : parseDollars(text.extra);
+        if ((count !== null && count !== size.count) || (extra !== null && extra !== size.extraCents)) {
+          next = {
+            ...next,
+            [size.label]: {
+              count: String(size.count),
+              extra: size.extraCents ? (size.extraCents / 100).toFixed(2) : '',
+            },
+          };
+        }
+      }
+      return next;
+    });
+  }, [sizes]);
+
+  const onHand = (sizes ?? []).reduce((sum, size) => sum + size.count, 0);
+
+  return (
+    <div className="bkclothes">
+      <label className="bkship__media">
+        <input
+          type="checkbox"
+          checked={sizes !== null}
+          disabled={busy}
+          onChange={(event) => onChange(event.target.checked ? [] : null)}
+        />
+        This is clothing — sold by size
+      </label>
+
+      {sizes !== null && (
+        <>
+          <table className="bksizes">
+            <caption className="visually-hidden">Sizes of {name}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Size</th>
+                <th scope="col">On hand</th>
+                <th scope="col">Adds</th>
+                <th scope="col">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SIZE_PRESETS.map((label) => {
+                const size = byLabel.get(label);
+                const text = textOf(label);
+                const countWrong = size !== undefined && !/^\d+$/.test(text.count.trim());
+                const extra = text.extra.trim() === '' ? 0 : parseDollars(text.extra);
+                const extraWrong = size !== undefined && (extra === null || extra > MAX_SIZE_EXTRA_CENTS);
+                return (
+                  <tr key={label} className={size ? 'is-on' : undefined}>
+                    <th scope="row">
+                      <label className="bkship__media">
+                        <input
+                          type="checkbox"
+                          checked={size !== undefined}
+                          disabled={busy}
+                          onChange={(event) =>
+                            put(
+                              label,
+                              event.target.checked
+                                ? {
+                                    label,
+                                    count: /^\d+$/.test(text.count.trim()) ? Math.min(MAX_SIZE_COUNT, Number(text.count)) : 0,
+                                    extraCents: extra !== null && extra <= MAX_SIZE_EXTRA_CENTS ? extra : 0,
+                                  }
+                                : null,
+                            )
+                          }
+                        />
+                        {label}
+                      </label>
+                    </th>
+                    <td>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className={countWrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+                        aria-label={`How many ${label} on hand`}
+                        value={size ? text.count : ''}
+                        placeholder="—"
+                        disabled={busy || !size}
+                        onChange={(event) => {
+                          setText(label, { count: event.target.value });
+                          const value = event.target.value.trim();
+                          if (size && /^\d+$/.test(value)) {
+                            put(label, { ...size, count: Math.min(MAX_SIZE_COUNT, Number(value)) });
+                          }
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <span className="bkdetails__money">
+                        <span aria-hidden="true">+$</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className={extraWrong ? 'bkrename__input is-wrong' : 'bkrename__input'}
+                          aria-label={`What ${label} adds to the price, in dollars`}
+                          value={size ? text.extra : ''}
+                          placeholder="0"
+                          disabled={busy || !size}
+                          onChange={(event) => {
+                            setText(label, { extra: event.target.value });
+                            const value = event.target.value.trim() === '' ? 0 : parseDollars(event.target.value);
+                            if (size && value !== null && value <= MAX_SIZE_EXTRA_CENTS) {
+                              put(label, { ...size, extraCents: value });
+                            }
+                          }}
+                        />
+                      </span>
+                    </td>
+                    <td className="bksizes__price">
+                      {size ? money(priceCents + size.extraCents) : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="bkpanel__aside">
+            {sizes.length === 0
+              ? 'Tick the sizes it comes in. Until one is ticked it cannot be bought.'
+              : `${onHand} on hand across ${sizes.length} ${sizes.length === 1 ? 'size' : 'sizes'}. ` +
+                'Counted on the website only — an online sale lowers the count, a sale on the register does not. ' +
+                'A size at 0 shows as sold out.'}
+          </p>
+        </>
+      )}
     </div>
   );
 }

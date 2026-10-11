@@ -14,6 +14,7 @@ import {
   taxPercentage,
   buildSquareOrder,
   cleanName,
+  cleanSizes,
   isUsableAddress,
   looksLikeEmail,
   normalizeEmail,
@@ -418,6 +419,8 @@ export const squareCheckout = onRequest(
            * would make the email disagree with the card statement.
            */
           line_items?: {
+            /** Ours, echoed back — see `SquareOrderLine.uid`. */
+            uid?: string;
             name?: string;
             quantity?: string;
             total_money?: { amount?: number };
@@ -442,6 +445,7 @@ export const squareCheckout = onRequest(
         return;
       }
 
+      const builtByUid = new Map(built.items.map((item) => [item.uid, item]));
       const total = orderJson.order?.total_money?.amount ?? 0;
       const taxCharged = orderJson.order?.total_tax_money?.amount ?? 0;
 
@@ -455,9 +459,7 @@ export const squareCheckout = onRequest(
         const expected = salesTaxCents(
           (orderJson.order?.line_items ?? []).map((item) => ({
             amountCents: item.gross_sales_money?.amount ?? 0,
-            taxable: [...byVariation.values()].some(
-              (product) => product.taxable === true && product.name === item.name,
-            ),
+            taxable: catalog.get(builtByUid.get(item.uid ?? '')?.slug ?? '')?.taxable === true,
           })),
           settings.taxRateBps,
         );
@@ -522,30 +524,24 @@ export const squareCheckout = onRequest(
        * Not from the Firestore catalog mirror, for the same reason the
        * confirmation email is not: the mirror can be stale by exactly the
        * amount that would make a sales report disagree with the bank. Square's
-       * `line_items` carry `base_price_money`, which is the price it actually
-       * charged, and the report is built on that or on nothing.
+       * `gross_sales_money` is what it actually charged for the line before
+       * tax — a size's add-on included — and the report is built on that or on
+       * nothing.
        *
-       * Matched by name because that is the only field common to both sides —
-       * the request carries slugs and Square's reply carries catalog names, and
-       * `built.names` is the map between them. A title that fails to match
-       * leaves `unitPrice` null, which the rollup handles by leaving
-       * per-product revenue at zero rather than guessing.
+       * Matched by the `uid` each line was sent with. Names were used once, and
+       * stopped being enough with clothing: two sizes of one shirt come back as
+       * two lines with the same name. A line that fails to match leaves
+       * `unitPrice` null, which the rollup handles by leaving per-product
+       * revenue at zero rather than guessing.
        */
-      const pricedByName = new Map<string, number>();
+      const pricedByUid = new Map<string, number>();
       for (const item of orderJson.order?.line_items ?? []) {
         const quantity = Number(item.quantity ?? '1') || 1;
         // Before tax, so per-product revenue is the book's price, not price plus tax.
         const lineTotal = item.gross_sales_money?.amount ?? item.total_money?.amount;
-        if (item.name && typeof lineTotal === 'number') {
-          pricedByName.set(item.name, Math.round(lineTotal / quantity));
+        if (item.uid && typeof lineTotal === 'number') {
+          pricedByUid.set(item.uid, Math.round(lineTotal / quantity));
         }
-      }
-
-      // Square's line items carry names, not SKUs; `built.names` is the bridge.
-      const skuByName = new Map<string, string>();
-      for (const [slug, name] of Object.entries(built.names)) {
-        const sku = catalog.get(slug)?.sku;
-        if (sku) skuByName.set(name, sku);
       }
 
       await db
@@ -577,19 +573,17 @@ export const squareCheckout = onRequest(
             // schema/commerce.ts.
             buyerFirstName: firstName,
             buyerLastName: lastName,
-            lineItems: cart
-              .filter((l: { slug?: string }) => built.names[String(l?.slug)])
-              .map((l: { slug?: string; quantity?: number }) => {
-                const name = built.names[String(l.slug)] as string;
-                const unit = pricedByName.get(name);
-                return {
-                  productId: String(l.slug),
-                  name,
-                  quantity: Number(l.quantity),
-                  unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
-                  sku: catalog.get(String(l.slug))?.sku ?? null,
-                };
-              }),
+            lineItems: built.items.map((item) => {
+              const unit = pricedByUid.get(item.uid);
+              return {
+                productId: item.slug,
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
+                sku: catalog.get(item.slug)?.sku ?? null,
+                ...(item.size ? { size: item.size } : {}),
+              };
+            }),
             total: { amount: total, currency: 'USD' },
             // What Square charged as tax, never our own arithmetic.
             tax: { amount: taxCharged, currency: 'USD' },
@@ -632,6 +626,48 @@ export const squareCheckout = onRequest(
         );
 
       /*
+       * Clothing sizes are counted on the website, so selling one is this
+       * Function's to record — Square's count is not the one the shop reads.
+       *
+       * In a transaction, and once per order: a retry with the same
+       * idempotency key reaches this line again for the same purchase (Square
+       * returns the original order), so the order document carries a flag and
+       * a second pass finds it set. A count never goes below zero — two buyers
+       * racing for the last shirt both paid, and a negative number would only
+       * hide that from whoever reads the panel.
+       *
+       * After the money has moved and inside a catch, like the email: a failed
+       * count is a number to correct by hand, not a reason to tell a buyer
+       * whose card was charged that checkout failed.
+       */
+      if (built.items.some((item) => item.size)) {
+        try {
+          await db.runTransaction(async (tx) => {
+            const orderRef = db.collection(COLLECTIONS.orders).doc(orderId);
+            const slugs = [...new Set(built.items.filter((item) => item.size).map((item) => item.slug))];
+            const refs = slugs.map((slug) => db.collection(COLLECTIONS.products).doc(slug));
+            const [orderSnap, ...productSnaps] = await Promise.all([tx.get(orderRef), ...refs.map((ref) => tx.get(ref))]);
+            if (orderSnap.get('sizesCounted') === true) return;
+
+            productSnaps.forEach((snap, index) => {
+              const sizes = cleanSizes(snap.get('sizes'));
+              if (!sizes) return;
+              const next = sizes.map((size) => {
+                const sold = built.items
+                  .filter((item) => item.slug === slugs[index] && item.size === size.label)
+                  .reduce((sum, item) => sum + item.quantity, 0);
+                return sold > 0 ? { ...size, count: Math.max(0, size.count - sold) } : size;
+              });
+              tx.update(refs[index]!, { sizes: next, updatedAt: FieldValue.serverTimestamp() });
+            });
+            tx.update(orderRef, { sizesCounted: true });
+          });
+        } catch (cause) {
+          console.error(`[checkout] size counts not lowered for ${orderId}`, cause);
+        }
+      }
+
+      /*
        * The parish's own confirmation, queued for the Trigger Email extension.
        *
        * **After the response is decided, and inside a catch that swallows
@@ -666,12 +702,15 @@ export const squareCheckout = onRequest(
               email,
               buyerName: `${firstName} ${lastName}`,
               shipping,
-              lines: (orderJson.order?.line_items ?? []).map((item) => ({
-                name: item.name ?? 'Book',
-                quantity: Number(item.quantity ?? '1'),
-                amount: item.gross_sales_money?.amount ?? item.total_money?.amount ?? 0,
-                sku: (item.name && skuByName.get(item.name)) || null,
-              })),
+              lines: (orderJson.order?.line_items ?? []).map((item) => {
+                const asked = builtByUid.get(item.uid ?? '');
+                return {
+                  name: `${item.name ?? 'Book'}${asked?.size ? ` — size ${asked.size}` : ''}`,
+                  quantity: Number(item.quantity ?? '1'),
+                  amount: item.gross_sales_money?.amount ?? item.total_money?.amount ?? 0,
+                  sku: (asked && catalog.get(asked.slug)?.sku) || null,
+                };
+              }),
               ...(shipping ? { shippingService: postage.label, shippingCents: postage.cents } : {}),
               ...(taxCharged > 0 ? { taxCents: taxCharged, taxLabel: taxLabel(settings.taxRateBps) } : {}),
               total,
