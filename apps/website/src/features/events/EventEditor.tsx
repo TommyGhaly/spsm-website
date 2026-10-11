@@ -19,35 +19,31 @@
  * file is that the editing surface is inside the same `PageBody` the read-only
  * page uses, and inherits the same measure.
  *
- * ## Typing is the save, and there is nothing else
+ * ## One Save, like every editor on the site
  *
- * No Save button, no Publish button, no draft state. Keystrokes are written to
- * the event a second after they stop, and that is the entire model. Tommy: *"get
- * rid of the publishing logic it should just autosave much less confusing."*
+ * Changes are held until Save changes in the bar is pressed, and Discard puts
+ * the event back as it was saved. This replaced autosave (which had itself
+ * replaced a draft-and-publish model) when Tommy asked for every admin editor to
+ * save the way the bookstore panel does. There is still no draft and no publish
+ * step: Save writes the event, and the event is what the page and the mobile app
+ * show. Leaving with unsaved changes is refused by Done and warned by the
+ * browser.
  *
- * This replaced a two-stage arrangement where edits accumulated in a `pendingEdit`
- * copy that a separate Publish promoted. Every awkward thing about the bar came
- * from it: a state pill, an "unpublished changes" marker, a Publish button that
- * appeared and disappeared, a line explaining why it was disabled, and a "throw
- * away my changes" item. All of that is gone, along with `Event.published` itself.
+ * The one exception is the photograph, which is written as soon as it is chosen
+ * or removed — on top of what is *saved*, never taking the unsaved words with
+ * it — because the file in storage and the document naming it must not
+ * disagree. See `settleHero`.
  *
- * **The two things it costs, since nothing in the interface says them any more.**
- * There is no undo — the mobile app reads this document directly, so a mistyped
- * title is the parish's title about a second later. And there is no way to take an
- * event off the website except deleting it; a postponed festival used to be one
- * switch. Both were named before the change was made, and both are the price of
- * the editor never being able to show different words than the page.
- *
- * The mechanics are in `useAutosave`.
+ * There is still no way to take an event off the website except deleting it.
  *
  * ## The document is re-read on the way in
  *
  * This page's HTML is baked at build time, so the copy it renders can be days
- * old, and every autosave writes every field. Editing from the baked copy would
+ * old, and every save writes every field. Editing from the baked copy would
  * silently revert anything changed since the build.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 /*
  * The form model is `@spsm/shared`'s now, not this folder's.
  *
@@ -79,13 +75,19 @@ import { PageBody } from '@/components/PageBody';
 import { Icon } from '@/components/Icon';
 import { BackLink } from '@/components/BackLink';
 import { Plain } from '@/components/Inline';
-import { Cols, Fold, Group, Segmented, TagField } from './EditorParts';
+import { Cols, Group, Segmented, TagField } from './EditorParts';
 import { HeroBand, type HeroStatus } from './HeroBand';
 import { WhenLine } from './WhenLine';
 import { BodyField } from './BodyField';
 import { EditorBar } from './EditorBar';
+import { EditTabPanel, EditTabs } from '@/components/EditTabs';
 
-import { useAutosave } from './useAutosave';
+/** Which tab below the heading is open, and the fields each one holds. */
+type Tab = 'page' | 'filing';
+const TAB_FIELDS: Record<Tab, readonly (keyof EventFormState)[]> = {
+  page: ['body', 'summary'],
+  filing: ['category', 'audience', 'tags', 'registrationUrl', 'meetingUrl'],
+};
 
 /** How long the undo offer stands after a delete. */
 const UNDO_MS = 12_000;
@@ -122,10 +124,8 @@ export function EventEditor({ baked, onSaved }: {
    * The read-only page owns the document it renders, so it is the thing that has
    * to be told.
    *
-   * It used to fire on Publish, which was the only moment the document changed.
-   * Every autosave changes it now, so it fires on every autosave: the page
-   * underneath is not being looked at while somebody types, so the cost is a
-   * `setState` nobody sees and the gain is that Done is never a step backwards.
+   * It fires after every Save and every photograph change, so Done is never a
+   * step backwards.
    */
   onSaved: (event: DocOf<Event>) => void;
 }) {
@@ -135,7 +135,11 @@ export function EventEditor({ baked, onSaved }: {
   const [form, setForm] = useState<EventFormState>(() => eventToForm(baked));
   const [load, setLoad] = useState<Load>({ kind: 'reading' });
   const [hero, setHero] = useState<HeroStatus>({ kind: 'idle' });
-  const [more, setMore] = useState(false);
+  const [tab, setTab] = useState<Tab>('page');
+  /* What is written, so the form can be compared against it and put back. */
+  const [saved, setSaved] = useState<EventFormState>(() => eventToForm(baked));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [removal, setRemoval] = useState<Removal>({ kind: 'no' });
 
@@ -143,7 +147,7 @@ export function EventEditor({ baked, onSaved }: {
     setForm((previous) => ({ ...previous, [key]: value }));
   }, []);
 
-  /* ---- autosave ------------------------------------------------------- */
+  /* ---- writing --------------------------------------------------------- */
 
   const save = useCallback(
     async (value: EventFormState) => {
@@ -204,35 +208,12 @@ export function EventEditor({ baked, onSaved }: {
     onSaved(live);
   }, [live, onSaved]);
 
-  /*
-   * Autosave is off until the fresh read has landed, and off once the event has
-   * been deleted. Writing before the read would save the baked copy over
-   * whatever is actually in Firestore — the precise thing re-reading exists to
-   * prevent — and writing after the delete would resurrect it as a fragment.
-   */
-  const autosave = useAutosave({
-    value: form,
-    save,
-    enabled: load.kind === 'ready' && removal.kind === 'no',
-    hold: startInstantOf(form) ? null : 'Waiting for a date it can save',
-  });
-
   /* ---- reading the real document ------------------------------------- */
 
   /*
-   * Below `useAutosave`, and that ordering is load-bearing.
-   *
-   * The hook seeds "what has been written" from the form it is first handed,
-   * which is built from the *baked* copy of the event — the words in the HTML
-   * this page was exported with, possibly days old. This effect then replaces the
-   * form with what Firestore actually holds. Unless the hook is told, it sees a
-   * form that differs from its record and concludes somebody typed — so opening
-   * an event would write back exactly what it had just read, stamping `updatedAt`
-   * and `updatedBy` on a document nobody touched.
-   *
-   * Invisible in development, where the dev server renders the "baked" copy
-   * fresh on every request and the two always agree. It would have happened on
-   * almost every real edit.
+   * What Firestore actually holds replaces the baked copy — possibly days old —
+   * and becomes what counts as saved, so opening an event never shows it as
+   * changed.
    */
   useEffect(() => {
     let alive = true;
@@ -256,7 +237,7 @@ export function EventEditor({ baked, onSaved }: {
         setLive(fresh);
         setForm(loaded);
         // What was just read is, by definition, already saved.
-        autosave.markSaved(loaded);
+        setSaved(loaded);
         setLoad({ kind: 'ready' });
 
         /*
@@ -300,8 +281,7 @@ export function EventEditor({ baked, onSaved }: {
     return () => {
       alive = false;
     };
-    // `autosave.markSaved` is stable — a `useCallback` with no dependencies —
-    // so this runs once per event, which is what re-reading on the way in means.
+    // Once per event, which is what re-reading on the way in means.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baked.id]);
 
@@ -316,10 +296,35 @@ export function EventEditor({ baked, onSaved }: {
    * live from the moment it is created is the ordinary state of a new one; it is
    * a quiet line in the bar rather than a red field.
    *
-   * Neither blocks anything. Nothing can be blocked: typing is the save.
+   * Mistakes block Save, with a line in the bar saying so; missing words do not.
    */
   const wrong = eventMistakes(form);
   const missing = eventStillMissing(form);
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+  const dirtyOn = (one: Tab) => TAB_FIELDS[one].some((key) => JSON.stringify(form[key]) !== JSON.stringify(saved[key]));
+
+  /* What blocks Save, in words. A summary or description not yet written does
+     not — that is `missing`, the ordinary state of a new event. */
+  const problem = !startInstantOf(form) || !formToDraft(form)
+    ? 'Give it a date to save'
+    : wrong.length > 0
+      ? `Fix ${wrong.length === 1 ? 'the field' : 'the fields'} marked in red to save`
+      : null;
+
+  async function saveNow() {
+    if (!dirty || saving || problem || load.kind !== 'ready') return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await save(form);
+      setSaved(form);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'That could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const errorOf = useCallback(
     (field: EventFieldKey): string | null =>
@@ -387,17 +392,18 @@ export function EventEditor({ baked, onSaved }: {
   /* ---- the photograph ------------------------------------------------- */
 
   /**
-   * Write the form now, then clear the bucket of everything it is not using.
+   * Write the new photograph onto the saved event now, then clear the bucket of
+   * everything it is not using.
    *
    * ---------------------------------------------------------------------------
    * The ordering is the whole of this function, and both halves of it are the
    * fix for a real bug rather than a preference.
    *
-   * **The write comes first**, because the form is not the document. Autosave
-   * writes about a second after typing stops, and deleting the object before
-   * that lands would leave a window in which the event still names a file that
-   * is gone — a broken picture on the live page and in the mobile app, which
-   * both read this document directly.
+   * **The write comes first**, because the form is not the document. Deleting
+   * the object before the event stops naming it would leave a broken picture on
+   * the live page and in the mobile app, which both read this document directly.
+   * Only the photograph is written — on top of the saved copy — so choosing one
+   * never saves words that are still waiting for Save.
    *
    * **It is awaited here rather than watched from an effect**, and that is the
    * part that was wrong. The version before this parked the path in state and
@@ -419,8 +425,10 @@ export function EventEditor({ baked, onSaved }: {
    * `sweepEventFiles` for why the files the document never named are the ones
    * that most need it.
    */
-  async function settleHero(next: EventFormState, keep: string | null) {
-    setForm(next);
+  async function settleHero(heroImagePath: string | null, keep: string | null) {
+    setForm((was) => ({ ...was, heroImagePath }));
+    // The photograph on top of what is saved — never the unsaved words with it.
+    const next = { ...saved, heroImagePath };
 
     /*
      * The one state in which this cannot finish. `formToDraft` returns null
@@ -444,9 +452,7 @@ export function EventEditor({ baked, onSaved }: {
 
     try {
       await save(next);
-      // Autosave's record has to be advanced by hand, or it sees a form that
-      // differs from what it believes is written and immediately writes it again.
-      autosave.markSaved(next);
+      setSaved(next);
 
       const { sweepEventFiles } = await import('./admin');
       await sweepEventFiles(next.slug, keep);
@@ -474,13 +480,12 @@ export function EventEditor({ baked, onSaved }: {
       const path = await uploadEventHero(file, form.slug);
       setHero({ kind: 'idle' });
       /*
-       * Replacing is a removal too. The note that used to be here kept the old
-       * object on the grounds that discarding the change would leave the event
-       * pointing at a deleted file — but there is nothing to discard any more,
-       * because there is no publish step and no discard: the form *is* on its way
-       * to the document.
+       * Replacing is a removal too, and it is written at once rather than held
+       * for Save: Discard can never point the event back at a file that has
+       * been swept from storage, because the saved copy already names the new
+       * one.
        */
-      await settleHero({ ...form, heroImagePath: path }, path);
+      await settleHero(path, path);
     } catch (error) {
       setHero({
         kind: 'error',
@@ -508,36 +513,27 @@ export function EventEditor({ baked, onSaved }: {
 
   /* ---- keyboard ------------------------------------------------------- */
 
-  /*
-   * Ctrl/Cmd+S writes now, rather than letting the browser offer to save the page
-   * as a file over work in progress.
-   *
-   * It used to publish, because publishing was the only thing a keystroke could
-   * usefully mean. With autosave as the whole mechanism it means "do the pending
-   * write immediately" — which is almost nothing, and is exactly what somebody
-   * pressing it wants: the reflex is "make sure that is saved", and the honest
-   * answer is that it is.
-   */
+  /* Ctrl/Cmd+S is Save, rather than the browser offering to save the page as a file. */
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
-        void autosave.flush();
+        void saveNow();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [autosave]);
+  });
 
   useEffect(() => {
-    if (!autosave.dirty) return;
+    if (!dirty) return;
     function warn(unload: BeforeUnloadEvent) {
       unload.preventDefault();
       unload.returnValue = '';
     }
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [autosave.dirty]);
+  }, [dirty]);
 
   /* ---- deleted ------------------------------------------------------- */
 
@@ -598,7 +594,7 @@ export function EventEditor({ baked, onSaved }: {
         onPick={(file) => void pickHero(file)}
         onClear={() => {
           setHero({ kind: 'idle' });
-          void settleHero({ ...form, heroImagePath: null }, null);
+          void settleHero(null, null);
         }}
       />
 
@@ -675,128 +671,145 @@ export function EventEditor({ baked, onSaved }: {
         </header>
 
         <div className="ee-sheet">
-          <BodyField
-            value={form.body}
-            error={errorOf('body')}
-            onChange={(value) => set('body', value)}
+          <EditTabs
+            tabs={[
+              { id: 'page', label: 'Description', dirty: dirtyOn('page') },
+              { id: 'filing', label: 'Filing & sign-ups', dirty: dirtyOn('filing') },
+            ]}
+            value={tab}
+            onChange={setTab}
+            label="Event settings"
+            idPrefix="ee"
           />
 
-          {/*
-            The summary is edited here and appears nowhere on this page. Said so
-            rather than left as a field whose effect is invisible from where you
-            are standing.
-          */}
-          <Group
-            label="One line for the calendar"
-            error={errorOf('summary')}
-            hint={`Not shown on this page — it is what the calendar and the homepage print. ${
-              200 - form.summary.length
-            } characters left.`}
-          >
-            <input
-              name="summary"
-              size={1}
-              value={form.summary}
-              maxLength={200}
-              placeholder="A six-week introduction to writing icons."
-              onChange={(event) => set('summary', event.target.value)}
-            />
-          </Group>
-
-          <Fold
-            title="Filing and sign-ups"
-            value={
+          <EditTabPanel idPrefix="ee" value={tab}>
+            {tab === 'page' ? (
               <>
-                {EVENT_CATEGORY_LABELS[form.category]} · {EVENT_AUDIENCE_LABELS[form.audience].toLowerCase()}
-                {form.tags.length > 0 &&
-                  ` · ${form.tags.length} ${form.tags.length === 1 ? 'tag' : 'tags'}`}
+              <BodyField
+                value={form.body}
+                error={errorOf('body')}
+                onChange={(value) => set('body', value)}
+              />
+
+              {/*
+                The summary is edited here and appears nowhere on this page. Said so
+                rather than left as a field whose effect is invisible from where you
+                are standing.
+              */}
+              <Group
+                label="One line for the calendar"
+                error={errorOf('summary')}
+                hint={`Not shown on this page — it is what the calendar and the homepage print. ${
+                  200 - form.summary.length
+                } characters left.`}
+              >
+                <input
+                  name="summary"
+                  size={1}
+                  value={form.summary}
+                  maxLength={200}
+                  placeholder="A six-week introduction to writing icons."
+                  onChange={(event) => set('summary', event.target.value)}
+                />
+              </Group>
               </>
-            }
-            open={more}
-            onToggle={() => setMore((was) => !was)}
-          >
-            <Cols>
-              <Group label="What kind of event is it?">
-                <select
-                  name="category"
-                  value={form.category}
-                  onChange={(event) => set('category', event.target.value as EventCategory)}
+            ) : (
+              <>
+              <Cols>
+                <Group label="What kind of event is it?">
+                  <select
+                    name="category"
+                    value={form.category}
+                    onChange={(event) => set('category', event.target.value as EventCategory)}
+                  >
+                    {EVENT_CATEGORY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Group>
+                <Group
+                  label="Who is it for?"
+                  hint="Servants-only events never reach the public calendar."
                 >
-                  {EVENT_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </Group>
-              <Group
-                label="Who is it for?"
-                hint="Servants-only events never reach the public calendar."
-              >
-                <Segmented
-                  label="Who it is for"
-                  options={EVENT_AUDIENCE_OPTIONS}
-                  value={form.audience}
-                  onChange={(value) => set('audience', value as EventAudience)}
-                />
-              </Group>
-            </Cols>
+                  <Segmented
+                    label="Who it is for"
+                    options={EVENT_AUDIENCE_OPTIONS}
+                    value={form.audience}
+                    onChange={(value) => set('audience', value as EventAudience)}
+                  />
+                </Group>
+              </Cols>
 
-            <Group label="Tags" hint="For grouping and filtering. Press Enter after each one.">
-              <TagField tags={form.tags} onChange={(tags) => set('tags', tags)} />
-            </Group>
-
-            <Cols>
-              <Group
-                label="Sign-up link"
-                error={errorOf('registrationUrl')}
-                hint="An external sign-up page. Built-in forms aren’t available yet."
-              >
-                <input
-                  name="registrationUrl"
-                  size={1}
-                  value={form.registrationUrl}
-                  placeholder="https://…"
-                  onChange={(event) => set('registrationUrl', event.target.value)}
-                />
+              <Group label="Tags" hint="For grouping and filtering. Press Enter after each one.">
+                <TagField tags={form.tags} onChange={(tags) => set('tags', tags)} />
               </Group>
-              <Group
-                label="Online link"
-                error={errorOf('meetingUrl')}
-                hint="For an event people can join remotely."
-              >
-                <input
-                  name="meetingUrl"
-                  size={1}
-                  value={form.meetingUrl}
-                  placeholder="https://…"
-                  onChange={(event) => set('meetingUrl', event.target.value)}
-                />
-              </Group>
-            </Cols>
 
-            {/*
-              The web address is shown and not editable. Changing it while
-              standing on the page it names would move the page out from under
-              you, and it is the URL anything already shared points at.
-            */}
-            <p className="ee-slug">
-              This page is at <code>/events/{form.slug}</code>. A web address cannot be
-              changed once an event exists — every link already shared points at it.
-            </p>
-          </Fold>
+              <Cols>
+                <Group
+                  label="Sign-up link"
+                  error={errorOf('registrationUrl')}
+                  hint="An external sign-up page. Built-in forms aren’t available yet."
+                >
+                  <input
+                    name="registrationUrl"
+                    size={1}
+                    value={form.registrationUrl}
+                    placeholder="https://…"
+                    onChange={(event) => set('registrationUrl', event.target.value)}
+                  />
+                </Group>
+                <Group
+                  label="Online link"
+                  error={errorOf('meetingUrl')}
+                  hint="For an event people can join remotely."
+                >
+                  <input
+                    name="meetingUrl"
+                    size={1}
+                    value={form.meetingUrl}
+                    placeholder="https://…"
+                    onChange={(event) => set('meetingUrl', event.target.value)}
+                  />
+                </Group>
+              </Cols>
+
+              {/*
+                The web address is shown and not editable. Changing it while
+                standing on the page it names would move the page out from under
+                you, and it is the URL anything already shared points at.
+              */}
+              <p className="ee-slug">
+                This page is at <code>/events/{form.slug}</code>. A web address cannot be
+                changed once an event exists — every link already shared points at it.
+              </p>
+              </>
+            )}
+          </EditTabPanel>
         </div>
       </PageBody>
 
       <EditorBar
-        autosave={autosave.state}
-        missing={missing.map((problem) => problem.message)}
+        dirty={dirty}
+        saving={saving}
+        problem={problem}
+        error={saveError}
+        missing={missing.map((one) => one.message)}
         busy={busy || load.kind === 'reading'}
+        onSave={() => void saveNow()}
+        onDiscard={() => {
+          setForm(saved);
+          setSaveError(null);
+        }}
         onDelete={() => void remove()}
         onDone={() => {
-          // Flushed rather than trusted to the unmount handler, so "Done" is a
-          // promise that what is on screen has been written.
-          void autosave.flush().then(() => edit.setOn(false));
+          // Leaving would drop what is held, out of sight. The bar says so.
+          if (dirty) {
+            setSaveError('Save or discard your changes before leaving.');
+            return;
+          }
+          edit.setOn(false);
         }}
       />
     </article>

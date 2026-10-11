@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { EditTabPanel, EditTabs } from '@/components/EditTabs';
+import { SaveFooter } from '@/components/SaveFooter';
 import {
   MAX_FIELDS,
   isBuiltInForm,
@@ -59,9 +61,15 @@ const TYPE_LABELS: Record<FormFieldType, string> = {
   photo: 'Photo upload',
 };
 
+type Tab = 'form' | 'questions' | 'after' | 'payment' | 'preview';
+
+/** The draft keys each tab edits, for its unsaved-changes dot. */
+const AFTER_KEYS = ['confirmationMessage', 'confirmationEmailBody', 'notifyEmails'] as const;
+
 export function FormBuilder({
   form,
   onDone,
+  onDirtyChange,
 }: {
   /*
    * A draft, not a `FormDefinition`. The builder has no business with
@@ -71,16 +79,37 @@ export function FormBuilder({
    */
   form: WithId<FormDraft>;
   onDone: () => void;
+  /** Tells the drawer, so closing it or changing tab can be refused. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<WithId<FormDraft>>(form);
-  const [dirty, setDirty] = useState(false);
+  /* What is written, to compare against and to put back on Discard. */
+  const [saved, setSaved] = useState<WithId<FormDraft>>(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState(false);
+  const [tab, setTab] = useState<Tab>('form');
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  // Closing the tab with changes held would lose them without a word.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(unload: BeforeUnloadEvent) {
+      unload.preventDefault();
+      unload.returnValue = '';
+    }
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  const changed = (key: keyof FormDraft) => JSON.stringify(draft[key]) !== JSON.stringify(saved[key]);
+  const afterDirty = AFTER_KEYS.some((key) => changed(key));
+  const formDirty = (Object.keys(draft) as (keyof FormDraft)[]).some(
+    (key) => key !== 'fields' && key !== 'payment' && !(AFTER_KEYS as readonly string[]).includes(key) && changed(key),
+  );
 
   function edit(patch: Partial<FormDraft>) {
     setDraft((previous) => ({ ...previous, ...patch }));
-    setDirty(true);
   }
 
   function editField(index: number, patch: Partial<FormField>) {
@@ -90,7 +119,6 @@ export function FormBuilder({
         position === index ? { ...field, ...patch } : field,
       ),
     }));
-    setDirty(true);
   }
 
   async function save() {
@@ -99,7 +127,7 @@ export function FormBuilder({
     try {
       const { id, ...rest } = draft;
       await writeForm(id, rest);
-      setDirty(false);
+      setSaved(draft);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'That did not save.');
     } finally {
@@ -112,31 +140,26 @@ export function FormBuilder({
   return (
     <div className="fxb">
       <div className="fxb__bar">
-        <button type="button" className="button button--quiet" onClick={onDone}>
-          <span aria-hidden="true">←</span> All forms
-        </button>
-        <span className="fxb__dirty">{dirty ? 'Unsaved changes' : 'Saved'}</span>
         <button
           type="button"
-          className="button"
-          onClick={() => void save()}
-          disabled={saving || !dirty}
+          className="button button--quiet"
+          onClick={() => {
+            // Back to the list would drop what is held, out of sight.
+            if (dirty) {
+              setError('Save or discard your changes to this form first.');
+              return;
+            }
+            onDone();
+          }}
         >
-          {saving ? 'Saving…' : 'Save'}
+          <span aria-hidden="true">←</span> All forms
         </button>
       </div>
-
-      {error && (
-        <div className="notice notice--alarm" role="alert">
-          <p>{error}</p>
-        </div>
-      )}
 
       {problems.length > 0 && (
         /*
          * Warnings, not blockers. Saving stays possible with any of these
-         * present, because a half-built form is a normal state to leave one in
-         * — the builder should say what is wrong, not refuse to remember it.
+         * present, because a half-built form is a normal state to leave one in.
          * `published` is the flag that decides whether anyone else sees it.
          */
         <div className="notice">
@@ -149,57 +172,54 @@ export function FormBuilder({
         </div>
       )}
 
-      <div className="fxb__tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!preview}
-          className={preview ? 'bktabs__tab' : 'bktabs__tab is-on'}
-          onClick={() => setPreview(false)}
-        >
-          Build
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={preview}
-          className={preview ? 'bktabs__tab is-on' : 'bktabs__tab'}
-          onClick={() => setPreview(true)}
-        >
-          Preview
-        </button>
-      </div>
+      <EditTabs
+        tabs={[
+          { id: 'form', label: 'Form', dirty: formDirty },
+          { id: 'questions', label: 'Questions', dirty: changed('fields') },
+          { id: 'after', label: 'After sending', dirty: afterDirty },
+          { id: 'payment', label: 'Payment', dirty: changed('payment') },
+          { id: 'preview', label: 'Preview' },
+        ]}
+        value={tab}
+        onChange={setTab}
+        label={`Settings for ${draft.title || 'this form'}`}
+        idPrefix="fxb"
+      />
 
-      {preview ? <Preview form={draft} /> : (
-        <>
-          <Settings draft={draft} edit={edit} />
-          {draft.kind === 'native' && (
-            <FieldList
-              draft={draft}
-              editField={editField}
-              setDraft={(fields) => {
-                setDraft((previous) => ({ ...previous, fields }));
-                setDirty(true);
-              }}
-            />
-          )}
-          {draft.kind === 'embed' && (
-            <p className="note">
-              The host draws the questions on this one. There is nothing to build here,
-              and no submissions arrive here either — the title, the blurb and the
-              picture above are what the church controls.
-            </p>
-          )}
-          {draft.kind === 'vehicle' && (
-            <p className="note">
-              The vehicle registration is built in code, not from fields — it has a
-              repeating driver list and a fixed colour set that Taksis matches on.
-              Its title, blurb and confirmation are editable above; its questions
-              are not.
-            </p>
-          )}
-        </>
-      )}
+      <EditTabPanel idPrefix="fxb" value={tab}>
+        {tab === 'preview' && <Preview form={draft} />}
+        {(tab === 'form' || tab === 'after' || tab === 'payment') && (
+          <Settings draft={draft} edit={edit} part={tab} />
+        )}
+        {tab === 'questions' && draft.kind === 'native' && (
+          <FieldList
+            draft={draft}
+            editField={editField}
+            setDraft={(fields) => setDraft((previous) => ({ ...previous, fields }))}
+          />
+        )}
+        {tab === 'questions' && draft.kind === 'embed' && (
+          <p className="note">
+            The host draws the questions on this one, so there is nothing to build here.
+          </p>
+        )}
+        {tab === 'questions' && draft.kind === 'vehicle' && (
+          <p className="note">
+            The vehicle registration&apos;s questions are built in code and cannot be edited here.
+          </p>
+        )}
+      </EditTabPanel>
+
+      <SaveFooter
+        dirty={dirty}
+        saving={saving}
+        error={error}
+        onDiscard={() => {
+          setDraft(saved);
+          setError(null);
+        }}
+        onSave={() => void save()}
+      />
     </div>
   );
 }
@@ -209,9 +229,12 @@ export function FormBuilder({
 function Settings({
   draft,
   edit,
+  part,
 }: {
   draft: WithId<FormDraft>;
   edit: (patch: Partial<FormDraft>) => void;
+  /** Which tab's settings: the form itself, what happens after, or payment. */
+  part: 'form' | 'after' | 'payment';
 }) {
   /*
    * The two forms the church always has are edited here like any other, with
@@ -228,7 +251,8 @@ function Settings({
 
   return (
     <div className="fxb__section">
-      <h3>The form</h3>
+      {part === 'form' && (
+        <>
 
       <label className="field">
         <span>Title</span>
@@ -392,7 +416,11 @@ function Settings({
         </label>
       )}
 
-      <h3>After it is sent</h3>
+        </>
+      )}
+
+      {part === 'after' && (
+        <>
 
       <label className="field">
         <span>Confirmation shown on screen</span>
@@ -434,7 +462,11 @@ function Settings({
         <small>Comma separated. Empty means nobody is emailed when one arrives.</small>
       </label>
 
-      <h3>Payment</h3>
+        </>
+      )}
+
+      {part === 'payment' && (
+        <>
 
       <label className="field field--check">
         <input
@@ -480,6 +512,8 @@ function Settings({
             total is worked out again on the server from this saved definition, so
             what a page displays can never change what a card is charged.
           </p>
+        </>
+      )}
         </>
       )}
     </div>

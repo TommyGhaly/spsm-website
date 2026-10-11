@@ -10,6 +10,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { EditColumn } from '@/components/EditColumn';
+import { EditTabPanel, EditTabs } from '@/components/EditTabs';
+import { SaveFooter } from '@/components/SaveFooter';
 import { downscaleToDataUrl } from '@/lib/downscale';
 import {
   MAX_SECTIONS,
@@ -282,27 +284,15 @@ export function ProductSettings({
 
   return (
     <div className={working ? 'bkpanel bkpanel--tabbed is-busy' : 'bkpanel bkpanel--tabbed'}>
-      <div className="bktabs" role="tablist" aria-label={`Settings for ${product.name}`}>
-        {TABS.map((one) => (
-          <button
-            key={one.id}
-            type="button"
-            role="tab"
-            id={`bktab-${one.id}`}
-            aria-selected={tab === one.id}
-            aria-controls={`bktabpanel-${one.id}`}
-            className={tab === one.id ? 'bktabs__tab is-on' : 'bktabs__tab'}
-            onClick={() => setTab(one.id)}
-          >
-            {one.label}
-            {tabDirty(one) && (
-              <span className="bktabs__dot" aria-label="unsaved changes" role="img" />
-            )}
-          </button>
-        ))}
-      </div>
+      <EditTabs
+        tabs={TABS.map((one) => ({ id: one.id, label: one.label, dirty: tabDirty(one) }))}
+        value={tab}
+        onChange={setTab}
+        label={`Settings for ${product.name}`}
+        idPrefix="bkitem"
+      />
 
-      <div className="bkpanel__body" role="tabpanel" id={`bktabpanel-${tab}`} aria-labelledby={`bktab-${tab}`}>
+      <EditTabPanel idPrefix="bkitem" value={tab} className="bkpanel__body">
         {tab === 'details' && (
           <>
             <div className="bkpanel__block bkdetails">
@@ -484,38 +474,22 @@ export function ProductSettings({
             onDone={onRemoved}
           />
         </div>
-      </div>
+      </EditTabPanel>
 
       {/* Always there, so where to save is never a question. */}
-      <div className={pending.dirty ? 'bkfoot is-dirty' : 'bkfoot'}>
-        <span className="bkfoot__state" aria-live="polite">
-          {saving
-            ? 'Saving…'
-            : !pending.dirty
-              ? 'All changes saved'
-              : Object.values(broken).some(Boolean)
-                ? 'Fix the box marked in red to save'
-                : saleWrong
-                  ? `Type a sale price below ${money(pending.wasPriceCents ?? 0)} to save`
-                  : 'Unsaved changes'}
-        </span>
-        <button
-          type="button"
-          className="button button--quiet button--small"
-          disabled={!pending.dirty || working}
-          onClick={() => release(product.slug)}
-        >
-          Discard
-        </button>
-        <button
-          type="button"
-          className="button button--small"
-          disabled={!pending.dirty || working || blocked}
-          onClick={() => void saveOne(product.slug)}
-        >
-          Save changes
-        </button>
-      </div>
+      <SaveFooter
+        dirty={pending.dirty}
+        saving={saving}
+        problem={
+          Object.values(broken).some(Boolean)
+            ? 'Fix the box marked in red to save'
+            : saleWrong
+              ? `Type a sale price below ${money(pending.wasPriceCents ?? 0)} to save`
+              : null
+        }
+        onDiscard={() => release(product.slug)}
+        onSave={() => void saveOne(product.slug)}
+      />
     </div>
   );
 }

@@ -4965,14 +4965,14 @@ main {
   padding-bottom: 0;
 }
 
-.bktabs {
+.edit-tabs {
   display: flex;
   gap: 0.25rem;
   margin-bottom: var(--space-sm, 0.75rem);
   border-bottom: 1px solid var(--color-rule, #e4dbd2);
 }
 
-.bktabs__tab {
+.edit-tabs__tab {
   position: relative;
   flex: 1 1 auto;
   display: inline-flex;
@@ -4991,18 +4991,18 @@ main {
   cursor: pointer;
 }
 
-.bktabs__tab:hover {
+.edit-tabs__tab:hover {
   color: var(--color-ink, #1c1614);
 }
 
-.bktabs__tab.is-on {
+.edit-tabs__tab.is-on {
   color: var(--color-accent, #992a21);
   border-bottom-color: var(--color-accent, #992a21);
   font-weight: 600;
 }
 
 /* Unsaved changes on this tab. */
-.bktabs__dot {
+.edit-tabs__dot {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
@@ -5046,35 +5046,51 @@ main {
   background: var(--color-accent, #992a21);
 }
 
-.bkfoot {
+.edit-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  background: var(--color-paper-raised, #fffefb);
+}
+
+/* At the foot of a panel, sticky so Save is never a scroll away. */
+.edit-foot--panel {
   position: sticky;
   bottom: 0;
   z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
   margin: var(--space-sm, 0.75rem) calc(-1 * var(--space-md, 1rem)) 0;
   padding: 0.75rem var(--space-md, 1rem);
-  background: var(--color-paper-raised, #fffefb);
   border-top: 1px solid var(--color-rule, #e4dbd2);
 }
 
-.bkfoot.is-dirty {
+.edit-foot.is-dirty {
   box-shadow: 0 -8px 16px -12px color-mix(in srgb, var(--color-ink, #1c1614) 40%, transparent);
 }
 
-.bkfoot__state {
-  flex: 1 1 auto;
-  font-family: var(--font-ui, system-ui, sans-serif);
+.edit-foot__state {
+  flex: 1 1 10rem;
   font-size: var(--type-micro, 0.8125rem);
   color: var(--color-ink-faint, #6f5f5a);
 }
 
-.bkfoot.is-dirty .bkfoot__state {
+.edit-foot.is-dirty .edit-foot__state {
   color: var(--color-accent, #992a21);
   font-weight: 600;
 }
+
+.edit-foot.is-bad .edit-foot__state {
+  color: var(--color-accent, #992a21);
+}
+
+.edit-foot__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 
 .bkclothes {
   display: grid;

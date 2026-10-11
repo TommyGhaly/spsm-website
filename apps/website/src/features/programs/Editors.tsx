@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { DEFAULT_CHILD_LABEL, type DocOf, type Program, type ProgramEvent } from '@spsm/shared';
 import { dayKey, fromDayKey, PARISH_TIME_ZONE } from '@/lib/dates';
 import { RichText } from '@/components/RichText';
+import { SaveFooter } from '@/components/SaveFooter';
+import { useHeldEdits } from './editMode';
 import {
   deleteProgram,
   deleteProgramEvent,
@@ -334,6 +336,10 @@ function explain(error: unknown, what: string): string {
  * a ministry has no dates (it is standing, not an occurrence) and no submission
  * window of its own (photographs are sent to a gathering, which is what has a
  * queue).
+ *
+ * Held and saved with one Save, like every editor on the site: the fields used
+ * to write as each one lost focus. While anything is unsaved, choosing another
+ * ministry or pressing Done is refused — see `useHeldEdits`.
  */
 export function ProgramDetails({
   program,
@@ -346,19 +352,49 @@ export function ProgramDetails({
   /** The thing being edited no longer exists; the page has to go somewhere. */
   onRemoved: () => void;
 }) {
+  const savedValues = {
+    name: program.name,
+    description: program.description,
+    childLabel: program.childLabel ?? '',
+    published: program.published,
+  };
+  const [draft, setDraft] = useState(savedValues);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function write(what: string, run: () => Promise<void>) {
+  // Another ministry, or the saved values coming back changed: start from them.
+  const savedKey = JSON.stringify(savedValues);
+  useEffect(() => {
+    setDraft(JSON.parse(savedKey) as typeof savedValues);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program.id, savedKey]);
+
+  const dirty = JSON.stringify(draft) !== savedKey;
+  useHeldEdits(dirty, program.name);
+  const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
+    setDraft((was) => ({ ...was, [key]: value }));
+
+  async function save() {
     setBusy(true);
     setError(null);
     try {
-      await run();
+      await updateProgram(
+        program.id,
+        {
+          ...(draft.name.trim() !== program.name ? { name: draft.name.trim() } : {}),
+          ...(draft.description !== program.description ? { description: draft.description } : {}),
+          // Empty means "no opinion", which reaches the document as null.
+          ...(draft.childLabel !== (program.childLabel ?? '') ? { childLabel: draft.childLabel.trim() || null } : {}),
+          ...(draft.published !== program.published ? { published: draft.published } : {}),
+        },
+        null,
+      );
       onChanged();
     } catch (caught) {
       console.error('[programs] could not save:', caught);
-      setError(explain(caught, what));
+      setError(explain(caught, 'save this ministry'));
     } finally {
       setBusy(false);
     }
@@ -366,62 +402,41 @@ export function ProgramDetails({
 
   return (
     <div className="inspector__body">
-      <LiveText
-        label="Name"
-        value={program.name}
-        busy={busy}
-        onCommit={(name) => void write('rename this ministry', () => updateProgram(program.id, { name }, null))}
-        note={`Its address stays /events/${program.slug} — changing that would break links the church has shared.`}
-      />
+      <label className="inspector__field">
+        <span>Name</span>
+        <input type="text" value={draft.name} disabled={busy} onChange={(e) => set('name', e.target.value)} />
+        <span className="inspector__note">Its address stays /events/{program.slug}.</span>
+      </label>
 
-      <LiveText
-        label="Description"
-        rows={4}
-        format
-        value={program.description}
-        busy={busy}
-        placeholder="What this ministry is, when it meets, how somebody joins."
-        onCommit={(description) =>
-          void write('edit this ministry', () => updateProgram(program.id, { description }, null))
-        }
-      />
+      <div className="inspector__field">
+        <RichText
+          label="Description"
+          value={draft.description}
+          onChange={(description) => set('description', description)}
+          placeholder="What this ministry is, when it meets, how somebody joins."
+          ariaLabel="Description"
+        />
+      </div>
 
-      {/*
-        What this ministry's parts are called. Shows on the side menu, on the
-        heading over the cards, and in "Add a …" — see `childLabelOf`.
-      */}
-      <LiveText
-        label="Its parts are called"
-        value={program.childLabel ?? ''}
-        busy={busy}
-        placeholder={DEFAULT_CHILD_LABEL}
-        allowEmpty
-        onCommit={(childLabel) =>
-          void write('rename the parts of this ministry', () =>
-            // Empty means "no opinion", which has to reach the document as null
-            // rather than as an empty string the fallback would then have to
-            // second-guess.
-            updateProgram(program.id, { childLabel: childLabel.trim() || null }, null),
-          )
-        }
-        note={`What the things one level inside this are called, over their list — "Years", "Weeks". Each of those sets its own in turn. Empty means "${DEFAULT_CHILD_LABEL}".`}
-      />
+      <label className="inspector__field">
+        <span>Its parts are called</span>
+        <input
+          type="text"
+          value={draft.childLabel}
+          disabled={busy}
+          placeholder={DEFAULT_CHILD_LABEL}
+          onChange={(e) => set('childLabel', e.target.value)}
+        />
+        <span className="inspector__note">What the things one level inside are called — &ldquo;Years&rdquo;, &ldquo;Weeks&rdquo;.</span>
+      </label>
 
       <Toggle
-        checked={program.published}
+        checked={draft.published}
         disabled={busy}
-        onChange={(published) =>
-          void write('publish this ministry', () => updateProgram(program.id, { published }, null))
-        }
+        onChange={(published) => set('published', published)}
         label="Visible to everyone"
-        hint={
-          program.published
-            ? 'Anyone can see this ministry on the Events page.'
-            : 'Only you can see it. Nothing is published until you turn this on.'
-        }
+        hint={draft.published ? 'Anyone can see it on the Events page.' : 'Only editors can see it.'}
       />
-
-      {error && <p className="inline-editor__error">{error}</p>}
 
       <Remove
         what="ministry"
@@ -429,7 +444,7 @@ export function ProgramDetails({
         onAsk={() => setConfirmDelete(true)}
         onKeep={() => setConfirmDelete(false)}
         busy={busy}
-        note="Its gatherings have to be removed first. The photographs are not deleted — they become the church's, and any ministry can take them in from “Not in any ministry” in its picture manager."
+        note="Its gatherings have to be removed first. The photographs are kept — any ministry can take them in from “Not in any ministry”."
         onRemove={() =>
           void (async () => {
             setBusy(true);
@@ -444,6 +459,15 @@ export function ProgramDetails({
             }
           })()
         }
+      />
+
+      <SaveFooter
+        dirty={dirty}
+        saving={busy}
+        problem={draft.name.trim() === '' ? 'A name is needed to save' : null}
+        error={error}
+        onDiscard={() => setDraft(JSON.parse(savedKey) as typeof savedValues)}
+        onSave={() => void save()}
       />
     </div>
   );

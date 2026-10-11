@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { type DocOf, type Program } from '@spsm/shared';
 import { getEventsPageConfig } from '@/lib/config';
+import { SaveFooter } from '@/components/SaveFooter';
 import { listProgramsForAdmin, setMainSection } from './adminData';
+import { useHeldEdits } from './editMode';
 
 /**
  * The parish's main section: one ministry, chosen on `/events` and stored in
@@ -51,8 +53,12 @@ export function MainSectionField() {
    * jump, which reads as the control having cleared itself.
    */
   const [chosen, setChosen] = useState<string | null | undefined>(undefined);
+  /* What is stored, so the choice can be held until Save and put back by Discard. */
+  const [stored, setStored] = useState<string | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dirty = chosen !== undefined && chosen !== stored;
+  useHeldEdits(dirty, 'the main section');
 
   useEffect(() => {
     let live = true;
@@ -66,6 +72,7 @@ export function MainSectionField() {
         if (!live) return;
         setPrograms(listed);
         setChosen(config.mainSection);
+        setStored(config.mainSection);
       } catch (caught) {
         if (!live) return;
         console.error('[programs] could not read the main section:', caught);
@@ -91,24 +98,16 @@ export function MainSectionField() {
     chosen && programs ? (programs.find((program) => program.id === chosen) ?? null) : null;
   const stale = Boolean(chosen) && programs !== null && chosenProgram === null;
 
-  async function choose(id: string) {
-    const next = id === '' ? null : id;
-    const previous = chosen ?? null;
-
-    // Optimistic, like every other control in this panel: the write is one small
-    // document and the alternative is a select that ignores you until it lands.
-    setChosen(next);
+  async function save() {
+    const next = chosen ?? null;
     setSaving(true);
     setError(null);
     try {
       await setMainSection(next);
+      setStored(next);
     } catch (caught) {
       console.error('[programs] could not set the main section:', caught);
-      setChosen(previous);
-      setError(
-        'That could not be saved. Only a superadmin may change this setting — if you are one, ' +
-          'the connection or the rules refused it.',
-      );
+      setError('That could not be saved. Only a superadmin may change this setting.');
     } finally {
       setSaving(false);
     }
@@ -121,7 +120,7 @@ export function MainSectionField() {
         <select
           value={chosen ?? ''}
           disabled={programs === null || saving}
-          onChange={(change) => void choose(change.target.value)}
+          onChange={(change) => setChosen(change.target.value === '' ? null : change.target.value)}
         >
           <option value="">
             {chosen === undefined ? 'Reading…' : 'None — nothing is pointed at'}
@@ -150,15 +149,18 @@ export function MainSectionField() {
         </p>
       ) : (
         <p className="inspector__note">
-          {chosenProgram ? `Pointing at ${chosenProgram.name}. ` : 'Nothing is pointed at. '}
-          Nothing on this page looks different for it. It is what a tap on an NFC tag means
-          by &ldquo;now&rdquo;, and where a form behind one files what it collects — so it is
-          worth changing when the ministry the church is running changes.
+          What a tap on an NFC tag means by &ldquo;now&rdquo;, and where a form behind one
+          files what it collects. Nothing on this page looks different for it.
         </p>
       )}
 
-      {saving && <p className="inspector__note">Saving…</p>}
-      {error && <p className="inline-editor__error">{error}</p>}
+      <SaveFooter
+        dirty={dirty}
+        saving={saving}
+        error={error}
+        onDiscard={() => setChosen(stored)}
+        onSave={() => void save()}
+      />
     </div>
   );
 }

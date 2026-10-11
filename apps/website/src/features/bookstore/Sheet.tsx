@@ -30,6 +30,7 @@ export function Dialog({
   screen,
   className,
   onClose,
+  canClose,
   children,
 }: {
   title: string;
@@ -65,9 +66,17 @@ export function Dialog({
       different ones. */
   className?: string;
   onClose: () => void;
+  /**
+   * Asked before the dialog closes by Escape, the backdrop or the ×. Return
+   * false to stay open — an editor inside with unsaved changes says why itself.
+   */
+  canClose?: () => boolean;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const tryClose = () => {
+    if (!canClose || canClose()) ref.current?.close();
+  };
 
   useEffect(() => {
     const node = ref.current;
@@ -85,10 +94,14 @@ export function Dialog({
       aria-label={title}
       // Fires for Escape as well as `close()`, so both routes out land here.
       onClose={onClose}
+      // Escape fires `cancel` first, which can be refused.
+      onCancel={(event) => {
+        if (canClose && !canClose()) event.preventDefault();
+      }}
       // Clicking the backdrop is a click on the dialog element itself; a click
       // on anything inside it stops at that child.
       onClick={(event) => {
-        if (event.target === ref.current) ref.current?.close();
+        if (event.target === ref.current) tryClose();
       }}
     >
       {/*
@@ -116,7 +129,7 @@ export function Dialog({
         <button
           type="button"
           className="sheet__close"
-          onClick={() => ref.current?.close()}
+          onClick={tryClose}
           aria-label="Close"
         >
           ×

@@ -5,7 +5,7 @@ import type { AboutSlug } from '@spsm/shared';
 import { EditColumn } from '@/components/EditColumn';
 import { Icon } from '@/components/Icon';
 import { BodyEditingClass, useEditMode } from '@/features/programs/editMode';
-import { useAutosave } from '@/features/events/useAutosave';
+import { SaveFooter } from '@/components/SaveFooter';
 import { AboutPanel, bandTitle } from './AboutPanel';
 import { readAboutOverride, saveAboutOverride } from './admin';
 import type { AboutCopy } from './context';
@@ -28,38 +28,21 @@ import type { AboutDraft } from './useAboutDraft';
  * it holds is only the words and the photograph. The long version is in
  * `AboutPanel`.
  *
- * The column also supplies the two things a foot bar used to: the saved
- * indicator and Done. `EditorBar` is not used here, and the events editor keeps
- * it exactly as it was.
+ * ## One Save, like every editor on the site
  *
- * ## The fresh read on open, and why `markSaved` is load-bearing
+ * What is typed is held until Save changes at the foot of the column, and
+ * Discard puts the page back as it was saved. This replaced autosave when Tommy
+ * asked for every admin editor to save the way the bookstore panel does. Done is
+ * refused while anything is unsaved, and the browser warns before the tab is
+ * closed.
  *
  * The draft is seeded from what Firestore holds *now*, not from the copy baked
- * into this page's HTML — which may be days old, and may be missing an edit
- * somebody else made this morning. Without that read, pressing Edit and then
- * Done would quietly republish stale words.
+ * into this page's HTML — which may be days old — and that read is what counts
+ * as saved.
  *
- * And having read it, the autosave has to be *told* the draft is already
- * written. It seeds its record from the first value it is handed, so a form
- * that changes underneath it on load looks exactly like somebody typing — and
- * every edit session would open by writing. That is the caller `markSaved` was
- * kept for. See `useAutosave`.
- *
- * ## No publish step, and therefore a real undo
- *
- * Same as the events editor and for the same reason, in Tommy's words there:
- * *"get rid of the publishing logic it should just autosave much less
- * confusing."* What is typed is what the page says.
- *
- * That is precisely why ⌘Z has to work here. With no draft to abandon and no
- * Cancel to press, an accidental keystroke or a section removed by a misclick
- * is already on the public page — so the history in `useAboutDraft` is the only
- * way back, and the bar carries it beside the saved indicator where somebody
- * looking for it will be looking.
- *
- * Undo does not un-save. It moves the draft, autosave notices the draft moved
- * and writes it, and the page steps backwards with it. There is no separate
- * "unsaved undo" state to explain.
+ * Undo and redo stay, and work on the held draft: they step through what has
+ * been typed since the page opened, saved or not, and Save writes wherever the
+ * draft has got to.
  * ---------------------------------------------------------------------------
  */
 export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDraft }) {
@@ -68,14 +51,37 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
   const { draft, load, clear, undo, redo, canUndo, canRedo } = editor;
   const loading = draft === null;
 
-  const autosave = useAutosave<AboutCopy | null>({
-    value: draft,
-    enabled: draft !== null,
-    save: async (value) => {
-      if (value === null) return;
+  /* What is written, to compare the draft against and to put back on Discard. */
+  const [saved, setSaved] = useState<AboutCopy | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const dirty = draft !== null && saved !== null && JSON.stringify(draft) !== JSON.stringify(saved);
+
+  async function saveNow() {
+    if (!dirty || saving || draft === null) return;
+    const value = draft;
+    setSaving(true);
+    setSaveError(null);
+    try {
       await saveAboutOverride(page, { slug: page, slots: value.slots, sections: value.sections });
-    },
-  });
+      setSaved(value);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'That could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Closing the tab with changes held would lose them without a word.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(unload: BeforeUnloadEvent) {
+      unload.preventDefault();
+      unload.returnValue = '';
+    }
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   /*
    * The read that seeds the draft.
@@ -103,9 +109,8 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
         if (!live) return;
         const copy: AboutCopy = { slots: fresh.slots, sections: fresh.sections };
         load(copy);
-        // Before anything can be typed, or the first keystroke writes back
-        // exactly what was just read.
-        autosave.markSaved(copy);
+        // What was just read is, by definition, already saved.
+        setSaved(copy);
       } catch (error) {
         if (!live) return;
         setFailed(
@@ -119,15 +124,18 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
       live = false;
     };
     /*
-     * `load` and `autosave` are deliberately not dependencies. Both are
+     * `load` is deliberately not a dependency. It is
      * recreated on renders this effect's own state change causes, so listing
      * them would re-read the document on every keystroke.
      */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  async function done() {
-    await autosave.flush();
+  function done() {
+    if (dirty) {
+      setSaveError('Save or discard your changes before leaving.');
+      return;
+    }
     clear();
     edit.setOn(false);
   }
@@ -157,6 +165,13 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
       if (!chord || event.altKey) return;
       const key = event.key.toLowerCase();
 
+      // ⌘S is Save, rather than the browser saving the page as a file.
+      if (key === 's') {
+        event.preventDefault();
+        void saveNow();
+        return;
+      }
+
       if (key === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -172,7 +187,9 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [loading, undo, redo]);
+    // `saveNow` reads the draft it closes over, so it is re-bound with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, undo, redo, draft, saved, saving]);
 
   const heading = bandTitle(page, edit.selection);
 
@@ -190,12 +207,12 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
         on
         kind={heading.kind}
         title={heading.title}
-        saving={autosave.state.kind === 'saving' || autosave.state.kind === 'pending'}
+        saving={saving}
         /* Absent when the page is already what is selected — there is nowhere up
            to go, and a control that does nothing is worse than none. */
         onBack={edit.selection.kind === 'page' ? undefined : () => edit.select({ kind: 'page' })}
         backLabel="Back to the whole page"
-        onDone={() => void done()}
+        onDone={done}
         actions={
           <>
             {/*
@@ -237,31 +254,6 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
           wrap their contents in this; nothing here needed inventing.
         */}
         <div className="inspector__body">
-          {/*
-            A refused write, said out loud.
-            ---------------------------------------------------------------
-            `EditColumn` reports "Saving…" or "Saved" from a boolean, and an
-            autosave that has *errored* is neither — so a write Firestore
-            refused read as "Saved" in the corner and the edit looked like it
-            had landed. It had not, and the next reload threw it away.
-
-            That was not hypothetical: with the `aboutOverrides` rule written but
-            not yet deployed, every save on the real project is refused, and the
-            only symptom was the page appearing to keep local edits that never
-            reached anybody else's device. Tommy's report was that it "should
-            sync to every other device not local".
-            ---------------------------------------------------------------
-          */}
-          {autosave.state.kind === 'error' && (
-            <div className="notice notice--alarm" role="alert">
-              <p>
-                <strong>This has not been saved.</strong> What you have typed is still on this
-                screen, and the page will go back to its old words if you reload.
-              </p>
-              <p>{autosave.state.message}</p>
-            </div>
-          )}
-
           {failed ? (
             <div className="notice notice--alarm" role="alert">
               <p>{failed}</p>
@@ -270,6 +262,21 @@ export function AboutEditor({ page, editor }: { page: AboutSlug; editor: AboutDr
             <p className="inspector__hint">Reading this page’s wording…</p>
           ) : (
             <AboutPanel page={page} draft={draft} editor={editor} />
+          )}
+
+          {!failed && !loading && (
+            <SaveFooter
+              dirty={dirty}
+              saving={saving}
+              error={saveError}
+              onDiscard={() => {
+                if (saved) load(saved);
+                setSaveError(null);
+                // A section added since the last save is gone; the panel must not point at it.
+                if (edit.selection.kind === 'level') edit.select({ kind: 'page' });
+              }}
+              onSave={() => void saveNow()}
+            />
           )}
         </div>
       </EditColumn>

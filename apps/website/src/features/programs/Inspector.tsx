@@ -63,7 +63,7 @@ export function Inspector({
   aside?: ReactNode;
   children: ReactNode;
 }) {
-  const { on, selection, select, setOn } = useEditMode();
+  const { on, selection, select, setOn, refusal } = useEditMode();
 
   return (
     <EditColumn
@@ -77,6 +77,11 @@ export function Inspector({
       onDone={() => setOn(false)}
       aside={aside}
     >
+      {refusal && (
+        <div className="notice notice--alarm inspector__refusal" role="alert">
+          <p>{refusal}</p>
+        </div>
+      )}
       {children}
     </EditColumn>
   );

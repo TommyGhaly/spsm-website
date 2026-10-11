@@ -94,6 +94,23 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
    */
   const [config, setConfig] = useState<FormsPageConfig>(DEFAULT_FORMS_PAGE_CONFIG);
   const [error, setError] = useState<string | null>(null);
+  /* The builder has unsaved changes: changing tab or closing is refused. */
+  const [held, setHeld] = useState(false);
+  const blocked = () => {
+    if (view.kind !== 'build' || !held) return false;
+    setError('Save or discard your changes to this form first.');
+    return true;
+  };
+  // Saved or discarded: the refusal no longer applies.
+  useEffect(() => {
+    if (!held) setError((was) => (was?.startsWith('Save or discard') ? null : was));
+  }, [held]);
+  const go = (next: View) => {
+    if (!blocked()) {
+      setError(null);
+      setView(next);
+    }
+  };
 
   useEffect(() => watchFormsPageConfig(setConfig), []);
 
@@ -124,6 +141,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
       className="sheet--drawer"
       screen={view.kind}
       onClose={onClose}
+      canClose={() => !blocked()}
     >
       <div className="bkadmin">
         <div className="bktabs" role="tablist" aria-label="Forms">
@@ -136,7 +154,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
                 ? 'bktabs__tab'
                 : 'bktabs__tab is-on'
             }
-            onClick={() => setView({ kind: 'list' })}
+            onClick={() => go({ kind: 'list' })}
           >
             Forms
           </button>
@@ -145,7 +163,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
             role="tab"
             aria-selected={view.kind === 'submissions'}
             className={view.kind === 'submissions' ? 'bktabs__tab is-on' : 'bktabs__tab'}
-            onClick={() => setView({ kind: 'submissions', formId: null })}
+            onClick={() => go({ kind: 'submissions', formId: null })}
           >
             Submissions
           </button>
@@ -154,7 +172,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
             role="tab"
             aria-selected={view.kind === 'import'}
             className={view.kind === 'import' ? 'bktabs__tab is-on' : 'bktabs__tab'}
-            onClick={() => setView({ kind: 'import' })}
+            onClick={() => go({ kind: 'import' })}
           >
             Import
           </button>
@@ -180,7 +198,9 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
         {view.kind === 'build' && (
           <FormBuilder
             form={view.form}
+            onDirtyChange={setHeld}
             onDone={() => {
+              setHeld(false);
               void refresh();
               setView({ kind: 'list' });
             }}

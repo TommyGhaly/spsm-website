@@ -94,6 +94,14 @@ interface EditModeValue {
   select: (next: Selection) => void;
   /** Whether this exact thing is the current selection. */
   isSelected: (next: Selection) => boolean;
+  /**
+   * The name of whatever has unsaved changes, or null. While set, `select` to
+   * something else and `setOn(false)` are refused and `refusal` says why — see
+   * `useHeldEdits`.
+   */
+  hold: (name: string | null) => void;
+  /** "Save or discard your changes to Summercamp first." — or null. */
+  refusal: string | null;
 }
 
 const OFF: EditModeValue = {
@@ -104,6 +112,8 @@ const OFF: EditModeValue = {
   setOn: () => undefined,
   select: () => undefined,
   isSelected: () => false,
+  hold: () => undefined,
+  refusal: null,
 };
 
 const EditModeContext = createContext<EditModeValue>(OFF);
@@ -118,6 +128,18 @@ export function EditModeProvider({
   const [on, setOnState] = useState(false);
   const [selection, setSelection] = useState<Selection>({ kind: 'page' });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  /*
+   * Unsaved changes, and the line saying a move was refused because of them.
+   * The held name is a ref so `select` and `setOn` stay stable; the selection
+   * is mirrored into one for the same reason.
+   */
+  const held = useRef<string | null>(null);
+  const current = useRef<Selection>({ kind: 'page' });
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const hold = useCallback((name: string | null) => {
+    held.current = name;
+    if (name === null) setRefusal(null);
+  }, []);
 
   /*
    * The last element pressed. Captured in the capture phase, so it is recorded
@@ -136,6 +158,12 @@ export function EditModeProvider({
   }, [on]);
 
   const select = useCallback((next: Selection) => {
+    // Leaving something with changes held would leave them out of sight.
+    if (held.current && !sameSelection(current.current, next)) {
+      setRefusal(`Save or discard your changes to ${held.current} first.`);
+      return;
+    }
+    current.current = next;
     setSelection(next);
     setAnchor(anchorFor(pressed.current));
     /*
@@ -148,10 +176,15 @@ export function EditModeProvider({
   }, []);
 
   const setOn = useCallback((next: boolean) => {
+    if (!next && held.current) {
+      setRefusal(`Save or discard your changes to ${held.current} first.`);
+      return;
+    }
     setOnState(next);
     // Leaving edit mode drops the selection, so re-entering does not open the
     // panel on a picture somebody was looking at ten minutes ago.
     if (!next) {
+      current.current = { kind: 'page' };
       setSelection({ kind: 'page' });
       setAnchor(null);
     }
@@ -169,8 +202,10 @@ export function EditModeProvider({
       setOn,
       select,
       isSelected: (next) => sameSelection(selection, next),
+      hold,
+      refusal,
     }),
-    [allowed, on, selection, anchor, setOn, select],
+    [allowed, on, selection, anchor, setOn, select, hold, refusal],
   );
 
   return <EditModeContext.Provider value={value}>{children}</EditModeContext.Provider>;
@@ -210,6 +245,19 @@ function anchorFor(element: HTMLElement | null): HTMLElement | null {
 
 export function useEditMode(): EditModeValue {
   return useContext(EditModeContext);
+}
+
+/**
+ * Tell edit mode this editor has unsaved changes, so selecting something else
+ * or pressing Done is refused until they are saved or discarded. `name` is what
+ * the refusal calls it: "Save or discard your changes to {name} first."
+ */
+export function useHeldEdits(dirty: boolean, name: string): void {
+  const { hold } = useEditMode();
+  useEffect(() => {
+    hold(dirty ? name : null);
+    return () => hold(null);
+  }, [dirty, name, hold]);
 }
 
 function sameSelection(a: Selection, b: Selection): boolean {

@@ -160,7 +160,7 @@ function coalescable(tag: string): boolean {
 /**
  * Whether two drafts are the same.
  *
- * A serialisation, for the reason `useAutosave` gives at more length: the draft
+ * A serialisation: the draft
  * is rebuilt on every keystroke so referential equality always says "changed",
  * and a dirty flag maintained by hand is wrong the first time somebody forgets
  * to set it. Key order is stable here because every writer builds these objects
