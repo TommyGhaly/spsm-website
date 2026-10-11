@@ -4200,6 +4200,18 @@ main {
   color: var(--color-ink-faint, #6f5f5a);
 }
 
+/* The shop's badge, at the foot of the slot where every cover stands. */
+.book__sale.bookshelf__sale {
+  top: auto;
+  bottom: var(--space-xs, 0.4rem);
+}
+
+.bookshelf__deal {
+  margin-right: var(--space-md, 1rem);
+  font-weight: 600;
+  color: var(--color-accent, #992a21);
+}
+
 .bookshelf__more {
   margin: var(--space-md, 1rem) 0 0;
   font-family: var(--font-ui, system-ui, sans-serif);
@@ -4909,38 +4921,21 @@ main {
 }
 
 /*
- * The clearance section: a band above the shelf, on a faint wash of the
- * accent so it reads as an announcement rather than as the first row of the
- * shelf. Its cards are the shelf's own.
+ * The Clearance toggle, first in the filter row: outlined in the accent while
+ * off so it reads as an offer, filled when on like any chosen pill.
  */
-.clearance {
-  margin: 0 0 var(--space-xl, 2.5rem);
-  padding: var(--space-md, 1.1rem) var(--space-md, 1.1rem) var(--space-lg, 1.6rem);
-  background: color-mix(in srgb, var(--color-accent, #992a21) 6%, var(--color-paper, #fffefb));
-  border: 1px solid color-mix(in srgb, var(--color-accent, #992a21) 22%, transparent);
-  border-radius: var(--radius-md, 8px);
-}
-
-.clearance__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.75rem;
-  margin-bottom: var(--space-md, 1rem);
-}
-
-.clearance__title {
-  margin: 0;
-  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
-  font-size: var(--type-heading, 1.5rem);
+.shop-filter.shop-filter--sale {
   color: var(--color-accent, #992a21);
+  border-color: color-mix(in srgb, var(--color-accent, #992a21) 55%, transparent);
+  font-weight: 600;
 }
 
-.clearance__lede {
-  margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-small, 0.9375rem);
-  color: var(--color-ink-soft, #4b413e);
+.shop-filter__deal {
+  font-weight: normal;
+}
+
+.shop-filter--sale.is-on .shop-filter__deal {
+  color: inherit;
 }
 
 /* ---- editing: clearance and sizes --------------------------------------- */

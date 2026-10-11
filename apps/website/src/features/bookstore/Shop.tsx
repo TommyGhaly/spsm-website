@@ -8,6 +8,7 @@ import { Icon } from "@/components/Icon";
 import { Cover } from "./Cover";
 import { PendingEditsProvider, SaveBar, usePendingEdits } from "./pendingEdits";
 import { money } from "./money";
+import { PriceTag } from "./PriceTag";
 import { track, trackProduct, trackSearch, trackViewOnce } from "./track";
 import { Suspense, lazy } from "react";
 import { Dialog } from "./Sheet";
@@ -501,6 +502,17 @@ export function Shop({
   const [pill, setPill] = useState<string | null | undefined>(undefined);
 
   /*
+   * The Clearance toggle: on top of whichever category is chosen, not instead
+   * of one, so "Clearance" with "Books" lit is the books on sale. Opened already
+   * on by `?clearance` — what the homepage's clearance link points at. Read
+   * after mount for the same hydration reason as the basket.
+   */
+  const [clearanceOnly, setClearanceOnly] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('clearance')) setClearanceOnly(true);
+  }, []);
+
+  /*
    * The second row: Square nests categories, so choosing one that has
    * subcategories opens a row of them beneath ("Books" → "Arabic books",
    * "English books"). Choosing a subcategory keeps its siblings showing, so
@@ -544,22 +556,10 @@ export function Shop({
     if (!stillThere) setPill(undefined);
   }, [pills, sections, pill]);
 
-  const shownHere = useMemo(() => {
-    if (pill === undefined) return shown;
-    const inPill = new Set(
-      (pills.find((group) => group.id === pill)?.items ?? []).map((item) => item.slug),
-    );
-    return shown.filter((product) => inPill.has(product.slug));
-  }, [shown, pills, pill]);
-
-  const count = lines.reduce((sum, line) => sum + line.quantity, 0);
-  const total = lines.reduce((sum, line) => sum + line.unit * line.quantity, 0);
-
   /*
-   * The clearance section: everything marked down that can still be bought,
-   * deepest discount first. Shown above the shelf only while the whole shop is
-   * — a search or a category is somebody looking for something in particular.
-   * The items stay in the shelf below too, with their crossed-out price.
+   * Everything marked down that can still be bought, deepest discount first —
+   * what the Clearance toggle shows. The toggle exists only while there is
+   * something in it, and says how deep the discounts go.
    */
   const onSale = useMemo(
     () =>
@@ -578,6 +578,37 @@ export function Shop({
       Math.max(most, clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount })?.percentOff ?? 0),
     0,
   );
+
+  // Nothing left on sale: the toggle goes, and must not leave the shelf empty.
+  useEffect(() => {
+    if (onSale.length === 0) setClearanceOnly(false);
+  }, [onSale.length]);
+
+  const shownHere = useMemo(() => {
+    // In the toggle's own order, deepest discount first.
+    const base = clearanceOnly ? onSale.filter((product) => shown.includes(product)) : shown;
+    if (pill === undefined) return base;
+    const inPill = new Set(
+      (pills.find((group) => group.id === pill)?.items ?? []).map((item) => item.slug),
+    );
+    return base.filter((product) => inPill.has(product.slug));
+  }, [shown, pills, pill, clearanceOnly, onSale]);
+
+  const clearanceToggle = onSale.length > 0 && (
+    <button
+      type="button"
+      className={clearanceOnly ? 'shop-filter shop-filter--sale is-on' : 'shop-filter shop-filter--sale'}
+      aria-pressed={clearanceOnly}
+      onClick={() => setClearanceOnly((was) => !was)}
+    >
+      Clearance
+      {deepest > 0 && <span className="shop-filter__deal">up to {deepest}% off</span>}
+      <span className="shop-filter__n">{onSale.length}</span>
+    </button>
+  );
+
+  const count = lines.reduce((sum, line) => sum + line.quantity, 0);
+  const total = lines.reduce((sum, line) => sum + line.unit * line.quantity, 0);
 
   /*
    * Pressing a card. While editing it selects the book into the column
@@ -715,6 +746,11 @@ export function Shop({
       {editing ? (
         /* Every category, including the empty ones — see `CategoryPills`. */
         <Suspense fallback={null}>
+          {clearanceToggle && (
+            <div className="shop-filters" role="group" aria-label="Show clearance">
+              {clearanceToggle}
+            </div>
+          )}
           <CategoryPills
             groups={pills}
             sections={sections}
@@ -740,8 +776,10 @@ export function Shop({
           )}
         </Suspense>
       ) : (
-        rowPills.length > 0 && (
+        (rowPills.length > 0 || clearanceToggle) && (
           <div className="shop-filters" role="group" aria-label="Filter by category">
+            {/* First, and in the accent: it is the row's one advertisement. */}
+            {clearanceToggle}
             <button
               type="button"
               className={pill === undefined ? 'shop-filter is-on' : 'shop-filter'}
@@ -833,12 +871,14 @@ export function Shop({
         </div>
       )}
 
-      {(needle || pill !== undefined) && (
+      {(needle || pill !== undefined || clearanceOnly) && (
         <p className="shop-count" aria-live="polite">
           {shownHere.length === 0
             ? needle
               ? `Nothing matches \u201C${query.trim()}\u201D.`
-              : 'Nothing in this category.'
+              : clearanceOnly
+                ? 'Nothing here is on clearance.'
+                : 'Nothing in this category.'
             : `${shownHere.length} of ${products.length} titles`}
         </p>
       )}
@@ -860,30 +900,6 @@ export function Shop({
         One grid, whatever the categories are. The pills above narrow it; nothing
         below is ever split into a second shelf.
       */}
-      {!needle && pill === undefined && onSale.length > 0 && (
-        <section className="clearance" aria-labelledby="clearance-title">
-          <div className="clearance__head">
-            <h3 id="clearance-title" className="clearance__title">Clearance</h3>
-            <p className="clearance__lede">
-              {deepest > 0 ? `Up to ${deepest}% off` : 'Marked down'} — while they last.
-            </p>
-          </div>
-          <ul className={editing ? 'shelf clearance__shelf is-editing' : 'shelf clearance__shelf'}>
-            {onSale.map((product) => (
-              <Book
-                key={product.id}
-                product={product}
-                inCart={inCartOf(cart, product.slug)}
-                editing={editing}
-                selected={editing && selected === product.slug}
-                onOpen={() => openProduct(product)}
-                onAdd={() => addFromCard(product)}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
-
       <ul className={editing ? 'shelf is-editing' : 'shelf'}>
         {shownHere.map((product) => (
           <Book
@@ -1622,35 +1638,6 @@ function Book({
       </div>
 
     </li>
-  );
-}
-
-/**
- * A price as the shop shows it: crossed out beside the clearance price when it
- * is on clearance, and for clothing with sizes that cost more, the range — or
- * the one size's price once a size is chosen.
- */
-function PriceTag({ product, size = null }: { product: ShopProduct; size?: string | null }) {
-  const sale = clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
-  const chosen = size ? product.sizes?.find((one) => one.label === size) : undefined;
-  const extras = chosen ? [chosen.extraCents] : product.sizes?.length ? product.sizes.map((one) => one.extraCents) : [0];
-  const low = Math.min(...extras);
-  const high = Math.max(...extras);
-  const span = (base: number) =>
-    low === high ? money(base + low, product.currency) : `${money(base + low)}–${money(base + high)}`;
-
-  if (!sale) return <>{span(product.amount)}</>;
-  return (
-    <>
-      <s className="price__was">
-        <span className="visually-hidden">Was </span>
-        {span(sale.wasCents)}
-      </s>{' '}
-      <span className="price__now">
-        <span className="visually-hidden">now </span>
-        {span(sale.nowCents)}
-      </span>
-    </>
   );
 }
 

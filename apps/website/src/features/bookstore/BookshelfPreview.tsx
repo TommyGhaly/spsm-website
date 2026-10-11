@@ -1,8 +1,12 @@
+'use client';
+
 import Link from 'next/link';
+import { clearanceOf, sizesSoldOut } from '@spsm/shared';
 import { DragRail } from '@/components/DragRail';
 import type { ShopProduct } from './shopData';
 import { Cover } from './Cover';
-import { money } from './money';
+import { PriceTag } from './PriceTag';
+import { useLiveCatalog } from './useLiveCatalog';
 
 /**
  * How many covers the strip carries before it is just the whole shop again.
@@ -33,8 +37,12 @@ const SHOWN = 12;
  * Covers and prices, no descriptions and no Add button. Buying needs a basket,
  * a dialog and Square's SDK — all of it client-side, none of it worth loading
  * on the homepage for the few who will click through. Every cover is a plain
- * link to `/bookstore`, so this stays a server component and costs the page
- * nothing but images.
+ * link to `/bookstore`.
+ *
+ * A client component since clearance, for one reason: the homepage is baked at
+ * deploy, and a sale marked on the shop that afternoon would not reach it until
+ * the next one. `useLiveCatalog` is the shop's own read — one REST query, no
+ * SDK — so the badges and crossed-out prices here are the ones the shop shows.
  *
  * A dozen, not the whole catalog. Enough to read as a shelf that continues past
  * the edge of the screen, which is the invitation; all of them would just be the
@@ -70,12 +78,23 @@ const SHOWN = 12;
  * gradient describing a book's thickness, which is not information.
  * ---------------------------------------------------------------------------
  */
-export function BookshelfPreview({ products }: { products: ShopProduct[] }) {
+export function BookshelfPreview({ products: baked }: { products: ShopProduct[] }) {
+  const live = useLiveCatalog(baked);
+  const products = live.products ?? baked;
+
   // No catalog, no section. An empty shelf under a heading saying "From the
   // bookstore" is a claim the parish sells nothing.
   if (products.length === 0) return null;
 
-  const shown = products.slice(0, SHOWN);
+  const saleOf = (product: ShopProduct) =>
+    clearanceOf({ wasPriceCents: product.wasPriceCents, amountCents: product.amount });
+  /* What is on clearance leads the strip, so the discount is what a reader
+     meets first — the same items the shop's Clearance toggle shows. */
+  const onSale = products.filter(
+    (product) => saleOf(product) && !(product.sizes ? sizesSoldOut(product.sizes) : product.stockCount === 0),
+  );
+  const shown = [...onSale, ...products.filter((product) => !onSale.includes(product))].slice(0, SHOWN);
+  const deepest = Math.max(0, ...onSale.map((product) => saleOf(product)?.percentOff ?? 0));
 
   return (
     <div className="bookshelf">
@@ -131,10 +150,13 @@ export function BookshelfPreview({ products }: { products: ShopProduct[] }) {
                     sizes="11rem"
                   />
                   <span className="bookshelf__spine" aria-hidden="true" />
+                  {saleOf(product) && (
+                    <span className="book__sale bookshelf__sale">{saleOf(product)?.percentOff}% off</span>
+                  )}
                 </span>
                 <span className="bookshelf__name">{product.name}</span>
                 <span className="bookshelf__price">
-                  {money(product.amount, product.currency)}
+                  <PriceTag product={product} />
                 </span>
               </Link>
             </li>
@@ -143,6 +165,14 @@ export function BookshelfPreview({ products }: { products: ShopProduct[] }) {
       </DragRail>
 
       <p className="bookshelf__more">
+        {onSale.length > 0 && (
+          <>
+            <Link className="bookshelf__deal" href="/bookstore?clearance">
+              Clearance{deepest > 0 ? `: up to ${deepest}% off` : ''}
+              <span aria-hidden="true"> →</span>
+            </Link>{' '}
+          </>
+        )}
         <Link href="/bookstore">
           {products.length > SHOWN
             ? `Browse all ${products.length} titles`
