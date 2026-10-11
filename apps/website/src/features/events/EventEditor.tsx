@@ -3,21 +3,18 @@
 /**
  * The event page, editable.
  *
- * ## The rule this is built to
+ * ## A labelled form, in four tabs
  *
- * **The editor is the page with editable words in it, not the page with a form
- * over it.** The title is the `h1`. The date line is the date line. The
- * description is the paragraph. Where a control has to exist that the page has
- * no place for — a category, a sign-up link — it goes below the rule, in a
- * folded sheet, and is named as something the page does not show.
+ * Basics (name, date and time, place), Description, Photo, and Sign-ups &
+ * filing — each field with a label above it, inside the same reading column as
+ * the page so it keeps the page's measure.
  *
- * That is what the version before this one was for as well, and it did not
- * achieve it, for one measurable reason: its fields ran the full 1200px of the
- * window while the page they edited is a 68ch reading column. Everything else —
- * a title in a 1216x120 grey box, labels above words that already labelled
- * themselves — followed from that. So the single most important line in this
- * file is that the editing surface is inside the same `PageBody` the read-only
- * page uses, and inherits the same measure.
+ * This replaced an in-place editor in which the title was the page's `h1`, the
+ * date was the page's date chip and the description was the paragraph. It was
+ * faithful to the page and, Tommy found, confusing: nothing said which words
+ * were fields, and a photograph drop zone the width of the window led the page.
+ * The page itself is what the read-only view shows; the editor's job is to make
+ * every setting obvious.
  *
  * ## One Save, like every editor on the site
  *
@@ -54,9 +51,7 @@ import { useCallback, useEffect, useState } from 'react';
  * stays on each side is the drawing.
  */
 import {
-  EVENT_AUDIENCE_LABELS,
   EVENT_AUDIENCE_OPTIONS,
-  EVENT_CATEGORY_LABELS,
   EVENT_CATEGORY_OPTIONS,
   eventMistakes,
   eventStillMissing,
@@ -72,9 +67,7 @@ import {
 } from '@spsm/shared';
 import { useEditMode } from '@/features/programs/editMode';
 import { PageBody } from '@/components/PageBody';
-import { Icon } from '@/components/Icon';
 import { BackLink } from '@/components/BackLink';
-import { Plain } from '@/components/Inline';
 import { Cols, Group, Segmented, TagField } from './EditorParts';
 import { HeroBand, type HeroStatus } from './HeroBand';
 import { WhenLine } from './WhenLine';
@@ -83,9 +76,11 @@ import { EditorBar } from './EditorBar';
 import { EditTabPanel, EditTabs } from '@/components/EditTabs';
 
 /** Which tab below the heading is open, and the fields each one holds. */
-type Tab = 'page' | 'filing';
+type Tab = 'basics' | 'page' | 'photo' | 'filing';
 const TAB_FIELDS: Record<Tab, readonly (keyof EventFormState)[]> = {
+  basics: ['title', 'date', 'startTime', 'endTime', 'endDate', 'allDay', 'timeZone', 'locationName', 'locationAddress'],
   page: ['body', 'summary'],
+  photo: ['heroImagePath'],
   filing: ['category', 'audience', 'tags', 'registrationUrl', 'meetingUrl'],
 };
 
@@ -135,7 +130,7 @@ export function EventEditor({ baked, onSaved }: {
   const [form, setForm] = useState<EventFormState>(() => eventToForm(baked));
   const [load, setLoad] = useState<Load>({ kind: 'reading' });
   const [hero, setHero] = useState<HeroStatus>({ kind: 'idle' });
-  const [tab, setTab] = useState<Tab>('page');
+  const [tab, setTab] = useState<Tab>('basics');
   /* What is written, so the form can be compared against it and put back. */
   const [saved, setSaved] = useState<EventFormState>(() => eventToForm(baked));
   const [saving, setSaving] = useState(false);
@@ -587,94 +582,30 @@ export function EventEditor({ baked, onSaved }: {
   /* ---- the editor ---------------------------------------------------- */
 
   return (
-    <article className="ee">
-      <HeroBand
-        path={form.heroImagePath}
-        status={hero}
-        onPick={(file) => void pickHero(file)}
-        onClear={() => {
-          setHero({ kind: 'idle' });
-          void settleHero(null, null);
-        }}
-      />
-
+    <article className="ee ee--form">
       <PageBody flush>
-        {/*
-          The same `gallery-head` the read-only page uses, so the back link, the
-          gap under it and the rule at the bottom are in the same places. Only
-          the leaves differ.
-        */}
-        <header className="gallery-head">
-          {/*
-            Always the calendar. This used to be a prop, because `/staff/events`
-            reached the editor from a list and had to send Back there; that
-            screen is gone, so every route into this editor is an event's own
-            page, and every one of them came from the calendar.
-          */}
+        <header className="ee-formhead">
           <BackLink href="/calendar" label="Church Calendar" />
-
-          {load.kind === 'failed' && (
-            <div className="notice notice--alarm" role="alert">
-              <h2>That didn&apos;t work</h2>
-              <p>{load.message}</p>
-            </div>
-          )}
-
-          <div className="gallery-head__titles">
-            {/*
-              An `h1` with an input in it, rather than an input styled to look
-              like one. The heading level is a fact about the page and does not
-              change because somebody is editing.
-            */}
-            <h1 className="ee-title">
-              <Plain
-                name="title"
-                label="The name of this event"
-                value={form.title}
-                placeholder="Name this event"
-                onChange={(value) => set('title', value)}
-              />
-            </h1>
-
-            <WhenLine form={form} set={set} errorOf={errorOf} />
-
-            <p className="ee-where">
-              <Icon name="pin" size={16} />
-              <Plain
-                name="locationName"
-                label="Where it is"
-                value={form.locationName}
-                placeholder="Where is it?"
-                onChange={(value) => set('locationName', value)}
-              />
-              {/*
-                The street address appears once there is somewhere to put it.
-                An empty second field beside an empty first one is two questions
-                where the page asks one.
-              */}
-              {form.locationName.trim() && (
-                <>
-                  <span className="ee-where__sep" aria-hidden="true">
-                    ·
-                  </span>
-                  <Plain
-                    name="locationAddress"
-                    label="Street address"
-                    value={form.locationAddress}
-                    placeholder="Street address, if it is not the church"
-                    onChange={(value) => set('locationAddress', value)}
-                  />
-                </>
-              )}
-            </p>
-          </div>
+          <h1 className="ee-formhead__title">{form.title.trim() || 'New event'}</h1>
+          <p className="ee-formhead__note">
+            Editing this event. Nothing changes on the website until you press Save changes.
+          </p>
         </header>
+
+        {load.kind === 'failed' && (
+          <div className="notice notice--alarm" role="alert">
+            <h2>That didn&apos;t work</h2>
+            <p>{load.message}</p>
+          </div>
+        )}
 
         <div className="ee-sheet">
           <EditTabs
             tabs={[
+              { id: 'basics', label: 'Basics', dirty: dirtyOn('basics') },
               { id: 'page', label: 'Description', dirty: dirtyOn('page') },
-              { id: 'filing', label: 'Filing & sign-ups', dirty: dirtyOn('filing') },
+              { id: 'photo', label: 'Photo' },
+              { id: 'filing', label: 'Sign-ups & filing', dirty: dirtyOn('filing') },
             ]}
             value={tab}
             onChange={setTab}
@@ -682,108 +613,138 @@ export function EventEditor({ baked, onSaved }: {
             idPrefix="ee"
           />
 
-          <EditTabPanel idPrefix="ee" value={tab}>
-            {tab === 'page' ? (
+          <EditTabPanel idPrefix="ee" value={tab} className="ee-tabpanel">
+            {tab === 'basics' && (
               <>
-              <BodyField
-                value={form.body}
-                error={errorOf('body')}
-                onChange={(value) => set('body', value)}
-              />
+                <Group label="Name of the event" error={errorOf('title')}>
+                  <input
+                    name="title"
+                    size={1}
+                    value={form.title}
+                    placeholder="Iconography class"
+                    onChange={(event) => set('title', event.target.value)}
+                  />
+                </Group>
 
-              {/*
-                The summary is edited here and appears nowhere on this page. Said so
-                rather than left as a field whose effect is invisible from where you
-                are standing.
-              */}
-              <Group
-                label="One line for the calendar"
-                error={errorOf('summary')}
-                hint={`Not shown on this page — it is what the calendar and the homepage print. ${
-                  200 - form.summary.length
-                } characters left.`}
-              >
-                <input
-                  name="summary"
-                  size={1}
-                  value={form.summary}
-                  maxLength={200}
-                  placeholder="A six-week introduction to writing icons."
-                  onChange={(event) => set('summary', event.target.value)}
-                />
-              </Group>
+                <div className="ee-group">
+                  <span className="ee-group__label">Date and time</span>
+                  <WhenLine form={form} set={set} errorOf={errorOf} inline />
+                </div>
+
+                <Cols>
+                  <Group label="Where">
+                    <input
+                      name="locationName"
+                      size={1}
+                      value={form.locationName}
+                      placeholder="The church hall"
+                      onChange={(event) => set('locationName', event.target.value)}
+                    />
+                  </Group>
+                  <Group label="Street address" hint="Only if it is not at the church.">
+                    <input
+                      name="locationAddress"
+                      size={1}
+                      value={form.locationAddress}
+                      onChange={(event) => set('locationAddress', event.target.value)}
+                    />
+                  </Group>
+                </Cols>
               </>
-            ) : (
+            )}
+
+            {tab === 'page' && (
               <>
-              <Cols>
-                <Group label="What kind of event is it?">
-                  <select
-                    name="category"
-                    value={form.category}
-                    onChange={(event) => set('category', event.target.value as EventCategory)}
-                  >
-                    {EVENT_CATEGORY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Group>
+                <BodyField value={form.body} error={errorOf('body')} onChange={(value) => set('body', value)} />
                 <Group
-                  label="Who is it for?"
-                  hint="Servants-only events never reach the public calendar."
-                >
-                  <Segmented
-                    label="Who it is for"
-                    options={EVENT_AUDIENCE_OPTIONS}
-                    value={form.audience}
-                    onChange={(value) => set('audience', value as EventAudience)}
-                  />
-                </Group>
-              </Cols>
-
-              <Group label="Tags" hint="For grouping and filtering. Press Enter after each one.">
-                <TagField tags={form.tags} onChange={(tags) => set('tags', tags)} />
-              </Group>
-
-              <Cols>
-                <Group
-                  label="Sign-up link"
-                  error={errorOf('registrationUrl')}
-                  hint="An external sign-up page. Built-in forms aren’t available yet."
+                  label="One line for the calendar"
+                  error={errorOf('summary')}
+                  hint={`Shown on the calendar and the homepage. ${200 - form.summary.length} characters left.`}
                 >
                   <input
-                    name="registrationUrl"
+                    name="summary"
                     size={1}
-                    value={form.registrationUrl}
-                    placeholder="https://…"
-                    onChange={(event) => set('registrationUrl', event.target.value)}
+                    value={form.summary}
+                    maxLength={200}
+                    placeholder="A six-week introduction to writing icons."
+                    onChange={(event) => set('summary', event.target.value)}
                   />
                 </Group>
-                <Group
-                  label="Online link"
-                  error={errorOf('meetingUrl')}
-                  hint="For an event people can join remotely."
-                >
-                  <input
-                    name="meetingUrl"
-                    size={1}
-                    value={form.meetingUrl}
-                    placeholder="https://…"
-                    onChange={(event) => set('meetingUrl', event.target.value)}
-                  />
-                </Group>
-              </Cols>
+              </>
+            )}
 
-              {/*
-                The web address is shown and not editable. Changing it while
-                standing on the page it names would move the page out from under
-                you, and it is the URL anything already shared points at.
-              */}
-              <p className="ee-slug">
-                This page is at <code>/events/{form.slug}</code>. A web address cannot be
-                changed once an event exists — every link already shared points at it.
-              </p>
+            {tab === 'photo' && (
+              <>
+                <p className="ee-tabnote">
+                  A wide photograph across the top of the event&rsquo;s page. It is saved as soon as you
+                  choose or remove it.
+                </p>
+                <HeroBand
+                  path={form.heroImagePath}
+                  status={hero}
+                  onPick={(file) => void pickHero(file)}
+                  onClear={() => {
+                    setHero({ kind: 'idle' });
+                    void settleHero(null, null);
+                  }}
+                />
+              </>
+            )}
+
+            {tab === 'filing' && (
+              <>
+                <Cols>
+                  <Group label="What kind of event is it?">
+                    <select
+                      name="category"
+                      value={form.category}
+                      onChange={(event) => set('category', event.target.value as EventCategory)}
+                    >
+                      {EVENT_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Group>
+                  <Group label="Who is it for?" hint="Servants-only events stay off the public calendar.">
+                    <Segmented
+                      label="Who it is for"
+                      options={EVENT_AUDIENCE_OPTIONS}
+                      value={form.audience}
+                      onChange={(value) => set('audience', value as EventAudience)}
+                    />
+                  </Group>
+                </Cols>
+
+                <Cols>
+                  <Group label="Sign-up link" error={errorOf('registrationUrl')} hint="A page where people sign up.">
+                    <input
+                      name="registrationUrl"
+                      size={1}
+                      value={form.registrationUrl}
+                      placeholder="https://…"
+                      onChange={(event) => set('registrationUrl', event.target.value)}
+                    />
+                  </Group>
+                  <Group label="Online link" error={errorOf('meetingUrl')} hint="For joining remotely.">
+                    <input
+                      name="meetingUrl"
+                      size={1}
+                      value={form.meetingUrl}
+                      placeholder="https://…"
+                      onChange={(event) => set('meetingUrl', event.target.value)}
+                    />
+                  </Group>
+                </Cols>
+
+                <Group label="Tags" hint="Press Enter after each one.">
+                  <TagField tags={form.tags} onChange={(tags) => set('tags', tags)} />
+                </Group>
+
+                <p className="ee-slug">
+                  Web address: <code>/events/{form.slug}</code> (cannot be changed).
+                </p>
               </>
             )}
           </EditTabPanel>

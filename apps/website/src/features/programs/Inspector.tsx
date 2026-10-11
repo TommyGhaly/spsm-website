@@ -55,12 +55,15 @@ export function Inspector({
   kind,
   saving = false,
   aside,
+  backLabel,
   children,
 }: {
   title: string;
   kind: string;
   saving?: boolean;
   aside?: ReactNode;
+  /** What the way back says — "All ministries" on /events. */
+  backLabel?: string;
   children: ReactNode;
 }) {
   const { on, selection, select, setOn, refusal } = useEditMode();
@@ -76,6 +79,7 @@ export function Inspector({
       onBack={selection.kind === 'page' ? undefined : () => select({ kind: 'page' })}
       onDone={() => setOn(false)}
       aside={aside}
+      backLabel={backLabel}
     >
       {refusal && (
         <div className="notice notice--alarm inspector__refusal" role="alert">

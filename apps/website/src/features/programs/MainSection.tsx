@@ -116,7 +116,7 @@ export function MainSectionField() {
   return (
     <div className="inspector__body">
       <label className="inspector__field">
-        <span>Main section</span>
+        <span>Current ministry (for NFC tags)</span>
         <select
           value={chosen ?? ''}
           disabled={programs === null || saving}

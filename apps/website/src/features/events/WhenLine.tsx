@@ -98,12 +98,16 @@ export function WhenLine({
   form,
   set,
   errorOf,
+  inline = false,
 }: {
   form: EventFormState;
   set: Setter;
   errorOf: (field: EventFieldKey) => string | null;
+  /** The date and time controls laid out in place, for the editor's Basics tab. */
+  inline?: boolean;
 }) {
   const { text, missing } = sentenceOf(form);
+  if (inline) return <WhenPanel form={form} set={set} errorOf={errorOf} />;
 
   /* The worst kind of error to bury in a closed panel. Drawn on the line. */
   const problem = errorOf('date') ?? errorOf('startTime') ?? errorOf('endTime') ?? errorOf('endDate');

@@ -77,6 +77,7 @@ export function SubgroupShelf({
   empty,
   busy = false,
   readOnly = false,
+  addFirst = false,
 }: {
   /** "Gatherings", "Inside this". What these are, in the parish's words. */
   legend: string;
@@ -112,6 +113,8 @@ export function SubgroupShelf({
   busy?: boolean;
   /** A visitor's shelf: links, no editing furniture. See the note above. */
   readOnly?: boolean;
+  /** The add box above the list rather than under it — where the events page wants it. */
+  addFirst?: boolean;
 }) {
   /*
    * A read-only menu has no closed state, and this is not merely a default.
@@ -395,6 +398,32 @@ export function SubgroupShelf({
     };
   }, [open, items.length]);
 
+  const addForm = !readOnly && (
+          <form
+            className="subshelf__add"
+            onSubmit={(submit) => {
+              submit.preventDefault();
+              const name = adding.trim();
+              if (!name) return;
+              onAdd(name);
+              // Cleared rather than kept: adding five days in a row is the common
+              // case, and each needs a different name.
+              setAdding('');
+            }}
+          >
+            <input
+              type="text"
+              value={adding}
+              placeholder={addLabel}
+              aria-label={addLabel}
+              onChange={(change) => setAdding(change.target.value)}
+            />
+            <button type="submit" className="button button--small" disabled={busy || !adding.trim()}>
+              Add
+            </button>
+          </form>
+  );
+
   return (
     <div
       className={
@@ -471,6 +500,7 @@ export function SubgroupShelf({
       */}
       {open && (
         <div className="subshelf__body scroller" ref={body}>
+          {addFirst && addForm}
           {items.length === 0 && <p className="subshelf__empty">{empty}</p>}
 
           {/*
@@ -627,31 +657,7 @@ export function SubgroupShelf({
             </ul>
           )}
 
-          {!readOnly && (
-          <form
-            className="subshelf__add"
-            onSubmit={(submit) => {
-              submit.preventDefault();
-              const name = adding.trim();
-              if (!name) return;
-              onAdd(name);
-              // Cleared rather than kept: adding five days in a row is the common
-              // case, and each needs a different name.
-              setAdding('');
-            }}
-          >
-            <input
-              type="text"
-              value={adding}
-              placeholder={addLabel}
-              aria-label={addLabel}
-              onChange={(change) => setAdding(change.target.value)}
-            />
-            <button type="submit" className="button button--small" disabled={busy || !adding.trim()}>
-              Add
-            </button>
-          </form>
-          )}
+          {!addFirst && addForm}
         </div>
       )}
     </div>

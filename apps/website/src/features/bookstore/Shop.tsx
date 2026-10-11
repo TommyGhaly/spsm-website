@@ -862,8 +862,7 @@ export function Shop({
       */}
       {editing && (
         <p className="shop-hint">
-          Press an item to change it in the panel on the right. Nothing is saved
-          until you press Save changes there.
+          Click any item — here or in the list on the right — to edit it.
         </p>
       )}
 
@@ -1409,6 +1408,7 @@ export function Shop({
             flatCents={live.deliveryCents ?? settings.deliveryCents}
             taxRateBps={live.taxRateBps ?? settings.taxRateBps}
             taxedCount={products.filter((one) => one.taxable).length}
+            products={products}
             onDone={() => setEditing(false)}
             onSelect={setSelected}
             onChanged={refresh}

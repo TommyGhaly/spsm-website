@@ -115,180 +115,6 @@ function Toggle({
   );
 }
 
-/**
- * A text field that writes when you leave it.
- *
- * Extracted because there are four of them and the behaviour is fiddly in the
- * same way each time: hold the keystrokes locally, commit on blur or Enter, and
- * **re-seed when the subject changes** — otherwise clicking from one level to the
- * next shows the first one's name over the second one's page.
- */
-function LiveText({
-  label,
-  value,
-  onCommit,
-  rows,
-  placeholder,
-  note,
-  busy = false,
-  allowEmpty = false,
-  format = false,
-}: {
-  label: string;
-  value: string;
-  onCommit: (next: string) => void;
-  /** Present for a textarea, absent for a single-line input. */
-  rows?: number;
-  placeholder?: string;
-  note?: string;
-  busy?: boolean;
-  /**
-   * Whether clearing the field is a real answer.
-   *
-   * False for a name, where empty would leave a level with nothing to click on.
-   * True for a field whose empty state *means* something — "use the default" —
-   * and where the guard below otherwise makes the value impossible to unset:
-   * it can be typed in and never taken out again.
-   */
-  allowEmpty?: boolean;
-  /**
-   * Formatting buttons over the field. Textareas only, and only where the value
-   * is rendered as prose — a marker in a field printed as plain text shows up as
-   * a literal asterisk on a card.
-   */
-  format?: boolean;
-}) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-
-  const commit = () => {
-    const next = rows === undefined ? draft.trim() : draft;
-    if (next === value) return;
-    // An empty name would leave a level with nothing to click on in the menu, so
-    // it is refused by putting the old one back rather than by an error message
-    // about a field somebody has already left.
-    if (rows === undefined && next === '' && !allowEmpty) {
-      setDraft(value);
-      return;
-    }
-    onCommit(next);
-  };
-
-  /*
-   * A `div` rather than a `label`, and only here.
-   *
-   * A `<button>` inside a `<label>` is a trap: the click bubbles to the label,
-   * which forwards it to its control, so a formatting button would fire and then
-   * hand the click to the field as well. Everything else in this panel is still a
-   * label, because everything else is a plain field.
-   */
-  if (rows !== undefined && format) {
-    return (
-      <div className="inspector__field">
-        <RichText
-          label={label}
-          value={draft}
-          onChange={setDraft}
-          onBlur={commit}
-          placeholder={placeholder}
-          ariaLabel={label}
-        />
-        {note && <span className="inspector__note">{note}</span>}
-      </div>
-    );
-  }
-
-  return (
-    <label className="inspector__field">
-      <span>{label}</span>
-      {rows === undefined ? (
-        <input
-          type="text"
-          value={draft}
-          disabled={busy}
-          placeholder={placeholder}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(key) => {
-            if (key.key === 'Enter') {
-              key.preventDefault();
-              (key.target as HTMLInputElement).blur();
-            }
-            if (key.key === 'Escape') setDraft(value);
-          }}
-        />
-      ) : (
-        <textarea
-          rows={rows}
-          value={draft}
-          disabled={busy}
-          placeholder={placeholder}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-        />
-      )}
-      {note && <span className="inspector__note">{note}</span>}
-    </label>
-  );
-}
-
-/**
- * A civil date, in and out of an `<input type="date">`.
- *
- * The dates were **absent from this panel entirely** until now, and the note
- * explaining why was honest about the cost: "the form does not read the existing
- * dates back into its state — Firestore hands them over in several shapes and
- * parsing them into `<input type=date>` is a job of its own — so writing the
- * form's `null` would silently erase a date somebody set. Better to leave the
- * field alone than to quietly destroy it."
- *
- * Which meant nothing on the site could set a date, on a collection that **sorts
- * by date** and prints one on every card. A week created in the editor was
- * undated for ever.
- *
- * Both halves of that are one line each, in the end:
- *
- * - **Reading**, `dayKey` — already written for the calendar, already handles
- *   every shape Firestore returns, and already renders the parish's civil date
- *   rather than the browser's.
- * - **Writing**, noon UTC. `new Date('2026-07-22')` parses as *midnight UTC*,
- *   which in the parish's zone is eight in the evening on the 21st — so the
- *   obvious version stores the day before the one that was typed, and only for
- *   the western half of the world. Noon keeps the civil date intact for any zone
- *   within eleven hours of UTC, which is all of them that matter and comfortably
- *   more than the one the parish is fixed to.
- */
-function DateField({
-  label,
-  value,
-  timeZone,
-  onCommit,
-  busy = false,
-}: {
-  label: string;
-  value: ProgramEvent['startAt'];
-  timeZone: string;
-  onCommit: (next: Date | null) => void;
-  busy?: boolean;
-}) {
-  const current = dayKey(value, timeZone) ?? '';
-
-  return (
-    <label className="inspector__field inspector__field--inline">
-      <span>{label}</span>
-      <input
-        type="date"
-        value={current}
-        disabled={busy}
-        // `fromDayKey` is exactly `dayKey` backwards, and it lives beside it in
-        // lib/dates so the round trip cannot drift. Clearing the field is a real
-        // choice — "this has no fixed date" — and reaches the document as null.
-        onChange={(change) => onCommit(fromDayKey(change.target.value))}
-      />
-    </label>
-  );
-}
-
 /** Turns a Firestore refusal into something the parish office can act on. */
 function explain(error: unknown, what: string): string {
   const code = (error as { code?: unknown } | null)?.code;
@@ -419,7 +245,7 @@ export function ProgramDetails({
       </div>
 
       <label className="inspector__field">
-        <span>Its parts are called</span>
+        <span>What its groups are called</span>
         <input
           type="text"
           value={draft.childLabel}
@@ -427,7 +253,7 @@ export function ProgramDetails({
           placeholder={DEFAULT_CHILD_LABEL}
           onChange={(e) => set('childLabel', e.target.value)}
         />
-        <span className="inspector__note">What the things one level inside are called — &ldquo;Years&rdquo;, &ldquo;Weeks&rdquo;.</span>
+        <span className="inspector__note">For example &ldquo;Years&rdquo; or &ldquo;Weeks&rdquo;. Leave empty for &ldquo;{DEFAULT_CHILD_LABEL}&rdquo;.</span>
       </label>
 
       <Toggle
@@ -492,168 +318,123 @@ export function LevelDetails({
   onChanged: () => void;
   onRemoved: () => void;
 }) {
+  const timeZone = node.timeZone || PARISH_TIME_ZONE;
+  /*
+   * Held and saved with one Save, like every editor on the site. Dates are held
+   * as the civil day an `<input type="date">` speaks ("2026-07-22"), read with
+   * `dayKey` and written back with `fromDayKey` — the same round trip the old
+   * per-field writes used.
+   */
+  const savedValues = {
+    title: node.title,
+    description: node.description,
+    dated: node.startAt !== null || node.endAt !== null,
+    from: dayKey(node.startAt, timeZone) ?? '',
+    to: dayKey(node.endAt, timeZone) ?? '',
+    childLabel: node.childLabel ?? '',
+    published: node.published,
+  };
+  const savedKey = JSON.stringify(savedValues);
+  const [draft, setDraft] = useState(savedValues);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  /**
-   * Whether the date switch is on, while it is on but empty.
-   *
-   * `null` is "nobody has touched it", which is the ordinary case, and then the
-   * document answers: a level with either date set is dated. The draft only ever
-   * matters for the gap between switching on and typing a date — without it the
-   * switch would spring back the instant it was pressed, because the document
-   * still has no dates to prove it on.
-   *
-   * Keyed to the node so that selecting a different level does not inherit the
-   * previous one's revealed-but-empty state.
-   */
-  const [datedDraft, setDatedDraft] = useState<{ id: string; on: boolean } | null>(null);
-  const dated =
-    datedDraft !== null && datedDraft.id === node.id
-      ? datedDraft.on
-      : node.startAt !== null || node.endAt !== null;
 
-  async function write(what: string, patch: Parameters<typeof updateProgramEvent>[1]) {
+  useEffect(() => {
+    setDraft(JSON.parse(savedKey) as typeof savedValues);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id, savedKey]);
+
+  const dirty = JSON.stringify(draft) !== savedKey;
+  useHeldEdits(dirty, node.title || 'this page');
+  const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
+    setDraft((was) => ({ ...was, [key]: value }));
+
+  async function save() {
     setBusy(true);
     setError(null);
     try {
-      await updateProgramEvent(node.id, patch, null);
+      const start = draft.dated ? fromDayKey(draft.from) : null;
+      const end = draft.dated ? fromDayKey(draft.to) : null;
+      await updateProgramEvent(
+        node.id,
+        {
+          ...(draft.title.trim() !== node.title ? { title: draft.title.trim() } : {}),
+          ...(draft.description !== node.description ? { description: draft.description } : {}),
+          ...(draft.dated !== savedValues.dated || draft.from !== savedValues.from ? { startAt: start } : {}),
+          ...(draft.dated !== savedValues.dated || draft.to !== savedValues.to ? { endAt: end } : {}),
+          ...(draft.childLabel !== (node.childLabel ?? '') ? { childLabel: draft.childLabel.trim() || null } : {}),
+          ...(draft.published !== node.published ? { published: draft.published } : {}),
+        },
+        null,
+      );
       onChanged();
     } catch (caught) {
       console.error('[programs] could not save:', caught);
-      setError(explain(caught, what));
+      setError(explain(caught, 'save this'));
     } finally {
       setBusy(false);
     }
   }
 
-  const timeZone = node.timeZone || PARISH_TIME_ZONE;
-
   return (
     <div className="inspector__body">
-      <LiveText
-        label="Name"
-        value={node.title}
-        busy={busy}
-        onCommit={(title) => void write('rename this', { title })}
-        note="Its address does not change with its name — links the church has shared keep working."
-      />
+      <label className="inspector__field">
+        <span>Name</span>
+        <input type="text" value={draft.title} disabled={busy} onChange={(e) => set('title', e.target.value)} />
+      </label>
 
-      <LiveText
-        label="Description"
-        rows={3}
-        format
-        value={node.description}
-        busy={busy}
-        placeholder="What this was. Shown above the photographs."
-        onCommit={(description) => void write('edit this', { description })}
-      />
+      <div className="inspector__field">
+        <RichText
+          label="Description"
+          value={draft.description}
+          onChange={(description) => set('description', description)}
+          placeholder="What this was. Shown above the photographs."
+          ariaLabel="Description"
+        />
+      </div>
 
-      {/*
-        Dates, which nothing on the site could set until now.
-
-        They are not decoration: undated levels sort *after* dated ones and the
-        span prints on the card. A week with no dates is a week that shows up in
-        an arbitrary place in its year with no clue when it was.
-
-        ## Behind a switch, because most levels have no date
-
-        Both fields were always optional and "no date" was always expressible — by
-        leaving two date inputs empty. Tommy: *"Not every subsection has a date
-        assigned to it that should be toggled on and off if the admin feels it's
-        necessary."* Which is the same set of documents and a different control: two
-        empty inputs *look* like two things you have not filled in yet, so a day of
-        a camp and a week whose dates nobody has got round to are indistinguishable.
-        A switch that is off says the level has no date and means it.
-
-        Turning it off clears both in one write — the point is to say "this has no
-        date", and leaving a stale `startAt` behind while the switch reads off would
-        be the panel stating something the document contradicts.
-      */}
       <Toggle
-        checked={dated}
+        checked={draft.dated}
         disabled={busy}
         label="It has a date"
-        hint="Off for a day of a camp or a standing class. Undated levels sort after dated ones, in the order you put them in."
-        onChange={(on) => {
-          setDatedDraft({ id: node.id, on });
-          /*
-            Only the clearing is a write. Switching *on* has nothing to save yet —
-            there is no date until one is typed — so it reveals the fields and waits.
-            That is why `dated` reads the draft first: the document cannot answer
-            "is this switch on" for a level whose dates are still empty.
-          */
-          if (!on && (node.startAt !== null || node.endAt !== null)) {
-            void write('clear the dates', { startAt: null, endAt: null });
-          }
-        }}
+        hint="Off for a day of a camp or a standing class."
+        onChange={(on) => set('dated', on)}
       />
 
-      {dated && (
+      {draft.dated && (
         <div className="inspector__dates">
-          <DateField
-            label="From"
-            value={node.startAt}
-            timeZone={timeZone}
-            busy={busy}
-            onCommit={(startAt) => void write('set the date', { startAt })}
-          />
-          <DateField
-            label="To"
-            value={node.endAt}
-            timeZone={timeZone}
-            busy={busy}
-            onCommit={(endAt) => void write('set the date', { endAt })}
-          />
+          <label className="inspector__field inspector__field--inline">
+            <span>From</span>
+            <input type="date" value={draft.from} disabled={busy} onChange={(e) => set('from', e.target.value)} />
+          </label>
+          <label className="inspector__field inspector__field--inline">
+            <span>To</span>
+            <input type="date" value={draft.to} disabled={busy} onChange={(e) => set('to', e.target.value)} />
+          </label>
         </div>
       )}
 
-      {/*
-        What the parts *inside this one* are called — the weeks of a year, the
-        days of a week. Set here rather than inherited from the ministry because
-        that is exactly where one word stops fitting: the parts of Summercamp are
-        years, and the parts of a year are not.
-      */}
-      <LiveText
-        label="Its parts are called"
-        value={node.childLabel ?? ''}
-        busy={busy}
-        placeholder={DEFAULT_CHILD_LABEL}
-        allowEmpty
-        onCommit={(childLabel) =>
-          void write('rename the parts of this', { childLabel: childLabel.trim() || null })
-        }
-        note={`What the things one level inside *this* are called — not what this one is. A year says "Weeks"; each week then says "Days" for itself. Empty means "${DEFAULT_CHILD_LABEL}".`}
-      />
+      <label className="inspector__field">
+        <span>What its groups are called</span>
+        <input
+          type="text"
+          value={draft.childLabel}
+          disabled={busy}
+          placeholder={DEFAULT_CHILD_LABEL}
+          onChange={(e) => set('childLabel', e.target.value)}
+        />
+        <span className="inspector__note">For example &ldquo;Weeks&rdquo; inside a year, &ldquo;Days&rdquo; inside a week.</span>
+      </label>
 
       <Toggle
-        checked={node.published}
+        checked={draft.published}
         disabled={busy}
-        onChange={(published) => void write('publish this', { published })}
+        onChange={(published) => set('published', published)}
         label="Visible to everyone"
-        hint={
-          node.published
-            ? 'Anyone can open this and everything inside it.'
-            : 'Only you can see it while you set it up.'
-        }
+        hint={draft.published ? 'Anyone can open this and everything inside it.' : 'Only editors can see it.'}
       />
-
-      {/*
-        There was an "Accepting photographs" toggle here, per level.
-
-        It is gone rather than moved, and the distinction matters: whether the
-        parish is collecting is now one flag on the *ministry*
-        (`Program.submissionsOpen`), set from the approval queue on the ministry
-        page beside the priority section — which is the other half of the same
-        decision. A level's own `submissionsOpen` is read by nothing and checked by
-        no rule.
-
-        Leaving the toggle here pointing at the dead field would have been the
-        worst of the three options: a switch that saves, reports success, and
-        changes nothing at all.
-      */}
-
-      {error && <p className="inline-editor__error">{error}</p>}
 
       <Remove
         what="level"
@@ -661,7 +442,7 @@ export function LevelDetails({
         onAsk={() => setConfirmDelete(true)}
         onKeep={() => setConfirmDelete(false)}
         busy={busy}
-        note="The photographs filed here are not deleted — they move up to the ministry, where they can be filed again. Anything nested inside this has to be removed first."
+        note="The photographs filed here are kept — they move up to the ministry. Anything inside this has to be removed first."
         onRemove={() =>
           void (async () => {
             setBusy(true);
@@ -677,19 +458,19 @@ export function LevelDetails({
           })()
         }
       />
+
+      <SaveFooter
+        dirty={dirty}
+        saving={busy}
+        problem={draft.title.trim() === '' ? 'A name is needed to save' : null}
+        error={error}
+        onDiscard={() => setDraft(JSON.parse(savedKey) as typeof savedValues)}
+        onSave={() => void save()}
+      />
     </div>
   );
 }
 
-/**
- * The one destructive control, behind one question.
- *
- * Shared between the two above because the shape of the interaction is the thing
- * worth being consistent about: a quiet link, then a question that says what is
- * lost, then a red button. The note is *always* on screen before the red button
- * is — an administrator should never have to remember what a delete takes with
- * it.
- */
 function Remove({
   what,
   note,

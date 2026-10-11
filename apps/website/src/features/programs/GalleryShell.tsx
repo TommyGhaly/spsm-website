@@ -75,6 +75,7 @@ import { SectionDesigner } from './SectionDesigner';
 import { useBlockPacking, type BlockPlacement } from './packing';
 import { MediaProperties } from './MediaProperties';
 import { Disclosure, DisclosureGroup } from './Disclosure';
+import { EditTabPanel, EditTabs } from '@/components/EditTabs';
 import {
   SubgroupShelf,
   shelfCover,
@@ -531,6 +532,8 @@ function LevelView({
   const [featured, setFeatured] = useState<string[] | null>(null);
   /** Whether the all-pictures manager is open. Ministry page only. */
   const [managing, setManaging] = useState(false);
+  /* The page column's tab — this page's details, its photographs, or what is inside it. */
+  const [pageTab, setPageTab] = useState<'details' | 'photos' | 'inside'>('details');
   /** "All of them", held locally so the page redraws the instant it is switched. */
   const [allPictures, setAllPictures] = useState<boolean | null>(null);
   /**
@@ -1793,35 +1796,76 @@ function LevelView({
       kind: node ? 'Level' : 'Ministry',
       title,
       body: (
-        <DisclosureGroup
-          key={nodeId ?? 'program'}
-          /*
-            Open on the details, not on nothing.
-            
-            It defaulted to `null`, so the column landed on two collapsed rows and
-            a line of idle text — and everything real, including the field that
-            names what is inside this level, was one more click down. Tommy, twice:
-            the panel looked useless, and then *"there's still no section to name
-            the subcollections."* There was; it was behind a closed row.
-            
-            `details` rather than `pictures` because it holds the things that are
-            *facts* about the page — its name, its dates, whether anyone can see it,
-            what its parts are called. The photographs choice is one switch and it
-            is one click away.
-          */
-          defaultOpen="details"
-        >
-          <Disclosure
-            id="pictures"
-            label="Photographs"
-            value={
-              children.length === 0
-                ? 'all of them'
-                : showAll === true
-                  ? 'all of them'
-                  : 'a selection'
-            }
-          >
+        <div key={nodeId ?? 'program'} className="inspector__body inspector__body--tabbed">
+          <EditTabs
+            tabs={[
+              { id: 'details', label: 'Details' },
+              { id: 'photos', label: 'Photos' },
+              { id: 'inside', label: `${childLabel} (${children.length})` },
+            ]}
+            value={pageTab}
+            onChange={setPageTab}
+            label={title}
+            idPrefix="gallerypage"
+          />
+          <EditTabPanel idPrefix="gallerypage" value={pageTab}>
+            {pageTab === 'details' && (
+              <>
+            {node ? (
+              <LevelDetails
+                programId={program.id}
+                node={node}
+                onChanged={refresh}
+                /*
+                  A reload, not a refetch: the level being looked at no longer
+                  exists, and there is nothing at this URL to re-read.
+                */
+                onRemoved={() => window.location.reload()}
+              />
+            ) : (
+              <>
+                <ProgramDetails
+                  program={program}
+                  onChanged={refresh}
+                  onRemoved={() => window.location.reload()}
+                />
+
+                {/*
+                  Every picture in the ministry, in one screen.
+
+                  Here and on no level below, for the reason `PictureManager` gives:
+                  a level's page only has its own subtree to offer, so a manager
+                  there could only file a picture *deeper*, and the mis-filing this
+                  fixes is nearly always a picture that is too shallow.
+
+                  A button rather than the screen itself: it is a full-screen
+                  modal, and one that renders because a panel row happens to be
+                  open is one nobody asked for.
+                */}
+              </>
+            )}
+
+            {/*
+              "Picture on its card" was here — a chooser for the one photograph a
+              level's card opened its cycle on, at Tommy's direction removed.
+
+              A card already cycles through what is beneath it, and the pick only
+              decided which lap it started on: a setting whose whole effect was
+              invisible after four seconds of cross-fade. Two of these existed —
+              this one for the level being looked at, one more for a child
+              selected from its card — so the same question was asked in two
+              places to move a picture to the front of a rotation nobody was
+              watching from the top.
+
+              The ministry's own version went earlier, for a related reason: the
+              tile never read it at all. See `Program.coverMediaId` in the schema
+              for that one, and `summariseChildren`, which is now the only thing
+              that decides a card's pictures — the subtree's own, in filing order.
+            */}
+              </>
+            )}
+            {pageTab === 'photos' && (
+              <>
             {children.length === 0 ? (
               <p className="inspector__note">
                 Nothing is inside this level, so every block on it starts from all the
@@ -1874,44 +1918,7 @@ function LevelView({
                 </p>
               </>
             )}
-          </Disclosure>
-
-          <Disclosure
-            id="details"
-            label={node ? 'This page' : 'This ministry'}
-            value={published ? (node && when ? when : 'visible') : 'draft'}
-          >
-            {node ? (
-              <LevelDetails
-                programId={program.id}
-                node={node}
-                onChanged={refresh}
-                /*
-                  A reload, not a refetch: the level being looked at no longer
-                  exists, and there is nothing at this URL to re-read.
-                */
-                onRemoved={() => window.location.reload()}
-              />
-            ) : (
-              <>
-                <ProgramDetails
-                  program={program}
-                  onChanged={refresh}
-                  onRemoved={() => window.location.reload()}
-                />
-
-                {/*
-                  Every picture in the ministry, in one screen.
-
-                  Here and on no level below, for the reason `PictureManager` gives:
-                  a level's page only has its own subtree to offer, so a manager
-                  there could only file a picture *deeper*, and the mis-filing this
-                  fixes is nearly always a picture that is too shallow.
-
-                  A button rather than the screen itself: it is a full-screen
-                  modal, and one that renders because a panel row happens to be
-                  open is one nobody asked for.
-                */}
+                {!node && (
                 <div className="inspector__group">
                   {/*
                     ## The label, which was wrong twice before it was too long
@@ -1953,28 +1960,17 @@ function LevelView({
                     </span>
                   </button>
                 </div>
+                )}
               </>
             )}
-
-            {/*
-              "Picture on its card" was here — a chooser for the one photograph a
-              level's card opened its cycle on, at Tommy's direction removed.
-
-              A card already cycles through what is beneath it, and the pick only
-              decided which lap it started on: a setting whose whole effect was
-              invisible after four seconds of cross-fade. Two of these existed —
-              this one for the level being looked at, one more for a child
-              selected from its card — so the same question was asked in two
-              places to move a picture to the front of a rotation nobody was
-              watching from the top.
-
-              The ministry's own version went earlier, for a related reason: the
-              tile never read it at all. See `Program.coverMediaId` in the schema
-              for that one, and `summariseChildren`, which is now the only thing
-              that decides a card's pictures — the subtree's own, in filing order.
-            */}
-          </Disclosure>
-        </DisclosureGroup>
+            {pageTab === 'inside' && (
+              <div className="evpage-list">
+                <Deferred render={() => shelf} />
+                <p className="inspector__note">Click one to edit it. Drag the handle to reorder.</p>
+              </div>
+            )}
+          </EditTabPanel>
+        </div>
       ),
     };
   })();
@@ -3061,7 +3057,7 @@ function LevelView({
             what makes an always-present column worth its space when nothing in
             particular is selected: page settings above, somewhere to go below.
           */
-          aside={shelf}
+          aside={inspecting.kind === 'Level' || inspecting.kind === 'Ministry' ? undefined : shelf}
         >
           {inspecting.body}
         </Inspector>
@@ -3409,4 +3405,13 @@ function LevelCard({
       {cardInner}
     </Link>
   );
+}
+
+/**
+ * Renders what `render` returns when React reaches it, not when the element is
+ * built — for a panel assembled above a value it shows (the shelf is declared
+ * further down `LevelView` than the panel that holds it).
+ */
+function Deferred({ render }: { render: () => React.ReactNode }) {
+  return <>{render()}</>;
 }

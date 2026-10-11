@@ -21,6 +21,7 @@ import { ProgramDetails } from './Editors';
 import { BodyEditingClass, EditModeProvider, EditToggle, useEditMode } from './editMode';
 import { Inspector } from './Inspector';
 import { MainSectionField } from './MainSection';
+import { EditTabPanel, EditTabs } from '@/components/EditTabs';
 import { SubgroupShelf, shelfCover, type ShelfItem } from './SubgroupShelf';
 import { useProgramAdmin } from './useProgramAdmin';
 import { CYCLE_MAX, CYCLE_MS, ProgramTile } from './ProgramTile';
@@ -86,6 +87,8 @@ function ProgramRail() {
   const reload = useCallback(() => setReloadKey((n) => n + 1), []);
 
   const [saving, setSaving] = useState(false);
+  /* The page column's tab: the ministries, or the one page-wide setting. */
+  const [pageTab, setPageTab] = useState<'ministries' | 'settings'>('ministries');
 
   /*
    * An administrator reads a different query from a visitor.
@@ -345,9 +348,10 @@ function ProgramRail() {
   const shelf = (
     <SubgroupShelf
       inline
+      addFirst
       legend="Ministries"
       busy={saving}
-      addLabel="Add a ministry…"
+      addLabel="New ministry name…"
       empty="No ministries yet."
       /* `move` is already "take the one at `from` and put it at `to`", which is
          exactly what a dropped row means. */
@@ -429,7 +433,8 @@ function ProgramRail() {
                 besides. Nothing explanatory belongs below a delete.
               */}
               <p className="inspector__note">
-                Its photographs and its albums are edited on the ministry&apos;s own page.
+                Photographs and albums are edited on{' '}
+                <a href={`/events/${program.slug}`}>the ministry&apos;s own page</a>.
               </p>
               <ProgramDetails
                 program={program}
@@ -466,7 +471,30 @@ function ProgramRail() {
     return {
       kind: 'Page',
       title: 'Our activities',
-      body: <MainSectionField />,
+      body: (
+        <div className="inspector__body">
+          <EditTabs
+            tabs={[
+              { id: 'ministries', label: `Ministries (${(programs ?? []).length})` },
+              { id: 'settings', label: 'Settings' },
+            ]}
+            value={pageTab}
+            onChange={setPageTab}
+            label="Our activities"
+            idPrefix="evpage"
+          />
+          <EditTabPanel idPrefix="evpage" value={pageTab}>
+            {pageTab === 'ministries' ? (
+              <div className="evpage-list">
+                {shelf}
+                <p className="inspector__note">Click a ministry to edit it. Drag the handle to reorder.</p>
+              </div>
+            ) : (
+              <MainSectionField />
+            )}
+          </EditTabPanel>
+        </div>
+      ),
     };
   })();
 
@@ -496,7 +524,7 @@ function ProgramRail() {
           title={inspecting.title}
           kind={inspecting.kind}
           saving={saving}
-          aside={shelf}
+          backLabel="All ministries"
         >
           {inspecting.body}
         </Inspector>
@@ -706,10 +734,7 @@ function ProgramRail() {
           title={inspecting.title}
           kind={inspecting.kind}
           saving={saving}
-          /* The ministries list, in the column rather than floating in the corner.
-             On this page it is the whole reason the column is not empty when
-             nothing is selected. */
-          aside={shelf}
+          backLabel="All ministries"
         >
           {inspecting.body}
         </Inspector>

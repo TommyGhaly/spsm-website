@@ -5092,6 +5092,88 @@ main {
 }
 
 
+/* The Items tab: a search, then every item as one pressable row. */
+.bkitems {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* "Add a product" as one row at the top of the list, not a tile. */
+.bkitems .bkadd {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.bkitems .bkadd__plus {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.bkitems__search {
+  width: 100%;
+}
+
+.bkitems__list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bkitems__row {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.65rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--color-ink, #1c1614);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+}
+
+.bkitems__row:hover,
+.bkitems__row:focus-visible {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 8%, transparent);
+}
+
+.bkitems__thumb {
+  grid-row: 1 / span 2;
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 0.3rem);
+  background: var(--color-paper-sunken, #eeddd7);
+}
+
+.bkitems__name {
+  font-size: var(--type-small, 0.9rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bkitems__meta {
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkitems__meta s {
+  opacity: 0.8;
+}
+
+.bkitems__out {
+  color: var(--color-accent, #992a21);
+}
+
 .bkclothes {
   display: grid;
   gap: 0.5rem;
@@ -41207,4 +41289,73 @@ body.is-camp-dragging {
   gap: var(--space-sm, 0.5rem);
   padding-top: var(--space-sm, 0.5rem);
   border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+/*
+ * The ministries list on /events, as the column's main content under its tab:
+ * the full height rather than the corner shelf's short scroller, and no
+ * "Ministries" legend under a tab that already says it.
+ */
+.evpage-list .subshelf__legend {
+  display: none;
+}
+
+.evpage-list .subshelf--inline .subshelf__body {
+  max-height: none;
+  overflow: visible;
+}
+
+.evpage-list .subshelf--inline .subshelf__body.has-more .subshelf__add::before {
+  display: none;
+}
+
+/*
+ * The event editor as a labelled form: a plain heading, then the tabs. The
+ * fields inside each tab sit one under another with room between them.
+ */
+.ee-formhead {
+  display: grid;
+  gap: 0.35rem;
+  padding: var(--space-lg, 1.75rem) 0 var(--space-sm, 0.75rem);
+}
+
+.ee-formhead__title {
+  margin: 0;
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
+  font-size: var(--type-heading, 1.75rem);
+}
+
+.ee-formhead__note,
+.ee-tabnote {
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.ee-tabpanel {
+  display: grid;
+  gap: var(--space-md, 1.1rem);
+  padding-top: var(--space-sm, 0.6rem);
+}
+
+/* The photograph band, inside its tab rather than the width of the window. */
+.ee--form .ee-tabpanel > .ee-hero {
+  max-height: 22rem;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+/* The date panel laid out in place, not floating. */
+.ee--form .ee-when-panel {
+  position: static;
+  box-shadow: none;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+/* A tabbed panel already padded: the details form inside must not pad again. */
+.inspector__body--tabbed .inspector__body {
+  padding: 0;
 }

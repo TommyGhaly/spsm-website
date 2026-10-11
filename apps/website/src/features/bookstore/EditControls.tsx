@@ -164,34 +164,6 @@ function useWriter(onChanged: () => void, onError: (message: string) => void) {
 }
 
 
-/**
- * "Saving…", then "Saved", then nothing — and "Edited" while a change is held.
- *
- * Absolutely positioned; costs no layout. The `dirty` state is the card's half
- * of the save bar: the bar says *how many* books are waiting, and this says
- * *which*. Without it the only feedback for pressing `+` would be the number
- * changing, which is indistinguishable from a control that has not been wired up.
- *
- * `busy` still wins, because the writes it reports — a photograph, a removal —
- * are the ones that do go out immediately.
- */
-function SaveState({
-  busy,
-  saved,
-  dirty = false,
-}: {
-  busy: boolean;
-  saved: boolean;
-  dirty?: boolean;
-}) {
-  const state = busy ? 'is-working' : saved ? 'is-saved' : dirty ? 'is-held' : '';
-  return (
-    <span className={state ? `bkedit__state ${state}` : 'bkedit__state'} aria-live="polite">
-      {busy ? 'Saving…' : saved ? 'Saved' : dirty ? 'Edited' : ''}
-    </span>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
 /* One product's settings                                                     */
 /* -------------------------------------------------------------------------- */
@@ -920,23 +892,25 @@ function TaxableField({
 function TaxSettings({
   taxRateBps,
   taxed,
-  onChanged,
-  onError,
+  busy,
+  onReport,
 }: {
   taxRateBps: number;
   /** How many products are marked taxable, so the rate is not set in a vacuum. */
   taxed: number;
-  onChanged: () => void;
-  onError: (message: string) => void;
+  busy: boolean;
+  onReport: (report: { changed: boolean; valid: boolean; next: number }) => void;
 }) {
-  const { busy, saved, write } = useWriter(onChanged, onError);
   const [text, setText] = useState(taxPercentage(taxRateBps));
   useEffect(() => setText(taxPercentage(taxRateBps)), [taxRateBps]);
 
   const trimmed = text.trim().replace(/%$/, '').trim();
   const value = /^\d{1,2}(\.\d{1,2})?$/.test(trimmed) ? Math.round(Number(trimmed) * 100) : null;
   const valid = value !== null && value <= MAX_TAX_RATE_BPS;
-  const changed = valid && value !== taxRateBps;
+  const changed = valid ? value !== taxRateBps : text !== taxPercentage(taxRateBps);
+  useEffect(() => {
+    onReport({ changed, valid, next: value ?? taxRateBps });
+  }, [changed, valid, value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="bkshipcfg">
@@ -953,28 +927,10 @@ function TaxSettings({
           <span className="bkunit__post">%</span>
         </span>
         <span className="bkshipcfg__hint">
-          Massachusetts is 6.25%. Applied only to items marked taxable
-          {taxed > 0 ? ` — ${taxed} ${taxed === 1 ? 'item is' : 'items are'} now.` : ' — none are yet.'}{' '}
-          Delivery is never taxed.
+          Massachusetts is 6.25%. Charged only on items marked taxable
+          {taxed > 0 ? ` (${taxed} now)` : ' (none yet)'}. Never on delivery.
         </span>
       </label>
-      <div className="bkshipcfg__go">
-        <button
-          type="button"
-          className="button button--small"
-          disabled={busy || !changed}
-          onClick={() => {
-            const save = async () => {
-              const { writeTaxRate } = await import('./adminData');
-              await writeTaxRate(value as number);
-            };
-            void write(save);
-          }}
-        >
-          Save tax rate
-        </button>
-        <SaveState busy={busy} saved={saved} dirty={changed} />
-      </div>
     </div>
   );
 }
@@ -2473,16 +2429,16 @@ async function downscale(file: File, max = 1600): Promise<string> {
 function ShippingSettings({
   shipping,
   flatCents,
-  onChanged,
-  onError,
+  busy,
+  onReport,
 }: {
   shipping: BookstoreShipping;
-  /** The flat delivery charge, shown for reference; set by the office. */
+  /** The flat delivery charge, shown for reference. */
   flatCents: number;
-  onChanged: () => void;
-  onError: (message: string) => void;
+  busy: boolean;
+  /** What would be saved, whether it differs, and whether it can be — for the Settings tab's one Save. */
+  onReport: (report: { changed: boolean; valid: boolean; next: BookstoreShipping }) => void;
 }) {
-  const { busy, saved, write } = useWriter(onChanged, onError);
   const seedText = (from: BookstoreShipping) => ({
     handling: (from.handlingCents / 100).toFixed(2),
     lengthIn: String(from.box.lengthIn),
@@ -2543,6 +2499,11 @@ function ShippingSettings({
     },
   };
   const changed = JSON.stringify(next) !== JSON.stringify(shipping);
+  const nextKey = JSON.stringify(next);
+  useEffect(() => {
+    onReport({ changed, valid, next: JSON.parse(nextKey) as BookstoreShipping });
+    // `onReport` is the parent's setter; the report is a function of these.
+  }, [changed, valid, nextKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const type = (key: keyof ReturnType<typeof seedText>) => (event: { target: { value: string } }) =>
     setText((was) => ({ ...was, [key]: event.target.value }));
@@ -2677,28 +2638,245 @@ function ShippingSettings({
         </fieldset>
       )}
 
-      <div className="bkshipcfg__go">
-        <button
-          type="button"
-          className="button button--small"
-          disabled={busy || !changed || !valid}
-          onClick={() => {
-            const save = async () => {
-              const { writeShipping } = await import('./adminData');
-              await writeShipping(next);
-            };
-            void write(save);
-          }}
-        >
-          Save shipping
-        </button>
-        <SaveState busy={busy} saved={saved} dirty={changed} />
-      </div>
     </div>
   );
 }
 
 /** `700` → `"$7.00"`. */
+type ShopTab = 'items' | 'categories' | 'settings';
+
+/**
+ * What the column shows with no item open: the shop's items, its categories
+ * and its settings, as three tabs. Items comes first because it is what
+ * somebody pressing Edit has come to change — and an item opens from this list
+ * as well as from its cover on the shelf.
+ */
+function ShopTabs({
+  products,
+  groups,
+  shipping,
+  flatCents,
+  taxRateBps,
+  taxedCount,
+  onSelect,
+  onChanged,
+  onError,
+  addItem,
+}: {
+  products: ShopProduct[];
+  groups: { id: string; label: string; count: number }[];
+  shipping: BookstoreShipping;
+  flatCents: number;
+  taxRateBps: number;
+  taxedCount: number;
+  onSelect: (slug: string | null) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  addItem?: ReactNode;
+}) {
+  const [tab, setTab] = useState<ShopTab>('items');
+  const [settingsDirty, setSettingsDirty] = useState(false);
+
+  return (
+    <div className="bkpanel bkpanel--tabbed">
+      <EditTabs
+        tabs={[
+          { id: 'items', label: `Items (${products.length})` },
+          { id: 'categories', label: 'Categories' },
+          { id: 'settings', label: 'Settings', dirty: settingsDirty },
+        ]}
+        value={tab}
+        onChange={(next) => {
+          // Settings holds unsaved changes in its own state; leaving the tab would drop them.
+          if (tab === 'settings' && settingsDirty) {
+            onError('Save or discard your settings changes first.');
+            return;
+          }
+          setTab(next);
+        }}
+        label="The bookstore"
+        idPrefix="bkshop"
+      />
+      <EditTabPanel idPrefix="bkshop" value={tab} className="bkpanel__body">
+        {tab === 'items' && <ItemList products={products} onSelect={onSelect} addItem={addItem} />}
+        {tab === 'categories' && (
+          <div className="bkpanel__block">
+            {groups.length > 0 ? (
+              <ul className="bkcats">
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <span className="bkcats__name">{group.label}</span>
+                    <span className="bkcats__n">
+                      {group.count} {group.count === 1 ? 'item' : 'items'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="bkpanel__aside">No categories yet.</p>
+            )}
+            <p className="bkpanel__aside">
+              Add, rename and reorder categories on the row of pills above the shelf: press{' '}
+              <strong>+ Category</strong> to add one, or use the pencil and drag handle on a pill.
+              Choose an item&rsquo;s categories on its Details tab.
+            </p>
+          </div>
+        )}
+        {tab === 'settings' && (
+          <ShopSettings
+            shipping={shipping}
+            flatCents={flatCents}
+            taxRateBps={taxRateBps}
+            taxedCount={taxedCount}
+            onDirty={setSettingsDirty}
+            onChanged={onChanged}
+            onError={onError}
+          />
+        )}
+      </EditTabPanel>
+    </div>
+  );
+}
+
+/** Every item, searchable, each one a button that opens it. "Add a product" leads. */
+function ItemList({
+  products,
+  onSelect,
+  addItem,
+}: {
+  products: ShopProduct[];
+  onSelect: (slug: string) => void;
+  addItem?: ReactNode;
+}) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? products.filter(
+        (one) => one.name.toLowerCase().includes(needle) || (one.sku?.toLowerCase().includes(needle) ?? false),
+      )
+    : products;
+
+  return (
+    <div className="bkitems">
+      {addItem}
+      <input
+        type="search"
+        className="bkrename__input bkitems__search"
+        placeholder={`Search ${products.length} items`}
+        aria-label="Search items"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <ul className="bkitems__list">
+        {shown.map((one) => {
+          const stock = one.sizes
+            ? `${one.sizes.reduce((sum, size) => sum + size.count, 0)} in sizes`
+            : one.stockCount === null
+              ? ''
+              : one.stockCount === 0
+                ? 'Sold out'
+                : `${one.stockCount} in stock`;
+          const sale = clearanceOf({ wasPriceCents: one.wasPriceCents, amountCents: one.amount });
+          return (
+            <li key={one.slug}>
+              <button type="button" className="bkitems__row" onClick={() => onSelect(one.slug)}>
+                {one.cover ? (
+                  <img className="bkitems__thumb" src={one.cover} alt="" loading="lazy" decoding="async" />
+                ) : (
+                  <span className="bkitems__thumb" aria-hidden="true" />
+                )}
+                <span className="bkitems__name">{one.name}</span>
+                <span className="bkitems__meta">
+                  {sale ? (
+                    <>
+                      <s>{money(sale.wasCents)}</s> {money(sale.nowCents)}
+                    </>
+                  ) : (
+                    money(one.amount)
+                  )}
+                  {stock && <span className={one.stockCount === 0 ? 'bkitems__out' : undefined}> · {stock}</span>}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+        {shown.length === 0 && <li className="bkpanel__aside">Nothing matches.</li>}
+      </ul>
+    </div>
+  );
+}
+
+/** Delivery and sales tax, saved together with the one footer. */
+function ShopSettings({
+  shipping,
+  flatCents,
+  taxRateBps,
+  taxedCount,
+  onDirty,
+  onChanged,
+  onError,
+}: {
+  shipping: BookstoreShipping;
+  flatCents: number;
+  taxRateBps: number;
+  taxedCount: number;
+  onDirty: (dirty: boolean) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  /* Bumped by Discard: the two forms remount and re-seed from what is saved. */
+  const [round, setRound] = useState(0);
+  const [ship, setShip] = useState<{ changed: boolean; valid: boolean; next: BookstoreShipping } | null>(null);
+  const [tax, setTax] = useState<{ changed: boolean; valid: boolean; next: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty = Boolean(ship?.changed || tax?.changed);
+  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  useEffect(() => () => onDirty(false), [onDirty]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const { writeShipping, writeTaxRate } = await import('./adminData');
+      if (ship?.changed) await writeShipping(ship.next);
+      if (tax?.changed) await writeTaxRate(tax.next);
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'That could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="bkpanel__block" key={`ship-${round}`}>
+        <h4 className="bkpanel__label">Delivery</h4>
+        <ShippingSettings shipping={shipping} flatCents={flatCents} busy={saving} onReport={setShip} />
+      </div>
+      <div className="bkpanel__block" key={`tax-${round}`}>
+        <h4 className="bkpanel__label">Sales tax</h4>
+        <TaxSettings taxRateBps={taxRateBps} taxed={taxedCount} busy={saving} onReport={setTax} />
+      </div>
+      <SaveFooter
+        dirty={dirty}
+        saving={saving}
+        error={error}
+        problem={
+          (ship?.changed && !ship.valid) || (tax?.changed && !tax.valid) ? 'Fix the box marked in red to save' : null
+        }
+        onDiscard={() => {
+          setRound((n) => n + 1);
+          setError(null);
+        }}
+        onSave={() => void save()}
+      />
+    </>
+  );
+}
+
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -2713,6 +2891,7 @@ export function ShopInspector({
   flatCents,
   taxRateBps,
   taxedCount,
+  products,
   onDone,
   onSelect,
   onChanged,
@@ -2734,6 +2913,8 @@ export function ShopInspector({
   taxRateBps: number;
   /** How many products are marked taxable, for the tax panel's hint. */
   taxedCount: number;
+  /** Everything on the shelf, for the Items tab. */
+  products: ShopProduct[];
   onDone: () => void;
   onSelect: (slug: string | null) => void;
   onChanged: () => void;
@@ -2750,7 +2931,7 @@ export function ShopInspector({
   return (
     <EditColumn
       on={editing}
-      kind={product ? 'Book' : 'Shop'}
+      kind={product ? 'Item' : 'Shop'}
       title={product ? product.name : 'The bookstore'}
       /*
        * The column's indicator reads from the save bar rather than from the last
@@ -2760,7 +2941,7 @@ export function ShopInspector({
        */
       saving={saving}
       onBack={product ? () => (held ? refuse() : onSelect(null)) : undefined}
-      backLabel="Back to the shop"
+      backLabel="All items"
       onDone={() => (held ? refuse() : onDone())}
     >
       {product ? (
@@ -2776,64 +2957,18 @@ export function ShopInspector({
           onRemoved={() => onSelect(null)}
         />
       ) : (
-        <div className="bkpanel">
-          <p className="bkpanel__note">
-            Pick an item on the shelf to change it.
-          </p>
-
-          <div className="bkpanel__block">
-            <h4 className="bkpanel__label">Categories</h4>
-            {groups.length > 0 ? (
-              <ul className="bkcats">
-                {groups.map((group) => (
-                  <li key={group.id}>
-                    <span className="bkcats__name">{group.label}</span>
-                    {/* The count is the useful half: an empty category is the
-                        thing somebody is most likely looking for here, and it is
-                        invisible on the shelf because nothing renders under it. */}
-                    <span className="bkcats__n">
-                      {group.count} {group.count === 1 ? 'book' : 'books'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="bkpanel__aside">
-                No categories yet. Add one from the row above the shelf.
-              </p>
-            )}
-            <p className="bkpanel__aside">
-              Rename, reorder and add categories on the pills above the shelf.
-            </p>
-          </div>
-
-          <div className="bkpanel__block">
-            <h4 className="bkpanel__label">Shipping</h4>
-            <ShippingSettings
-              shipping={shipping}
-              flatCents={flatCents}
-              onChanged={onChanged}
-              onError={onError}
-            />
-          </div>
-
-          <div className="bkpanel__block">
-            <h4 className="bkpanel__label">Sales tax</h4>
-            <TaxSettings
-              taxRateBps={taxRateBps}
-              taxed={taxedCount}
-              onChanged={onChanged}
-              onError={onError}
-            />
-          </div>
-
-          {children && (
-            <div className="bkpanel__block bkpanel__block--last">
-              <h4 className="bkpanel__label">Add a book</h4>
-              {children}
-            </div>
-          )}
-        </div>
+        <ShopTabs
+          products={products}
+          groups={groups}
+          shipping={shipping}
+          flatCents={flatCents}
+          taxRateBps={taxRateBps}
+          taxedCount={taxedCount}
+          onSelect={onSelect}
+          onChanged={onChanged}
+          onError={onError}
+          addItem={children}
+        />
       )}
     </EditColumn>
   );
