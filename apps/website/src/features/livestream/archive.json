@@ -1,5 +1,15 @@
 [
   {
+    "id": "ljgzY8ZqCVo",
+    "startedAt": "2026-10-22T10:01:24.000Z",
+    "thumbnailUrl": "https://i.ytimg.com/vi/ljgzY8ZqCVo/maxresdefault.jpg?v=d"
+  },
+  {
+    "id": "a_la7AMb3cE",
+    "startedAt": "2026-10-22T08:59:17.000Z",
+    "thumbnailUrl": "https://i.ytimg.com/vi/a_la7AMb3cE/maxresdefault.jpg?v=c"
+  },
+  {
     "id": "HQ4YsBjgwzg",
     "startedAt": "2026-10-21T01:13:54.000Z",
     "thumbnailUrl": "https://i.ytimg.com/vi/HQ4YsBjgwzg/maxresdefault.jpg"
@@ -37,7 +47,7 @@
   {
     "id": "b_qPriPLKbk",
     "startedAt": "2026-10-12T23:09:03.000Z",
-    "thumbnailUrl": "https://i.ytimg.com/vi/b_qPriPLKbk/maxresdefault_live.jpg"
+    "thumbnailUrl": "https://i.ytimg.com/vi/b_qPriPLKbk/maxresdefault.jpg"
   },
   {
     "id": "UCpbgjw0QyY",
@@ -48,15 +58,5 @@
     "id": "GCpOZUYg0EU",
     "startedAt": "2026-10-11T13:51:28.000Z",
     "thumbnailUrl": "https://i.ytimg.com/vi/GCpOZUYg0EU/maxresdefault.jpg"
-  },
-  {
-    "id": "AsMeA6muumM",
-    "startedAt": "2026-10-11T02:27:37.000Z",
-    "thumbnailUrl": "https://i.ytimg.com/vi/AsMeA6muumM/maxresdefault.jpg"
-  },
-  {
-    "id": "1mmTPndahAM",
-    "startedAt": "2026-10-11T00:28:55.000Z",
-    "thumbnailUrl": "https://i.ytimg.com/vi/1mmTPndahAM/maxresdefault.jpg"
   }
 ]
