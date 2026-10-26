@@ -43,6 +43,11 @@ export type ParishApp = {
    * there is a date somebody is willing to be held to.
    */
   unreleased?: string;
+  /**
+   * Set on an app that is on one store and not yet the other, and said under
+   * the badge it does have. A plain sentence with no date, like `unreleased`.
+   */
+  pending?: string;
   /** A page on this site that says more, when there is one. */
   more?: { href: string; label: string };
 };
@@ -102,13 +107,12 @@ export const PARISH_APPS: readonly ParishApp[] = [
      * The parish's second app, and the second part of the three-part program the
      * website is the first part of.
      *
-     * It is listed with no links and no date on purpose. Tommy: *"eventually
-     * spsm connect but its not a thing yet."* Naming an unbuilt app is worth it
-     * — somebody will hear it mentioned and come looking — but the honest thing
-     * for this card to say is that there is nothing to install, and it must not
-     * grow a feature list, a screenshot, or a month.
+     * On Google Play and not yet on the App Store. The Play URL has been opened;
+     * there is no App Store URL to open, so the card shows the one badge it can
+     * and says the iPhone version is still to come — with no date, for the same
+     * reason `unreleased` has none.
      */
-    what: 'Our next app, for everyone rather than for servants.',
+    what: 'Our newer app, for everyone rather than for servants.',
     /*
      * The parish's own seal on the brand ground, which is the icon the app
      * ships and the one Apple has — not an invention for a card, which is what
@@ -117,6 +121,7 @@ export const PARISH_APPS: readonly ParishApp[] = [
      * in scripts/optimize-assets.mjs says when to re-copy it.
      */
     icon: 'app-spsm-connect',
-    unreleased: 'Being built. There is nothing to install yet.',
+    android: 'https://play.google.com/store/apps/details?id=org.spsm.connect',
+    pending: 'Not on the App Store yet. The iPhone version is on its way.',
   },
 ];

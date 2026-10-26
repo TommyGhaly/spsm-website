@@ -8611,7 +8611,8 @@ main {
 }
 
 /*
- * Where the badges would be, on an app that has none.
+ * Where the badges would be, on an app that has none — and under the one badge
+ * an app on a single store has, saying the other store is still to come.
  *
  * Deliberately quiet — no pill, no accent colour, no "coming soon" badge of our
  * own. It is a sentence saying there is nothing to install, and dressing it up

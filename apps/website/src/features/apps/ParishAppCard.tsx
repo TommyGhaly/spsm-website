@@ -104,6 +104,8 @@ export function ParishAppCard({
           <StoreBadges ios={app.ios} android={app.android} appName={app.name} />
         )}
 
+        {app.pending && <p className="app-card__unreleased">{app.pending}</p>}
+
         {showMore && app.more && (
           <p className="app-card__more">
             <Link href={app.more.href}>{app.more.label}</Link>
