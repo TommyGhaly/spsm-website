@@ -49,6 +49,7 @@ export function ParishAppCard({
   what?: string | undefined;
   showMore?: boolean;
 }) {
+  const v = app.iconVersion ? `?v=${app.iconVersion}` : '';
   return (
     <Tag className="app-card app-card--iconed">
       {app.icon ? (
@@ -63,8 +64,8 @@ export function ParishAppCard({
         */
         <img
           className="app-card__icon"
-          src={`/img/${app.icon}-128.webp`}
-          srcSet={`/img/${app.icon}-128.webp 2x, /img/${app.icon}-192.webp 3x`}
+          src={`/img/${app.icon}-128.webp${v}`}
+          srcSet={`/img/${app.icon}-128.webp${v} 2x, /img/${app.icon}-192.webp${v} 3x`}
           alt=""
           aria-hidden="true"
           width={64}

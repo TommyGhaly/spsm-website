@@ -31,6 +31,14 @@ export type ParishApp = {
    * seal the app itself ships, copied from the app repository.
    */
   icon?: string;
+  /**
+   * Bumped when an icon is redrawn, and appended to its URL as `?v=`.
+   *
+   * The pipeline rewrites an icon in place under the same name, and `/img/**`
+   * is cached for an hour (firebase.json), so without this a browser that has
+   * seen the old icon keeps showing it after the deploy.
+   */
+  iconVersion?: number;
   /** App Store URL, absent when it is not on the App Store. */
   ios?: string;
   /** Google Play URL, absent when it is not on Play. */
@@ -121,6 +129,8 @@ export const PARISH_APPS: readonly ParishApp[] = [
      * in scripts/optimize-assets.mjs says when to re-copy it.
      */
     icon: 'app-spsm-connect',
+    // 2: the seal's white field carried down under the saints' feet, 2026-10-25.
+    iconVersion: 2,
     android: 'https://play.google.com/store/apps/details?id=org.spsm.connect',
     pending: 'Not on the App Store yet. The iPhone version is on its way.',
   },
