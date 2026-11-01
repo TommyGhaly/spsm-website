@@ -138,13 +138,19 @@ async function sealOnItsGround(seal) {
 
   const { width, height } = band.info;
   const isBand = new Uint8Array(width * height);
-  let springLine = 0;
+  // The arch's two feet do not stop at the same height, so each side's lowest
+  // row is kept and the spring line is the higher of the two. Taking the lower
+  // let the flood run in under the other foot and empty the pocket between the
+  // horse's legs, which then showed whatever was behind the seal.
+  const feet = [0, 0];
   for (let p = 0; p < width * height; p++) {
     if (band.data[p * 4 + 3] > 128) {
       isBand[p] = 1;
-      springLine = Math.max(springLine, Math.floor(p / width));
+      const side = p % width < width / 2 ? 0 : 1;
+      feet[side] = Math.max(feet[side], Math.floor(p / width));
     }
   }
+  const springLine = Math.min(...feet);
   if (springLine < height / 2) throw new Error('seal: the arch band did not render — is it still the largest shape?');
 
   // Everything the flood reaches is outside the arch. Seeded from the top edge
