@@ -3237,7 +3237,6 @@ function LevelView({
           programId={program.id}
           programName={program.name}
           tree={tree}
-          media={media}
           onChanged={refresh}
           onClose={() => setManaging(false)}
         />

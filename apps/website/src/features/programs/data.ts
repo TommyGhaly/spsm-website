@@ -5,9 +5,11 @@ import {
   getDocFromCache,
   getDocs,
   getDocsFromCache,
+  getCountFromServer,
   limit,
   orderBy,
   query,
+  startAfter,
   where,
   type DocumentReference,
   type Query,
@@ -458,6 +460,82 @@ export async function getProgramMedia(
 }
 
 /**
+ * One page of a program's archive, or of one level's — what the picture manager
+ * scrolls through.
+ *
+ * The manager is the one screen that has to show *every* photograph, so it cannot
+ * live on `PROGRAM_PAGE_WINDOW` the way a ministry page does: past the window a
+ * day simply looked like it had ten pictures. Reading the whole archive up front
+ * would fix that and charge a read per photograph every time the screen opened,
+ * most of them for pictures nobody scrolls to. So it reads a page at a time from a
+ * cursor, and only the view somebody is actually looking at.
+ *
+ * Uncached on purpose: only an editor opens the manager, and an editor always
+ * reads fresh — see "Caching" above.
+ */
+export interface MediaPage {
+  media: DocOf<GalleryMedia>[];
+  /** Where the next page starts, or null when this was the last of them. */
+  next: QueryDocumentSnapshot | null;
+}
+
+export const MANAGER_PAGE = 120;
+
+export async function getMediaPage(
+  scope: { programId: string } | { programEventId: string },
+  after: QueryDocumentSnapshot | null,
+  size = MANAGER_PAGE,
+): Promise<MediaPage> {
+  const filter =
+    'programId' in scope
+      ? where('programId', '==', scope.programId)
+      : where('programEventId', '==', scope.programEventId);
+  const snapshot = await getDocs(
+    query(
+      collection(db(), COLLECTIONS.galleryMedia),
+      filter,
+      APPROVED,
+      orderBy('order', 'asc'),
+      ...(after ? [startAfter(after)] : []),
+      limit(size),
+    ),
+  );
+  const docs = snapshot.docs;
+  return {
+    media: docs.map(docOf<GalleryMedia>),
+    next: docs.length === size ? (docs[docs.length - 1] ?? null) : null,
+  };
+}
+
+/**
+ * How many approved photographs are filed directly on each level, and in the
+ * program as a whole — without reading any of them.
+ *
+ * A count query is billed one read per thousand entries it matches, so forty
+ * levels cost forty reads where reading the pictures to count them cost one per
+ * picture. Both shapes ride the indexes the page reads already use.
+ *
+ * `total` is the program's own count, which is the honest number for
+ * "Everything": it includes pictures still filed on a level that was deleted,
+ * which no per-level count can name.
+ */
+export async function getLevelCounts(
+  programId: string,
+  levelIds: readonly string[],
+): Promise<{ total: number; byLevel: Map<string, number> }> {
+  const media = collection(db(), COLLECTIONS.galleryMedia);
+  const [total, ...each] = await Promise.all([
+    getCountFromServer(query(media, where('programId', '==', programId), APPROVED)),
+    ...levelIds.map((id) =>
+      getCountFromServer(query(media, where('programEventId', '==', id), APPROVED)),
+    ),
+  ]);
+  const byLevel = new Map<string, number>();
+  levelIds.forEach((id, at) => byLevel.set(id, each[at]?.data().count ?? 0));
+  return { total: total.data().count, byLevel };
+}
+
+/**
  * The showcase set, across every program — what the homepage band will read.
  *
  * Built now because the flag it filters on is set from day one in the admin
@@ -598,7 +676,7 @@ export async function getGalleryLevel(
  * looking. Reading it as its own level's in both cases keeps it off the ministry
  * page either way, which is what an unpublished level is *for*.
  */
-function healOrphans(
+export function healOrphans(
   media: readonly DocOf<GalleryMedia>[],
   tree: GalleryTree<DocOf<ProgramEvent>>,
   programId: string,

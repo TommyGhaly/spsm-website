@@ -18348,6 +18348,14 @@ button.sched-month__entry:focus-visible {
   font-weight: 600;
 }
 
+/* The foot of a view with more still to read. The observer reads it before it
+   is reached; the button is there for when it does not. */
+.manager__more {
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 0 0.5rem;
+}
+
 /*
  * The parish's loose pictures, at the foot of the ministry's levels.
  *

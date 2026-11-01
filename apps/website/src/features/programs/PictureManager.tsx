@@ -48,6 +48,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   UNFILED_PROGRAM_ID,
   childrenOf,
@@ -61,7 +62,7 @@ import {
 import { Icon } from '@/components/Icon';
 import { galleryPosterUrl } from './media';
 import { adoptUnfiledMedia, setMediaNode } from './adminData';
-import { getUnfiledMedia } from './data';
+import { getLevelCounts, getMediaPage, getUnfiledMedia, healOrphans } from './data';
 import { deleteMediaForever } from './review';
 
 /** How far the pointer travels before a press becomes a drag. */
@@ -72,19 +73,26 @@ type Busy =
   | { kind: 'moving'; id: string }
   | { kind: 'deleting'; id: string };
 
+/** What has been read of one view so far — "Everything", or one level. */
+interface Loaded {
+  media: DocOf<GalleryMedia>[];
+  next: QueryDocumentSnapshot | null;
+  done: boolean;
+}
+
+/** The key "Everything" is held under. No document id is empty. */
+const ALL = '';
+
 export function PictureManager({
   programId,
   programName,
   tree,
-  media,
   onChanged,
   onClose,
 }: {
   programId: string;
   programName: string;
   tree: GalleryTree<DocOf<ProgramEvent>>;
-  /** Every approved item in the ministry. This screen is about all of them. */
-  media: readonly DocOf<GalleryMedia>[];
   /** Something was moved or deleted; the page owns the re-read. */
   onChanged: () => void;
   onClose: () => void;
@@ -121,6 +129,134 @@ export function PictureManager({
   }, []);
   useEffect(loadUnfiled, [loadUnfiled]);
 
+  /*
+   * ## Read here, a page at a time, rather than handed in
+   *
+   * This screen used to take the ministry page's `media`, which is one capped read
+   * of the whole program — `PROGRAM_PAGE_WINDOW`, 300. A ministry with more than
+   * that showed only the first 300 here, so a day with sixty photographs could
+   * list ten, and the counts down the left were counts of the window rather than
+   * of the day. On the one screen whose whole job is "every picture", that is
+   * the wrong approximation.
+   *
+   * So the counts are count queries — a read per level, not per picture — and
+   * the grid reads the view being looked at, `MANAGER_PAGE` at a time, as it is
+   * scrolled. Opening the manager and moving one picture in Week 1 costs Week 1's
+   * first page, not the archive.
+   */
+  const [counts, setCounts] = useState<{
+    total: number;
+    byLevel: Map<string, number>;
+  } | null>(null);
+  useEffect(() => {
+    let live = true;
+    const ids = [programId, ...descendantsOf(tree, null).map((node) => node.id)];
+    getLevelCounts(programId, ids)
+      .then((found) => live && setCounts(found))
+      .catch((caught) => console.error('[galleries] could not count pictures:', caught));
+    return () => {
+      live = false;
+    };
+  }, [programId, tree]);
+
+  const [loaded, setLoaded] = useState<ReadonlyMap<string, Loaded>>(new Map());
+  /** The views with a read in flight, so a scroll cannot ask for a page twice. */
+  const reading = useRef(new Set<string>());
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
+
+  const readMore = useCallback(
+    (key: string) => {
+      const have = loadedRef.current.get(key);
+      if (have?.done || reading.current.has(key)) return;
+      reading.current.add(key);
+      const scope = key === ALL ? { programId } : { programEventId: key };
+      getMediaPage(scope, have?.next ?? null)
+        .then((page) => {
+          // "Everything" reads by `programId`, which includes pictures still
+          // filed on a deleted level. The page reads those as the ministry's, and
+          // so does this — see `healOrphans`.
+          const media = key === ALL ? healOrphans(page.media, tree, programId) : page.media;
+          setLoaded((was) => {
+            const out = new Map(was);
+            const before = was.get(key)?.media ?? [];
+            out.set(key, {
+              media: [...before, ...media],
+              next: page.next,
+              done: !page.next,
+            });
+            return out;
+          });
+        })
+        .catch((caught) => {
+          console.error('[galleries] could not read pictures:', caught);
+          setError('Those pictures could not be loaded. Try closing and reopening this.');
+        })
+        .finally(() => reading.current.delete(key));
+    },
+    [programId, tree],
+  );
+
+  const viewKey = level === null ? ALL : level;
+  useEffect(() => {
+    if (viewKey !== UNFILED_PROGRAM_ID && !loaded.has(viewKey)) readMore(viewKey);
+  }, [viewKey, loaded, readMore]);
+
+  /** The end of the grid. Scrolling it into view reads the next page. */
+  const [end, setEnd] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!end || typeof IntersectionObserver === 'undefined') return;
+    const watcher = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) readMore(viewKey);
+      },
+      // Most of a screen early, so the next page is usually there before it is
+      // reached.
+      { rootMargin: '600px 0px' },
+    );
+    watcher.observe(end);
+    return () => watcher.disconnect();
+  }, [end, viewKey, readMore]);
+
+  /**
+   * Make a move or a delete true on this screen without reading it again.
+   *
+   * The page re-reads after every write; this screen does not, because the read it
+   * would repeat is every page somebody has scrolled through. So the change is
+   * applied to what is held: the counts move by one, the picture leaves the level
+   * it was in and changes its label in "Everything", and the level it went to is
+   * forgotten — its next visit reads it fresh, with the picture in its place.
+   */
+  const settle = useCallback((item: DocOf<GalleryMedia>, destination: string | null) => {
+    const from = item.programEventId;
+    const rogue = item.programId === UNFILED_PROGRAM_ID;
+    setCounts((was) => {
+      if (!was) return was;
+      const byLevel = new Map(was.byLevel);
+      if (!rogue && byLevel.has(from)) byLevel.set(from, (byLevel.get(from) ?? 1) - 1);
+      if (destination !== null) byLevel.set(destination, (byLevel.get(destination) ?? 0) + 1);
+      const total = was.total + (rogue ? 1 : 0) - (destination === null ? 1 : 0);
+      return { total, byLevel };
+    });
+    setLoaded((was) => {
+      const out = new Map<string, Loaded>();
+      for (const [key, view] of was) {
+        if (destination !== null && key === destination) continue;
+        // A taken-in picture belongs in "Everything" now, at a place in `order`
+        // this cannot know. Read it again.
+        if (key === ALL && rogue) continue;
+        const media =
+          key === ALL && destination !== null
+            ? view.media.map((one) =>
+                one.id === item.id ? { ...one, programEventId: destination } : one,
+              )
+            : view.media.filter((one) => one.id !== item.id);
+        out.set(key, { ...view, media });
+      }
+      return out;
+    });
+  }, []);
+
   /**
    * The photograph whose delete has been asked for but not confirmed.
    *
@@ -144,19 +280,20 @@ export function PictureManager({
    * up in.
    */
   const levels = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of media) {
-      counts.set(item.programEventId, (counts.get(item.programEventId) ?? 0) + 1);
-    }
-
-    const out: { id: string; label: string; depth: number; count: number }[] = [];
+    const out: {
+      id: string;
+      label: string;
+      depth: number;
+      count: number | null;
+    }[] = [];
+    const countOf = (id: string) => (counts ? (counts.byLevel.get(id) ?? 0) : null);
     const walk = (parent: string | null, depth: number) => {
       for (const child of childrenOf(tree, parent)) {
         out.push({
           id: child.id,
           label: child.title,
           depth,
-          count: counts.get(child.id) ?? 0,
+          count: countOf(child.id),
         });
         walk(child.id, depth + 1);
       }
@@ -172,10 +309,15 @@ export function PictureManager({
      * away and never moved back.
      */
     return [
-      { id: programId, label: programName, depth: 0, count: counts.get(programId) ?? 0 },
+      {
+        id: programId,
+        label: programName,
+        depth: 0,
+        count: countOf(programId),
+      },
       ...out,
     ];
-  }, [tree, media, programId, programName]);
+  }, [tree, counts, programId, programName]);
 
   /*
    * "Everything" means everything in *this ministry*, and deliberately excludes
@@ -183,15 +325,11 @@ export function PictureManager({
    * — and folding them into the ministry's own grid would make the count above
    * the levels wrong and put pictures from a deleted ministry in among Week 1's.
    */
-  const shown = useMemo(
-    () =>
-      level === null
-        ? media
-        : level === UNFILED_PROGRAM_ID
-          ? unfiled
-          : media.filter((item) => item.programEventId === level),
-    [media, unfiled, level],
-  );
+  const view = viewKey === UNFILED_PROGRAM_ID ? null : loaded.get(viewKey);
+  const shown = level === UNFILED_PROGRAM_ID ? unfiled : (view?.media ?? []);
+  /** Nothing read yet for this view, as distinct from a view that is empty. */
+  const waiting = level !== UNFILED_PROGRAM_ID && !view;
+  const more = view !== null && view !== undefined && !view.done;
 
   /**
    * The name of the level a photograph is filed on.
@@ -248,6 +386,7 @@ export function PictureManager({
         } else {
           await setMediaNode(item.id, destination, null);
         }
+        settle(item, destination);
         onChanged();
       } catch (caught) {
         console.error('[galleries] could not refile:', caught);
@@ -261,7 +400,7 @@ export function PictureManager({
         setBusy({ kind: 'no' });
       }
     },
-    [onChanged, programId, loadUnfiled],
+    [onChanged, programId, loadUnfiled, settle],
   );
 
   const destroy = useCallback(
@@ -274,6 +413,7 @@ export function PictureManager({
         // A rogue picture is not in `media`, so the page's re-read cannot take it
         // off this screen. Its own list has to be read again.
         if (item.programId === UNFILED_PROGRAM_ID) loadUnfiled();
+        else settle(item, null);
         onChanged();
       } catch (caught) {
         console.error('[galleries] could not delete:', caught);
@@ -282,7 +422,7 @@ export function PictureManager({
         setBusy({ kind: 'no' });
       }
     },
-    [onChanged, loadUnfiled],
+    [onChanged, loadUnfiled, settle],
   );
 
   /* ---- the drag ---------------------------------------------------------- */
@@ -497,7 +637,7 @@ export function PictureManager({
             onClick={() => setLevel(null)}
           >
             <span>Everything</span>
-            <b>{media.length}</b>
+            <b>{counts?.total ?? '…'}</b>
           </button>
 
           {levels.map((one) => (
@@ -519,7 +659,7 @@ export function PictureManager({
               onClick={() => setLevel(one.id)}
             >
               <span>{one.label}</span>
-              <b>{one.count}</b>
+              <b>{one.count ?? '…'}</b>
             </button>
           ))}
 
@@ -551,51 +691,56 @@ export function PictureManager({
         </nav>
 
         <div className="picker__pictures">
-          {shown.length === 0 ? (
+          {waiting ? (
+            <p className="picker__hint">Loading pictures…</p>
+          ) : shown.length === 0 ? (
             <p className="picker__hint">Nothing is filed here.</p>
           ) : (
-            <ul className="picker__grid">
-              {shown.map((item) => {
-                const poster = galleryPosterUrl(item);
-                const isConfirming = confirming === item.id;
-                const working =
-                  (busy.kind === 'moving' || busy.kind === 'deleting') && busy.id === item.id;
+            <>
+              <ul className="picker__grid">
+                {shown.map((item) => {
+                  const poster = galleryPosterUrl(item);
+                  const isConfirming = confirming === item.id;
+                  const working =
+                    (busy.kind === 'moving' || busy.kind === 'deleting') && busy.id === item.id;
 
-                return (
-                  <li key={item.id}>
-                    <div
-                      className={[
-                        'manager__tile',
-                        dragging === item.id ? 'is-dragging' : '',
-                        working ? 'is-working' : '',
-                      ]
-                        .join(' ')
-                        .trim()}
-                      onPointerDown={(event) => {
-                        if (isConfirming || working) return;
-                        grab(event, item);
-                      }}
-                    >
-                      {poster ? (
-                        <img
-                          src={poster}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          draggable={false}
-                          style={{ objectPosition: focalPosition(item.focal) }}
-                        />
-                      ) : (
-                        <span className="picker__tile-blank">Processing…</span>
-                      )}
+                  return (
+                    <li key={item.id}>
+                      <div
+                        className={[
+                          'manager__tile',
+                          dragging === item.id ? 'is-dragging' : '',
+                          working ? 'is-working' : '',
+                        ]
+                          .join(' ')
+                          .trim()}
+                        onPointerDown={(event) => {
+                          if (isConfirming || working) return;
+                          grab(event, item);
+                        }}
+                      >
+                        {poster ? (
+                          <img
+                            src={poster}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            draggable={false}
+                            style={{
+                              objectPosition: focalPosition(item.focal),
+                            }}
+                          />
+                        ) : (
+                          <span className="picker__tile-blank">Processing…</span>
+                        )}
 
-                      {item.kind === 'video' && (
-                        <span className="picker__tile-kind" aria-hidden="true">
-                          <Icon name="film" size={14} />
-                        </span>
-                      )}
+                        {item.kind === 'video' && (
+                          <span className="picker__tile-kind" aria-hidden="true">
+                            <Icon name="film" size={14} />
+                          </span>
+                        )}
 
-                      {/*
+                        {/*
                         The mark that says this can be picked up. `cursor: grab` was
                         the only sign, and a cursor is invisible until the pointer is
                         already on the tile and says nothing at all on a touch screen.
@@ -604,11 +749,11 @@ export function PictureManager({
                         keyboard equivalent, and a label promising one is worse than
                         silence.
                       */}
-                      <span className="manager__grip" aria-hidden="true">
-                        <Icon name="grip" size={13} />
-                      </span>
+                        <span className="manager__grip" aria-hidden="true">
+                          <Icon name="grip" size={13} />
+                        </span>
 
-                      {/*
+                        {/*
                         Where it is filed now, on the tile. Without it "move this
                         somewhere else" is a decision made blind — and while the
                         list shows Everything, half of these are already where they
@@ -621,21 +766,21 @@ export function PictureManager({
                         clip before the part that differs. The hierarchy is already
                         down the left; what the tile has to say is the leaf.
                       */}
-                      <span className="manager__where" title={whereOf(item.programEventId)}>
-                        {whereOf(item.programEventId)}
-                      </span>
+                        <span className="manager__where" title={whereOf(item.programEventId)}>
+                          {whereOf(item.programEventId)}
+                        </span>
 
-                      {isConfirming ? (
-                        <button
-                          type="button"
-                          className="manager__confirm"
-                          disabled={working}
-                          onClick={() => void destroy(item)}
-                        >
-                          {working ? 'Deleting…' : 'Delete for ever'}
-                        </button>
-                      ) : (
-                        /*
+                        {isConfirming ? (
+                          <button
+                            type="button"
+                            className="manager__confirm"
+                            disabled={working}
+                            onClick={() => void destroy(item)}
+                          >
+                            {working ? 'Deleting…' : 'Delete for ever'}
+                          </button>
+                        ) : (
+                          /*
                           A red pill with the word on it, on every tile, always.
                           Not a bare icon and not revealed on hover: the two things
                           asked of this control are that it is impossible to miss
@@ -645,22 +790,31 @@ export function PictureManager({
                           "take it off this page and keep the photograph" in every
                           other part of this editor — see `PictureStrip`.
                         */
-                        <button
-                          type="button"
-                          className="manager__delete"
-                          aria-label={`Delete ${item.caption || 'this picture'} for ever`}
-                          disabled={working}
-                          onClick={() => setConfirming(item.id)}
-                        >
-                          <Icon name="trash" size={12} />
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                          <button
+                            type="button"
+                            className="manager__delete"
+                            aria-label={`Delete ${item.caption || 'this picture'} for ever`}
+                            disabled={working}
+                            onClick={() => setConfirming(item.id)}
+                          >
+                            <Icon name="trash" size={12} />
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {more && (
+                <div ref={setEnd} className="manager__more">
+                  {/* The observer is the ordinary path; this is for when it is not there. */}
+                  <button type="button" className="button" onClick={() => readMore(viewKey)}>
+                    Load more pictures
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
