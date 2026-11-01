@@ -610,7 +610,7 @@ describe('summariseChildren', () => {
     const media = [shot('first', 'day-1'), shot('second', 'day-2')];
     const summary = summariseChildren(tree, '2027', media).get('week-1');
     expect(summary?.cover?.id).toBe('first');
-    expect(summary?.covers.map((one) => one.id)).toEqual(['first', 'second']);
+    expect(summary?.pool.map((one) => one.id)).toEqual(['first', 'second']);
   });
 
   /**

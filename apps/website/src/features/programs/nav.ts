@@ -1,4 +1,4 @@
-import { SUMMARY_COVERS, hasRenderableFile, spreadAcross } from '@spsm/shared';
+import { hasRenderableFile } from '@spsm/shared';
 import { COVER_WINDOW, getProgramMedia, getPrograms } from './data';
 import { programHref } from './route';
 
@@ -32,8 +32,9 @@ export type ProgramNavChild = {
   href: string;
   label: string;
   /**
-   * Up to `SUMMARY_COVERS` photographs for the tile to cycle through, spread
-   * across the ministry. Empty for a program with no approved pictures yet.
+   * Every photograph in the build's window for the tile to draw from; it holds
+   * `SUMMARY_COVERS` at a time and swaps in a random one each turn (see
+   * `useRandomDraw`). Empty for a program with no approved pictures yet.
    *
    * Paths rather than URLs: the bucket host differs between production and
    * the emulators, and only the browser knows which it is talking to. `media.ts`
@@ -46,13 +47,13 @@ export async function programNavChildren(): Promise<ProgramNavChild[]> {
   const programs = await getPrograms();
 
   /*
-   * A handful of pictures each, fetched in parallel at build time.
+   * A window of pictures each, fetched in parallel at build time.
    *
    * This is the only reason the menu costs more than one query, and it costs it
-   * once per build rather than once per visitor. Asking for `SUMMARY_COVERS`
-   * instead of one costs the same number of queries — a `limit` of five reads
-   * five documents in the query that was already being run — and it is what
-   * lets each tile show the ministry rather than one frozen moment of it.
+   * once per build rather than once per visitor. A wider `limit` costs the same
+   * number of queries — it reads more documents in the query that was already
+   * being run — and it is what lets each tile show the ministry rather than one
+   * frozen moment of it.
    *
    * A program with no approved photographs yields an empty list and its tile
    * falls back to a plain ground; one with a single photograph simply holds it,
@@ -61,19 +62,16 @@ export async function programNavChildren(): Promise<ProgramNavChild[]> {
   const covers = await Promise.all(
     programs.map(async (program) =>
       /*
-       * A wider window than the tile shows, spread through, so the menu's
-       * handful is a cross-section of the ministry rather than its first five
-       * pictures — see `gallery/sample.ts`. Once per build, so the extra reads
-       * are paid by the deploy and not by visitors. `NavTile` shuffles them in
-       * the browser so it does not open on the same one every time.
+       * The whole window, not a handful of it: the tile draws its few at
+       * random in the browser and keeps swapping in more — see
+       * `useRandomDraw`. Only paths go into the page, and only the pictures a
+       * tile has in hand are downloaded. Once per build, so the reads are paid
+       * by the deploy and not by visitors.
        */
-      spreadAcross(
-        (await getProgramMedia(program.id, COVER_WINDOW))
-          .filter((media) => media.kind === 'photo' && hasRenderableFile(media))
-          .map((media) => media.renditionPath)
-          .filter((path): path is string => path !== null),
-        SUMMARY_COVERS,
-      ),
+      (await getProgramMedia(program.id, COVER_WINDOW))
+        .filter((media) => media.kind === 'photo' && hasRenderableFile(media))
+        .map((media) => media.renditionPath)
+        .filter((path): path is string => path !== null),
     ),
   );
 

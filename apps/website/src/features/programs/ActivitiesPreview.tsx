@@ -10,7 +10,7 @@ import {
   programFallbackShot,
   programTileMedia,
 } from './data';
-import { CYCLE_MAX, CYCLE_MS, ProgramTile } from './ProgramTile';
+import { CYCLE_MS, ProgramTile } from './ProgramTile';
 import { DragRail } from '@/components/DragRail';
 import { SectionHeading, SectionMore } from '@/components/SectionHeading';
 
@@ -87,7 +87,7 @@ export function ActivitiesPreview({ band }: { band: string }) {
             ? await getProgramPageMedia(program.id)
             : await getProgramMedia(program.id, COVER_WINDOW);
 
-          const featured = programTileMedia(program, media, CYCLE_MAX);
+          const featured = programTileMedia(program, media, media.length);
           if (featured.length > 0) return [program.id, featured] as const;
 
           const fallback = programFallbackShot(media);

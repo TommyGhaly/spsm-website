@@ -24,7 +24,7 @@ import { MainSectionField } from './MainSection';
 import { EditTabPanel, EditTabs } from '@/components/EditTabs';
 import { SubgroupShelf, shelfCover, type ShelfItem } from './SubgroupShelf';
 import { useProgramAdmin } from './useProgramAdmin';
-import { CYCLE_MAX, CYCLE_MS, ProgramTile } from './ProgramTile';
+import { CYCLE_MS, ProgramTile } from './ProgramTile';
 import { DragRail } from '@/components/DragRail';
 import { Icon } from '@/components/Icon';
 
@@ -157,7 +157,7 @@ function ProgramRail() {
            * approved but none cleared for a page. Drawing one of those beats a
            * blank plate, which is the worse failure of the two.
            */
-          const featured = programTileMedia(program, media, CYCLE_MAX);
+          const featured = programTileMedia(program, media, media.length);
           if (featured.length > 0) return [program.id, featured] as const;
 
           const fallback = programFallbackShot(media);

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SUMMARY_COVERS, type DocOf, type GalleryMedia, type ProgramEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
-import { useShuffled } from '@/lib/useShuffled';
+import { useRandomDraw } from '@/lib/useRandomDraw';
 import { galleryPathUrl } from './media';
 
 /**
@@ -65,7 +65,7 @@ const SHELF_CYCLE_MS = 3200;
  *     handle nobody has been told to press.
  *   - its tiles **cycle through their pictures**, the way the ministries do on
  *     `/events`. That is what makes a column of small tiles legible as places
- *     rather than as labels — see `covers` on `NodeSummary`.
+ *     rather than as labels — see `pool` on `NodeSummary`.
  */
 export function SubgroupShelf({
   legend,
@@ -686,8 +686,13 @@ function Tile({
   shot: number;
   readOnly: boolean;
 }) {
-  // Shuffled once per visit so the tile does not always open on the same one.
-  const shots = useShuffled(item.coverPaths ?? (item.coverPath ? [item.coverPath] : []), String);
+  // A random few from the whole level, one swapped for a fresh draw each turn.
+  const shots = useRandomDraw(
+    item.coverPaths ?? (item.coverPath ? [item.coverPath] : []),
+    String,
+    SUMMARY_COVERS,
+    shot,
+  );
   const current = shots.length > 0 ? shot % shots.length : 0;
 
   const className = `subshelf__tile${item.selected ? ' is-selected' : ''}${
@@ -735,8 +740,8 @@ export interface ShelfItem {
   /** Where a visitor goes when they press it. Unused in the editing shelf. */
   href?: string | undefined;
   /**
-   * Up to `SUMMARY_COVERS` pictures for the tile to cycle through, the chosen
-   * cover first. Falls back to `coverPath` alone when absent, so the editing
+   * Every picture the tile may cycle through; it holds `SUMMARY_COVERS` of them
+   * at a time, drawn at random (`useRandomDraw`). Falls back to `coverPath` alone when absent, so the editing
    * shelf — which has no use for a slideshow — need not supply it.
    */
   coverPaths?: readonly string[] | undefined;
@@ -766,19 +771,15 @@ export function shelfCover(cover: DocOf<GalleryMedia> | null | undefined): strin
 }
 
 /**
- * The same, for the several a cycling tile wants.
+ * The same, for the whole pool a cycling tile draws from.
  *
- * Capped again here rather than trusting the summary: `covers` is already sliced
- * to `SUMMARY_COVERS`, and a second cap costs nothing and means this cannot be
- * the place a wider summary quietly puts twelve images in a corner tile.
+ * Not capped: only paths, and the tile itself keeps `SUMMARY_COVERS` of them in
+ * the DOM at once — see `useRandomDraw`.
  */
 export function shelfCovers(
-  covers: readonly (DocOf<GalleryMedia> | null | undefined)[] | undefined,
+  pool: readonly (DocOf<GalleryMedia> | null | undefined)[] | undefined,
 ): string[] {
-  return (covers ?? [])
-    .map(shelfCover)
-    .filter((path): path is string => path !== null)
-    .slice(0, SUMMARY_COVERS);
+  return (pool ?? []).map(shelfCover).filter((path): path is string => path !== null);
 }
 
 /**

@@ -34,7 +34,6 @@
  */
 import type { Timestamped } from '../schema/common.js';
 import { toDate } from '../schema/common.js';
-import { spreadAcross } from './sample.js';
 
 /**
  * The least a node has to be for anything here to work.
@@ -689,18 +688,19 @@ export function nodeSummary<N extends GalleryTreeNode, M extends SummaryMedia>(
 export interface NodeSummary<M extends SummaryMedia> {
   cover: M | null;
   /**
-   * A handful spread across the same subtree, for a tile that cycles.
+   * Every photograph in the same subtree a cycling tile may show.
    *
    * The side menu on a gallery page shows its levels the way `/events` shows the
    * ministries — a photograph with the name over it, cross-fading to the next
    * one — and a single cover cannot do that. Everything here is already in
-   * `mine`, so this costs a slice and no extra reads.
+   * `mine`, so this costs a filter and no extra reads.
    *
-   * Capped at `SUMMARY_COVERS`. `cover` is kept beside it rather than being
-   * replaced by `covers[0]`, because the cards elsewhere on the page want
-   * exactly one and should not have to know about the cap.
+   * Not capped. The tile keeps `SUMMARY_COVERS` in hand at once and draws a
+   * fresh one from this on every turn (`useRandomDraw`), so a card wanders the
+   * whole event rather than shuffling the same handful. `cover` is kept beside
+   * it because the cards elsewhere on the page want exactly one.
    */
-  covers: M[];
+  pool: M[];
   photos: number;
   videos: number;
   /** How many levels hang directly beneath. Zero for a leaf. */
@@ -708,7 +708,7 @@ export interface NodeSummary<M extends SummaryMedia> {
 }
 
 /**
- * How many pictures a cycling tile is given.
+ * How many pictures a cycling tile holds at once, drawn from its pool.
  *
  * Five, for the reason `CYCLE_MAX` in `ProgramTile` is five: every one of them is
  * an `<img>` in the DOM at once — that is what makes it a cross-fade rather than
@@ -721,8 +721,8 @@ export const SUMMARY_COVERS = 8;
  * Summarise every child of a level, for the cards on its page.
  *
  * The cover is the first photograph in the child's subtree that is cleared for a
- * page and has a file, and `covers` is a spread of the whole subtree's — a card
- * cycles, and opens on a random one of them.
+ * page and has a file, and `pool` is every such photograph in the subtree — a
+ * card cycles through random draws from it.
  *
  * **Nothing is chosen here any more.** `coverMediaId` used to win over the
  * automatic pick, with a chooser in the panel for it at Tommy's direction
@@ -761,24 +761,21 @@ export function summariseChildren<N extends GalleryTreeNode, M extends SummaryMe
       null;
 
     /*
-     * The cycle's pictures, spread across the whole subtree rather than its
-     * first few, so a week's card shows the week and not its first hour — see
-     * `gallery/sample.ts`. Which one a tile *opens* on is decided in the
-     * browser by `useShuffled`, so `cover` (the single picture other cards
-     * draw) is no longer forced to the head of the cycle.
+     * The cycle's pool: the whole subtree, not a handful of it. Which few are
+     * on the tile at once, and which replace them, is decided in the browser by
+     * `useRandomDraw`.
      *
      * Same `hasRenderableFile` guard as the cover above, and for the same
      * reason — a mid-transcode file in the cycle is a tile that blinks to blank
      * once per lap.
      */
-    const eligible = mine.filter(
+    const pool = mine.filter(
       (item) => item.kind === 'photo' && item.placement.onPage && hasRenderableFile(item),
     );
-    const covers = spreadAcross(eligible, SUMMARY_COVERS);
 
     summaries.set(child.id, {
       cover,
-      covers,
+      pool,
       photos: mine.filter((item) => item.kind === 'photo').length,
       videos: mine.filter((item) => item.kind === 'video').length,
       children: childrenOf(tree, child.id).length,

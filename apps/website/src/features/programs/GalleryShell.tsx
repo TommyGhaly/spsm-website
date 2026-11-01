@@ -26,6 +26,7 @@ import {
   subtreeSlideshow,
   childLabelOf,
   summariseChildren,
+  SUMMARY_COVERS,
   trailLabel,
   trailSlugs,
   type DocOf,
@@ -48,7 +49,7 @@ import { BackLink } from '@/components/BackLink';
 import { Icon } from '@/components/Icon';
 import { Grow, Plain } from '@/components/Inline';
 import { formatDateSpan, formatEventWhen } from '@/lib/dates';
-import { useShuffled } from '@/lib/useShuffled';
+import { useRandomDraw } from '@/lib/useRandomDraw';
 import {
   getGalleryLevel,
   getLinkedCalendarEvent,
@@ -2139,7 +2140,7 @@ function LevelView({
           label: child.title,
           href: hrefOf(child.id),
           coverPath: shelfCover(summary?.cover),
-          coverPaths: shelfCovers(summary?.covers),
+          coverPaths: shelfCovers(summary?.pool),
           note: shelfNote(child),
           selected: false,
           onSelect: () => undefined,
@@ -3449,9 +3450,10 @@ function LevelCard({
    * twelve identically named weeks apart, which is as true of somebody filing
    * photographs into them as of somebody looking at them.
    */
-  // Shuffled once per visit so the card does not always open on the same one.
-  const shots = useShuffled(clip ? [] : shelfCovers(summary?.covers), String);
-  const shot = useCycle(shots.length);
+  // A random few from the whole level, one swapped for a fresh draw each turn.
+  const pool = clip ? [] : shelfCovers(summary?.pool);
+  const shot = useCycle(Math.min(pool.length, SUMMARY_COVERS));
+  const shots = useRandomDraw(pool, String, SUMMARY_COVERS, shot);
   const when = formatDateSpan(node.startAt, node.endAt, node.timeZone);
   const photos = summary?.photos ?? 0;
   const clips = summary?.videos ?? 0;

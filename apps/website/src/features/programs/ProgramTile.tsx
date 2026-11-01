@@ -7,7 +7,7 @@ import { Grow, Plain } from '@/components/Inline';
 import { AutoClip } from './AutoClip';
 import { captionOf } from './caption';
 import { galleryPathUrl } from './media';
-import { useShuffled } from '@/lib/useShuffled';
+import { useRandomDraw } from '@/lib/useRandomDraw';
 import { programHref } from './route';
 
 /*
@@ -83,7 +83,7 @@ export function ProgramTile({
   onDescription,
 }: {
   program: DocOf<Program>;
-  /** The ministry's featured pictures, in the order it chose them. */
+  /** Every picture the plate may show; it holds `CYCLE_MAX` at a time, drawn at random. */
   shots: DocOf<GalleryMedia>[];
   /** The rail's shared counter; taken modulo this tile's own length. */
   shot: number;
@@ -181,13 +181,18 @@ function ProgramCover({ shots, shot }: { shots: DocOf<GalleryMedia>[]; shot: num
   /* A type predicate rather than a truthiness check plus `!` further down: the
      filter is the thing that knows these have a file, so it should be the thing
      that says so. */
-  // A random order per visit, so the plate does not open on the same picture
-  // every time — see `useShuffled`. The set itself is chosen in `data.ts`.
-  const usable = useShuffled(shots, (item) => item.id).filter(
-    (item): item is DocOf<GalleryMedia> & { renditionPath: string } =>
-      typeof item.renditionPath === 'string' &&
-      item.renditionPath.length > 0 &&
-      !broken.has(item.id),
+  // A random few from the whole pool, one swapped for a fresh draw each turn —
+  // see `useRandomDraw`. The pool itself is chosen in `data.ts`.
+  const usable = useRandomDraw(
+    shots.filter(
+      (item): item is DocOf<GalleryMedia> & { renditionPath: string } =>
+        typeof item.renditionPath === 'string' &&
+        item.renditionPath.length > 0 &&
+        !broken.has(item.id),
+    ),
+    (item) => item.id,
+    CYCLE_MAX,
+    shot,
   );
 
   if (usable.length === 0) {

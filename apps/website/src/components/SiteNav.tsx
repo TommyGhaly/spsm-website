@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HeaderAuth } from './HeaderAuth';
 import { galleryPathUrl } from '@/features/programs/media';
-import { useShuffled } from '@/lib/useShuffled';
+import { SUMMARY_COVERS } from '@spsm/shared';
+import { useRandomDraw } from '@/lib/useRandomDraw';
 
 /**
  * The main navigation, in two forms.
@@ -469,41 +470,44 @@ function NavTile({
    * blanking the tile for its turn — the same judgement the single-cover
    * version made with its one boolean, extended to a set.
    */
-  const [loaded, setLoaded] = useState<readonly number[]>([]);
+  const [loaded, setLoaded] = useState<ReadonlySet<string>>(new Set());
 
-  const paths = child.coverPaths ?? [];
   /*
-   * The order the tile walks them in, shuffled once per visit so it does not
-   * open on the same picture every time — see `useShuffled`. Indices rather
-   * than the paths themselves, so the stacked images and the `loaded` set keep
-   * their positions and only the walk changes.
+   * A random few from the ministry, one swapped for a fresh draw each turn, so
+   * the tile wanders the whole set rather than shuffling the same handful —
+   * see `useRandomDraw`. The cycle walks the ones in hand that have loaded.
    */
-  const walk = useShuffled(
-    paths.map((_, index) => index),
-    String,
-  ).filter((index) => loaded.includes(index));
-  const showing = walk.length > 0 ? walk[shot % walk.length]! : -1;
+  const drawn = useRandomDraw(child.coverPaths ?? [], String, SUMMARY_COVERS, shot);
+  const walk = drawn.filter((path) => loaded.has(path));
+  const showing = walk.length > 0 ? walk[shot % walk.length]! : null;
 
-  const markLoaded = (index: number) =>
-    setLoaded((was) => (was.includes(index) ? was : [...was, index].sort((a, b) => a - b)));
-  const markFailed = (index: number) => setLoaded((was) => was.filter((n) => n !== index));
+  const markLoaded = (path: string) =>
+    setLoaded((was) => (was.has(path) ? was : new Set(was).add(path)));
+  const markFailed = (path: string) =>
+    setLoaded((was) => {
+      if (!was.has(path)) return was;
+      const next = new Set(was);
+      next.delete(path);
+      return next;
+    });
 
   return (
     <Link
       href={child.href}
       aria-current={current ? 'page' : undefined}
-      className={loaded.length > 0 ? 'has-cover' : undefined}
+      className={walk.length > 0 ? 'has-cover' : undefined}
     >
       {/*
-        Every picture is in the DOM at once, stacked, with opacity deciding
-        which is seen — the same construction as the shelf tiles on /events, and
-        for the same reason: swapping one element's `src` shows the ground for
-        however long the new file takes to decode, which reads as a flash.
+        Every picture in hand is in the DOM at once, stacked, with opacity
+        deciding which is seen — the same construction as the shelf tiles on
+        /events, and for the same reason: swapping one element's `src` shows the
+        ground for however long the new file takes to decode, which reads as a
+        flash.
       */}
-      {paths.map((path, index) => (
+      {drawn.map((path) => (
         <img
           key={path}
-          className={index === showing ? 'is-current' : undefined}
+          className={path === showing ? 'is-current' : undefined}
           src={galleryPathUrl(path)}
           // Decorative: the name is right on top of it.
           alt=""
@@ -525,10 +529,10 @@ function NavTile({
            * "complete", and only the width tells the two apart.
            */
           ref={(element) => {
-            if (element?.complete && element.naturalWidth > 0) markLoaded(index);
+            if (element?.complete && element.naturalWidth > 0) markLoaded(path);
           }}
-          onLoad={() => markLoaded(index)}
-          onError={() => markFailed(index)}
+          onLoad={() => markLoaded(path)}
+          onError={() => markFailed(path)}
         />
       ))}
       <span>{child.label}</span>
