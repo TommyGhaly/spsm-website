@@ -9,6 +9,7 @@ import {
 } from '../../packages/shared/src/gallery/randomizer.js';
 import {
   buildGalleryTree,
+  subtreeSlideshow,
   type GalleryTreeNode,
   type SummaryMedia,
 } from '../../packages/shared/src/gallery/tree.js';
@@ -136,5 +137,21 @@ describe('randomSections', () => {
         expect(both).not.toEqual(['rail', 'rail']);
       }
     }
+  });
+});
+
+describe('the blacklist', () => {
+  it('keeps a picture out of the randomizer but not out of the presentation', () => {
+    const items = [shot('banned', 'monday'), shot('kept', 'monday')];
+    const picks = randomPicks(
+      tree,
+      'week-1',
+      items,
+      { enabled: true, count: 10, perChild: {} },
+      ['banned'],
+      seededRandom(7),
+    );
+    expect(picks.map((p) => p.id)).toEqual(['kept']);
+    expect(subtreeSlideshow(tree, 'week-1', items).map((p) => p.id)).toContain('banned');
   });
 });

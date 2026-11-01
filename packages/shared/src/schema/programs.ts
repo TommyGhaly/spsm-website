@@ -216,7 +216,8 @@ export interface Program extends AuditFields, Publishable {
    * Photographs no randomizer anywhere in this program may pick. One list for
    * the whole program, by the parish's choice: blacklisted once, a picture is
    * never drawn at random on a year, a week or a day — and is still on the page
-   * of the day it was filed on, for anyone who goes looking.
+   * of the day it was filed on, for anyone who goes looking, and in the
+   * presentation. Only `randomPicks` reads this list; `subtreeSlideshow` must not.
    */
   randomizerBlacklist?: string[];
 

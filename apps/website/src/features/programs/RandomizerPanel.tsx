@@ -121,7 +121,7 @@ export function RandomizerPanel({
           <p className="inspector__note">
             Visitors get a new mix on every visit. <strong>Never pick</strong> is one list
             for the whole ministry: a picture on it is left out of every randomized page,
-            and still shows on the day it was filed under.
+            and still shows on the day it was filed under and in the presentation.
           </p>
         </>
       )}

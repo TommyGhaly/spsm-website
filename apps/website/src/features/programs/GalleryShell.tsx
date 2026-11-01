@@ -407,6 +407,9 @@ export function GalleryShell() {
    * to tick — see `subtreeSlideshow` for why that one came off.
    */
   if (present) {
+    // Not filtered by the randomizer's blacklist, on purpose: "never pick at
+    // random" is about which pictures a page shows, and a presentation still
+    // shows every photograph in the subtree.
     const slides = subtreeSlideshow(level.tree, level.node?.id ?? null, level.media);
     /*
      * The name of what is being presented — **this level, not the road to it.**
