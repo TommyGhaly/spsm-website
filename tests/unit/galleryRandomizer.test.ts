@@ -127,16 +127,67 @@ describe('randomPicks', () => {
 });
 
 describe('randomSections', () => {
-  it('puts every pick in exactly one section and never two wheels in a row', () => {
-    for (let seed = 1; seed < 50; seed += 1) {
+  const COLUMNS = { full: 12, 'two-thirds': 8, half: 6, third: 4 } as const;
+  const RAIL_REM = { small: 9, medium: 13, large: 18, full: 34, fit: 18 } as const;
+  const heightOf = (layout: { display: string; scale: keyof typeof RAIL_REM; height: number | null }) =>
+    layout.display === 'column' ? layout.height : RAIL_REM[layout.scale];
+
+  /** The sections cut into rows by their widths. */
+  const rowsOf = (sections: ReturnType<typeof randomSections>) => {
+    const rows: (typeof sections)[] = [];
+    let used = 12;
+    for (const section of sections) {
+      if (used === 12) {
+        rows.push([]);
+        used = 0;
+      }
+      used += COLUMNS[section.band.layout.width];
+      rows[rows.length - 1]!.push(section);
+      expect(used).toBeLessThanOrEqual(12);
+    }
+    expect(used).toBe(12);
+    return rows;
+  };
+
+  it('puts every pick in exactly one section', () => {
+    for (let seed = 1; seed < 60; seed += 1) {
       const picks = media.slice(0, 40);
       const sections = randomSections(picks, seededRandom(seed));
       expect(sections.flatMap((s) => s.media)).toEqual(picks);
-      for (let i = 1; i < sections.length; i += 1) {
-        const both = [sections[i - 1]!.band.layout.display, sections[i]!.band.layout.display];
-        expect(both).not.toEqual(['rail', 'rail']);
+      expect(sections.every((s) => s.media.length > 0)).toBe(true);
+    }
+  });
+
+  it('fills every row, and blocks that share a row are wheels of one height', () => {
+    for (let seed = 1; seed < 200; seed += 1) {
+      for (const row of rowsOf(randomSections(media.slice(0, 40), seededRandom(seed)))) {
+        if (row.length === 1) continue;
+        const heights = row.map((s) => {
+          expect(s.band.layout.display).not.toBe('grid');
+          return heightOf(s.band.layout);
+        });
+        expect(new Set(heights).size).toBe(1);
       }
     }
+  });
+
+  it('uses every direction and every width', () => {
+    const spins = new Set<string>();
+    const widths = new Set<string>();
+    for (let seed = 1; seed < 200; seed += 1) {
+      for (const { band } of randomSections(media.slice(0, 40), seededRandom(seed))) {
+        if (band.layout.display !== 'grid') spins.add(band.layout.spin);
+        widths.add(band.layout.width);
+      }
+    }
+    expect([...spins].sort()).toEqual(['down', 'left', 'right', 'up']);
+    expect([...widths].sort()).toEqual(['full', 'half', 'third', 'two-thirds']);
+  });
+
+  it('still lays out a handful of pictures', () => {
+    const sections = randomSections(media.slice(0, 3), seededRandom(1));
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.band.layout.width).toBe('full');
   });
 });
 

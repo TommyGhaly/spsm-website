@@ -15,8 +15,10 @@
 import {
   layoutForLook,
   type GalleryBand,
-  type GalleryDisplay,
+  type SectionLayout,
   type SectionScale,
+  type SectionWidth,
+  type WheelSpin,
 } from '../schema/sectionLayout.js';
 import {
   childrenOf,
@@ -163,54 +165,201 @@ export function randomPicks<N extends GalleryTreeNode, M extends SummaryMedia>(
   return sample(picked, picked.length, random);
 }
 
-/** The looks a random section may take, and how many pictures each holds. */
-const SECTION_LOOKS: readonly {
-  display: GalleryDisplay;
-  scales: readonly SectionScale[];
-  min: number;
-  max: number;
-}[] = [
-  { display: 'grid', scales: ['small', 'medium', 'large'], min: 6, max: 12 },
-  { display: 'rail', scales: ['medium', 'large'], min: 8, max: 16 },
+/* -------------------------------------------------------------------------- */
+/* The layout: rows that fill the page                                         */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The page packs blocks into twelve columns like a masonry wall (`packBlocks`),
+ * so a random layout only *fits* if two things hold:
+ *
+ *  1. **Every row's widths add up to the whole page** — full; ½ + ½; ⅓ ⅓ ⅓;
+ *     ⅔ + ⅓; ⅓ + ⅔. Then no block is left dangling beside a gap.
+ *  2. **Blocks sharing a row are the same height.** A grid is as tall as its
+ *     pictures make it, which nothing here can know, so a grid only ever takes a
+ *     full row. A shared row is all wheels at one height: an upright wheel takes
+ *     any height (`layout.height`), a sideways one only its tile ladder — so a row
+ *     whose height is on that ladder may mix the two, and any other row is all
+ *     upright wheels.
+ *
+ * Within those rules everything is random: which row shape, grid or wheel,
+ * which way each wheel spins, how big, how tall, and how many pictures each holds.
+ */
+
+/** Row shapes, in twelfths of the page, with how often each is drawn. */
+const ROW_SHAPES: readonly { widths: readonly SectionWidth[]; weight: number }[] = [
+  { widths: ['full'], weight: 7 },
+  { widths: ['half', 'half'], weight: 5 },
+  { widths: ['third', 'third', 'third'], weight: 4 },
+  { widths: ['two-thirds', 'third'], weight: 2 },
+  { widths: ['third', 'two-thirds'], weight: 2 },
 ];
 
+/** A sideways wheel's tile height for each scale, in rem — the stylesheet's ladder. */
+const RAIL_TILE_REM: Partial<Record<SectionScale, number>> = { medium: 13, large: 18 };
+
+/** Heights a shared row may take, in rem. The first two are on the rail ladder. */
+const ROW_HEIGHTS_REM = [13, 18, 22, 26, 30, 36] as const;
+
+const pick = <T>(options: readonly T[], random: () => number): T =>
+  options[Math.floor(random() * options.length)] as T;
+
+const between = (min: number, max: number, random: () => number): number =>
+  min + Math.floor(random() * (max - min + 1));
+
+/** One planned block: its layout and how many pictures it wants. */
+interface Slot {
+  layout: SectionLayout;
+  min: number;
+  max: number;
+}
+
+/** A full-width sideways wheel, which holds any number without growing taller. */
+function railRow(random: () => number): Slot[] {
+  return [
+    {
+      layout: layoutForLook(
+        'rail',
+        pick<SectionScale>(['small', 'medium', 'large'], random),
+        'full',
+        'hidden',
+        pick<WheelSpin>(['left', 'right'], random),
+      ),
+      min: 1,
+      max: Number.POSITIVE_INFINITY,
+    },
+  ];
+}
+
 /**
- * Split this visit's pictures into a run of random sections, as bands.
+ * A block that takes a whole row: a grid or a sideways wheel, any size.
  *
- * Each section is a grid or a sideways wheel at a random size, holding a random
- * share of the pictures. Built as ordinary `GalleryBand`s with `picks` set, so
- * the page draws them through exactly the code it draws a hand-made block with
- * — the randomizer decides what goes in a block, never how a block renders.
+ * Never an upright wheel. At full width one portrait photograph draws in the
+ * middle of the page with empty paper either side; upright wheels look right in
+ * a half or a third, so that is where `sharedRow` puts them.
+ */
+function fullRow(random: () => number): Slot[] {
+  if (random() < 0.5) {
+    return [
+      {
+        // Short, always: a full-width grid gives each picture real room, and
+        // sixteen of them made a block three thousand pixels tall.
+        layout: layoutForLook('grid', pick<SectionScale>(['small', 'medium'], random)),
+        min: 4,
+        max: 8,
+      },
+    ];
+  }
+  return [
+    {
+      layout: layoutForLook(
+        'rail',
+        pick<SectionScale>(['small', 'medium', 'large', 'full'], random),
+        'full',
+        'hidden',
+        pick<WheelSpin>(['left', 'right'], random),
+      ),
+      min: 8,
+      max: 16,
+    },
+  ];
+}
+
+/** Two or three wheels sharing a row, all one height. */
+function sharedRow(widths: readonly SectionWidth[], random: () => number): Slot[] {
+  const height = pick(ROW_HEIGHTS_REM, random);
+  const railScale = (Object.entries(RAIL_TILE_REM) as [SectionScale, number][]).find(
+    ([, rem]) => rem === height,
+  )?.[0];
+  return widths.map((width) => {
+    const sideways = railScale !== undefined && random() < 0.5;
+    return {
+      layout: sideways
+        ? layoutForLook('rail', railScale, width, 'hidden', pick<WheelSpin>(['left', 'right'], random))
+        : layoutForLook(
+            'column',
+            'medium',
+            width,
+            'hidden',
+            pick<WheelSpin>(['up', 'down'], random),
+            'natural',
+            height,
+          ),
+      min: 5,
+      max: width === 'two-thirds' ? 12 : 9,
+    };
+  });
+}
+
+/**
+ * Split this visit's pictures into a random layout of rows, as bands.
  *
- * Never two wheels in a row: two rails back to back read as one broken rail.
+ * Built as ordinary `GalleryBand`s with `picks` set, so the page draws them
+ * through exactly the code it draws a hand-made block with — the randomizer
+ * decides what goes in a block and how it is shaped, never how a block renders.
+ *
+ * Rows are planned until the pictures run out. A row is only started when there
+ * are enough pictures left to give every block in it its minimum; whatever is
+ * left over at the end goes into the last row's blocks, so no block is starved
+ * and none is left empty.
  */
 export function randomSections<M extends { id: string }>(
   picks: readonly M[],
   random: () => number,
 ): { band: GalleryBand; media: M[] }[] {
+  const totalWeight = ROW_SHAPES.reduce((sum, shape) => sum + shape.weight, 0);
+  const rows: { slot: Slot; count: number }[][] = [];
+  let left = picks.length;
+
+  while (left > 0) {
+    let roll = random() * totalWeight;
+    const shape = ROW_SHAPES.find((one) => (roll -= one.weight) < 0) ?? ROW_SHAPES[0]!;
+    const slots = shape.widths.length === 1 ? fullRow(random) : sharedRow(shape.widths, random);
+    const needed = slots.reduce((sum, slot) => sum + slot.min, 0);
+
+    if (needed > left) {
+      /*
+       * The leftovers. Spread over the last row when it is wheels — a wheel
+       * holds more without growing — and otherwise given a wheel of their own,
+       * so they never pile into a grid and stretch it down the page.
+       */
+      const last = rows[rows.length - 1];
+      const wheels = last?.filter((entry) => entry.slot.layout.display !== 'grid') ?? [];
+      if (last && wheels.length === last.length && left < 4 * wheels.length) {
+        for (let i = 0; left > 0; i = (i + 1) % wheels.length, left -= 1) wheels[i]!.count += 1;
+      } else {
+        rows.push(railRow(random).map((slot) => ({ slot, count: left })));
+      }
+      break;
+    }
+
+    const row = slots.map((slot) => ({ slot, count: slot.min }));
+    left -= needed;
+    // Top each block up towards its own random size while pictures remain.
+    for (const entry of row) {
+      const extra = Math.min(left, between(entry.slot.min, entry.slot.max, random) - entry.slot.min);
+      entry.count += extra;
+      left -= extra;
+    }
+    rows.push(row);
+  }
+
   const sections: { band: GalleryBand; media: M[] }[] = [];
   let at = 0;
-  let last: GalleryDisplay | null = null;
-  while (at < picks.length) {
-    const options = SECTION_LOOKS.filter((look) => !(look.display === 'rail' && last === 'rail'));
-    const look = options[Math.floor(random() * options.length)] ?? SECTION_LOOKS[0]!;
-    const scale = look.scales[Math.floor(random() * look.scales.length)] ?? 'medium';
-    const size = look.min + Math.floor(random() * (look.max - look.min + 1));
-    // Fold a short tail into this section rather than leaving a block of two.
-    const end = picks.length - (at + size) < look.min ? picks.length : at + size;
-    const media = picks.slice(at, end);
+  for (const entry of rows.flat()) {
+    const media = picks.slice(at, at + entry.count);
+    at += entry.count;
+    if (media.length === 0) continue;
     sections.push({
       band: {
         id: `random-${sections.length}`,
         title: '',
-        layout: layoutForLook(look.display, scale),
+        layout: entry.slot.layout,
         picks: media.map((item) => item.id),
         hidden: [],
       },
       media,
     });
-    last = look.display;
-    at = end;
   }
   return sections;
 }
