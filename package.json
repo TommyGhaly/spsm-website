@@ -28,6 +28,8 @@
     "clip:pages": "npm run build --workspace @spsm/shared && node scripts/make-clip-pages.mjs",
     "//bulletin": "Prints this week's bulletin exactly as the site build reads it. First stop when the homepage bulletin section is missing.",
     "bulletin": "npm run build --workspace @spsm/shared && node scripts/read-bulletin.mjs",
+    "//import:camp": "One-time import of the camp photo archive from a synced SharePoint folder into the Summercamp gallery, creating year, week and weekday levels as needed. Pass --folders scripts/camp-folders.json to read only the real photo folders. Dry run by default; --suggest proposes week dates; --write applies. See the note at the top of scripts/import-camp-photos.mjs.",
+    "import:camp": "npm run build --workspace @spsm/shared && node scripts/import-camp-photos.mjs",
     "//config": "Shows config/integrations, config/parish, config/theme and config/camp; --write creates any that are missing from the committed defaults. Narrow it with --only=camp.",
     "config": "npm run build --workspace @spsm/shared && node scripts/seed-config.mjs",
     "//content": "Pushes content/*.md into the Firestore `content` collection. Dry run by default; -- --write applies.",
