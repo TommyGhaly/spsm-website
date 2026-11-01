@@ -8,7 +8,12 @@
  * as `route.ts` beside `GalleryShell.tsx`.
  */
 
-export type PickerMode = 'one' | 'many';
+/**
+ * `one` and `many` choose pictures for a block. `mark` flags pictures in a set
+ * with no order and no ceiling — the randomizer's blacklist — so its tiles carry
+ * a cross rather than a position.
+ */
+export type PickerMode = 'one' | 'many' | 'mark';
 
 /**
  * Apply one click to the chosen list.

@@ -16,6 +16,11 @@ import {
   spinFor,
   swapBlocks,
   pagePictures,
+  randomPicks,
+  randomSections,
+  randomTotal,
+  resolveRandomizer,
+  seededRandom,
   resolveBands,
   resolveSectionLayout,
   subtreeSlideshow,
@@ -35,6 +40,7 @@ import {
   type GalleryMedia,
   type Program,
   type ProgramEvent,
+  type RandomizerSettings,
 } from '@spsm/shared';
 import { Prose } from '@/components/Prose';
 import { PageBody } from '@/components/PageBody';
@@ -85,7 +91,14 @@ import {
 } from './SubgroupShelf';
 import { BlockFrame as Block } from './BlockFrame';
 import { Inspector } from './Inspector';
-import { BodyEditingClass, EditModeProvider, EditToggle, useEditMode } from './editMode';
+import {
+  BodyEditingClass,
+  EditModeProvider,
+  EditToggle,
+  ViewOnly,
+  useEditMode,
+} from './editMode';
+import { RandomizerPanel } from './RandomizerPanel';
 import { togglePick } from './pick';
 import { SubmitPhotos } from './SubmitPhotos';
 import { SubmissionQueue } from './SubmissionQueue';
@@ -122,6 +135,8 @@ import {
   setProgramEventParent,
   setProgramFeatured,
   setSectionLayout,
+  setRandomizer,
+  setBlacklisted,
   type SectionTarget,
 } from './adminData';
 import { LevelDetails, ProgramDetails } from './Editors';
@@ -330,8 +345,12 @@ export function GalleryShell() {
     // are now looking at.
     let live = true;
 
+    // A signed-in editor reads past every cache, so a change they just made
+    // shows on the refresh that follows it. See "Caching" in data.ts.
+    const fresh = admin.uid !== null;
+
     void (async () => {
-      const program = await getProgram(route.programSlug);
+      const program = await getProgram(route.programSlug, fresh);
       if (!live) return;
       if (!program) {
         setState({ kind: 'missing' });
@@ -353,7 +372,7 @@ export function GalleryShell() {
       if (!live) return;
 
       const trail = route.kind === 'program' ? [] : route.trail;
-      const level = await getGalleryLevel(program.id, trail, nodes);
+      const level = await getGalleryLevel(program.id, trail, nodes, fresh);
       if (!live) return;
       if (!level) {
         setState({ kind: 'missing' });
@@ -361,7 +380,7 @@ export function GalleryShell() {
       }
 
       const calendarId = level.node?.calendarEventId ?? null;
-      const calendar = calendarId ? await getLinkedCalendarEvent(calendarId) : null;
+      const calendar = calendarId ? await getLinkedCalendarEvent(calendarId, fresh) : null;
       if (live) setState({ kind: 'level', program, level, calendar });
     })();
 
@@ -580,6 +599,17 @@ function LevelView({
    */
   const [picking, setPicking] = useState<string | null>(null);
 
+  /**
+   * The randomizer: this page's settings while a change is in flight, the
+   * program's blacklist likewise, whether its picker is open, and this visit's
+   * seed. One seed per visit is what makes it random per visit and stable per
+   * render — a re-render must not reshuffle the page under a reader's eyes.
+   */
+  const [randomDraft, setRandomDraft] = useState<RandomizerSettings | null>(null);
+  const [blacklistDraft, setBlacklistDraft] = useState<string[] | null>(null);
+  const [blacklisting, setBlacklisting] = useState(false);
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 2 ** 32));
+
   /*
    * Dropped when the page changes level. This component is reused across a
    * navigation — same element, different props — so without this, clicking into
@@ -601,6 +631,8 @@ function LevelView({
     setBandSets({});
     bandsWritten.current = {};
     setPicking(null);
+    setRandomDraft(null);
+    setBlacklisting(false);
     setDrafts({});
     setOpen(null);
     select({ kind: 'page' });
@@ -611,6 +643,64 @@ function LevelView({
     () => summariseChildren(tree, nodeId, media),
     [tree, nodeId, media],
   );
+
+  /*
+   * The randomizer, when it is on: this visit's pictures as a run of random
+   * grids and wheels, in place of the page's own block, its bands and the "Also
+   * from here" strip. See `gallery/randomizer.ts`. On by default for a page with
+   * levels inside it, which is what stops a year of camp drawing its whole
+   * archive at once.
+   */
+  // Memoised, both: they are dependencies of the shuffle below, and a fresh
+  // object each render would reshuffle the page every time anything re-rendered.
+  //
+  // The default is for a page nobody has arranged. One with picked pictures or
+  // blocks of its own — 2026's two hand-picked wheels — keeps its design until
+  // somebody turns the randomizer on for it.
+  const storedRandomizer = node === null ? program.randomizer : node.randomizer;
+  const storedBands = node === null ? program.bands : node.bands;
+  const storedFeatured = node === null ? program.featuredMediaIds : node.featuredMediaIds;
+  const arranged =
+    (Array.isArray(storedBands) && storedBands.length > 0) ||
+    (Array.isArray(storedFeatured) && storedFeatured.length > 0);
+  const randomizer = useMemo(
+    () => randomDraft ?? resolveRandomizer(storedRandomizer, children.length > 0 && !arranged),
+    [randomDraft, storedRandomizer, children.length, arranged],
+  );
+  const blacklist = useMemo(
+    () =>
+      blacklistDraft ??
+      (Array.isArray(program.randomizerBlacklist) ? program.randomizerBlacklist : []),
+    [blacklistDraft, program.randomizerBlacklist],
+  );
+  const randomOn = randomizer.enabled && randomTotal(randomizer) > 0;
+  const randomBlocks = useMemo(
+    () =>
+      randomOn
+        ? randomSections(
+            randomPicks(tree, nodeId, media, randomizer, blacklist, seededRandom(seed), program.id),
+            seededRandom(seed ^ 0x9e3779b9),
+          )
+        : null,
+    [randomOn, tree, nodeId, media, randomizer, blacklist, seed, program.id],
+  );
+
+  const changeRandomizer = (next: RandomizerSettings) => {
+    setRandomDraft(next);
+    void write(async () => {
+      await setRandomizer(target, next, admin.uid);
+      refresh();
+    });
+  };
+
+  const toggleBlacklisted = (mediaId: string) => {
+    const on = !blacklist.includes(mediaId);
+    setBlacklistDraft(on ? [...blacklist, mediaId] : blacklist.filter((id) => id !== mediaId));
+    void write(async () => {
+      await setBlacklisted(program.id, [mediaId], on, admin.uid);
+      refresh();
+    });
+  };
 
   /*
    * This level's own choices — never its parent's, and never the ministry's.
@@ -657,6 +747,9 @@ function LevelView({
     picturesOffDraft ??
     (node === null ? program.hidePagePictures : node.hidePagePictures) === true;
 
+  /** The page's own block is not drawn: removed by hand, or the randomizer is on. */
+  const pageBlockOff = picturesOff || randomOn;
+
   /**
    * The pictures pressed × on in the page's *own* blocks — its first one, and the
    * "Also from here" strip.
@@ -686,7 +779,7 @@ function LevelView({
         the leftovers strip would keep excluding exactly the photographs that are
         no longer anywhere on the page.
       */
-      picturesOff
+      pageBlockOff
         ? []
         : pagePictures(tree, nodeId, media, {
             /*
@@ -707,7 +800,7 @@ function LevelView({
             */
             rootId: program.id,
           }),
-    [tree, nodeId, media, chosen, showAll, hidden, picturesOff, program.id],
+    [tree, nodeId, media, chosen, showAll, hidden, pageBlockOff, program.id],
   );
 
   /**
@@ -745,7 +838,7 @@ function LevelView({
       one press would take a block away and put more photographs on the page than
       were there before.
     */
-    if (picturesOff) return [];
+    if (pageBlockOff) return [];
     const shown = new Set(pictures.map((item) => item.id));
     const off = new Set(hidden);
     return media.filter(
@@ -755,7 +848,7 @@ function LevelView({
         !shown.has(item.id) &&
         !off.has(item.id),
     );
-  }, [media, nodeId, pictures, hidden, program.id]);
+  }, [media, nodeId, pictures, hidden, program.id, pageBlockOff]);
 
   /*
    * This level's own layout — never its ministry's.
@@ -817,7 +910,15 @@ function LevelView({
    */
   const bandBlocks = useMemo(
     () =>
-      bands.map((band) => {
+      randomBlocks
+        ? randomBlocks.map(({ band, media: shown }) => ({
+            band,
+            layout: band.layout,
+            picks: band.picks,
+            hidden: band.hidden,
+            media: shown,
+          }))
+        : bands.map((band) => {
         const local = bandSets[band.id];
         // `local === undefined` means nothing has been changed here yet, which is
         // not the same as `local.picks === null` — that is somebody having pressed
@@ -837,7 +938,7 @@ function LevelView({
           }),
         };
       }),
-    [bands, bandSets, drafts, tree, nodeId, media, showAll, program.id],
+    [randomBlocks, bands, bandSets, drafts, tree, nodeId, media, showAll, program.id],
   );
 
   /**
@@ -849,12 +950,12 @@ function LevelView({
    */
   const shownByBlock = useMemo(() => {
     const map = new Map<string, readonly string[]>();
-    if (!picturesOff) map.set('summary', pictures.map((one) => one.id));
+    if (!pageBlockOff) map.set('summary', pictures.map((one) => one.id));
     for (const block of bandBlocks) {
       map.set(block.band.id, block.media.map((one) => one.id));
     }
     return map;
-  }, [picturesOff, pictures, bandBlocks]);
+  }, [pageBlockOff, pictures, bandBlocks]);
 
   /**
    * Every block's key, in the order the page lays them out — `'summary'` for the
@@ -868,7 +969,7 @@ function LevelView({
   const blockOrder = useMemo(() => {
     const ids = bandBlocks.map((block) => block.band.id);
     const stored = node === null ? program.pageBlockAt : node.pageBlockAt;
-    const fromDocument = picturesOff
+    const fromDocument = pageBlockOff
       ? ids
       : [
           ...ids.slice(0, pageBlockIndex(stored, ids.length)),
@@ -880,7 +981,7 @@ function LevelView({
       orderDraft.length === fromDocument.length &&
       fromDocument.every((key) => orderDraft.includes(key));
     return agrees ? orderDraft : fromDocument;
-  }, [bandBlocks, node, program.pageBlockAt, picturesOff, orderDraft]);
+  }, [bandBlocks, node, program.pageBlockAt, pageBlockOff, orderDraft]);
 
   /** A block's layout by key, the page's own block included. */
   const layoutOf = useCallback(
@@ -1866,7 +1967,27 @@ function LevelView({
             )}
             {pageTab === 'photos' && (
               <>
-            {children.length === 0 ? (
+            <RandomizerPanel
+              settings={randomizer}
+              levels={children.map((child) => ({ id: child.id, title: child.title }))}
+              blacklisted={blacklist.length}
+              busy={saving}
+              onChange={changeRandomizer}
+              onReshuffle={() => setSeed(Math.floor(Math.random() * 2 ** 32))}
+              onBlacklist={() => setBlacklisting(true)}
+            />
+            {blacklisting && (
+              <MediaPicker
+                media={media}
+                tree={tree}
+                mode="mark"
+                selected={blacklist}
+                onToggle={toggleBlacklisted}
+                title="Never pick these at random"
+                onClose={() => setBlacklisting(false)}
+              />
+            )}
+            {randomOn ? null : children.length === 0 ? (
               <p className="inspector__note">
                 Nothing is inside this level, so every block on it starts from all the
                 photographs filed here — there is nothing to summarise. Add a part in the
@@ -2010,15 +2131,13 @@ function LevelView({
       empty=""
       items={children.map((child): ShelfItem => {
         const summary = summaries.get(child.id);
-        const count = (summary?.photos ?? 0) + (summary?.videos ?? 0);
-        const inside = summary?.children ?? 0;
         return {
           id: child.id,
           label: child.title,
           href: hrefOf(child.id),
           coverPath: shelfCover(summary?.cover),
           coverPaths: shelfCovers(summary?.covers),
-          note: shelfNote(child, inside, count),
+          note: shelfNote(child),
           selected: false,
           onSelect: () => undefined,
           onRename: () => undefined,
@@ -2059,13 +2178,12 @@ function LevelView({
       }
       items={children.map((child): ShelfItem => {
         const summary = summaries.get(child.id);
-        const count = (summary?.photos ?? 0) + (summary?.videos ?? 0);
         const inside = summary?.children ?? 0;
         return {
           id: child.id,
           label: child.title,
           coverPath: shelfCover(summary?.cover),
-          note: shelfNote(child, inside, count),
+          note: shelfNote(child),
           selected: edit.isSelected({ kind: 'level', id: child.id }),
           onSelect: () => edit.select({ kind: 'level', id: child.id }),
           onRename: (name) =>
@@ -2130,7 +2248,7 @@ function LevelView({
     { width: SectionWidth; node: (spot: BlockPlacement | null) => React.ReactNode }
   >();
 
-  if (!picturesOff && (pictures.length > 0 || edit.on)) {
+  if (!pageBlockOff && (pictures.length > 0 || edit.on)) {
     blockByKey.set('summary', {
       width: summaryLayout.width,
       node: (spot) => (
@@ -2333,6 +2451,45 @@ function LevelView({
         */
   }
   bandBlocks.forEach(({ band, layout, picks, media: shown }, index) => {
+    if (randomOn) {
+      const none = () => undefined;
+      blockByKey.set(band.id, {
+        width: layout.width,
+        node: (spot) => (
+          <ViewOnly key={band.id}>
+            <Block
+              blockKey={band.id}
+              place={spot}
+              display={layout.display}
+              label={`block ${index + 1}`}
+              onShape={none}
+              spin={spinFor(layout)}
+              onSpin={none}
+              fit={layout.fit}
+              onFit={none}
+              captions={layout.caption.placement !== 'hidden'}
+              onCaptions={none}
+              width={layout.width}
+              onWidth={none}
+              scale={layout.scale}
+              height={layout.height}
+              onHeight={none}
+            >
+              <GallerySection
+                id={band.id}
+                title=""
+                label={`${GALLERY_DISPLAY_NAMES[layout.display]} of photographs`}
+                layout={layout}
+                media={shown}
+                onPlace={place}
+                onSelect={(at) => openAt(band.id, at)}
+              />
+            </Block>
+          </ViewOnly>
+        ),
+      });
+      return;
+    }
     blockByKey.set(band.id, {
       width: layout.width,
       node: (spot) => (
@@ -2502,7 +2659,7 @@ function LevelView({
    * about: it is a child of the same grid and takes the whole width, so it is
    * placed with everything else rather than appended underneath.
    */
-  const addRow = edit.on && (picturesOff || bands.length < MAX_BANDS);
+  const addRow = edit.on && !randomOn && (picturesOff || bands.length < MAX_BANDS);
 
   /**
    * Where every one of them goes.

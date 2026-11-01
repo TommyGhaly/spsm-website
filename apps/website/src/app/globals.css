@@ -41360,3 +41360,78 @@ body.is-camp-dragging {
 .inspector__body--tabbed .inspector__body {
   padding: 0;
 }
+
+/*
+ * A picker section's heading is a button: its pictures are drawn only once it is
+ * open. See `open` in MediaPicker.tsx — "Everywhere" on a year of camp is
+ * thousands of thumbnails, and drawing them all at once froze the tab.
+ */
+.picker__section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.35rem);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.picker__section-toggle:disabled {
+  cursor: default;
+}
+
+.picker__section-toggle small {
+  margin-inline-start: auto;
+  color: var(--color-ink-muted, #6b5a55);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.75rem);
+}
+
+/* A blacklisted picture: crossed out rather than numbered, and dimmed. */
+.picker__tile-mark--cross {
+  background: var(--color-ink, #2a1b18);
+}
+
+.picker__tile.is-chosen:has(.picker__tile-mark--cross) img {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+/* The randomizer's controls in a page's Photos tab. See RandomizerPanel.tsx. */
+.randomizer {
+  display: grid;
+  gap: var(--space-sm, 0.6rem);
+}
+
+.randomizer__shares {
+  display: grid;
+  gap: var(--space-xs, 0.35rem);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.randomizer__shares legend {
+  margin-bottom: var(--space-xs, 0.35rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.875rem);
+  font-weight: 600;
+}
+
+/* Name and number on one line: a list of eight days stays short. */
+.randomizer__shares .randomizer__count {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  align-items: center;
+}
+
+.randomizer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs, 0.35rem);
+  margin: 0;
+}

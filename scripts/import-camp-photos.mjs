@@ -472,14 +472,32 @@ async function createDocument(collection, id, body) {
   }
 }
 
+/**
+ * One object, with the cache header the approval Function sets — see the note
+ * on `onGalleryMediaReviewed`. Multipart because a `media` upload cannot carry
+ * metadata, and without it Storage serves `private, max-age=0`.
+ */
 async function upload(path, bytes) {
   const url = new URL(`https://storage.googleapis.com/upload/storage/v1/b/${bucket}/o`);
-  url.searchParams.set('uploadType', 'media');
-  url.searchParams.set('name', path);
+  url.searchParams.set('uploadType', 'multipart');
+  const boundary = `camp-${Date.now()}`;
+  const metadata = JSON.stringify({
+    name: path,
+    contentType: 'image/webp',
+    cacheControl: 'public, max-age=31536000, immutable',
+  });
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+        `--${boundary}\r\nContent-Type: image/webp\r\n\r\n`,
+    ),
+    bytes,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
   const response = await fetch(url, {
     method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'image/webp' },
-    body: bytes,
+    headers: { ...authHeader(), 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
   });
   if (!response.ok) throw new Error(`Could not upload ${path}: ${await response.text()}`);
 }

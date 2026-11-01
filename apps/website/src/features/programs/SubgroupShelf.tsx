@@ -781,9 +781,15 @@ export function shelfCovers(
     .slice(0, SUMMARY_COVERS);
 }
 
-/** Narrow helper so the caller does not repeat the draft/count wording. */
-export function shelfNote(node: DocOf<ProgramEvent>, inside: number, count: number): string {
-  if (!node.published) return 'draft';
-  if (inside > 0) return `${inside} inside`;
-  return count > 0 ? `${count}` : 'empty';
+/**
+ * The word at the end of a row: "draft", or nothing.
+ *
+ * It used to be a count — "2 inside", "10", "empty" — and was taken off on
+ * 2026-11-01. "Summer Camp 2026  2 inside" read as part of the album's name,
+ * and the photograph count was of the summary window rather than the album,
+ * so a year holding 222 photographs said "10". Only the editor sees a draft, and
+ * that is the one thing worth flagging on a row.
+ */
+export function shelfNote(node: DocOf<ProgramEvent>): string {
+  return node.published ? '' : 'draft';
 }

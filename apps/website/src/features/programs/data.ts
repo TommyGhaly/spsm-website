@@ -2,11 +2,16 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromCache,
   getDocs,
+  getDocsFromCache,
   limit,
   orderBy,
   query,
   where,
+  type DocumentReference,
+  type Query,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
@@ -73,19 +78,141 @@ async function readOrEmpty<T>(what: string, run: () => Promise<T>, fallback: T):
   }
 }
 
-export async function getPrograms(): Promise<DocOf<Program>[]> {
+/* -------------------------------------------------------------------------- */
+/* Caching                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Why this exists: after the 2026-11-01 archive import a year of camp is six
+ * thousand photographs, and a gallery page reads its whole subtree — so one
+ * visit to "Summer Camp 2025" was six thousand document reads, and so was the
+ * next one, and the reload after that. Three layers, cheapest first:
+ *
+ *  1. **Memory, per tab.** One promise per read, shared by every caller while it
+ *     is fresh: the nav, the directory and the homepage band asking for the
+ *     programs at once make one query, and clicking back to a page is free.
+ *  2. **A subtree already in hand.** A year page's `in` query is exact for every
+ *     level under it, so opening one of its weeks or days filters that instead
+ *     of asking again. See `fromLoadedSubtree`.
+ *  3. **IndexedDB, across visits.** Firestore's persistent cache keeps every
+ *     document read; a query run inside `CACHE_TTL` is answered by
+ *     `getDocsFromCache` at no charge. That cache can be partial — its LRU drops
+ *     documents — so it is trusted only when it returns exactly as many as the
+ *     server did last time, else the server is asked.
+ *
+ * `fresh` skips all three, and is what a signed-in editor passes: somebody who
+ * just moved a photograph must see it moved, not a copy from ten minutes ago.
+ * A fresh read still refills every layer, so their next public view agrees.
+ *
+ * The cost is staleness for visitors: a newly approved photograph reaches a
+ * visitor who already had the page open within `CACHE_TTL`. For an archive of
+ * past camps that is no cost at all.
+ */
+const CACHE_TTL = 15 * 60_000;
+const STAMP_PREFIX = 'spsm.gallery-read.';
+
+type Stamp = { at: number; n: number };
+
+function readStamp(key: string): Stamp | null {
+  try {
+    const raw = window.localStorage.getItem(STAMP_PREFIX + key);
+    const stamp = raw ? (JSON.parse(raw) as Stamp) : null;
+    return stamp && Date.now() - stamp.at < CACHE_TTL ? stamp : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStamp(key: string, n: number): void {
+  try {
+    window.localStorage.setItem(STAMP_PREFIX + key, JSON.stringify({ at: Date.now(), n }));
+  } catch {
+    // Private window or full storage: every visit simply asks the server.
+  }
+}
+
+/** A query, from IndexedDB when it was run recently and the copy is whole. */
+async function getDocsCached(
+  key: string,
+  q: Query,
+  fresh: boolean,
+): Promise<QueryDocumentSnapshot[]> {
+  if (!fresh && typeof window !== 'undefined') {
+    const stamp = readStamp(key);
+    if (stamp) {
+      try {
+        const cached = await getDocsFromCache(q);
+        if (cached.size === stamp.n) return cached.docs;
+      } catch {
+        // Nothing cached for it: fall through to the server.
+      }
+    }
+  }
+  const snapshot = await getDocs(q);
+  if (typeof window !== 'undefined') writeStamp(key, snapshot.size);
+  return snapshot.docs;
+}
+
+/** One document, the same way. */
+async function getDocCached(key: string, ref: DocumentReference, fresh: boolean) {
+  if (!fresh && typeof window !== 'undefined' && readStamp(key)) {
+    try {
+      const cached = await getDocFromCache(ref);
+      if (cached.exists()) return cached;
+    } catch {
+      // Not cached.
+    }
+  }
+  const snapshot = await getDoc(ref);
+  if (typeof window !== 'undefined') writeStamp(key, snapshot.exists() ? 1 : 0);
+  return snapshot;
+}
+
+const memory = new Map<string, { at: number; value: Promise<unknown> }>();
+
+/**
+ * One in-flight or recent promise per key. A rejected read is forgotten at once,
+ * so a network blip is not remembered as an empty gallery for fifteen minutes —
+ * which is why this sits inside `readOrEmpty`'s `run`, not around it.
+ */
+function remembered<T>(key: string, fresh: boolean, load: () => Promise<T>): Promise<T> {
+  const hit = memory.get(key);
+  if (!fresh && hit && Date.now() - hit.at < CACHE_TTL) return hit.value as Promise<T>;
+  const value = load();
+  memory.set(key, { at: Date.now(), value });
+  value.catch(() => memory.delete(key));
+  return value;
+}
+
+/** Exact subtree reads still in memory: every approved item under these ids. */
+const loadedSubtrees: { at: number; ids: Set<string>; media: DocOf<GalleryMedia>[] }[] = [];
+
+function fromLoadedSubtree(nodeIds: readonly string[]): DocOf<GalleryMedia>[] | null {
+  const now = Date.now();
+  const hit = loadedSubtrees.find(
+    (entry) => now - entry.at < CACHE_TTL && nodeIds.every((id) => entry.ids.has(id)),
+  );
+  if (!hit) return null;
+  const wanted = new Set(nodeIds);
+  return hit.media.filter((item) => wanted.has(item.programEventId));
+}
+
+export async function getPrograms(fresh = false): Promise<DocOf<Program>[]> {
   return readOrEmpty(
     'programs',
-    async () => {
-      const snapshot = await getDocs(
-        query(
-          collection(db(), COLLECTIONS.programs),
-          where('published', '==', true),
-          orderBy('order', 'asc'),
-        ),
-      );
-      return snapshot.docs.map(docOf<Program>);
-    },
+    () =>
+      remembered('programs', fresh, async () => {
+        const docs = await getDocsCached(
+          'programs',
+          query(
+            collection(db(), COLLECTIONS.programs),
+            where('published', '==', true),
+            orderBy('order', 'asc'),
+          ),
+          fresh,
+        );
+        return docs.map(docOf<Program>);
+      }),
     [],
   );
 }
@@ -98,17 +225,19 @@ export async function getPrograms(): Promise<DocOf<Program>[]> {
  * `getDoc` costs one read where a query costs a query. `getPrograms` is
  * therefore not the way to find one.
  */
-export async function getProgram(slug: string): Promise<DocOf<Program> | null> {
+export async function getProgram(slug: string, fresh = false): Promise<DocOf<Program> | null> {
   return readOrEmpty(
     `program ${slug}`,
-    async () => {
-      const snapshot = await getDoc(doc(db(), COLLECTIONS.programs, slug));
-      if (!snapshot.exists()) return null;
-      // `docOf` takes a QueryDocumentSnapshot; a single-document read yields a
-      // DocumentSnapshot, which is the same shape once existence is proven.
-      const program = { id: snapshot.id, ...(snapshot.data() as Program) };
-      return program.published ? program : null;
-    },
+    () =>
+      remembered(`program:${slug}`, fresh, async () => {
+        const key = `program:${slug}`;
+        const snapshot = await getDocCached(key, doc(db(), COLLECTIONS.programs, slug), fresh);
+        if (!snapshot.exists()) return null;
+        // `docOf` takes a QueryDocumentSnapshot; a single-document read yields a
+        // DocumentSnapshot, which is the same shape once existence is proven.
+        const program = { id: snapshot.id, ...(snapshot.data() as Program) };
+        return program.published ? program : null;
+      }),
     null,
   );
 }
@@ -134,20 +263,27 @@ export async function getProgram(slug: string): Promise<DocOf<Program> | null> {
  * collection has always used: a level with no date is one somebody has not
  * finished filling in.
  */
-export async function getProgramEvents(programId: string): Promise<DocOf<ProgramEvent>[]> {
+export async function getProgramEvents(
+  programId: string,
+  fresh = false,
+): Promise<DocOf<ProgramEvent>[]> {
+  const key = `levels:${programId}`;
   return readOrEmpty(
     `events for ${programId}`,
-    async () => {
-      const snapshot = await getDocs(
-        query(
-          collection(db(), COLLECTIONS.programEvents),
-          where('programId', '==', programId),
-          where('published', '==', true),
-          orderBy('startAt', 'desc'),
-        ),
-      );
-      return snapshot.docs.map(docOf<ProgramEvent>);
-    },
+    () =>
+      remembered(key, fresh, async () => {
+        const docs = await getDocsCached(
+          key,
+          query(
+            collection(db(), COLLECTIONS.programEvents),
+            where('programId', '==', programId),
+            where('published', '==', true),
+            orderBy('startAt', 'desc'),
+          ),
+          fresh,
+        );
+        return docs.map(docOf<ProgramEvent>);
+      }),
     [],
   );
 }
@@ -173,14 +309,19 @@ export async function getProgramEvents(programId: string): Promise<DocOf<Program
  * There used to be a `published` check here as well. Events have no published
  * state now — one exists or it does not — so existence is the whole test.
  */
-export async function getLinkedCalendarEvent(eventId: string): Promise<DocOf<Event> | null> {
+export async function getLinkedCalendarEvent(
+  eventId: string,
+  fresh = false,
+): Promise<DocOf<Event> | null> {
+  const key = `calendar:${eventId}`;
   return readOrEmpty(
     `calendar event ${eventId}`,
-    async () => {
-      const snapshot = await getDoc(doc(db(), COLLECTIONS.events, eventId));
-      if (!snapshot.exists()) return null;
-      return { id: snapshot.id, ...(snapshot.data() as Event) };
-    },
+    () =>
+      remembered(key, fresh, async () => {
+        const snapshot = await getDocCached(key, doc(db(), COLLECTIONS.events, eventId), fresh);
+        if (!snapshot.exists()) return null;
+        return { id: snapshot.id, ...(snapshot.data() as Event) };
+      }),
     null,
   );
 }
@@ -240,31 +381,44 @@ const PROGRAM_PAGE_WINDOW = 300;
 export async function getSubtreeMedia(
   programId: string,
   nodeIds: readonly string[],
+  fresh = false,
 ): Promise<DocOf<GalleryMedia>[]> {
   // A level with nothing under it — an empty ministry, or a node whose children
   // are all unpublished. No query, rather than a query that cannot match.
   if (nodeIds.length === 0) return [];
 
   if (nodeIds.length <= IN_FILTER_MAX) {
+    if (!fresh) {
+      const inHand = fromLoadedSubtree(nodeIds);
+      if (inHand) return inHand;
+    }
+    // Sorted, so the same subtree is the same key however the tree listed it.
+    const key = `subtree:${[...nodeIds].sort().join(',')}`;
     return readOrEmpty(
       `media for ${nodeIds.length} level(s) of ${programId}`,
-      async () => {
-        const snapshot = await getDocs(
-          query(
-            collection(db(), COLLECTIONS.galleryMedia),
-            where('programEventId', 'in', [...nodeIds]),
-            APPROVED,
-            orderBy('order', 'asc'),
-          ),
-        );
-        return snapshot.docs.map(docOf<GalleryMedia>);
-      },
+      () =>
+        remembered(key, fresh, async () => {
+          const docs = await getDocsCached(
+            key,
+            query(
+              collection(db(), COLLECTIONS.galleryMedia),
+              where('programEventId', 'in', [...nodeIds]),
+              APPROVED,
+              orderBy('order', 'asc'),
+            ),
+            fresh,
+          );
+          const media = docs.map(docOf<GalleryMedia>);
+          loadedSubtrees.unshift({ at: Date.now(), ids: new Set(nodeIds), media });
+          loadedSubtrees.length = Math.min(loadedSubtrees.length, 8);
+          return media;
+        }),
       [],
     );
   }
 
   const wanted = new Set(nodeIds);
-  const everything = await getProgramMedia(programId, PROGRAM_PAGE_WINDOW);
+  const everything = await getProgramMedia(programId, PROGRAM_PAGE_WINDOW, fresh);
   return everything.filter((item) => wanted.has(item.programEventId));
 }
 
@@ -279,21 +433,26 @@ export async function getSubtreeMedia(
 export async function getProgramMedia(
   programId: string,
   max = 500,
+  fresh = false,
 ): Promise<DocOf<GalleryMedia>[]> {
+  const key = `program-media:${programId}:${max}`;
   return readOrEmpty(
     `media for program ${programId}`,
-    async () => {
-      const snapshot = await getDocs(
-        query(
-          collection(db(), COLLECTIONS.galleryMedia),
-          where('programId', '==', programId),
-          APPROVED,
-          orderBy('order', 'asc'),
-          limit(max),
-        ),
-      );
-      return snapshot.docs.map(docOf<GalleryMedia>);
-    },
+    () =>
+      remembered(key, fresh, async () => {
+        const docs = await getDocsCached(
+          key,
+          query(
+            collection(db(), COLLECTIONS.galleryMedia),
+            where('programId', '==', programId),
+            APPROVED,
+            orderBy('order', 'asc'),
+            limit(max),
+          ),
+          fresh,
+        );
+        return docs.map(docOf<GalleryMedia>);
+      }),
     [],
   );
 }
@@ -328,8 +487,11 @@ export async function getHomepageMedia(max = 24): Promise<DocOf<GalleryMedia>[]>
 /* Deriving what a page shows from one read                                    */
 /* -------------------------------------------------------------------------- */
 
-export function getProgramPageMedia(programId: string): Promise<DocOf<GalleryMedia>[]> {
-  return getProgramMedia(programId, PROGRAM_PAGE_WINDOW);
+export function getProgramPageMedia(
+  programId: string,
+  fresh = false,
+): Promise<DocOf<GalleryMedia>[]> {
+  return getProgramMedia(programId, PROGRAM_PAGE_WINDOW, fresh);
 }
 
 /**
@@ -371,8 +533,10 @@ export async function getGalleryLevel(
    * made, which is the one they most need to open.
    */
   nodes?: readonly DocOf<ProgramEvent>[],
+  /** Skip every cache — a signed-in editor. See "Caching" above. */
+  fresh = false,
 ): Promise<GalleryLevel | null> {
-  const all = nodes ?? (await getProgramEvents(programId));
+  const all = nodes ?? (await getProgramEvents(programId, fresh));
   const tree = buildGalleryTree(all);
 
   const found = trail.length === 0 ? [] : resolveTrail(tree, trail);
@@ -405,8 +569,8 @@ export async function getGalleryLevel(
    */
   const media =
     node === null
-      ? healOrphans(await getProgramPageMedia(programId), tree, programId)
-      : await getSubtreeMedia(programId, subtreeIds(tree, node.id));
+      ? healOrphans(await getProgramPageMedia(programId, fresh), tree, programId)
+      : await getSubtreeMedia(programId, subtreeIds(tree, node.id), fresh);
 
   return { tree, trail: found, node, media };
 }

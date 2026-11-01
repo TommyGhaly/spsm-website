@@ -23,7 +23,14 @@ import {
   ReCaptchaEnterpriseProvider,
   type AppCheck,
 } from 'firebase/app-check';
-import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getPublicConfig } from '@spsm/shared';
 
@@ -214,10 +221,41 @@ export async function appCheckTokenForFetch(): Promise<string | null> {
 }
 
 let firestoreConnected = false;
+let firestoreInstance: Firestore | null = null;
+
+/**
+ * Firestore, with the browser's copy of what it read kept in IndexedDB.
+ *
+ * The persistent cache is what lets `features/programs/data.ts` answer a repeat
+ * visit to a gallery from disk instead of re-reading thousands of photograph
+ * documents — see `getDocsCached` there. It does nothing on its own: a plain
+ * `getDocs` still goes to the server. In Node (the static build) there is no
+ * IndexedDB, so the build keeps the ordinary memory cache.
+ *
+ * Multi-tab, because a parent with the camp open in three tabs is the normal
+ * case, and the single-tab manager makes every tab after the first fall back to
+ * memory with a console warning.
+ */
+function firestore(): Firestore {
+  if (firestoreInstance) return firestoreInstance;
+  const app = firebaseApp();
+  try {
+    firestoreInstance =
+      typeof window === 'undefined'
+        ? getFirestore(app)
+        : initializeFirestore(app, {
+            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+          });
+  } catch {
+    // Already initialised elsewhere (a hot reload in dev): use that instance.
+    firestoreInstance = getFirestore(app);
+  }
+  return firestoreInstance;
+}
 
 export function db(): Firestore {
   ensureAppCheck();
-  const instance = getFirestore(firebaseApp());
+  const instance = firestore();
 
   // `connectFirestoreEmulator` throws if the instance has already been used, so
   // this has to happen on first access and exactly once.

@@ -138,6 +138,24 @@ export function MediaPicker({
 
   /** `null` is "everything". Otherwise one level's id. */
   const [level, setLevel] = useState<string | null>(null);
+
+  /**
+   * Which levels' pictures are drawn.
+   *
+   * Every section starts closed and draws nothing but its heading until it is
+   * opened. Since the camp archive went in, "Everywhere" on a year is six
+   * thousand thumbnails, and drawing them all at once froze the tab before the
+   * first could be clicked. A folder chosen on the left opens on its own, so
+   * narrowing to one day still shows that day straight away.
+   */
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleOpen = (id: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [kind, setKind] = useState<'all' | 'photo' | 'video'>('all');
 
   /**
@@ -198,6 +216,7 @@ export function MediaPicker({
   }, [shown, levels]);
 
   const ceiling = max ?? (mode === 'one' ? 1 : Number.POSITIVE_INFINITY);
+  const picked = useMemo(() => new Set(selected), [selected]);
   const full = mode === 'many' && selected.length >= ceiling;
 
   /*
@@ -252,7 +271,7 @@ export function MediaPicker({
     <div className="picker" role="dialog" aria-modal="true" aria-label={title}>
       <header className="picker__head">
         <div className="picker__title">
-          <p className="picker__kind">Choosing pictures</p>
+          <p className="picker__kind">{mode === 'mark' ? 'Marking pictures' : 'Choosing pictures'}</p>
           <h3>{title}</h3>
         </div>
 
@@ -264,7 +283,9 @@ export function MediaPicker({
           losing twelve.
         */}
         <p className="picker__hint">
-          {mode === 'one'
+          {mode === 'mark'
+            ? 'Open a level to see its pictures. Click one to mark it, click again to unmark it.'
+            : mode === 'one'
             ? 'Choose one picture. Click it again to go back to the newest photograph.'
             : `The numbered ones are what this block shows now, in order. Click to add, click again to take one out.${
                 Number.isFinite(ceiling) ? ` Up to ${ceiling}.` : ''
@@ -335,16 +356,36 @@ export function MediaPicker({
               approved them.
             </p>
           ) : (
-            sections.map((section) => (
+            sections.map((section) => {
+              const expanded = level === section.id || open.has(section.id);
+              const marked = section.items.filter((item) => picked.has(item.id)).length;
+              return (
               <div className="picker__gathering" key={section.id}>
                 {/* The heading stays put while its own run of pictures scrolls
                     past, so it is always clear which level you are looking at in a
-                    ministry with ten years behind it. */}
-                <h4>{section.title}</h4>
+                    ministry with ten years behind it. A button now: the pictures
+                    under it are drawn only once it is open. */}
+                <h4>
+                  <button
+                    type="button"
+                    className="picker__section-toggle"
+                    aria-expanded={expanded}
+                    onClick={() => toggleOpen(section.id)}
+                    disabled={level === section.id}
+                  >
+                    <Icon name={expanded ? 'chevron' : 'next'} size={14} />
+                    <span>{section.title}</span>
+                    <small>
+                      {section.items.length}
+                      {marked > 0 && ` · ${marked} ${mode === 'mark' ? 'marked' : 'chosen'}`}
+                    </small>
+                  </button>
+                </h4>
+                {expanded && (
                 <ul className="picker__grid">
                   {section.items.map((item) => {
-                    const at = selected.indexOf(item.id);
-                    const chosen = at !== -1;
+                    const at = mode === 'mark' ? -1 : selected.indexOf(item.id);
+                    const chosen = mode === 'mark' ? picked.has(item.id) : at !== -1;
                     const alsoHere = !chosen && already.has(item.id);
                     const poster = galleryPosterUrl(item);
 
@@ -382,10 +423,20 @@ export function MediaPicker({
                           )}
 
                           {chosen && (
-                            <span className="picker__tile-mark">
-                              {mode === 'many' ? at + 1 : <Icon name="check" size={14} />}
+                            <span
+                              className={`picker__tile-mark${mode === 'mark' ? ' picker__tile-mark--cross' : ''}`}
+                            >
+                              {mode === 'many' ? (
+                                at + 1
+                              ) : (
+                                <Icon name={mode === 'mark' ? 'close' : 'check'} size={14} />
+                              )}
                               <span className="visually-hidden">
-                                {mode === 'many' ? `Position ${at + 1}` : 'Chosen'}
+                                {mode === 'many'
+                                  ? `Position ${at + 1}`
+                                  : mode === 'mark'
+                                    ? 'Marked'
+                                    : 'Chosen'}
                               </span>
                             </span>
                           )}
@@ -413,8 +464,10 @@ export function MediaPicker({
                     );
                   })}
                 </ul>
+                )}
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

@@ -206,6 +206,21 @@ export interface Program extends AuditFields, Publishable {
   hiddenMediaIds?: string[];
 
   /**
+   * This page's randomizer — see `resolveRandomizer` in gallery/randomizer.ts.
+   * Absent reads as on for a page with levels inside it that has no picked
+   * pictures or blocks of its own, and off otherwise.
+   */
+  randomizer?: unknown;
+
+  /**
+   * Photographs no randomizer anywhere in this program may pick. One list for
+   * the whole program, by the parish's choice: blacklisted once, a picture is
+   * never drawn at random on a year, a week or a day — and is still on the page
+   * of the day it was filed on, for anyone who goes looking.
+   */
+  randomizerBlacklist?: string[];
+
+  /**
    * Whether the parish is collecting photographs anywhere under this ministry.
    *
    * **One flag for the whole tree**, at Tommy's direction. It used to be a flag
@@ -439,6 +454,13 @@ export interface ProgramEvent extends AuditFields, Publishable {
    * applies this last.
    */
   hiddenMediaIds?: string[];
+
+  /**
+   * This page's randomizer — see `resolveRandomizer` in gallery/randomizer.ts.
+   * Absent reads as on for a page with levels inside it that has no picked
+   * pictures or blocks of its own, and off otherwise.
+   */
+  randomizer?: unknown;
 
   /**
    * A calendar `events` document, when this occurrence is also something people

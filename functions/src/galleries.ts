@@ -598,6 +598,15 @@ export const onGalleryMediaReviewed = onDocumentUpdated(
 
       try {
         await bucket.file(source).copy(bucket.file(renditionPath));
+        /*
+         * A year in every cache, and never revalidated. Safe because the path
+         * is the media id: it is never rewritten with different bytes, so a
+         * cached copy cannot go stale. Without this Storage serves
+         * `private, max-age=0` and every visit re-downloads every photograph.
+         */
+        await bucket
+          .file(renditionPath)
+          .setMetadata({ cacheControl: 'public, max-age=31536000, immutable' });
         await ref.update({
           renditionPath,
           previewPath: null,

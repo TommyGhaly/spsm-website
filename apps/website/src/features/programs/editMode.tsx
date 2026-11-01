@@ -118,6 +118,17 @@ const OFF: EditModeValue = {
 
 const EditModeContext = createContext<EditModeValue>(OFF);
 
+/**
+ * Draw what is inside as a visitor sees it, whatever the page around it is doing.
+ *
+ * For the randomizer's sections: they are blocks drawn through `BlockFrame`, but
+ * they exist only for this visit, so the shape, width and bin controls an editor
+ * gets on a real block would write to bands that are not there.
+ */
+export function ViewOnly({ children }: { children: ReactNode }) {
+  return <EditModeContext.Provider value={OFF}>{children}</EditModeContext.Provider>;
+}
+
 export function EditModeProvider({
   allowed,
   children,

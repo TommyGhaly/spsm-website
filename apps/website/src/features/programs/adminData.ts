@@ -32,6 +32,8 @@
  * same shape as `listProgramLinkTargets` in features/events/admin.ts.
  */
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -65,6 +67,7 @@ import {
   type MediaPlacement,
   type Program,
   type ProgramEvent,
+  type RandomizerSettings,
   type SectionLayout,
 } from '@spsm/shared';
 import { db } from '@/lib/firebase';
@@ -811,6 +814,53 @@ export async function setSectionLayout(
       : doc(db(), COLLECTIONS.programEvents, target.programEventId);
 
   await updateDoc(reference, { sectionLayout: layout, ...audit });
+}
+
+/* -------------------------------------------------------------------------- */
+/* The randomizer                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Save one page's randomizer. The whole object, for the reason `setSectionLayout`
+ * writes the whole layout: a partial nested object replaces rather than merges.
+ * Written explicitly even when it matches the default, so turning a page's
+ * randomizer *off* sticks — absent would read back as on for a page with levels.
+ */
+export async function setRandomizer(
+  target: SectionTarget,
+  settings: RandomizerSettings,
+  uid: string | null,
+): Promise<void> {
+  const reference =
+    target.kind === 'program'
+      ? doc(db(), COLLECTIONS.programs, target.programId)
+      : doc(db(), COLLECTIONS.programEvents, target.programEventId);
+  await updateDoc(reference, {
+    randomizer: settings,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
+/**
+ * Put pictures on, or take them off, the program's randomizer blacklist.
+ *
+ * `arrayUnion`/`arrayRemove` rather than a read-modify-write: the list holds
+ * plain ids, which those match exactly, so two administrators blacklisting on
+ * two pages at once cannot lose each other's picks.
+ */
+export async function setBlacklisted(
+  programId: string,
+  mediaIds: readonly string[],
+  blacklisted: boolean,
+  uid: string | null,
+): Promise<void> {
+  if (mediaIds.length === 0) return;
+  await updateDoc(doc(db(), COLLECTIONS.programs, programId), {
+    randomizerBlacklist: blacklisted ? arrayUnion(...mediaIds) : arrayRemove(...mediaIds),
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
 }
 
 /* -------------------------------------------------------------------------- */
