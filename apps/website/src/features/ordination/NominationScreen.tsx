@@ -7,8 +7,8 @@ import {
   ageOn,
   isOrdinationRank,
   emptyOrdinationDraft,
+  longDay,
   ordinationRankLabel,
-  ordinationTitle,
   validateOrdinationDraft,
   type Ordination,
   type OrdinationApplicationDraft,
@@ -28,9 +28,13 @@ const TITLE = 'Nomination for ordination';
  * The public nomination form, at /forms/ordination.
  *
  * ---------------------------------------------------------------------------
- * The nominee page of the diocese's form, online. A nominee — or a parent, for
- * a cantor or a reader — picks the ordination's date and the rank, and gives
- * the details the page asks for. Nobody signs in; the camp's servant sign-up is the model.
+ * The nominee page of the diocese's form, online. It is written to the nominee,
+ * since that is who fills it in nearly every time; a parent filling it in for
+ * a son says so in one optional field. Nobody signs in; the camp's servant
+ * sign-up is the model.
+ *
+ * There is no choosing the ordination. The parish holds one a year, so the
+ * form takes the open one — the soonest, should two ever be open at once.
  *
  * What is deliberately not here is the half of the page the priest writes:
  * the questions about attendance, conduct and the father of confession's
@@ -44,11 +48,12 @@ const TITLE = 'Nomination for ordination';
  * ---------------------------------------------------------------------------
  */
 export function NominationScreen() {
-  const [ordinations, setOrdinations] = useState<WithId<Ordination>[] | null>(null);
+  const [ordination, setOrdination] = useState<WithId<Ordination> | null | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState<OrdinationApplicationDraft>(() => emptyOrdinationDraft());
 
-  // `?rank=reader` preselects the rank, alongside `?ordination=` below.
+  // `?rank=reader` preselects the rank. Read off `location` rather than
+  // `useSearchParams`, which would take this page out of the static export.
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get('rank');
     if (isOrdinationRank(wanted)) setDraft((current) => ({ ...current, rank: wanted }));
@@ -61,19 +66,9 @@ export function NominationScreen() {
     () =>
       watchOpenOrdinations(
         (rows) => {
-          setOrdinations(rows);
-          setDraft((current) => {
-            if (rows.some((row) => row.id === current.ordinationId)) return current;
-            /*
-             * A link may name the ordination — `?ordination=<id>` — so a priest
-             * can send one family straight to the right one. Read off `location`
-             * rather than `useSearchParams`, which would take this page out of
-             * the static export; see `GalleryShell`.
-             */
-            const wanted = new URLSearchParams(window.location.search).get('ordination');
-            const pick = rows.find((row) => row.id === wanted) ?? (rows.length === 1 ? rows[0] : undefined);
-            return { ...current, ordinationId: pick?.id ?? '' };
-          });
+          const soonest = [...rows].sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+          setOrdination(soonest);
+          setDraft((current) => ({ ...current, ordinationId: soonest?.id ?? '' }));
         },
         (error) => {
           console.error('[ordination] could not read the open ordinations', error);
@@ -106,9 +101,9 @@ export function NominationScreen() {
     );
   }
 
-  if (ordinations === null) return frame(<p className="note">Loading…</p>);
+  if (ordination === undefined) return frame(<p className="note">Loading…</p>);
 
-  if (ordinations.length === 0) {
+  if (ordination === null) {
     return frame(
       <>
         <h2>{TITLE}</h2>
@@ -137,7 +132,6 @@ export function NominationScreen() {
     );
   }
 
-  const ordination = ordinations.find((row) => row.id === draft.ordinationId) ?? null;
   const rank = draft.rank || null;
   const info = rank ? ORDINATION_RANK_INFO[rank] : null;
   const nominee = draft.nominee;
@@ -152,10 +146,7 @@ export function NominationScreen() {
     });
 
   async function send() {
-    if (!ordination) {
-      setErrors(['Choose the ordination this nomination is for.']);
-      return;
-    }
+    if (!ordination) return;
     const problems = validateOrdinationDraft(draft, ordination.date);
     setErrors(problems);
     if (problems.length > 0) {
@@ -178,9 +169,9 @@ export function NominationScreen() {
     <>
       <h2>{TITLE}</h2>
       <p className="camp-public__intro">
-        For a cantor, reader or subdeacon being put forward for ordination. Fill this in for
-        yourself, or for your son. The parish priests review every nomination and answer the
-        diocese&rsquo;s questions about the nominee themselves before anything is sent.
+        For the ordination on {longDay(ordination.date)}. Put yourself forward as a cantor,
+        reader or subdeacon here. The parish priests review every nomination and answer the
+        diocese&rsquo;s questions about you themselves before anything is sent.
       </p>
 
       {errors.length > 0 ? (
@@ -195,23 +186,8 @@ export function NominationScreen() {
       ) : null}
 
       <section className="camp-step">
-        <h3>Which ordination</h3>
+        <h3>Which rank</h3>
         <div className="camp-grid">
-          <label className="camp-field">
-            <span className="camp-field__label">Date</span>
-            <select
-              className="input"
-              value={draft.ordinationId}
-              onChange={(event) => setDraft({ ...draft, ordinationId: event.target.value })}
-            >
-              <option value="">Choose one</option>
-              {ordinations.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {ordinationTitle(row)}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="camp-field">
             <span className="camp-field__label">Rank</span>
             <select
@@ -238,12 +214,12 @@ export function NominationScreen() {
         </div>
       </section>
 
-      {ordination && rank && info ? (
+      {rank && info ? (
         <>
           <section className="camp-step">
-            <h3>The nominee</h3>
+            <h3>About you</h3>
             <label className="camp-field">
-              <span className="camp-field__label">Full name</span>
+              <span className="camp-field__label">Your full name</span>
               <input
                 className="input"
                 autoComplete="off"
@@ -324,7 +300,7 @@ export function NominationScreen() {
                 onChange={(event) => setNominee({ fatherOfConfession: event.target.value })}
               />
               <span className="camp-field__hint">
-                The diocese asks the parish priests whether he has approved the nomination.
+                The diocese asks the parish priests whether he has approved your nomination.
               </span>
             </label>
           </section>
@@ -334,7 +310,7 @@ export function NominationScreen() {
               <h3>Parents</h3>
               <p className="note">
                 {age !== null && age < 18
-                  ? 'At least one parent, since the nominee is under 18.'
+                  ? 'At least one parent, since you are under 18.'
                   : 'If applicable.'}
               </p>
               {draft.parents.map((parent, index) => (
@@ -373,7 +349,7 @@ export function NominationScreen() {
           <section className="camp-step">
             <h3>Anything else</h3>
             <label className="camp-field">
-              <span className="camp-field__label">Your name, if you are not the nominee</span>
+              <span className="camp-field__label">Filling this in for your son? Your name</span>
               <input
                 className="input"
                 value={draft.submittedBy}
@@ -398,7 +374,7 @@ export function NominationScreen() {
               disabled={sending}
               onClick={() => void send()}
             >
-              {sending ? 'Sending…' : `Send the nomination for ${ordinationRankLabel(rank)}`}
+              {sending ? 'Sending…' : `Send my nomination for ${ordinationRankLabel(rank)}`}
             </button>
           </p>
         </>
