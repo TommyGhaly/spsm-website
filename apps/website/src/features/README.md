@@ -47,7 +47,7 @@ feature A needs a file inside feature B, that file probably belongs in
 | `parking` | `/parking` | **Working form**, writes to Firestore. |
 | `giving` | `/giving` | Working. Tithe.ly's hosted form in an overlay; needs no configuration. |
 | `servants` | `/servants` | **Live.** Breeze calendar, framed behind Microsoft sign-in. |
-| `ordination` | `/forms/ordination`, `/admin/ordination` | **Built 2 Nov 2026, not deployed.** Public nomination form (website only, not the app) posting to `ordinationApply`; admins review, answer the diocese's questions, sign with a drawn signature, and print the diocese's PDFs, filled in the browser with pdf-lib from `public/ordination/`. SharePoint upload not built yet. |
+| `ordination` | `/forms/ordination`, `/admin/ordination` | **Built 2 Nov 2026, not deployed.** Public nomination form (website only, not the app) posting to `ordinationApply`; an ordination is a date and the family picks the rank on the form, and admins print one packet per rank; admins review, answer the diocese's questions, sign with a drawn signature, and print the diocese's PDFs, filled in the browser with pdf-lib from `public/ordination/`. SharePoint upload not built yet. |
 
 "Waiting on content" means the code works and the source is empty, so the page
 renders its empty state. That is different from blocked.

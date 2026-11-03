@@ -1631,13 +1631,13 @@ service cloud.firestore {
      * -----------------------------------------------------------------------
      * Three collections, all behind the `ordination` screen except one read.
      *
-     * `ordinations` is a rank and a date. It is public to read because the
+     * `ordinations` is a date; each nomination carries its rank. It is public to read because the
      * nomination form lists the open ones to people with no account, and there
      * is nothing on it a parish newsletter would not print.
      *
      * `ordinationApplications` is shaped like `campServantRequests`: only the
-     * `ordinationApply` Function creates one, because the rank is copied from
-     * the ordination and an application must arrive pending, unanswered and
+     * `ordinationApply` Function creates one, because it checks the ordination
+     * is open and an application must arrive pending, unanswered and
      * unsigned. An admin may then change the review and nothing else — the
      * nominee's details are what the family sent, and the packet the diocese
      * receives should print exactly that.
@@ -1651,8 +1651,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if hasScreen('ordination')
         && request.resource.data.keys().hasOnly(
-             ['rank', 'date', 'open', 'churchName', 'churchAddress', 'createdAt', 'updatedAt', 'updatedBy'])
-        && request.resource.data.rank in ['cantor', 'reader', 'subdeacon']
+             ['date', 'open', 'churchName', 'churchAddress', 'createdAt', 'updatedAt', 'updatedBy'])
         && request.resource.data.date is string
         && request.resource.data.open is bool;
       allow delete: if hasScreen('ordination');

@@ -16,8 +16,11 @@ import {
   type OrdinationApplicationDraft,
 } from '@spsm/shared';
 
-function draft(over: Partial<OrdinationApplicationDraft['nominee']> = {}): OrdinationApplicationDraft {
-  const base = emptyOrdinationDraft('ord-1');
+function draft(
+  over: Partial<OrdinationApplicationDraft['nominee']> = {},
+  rank: OrdinationApplicationDraft['rank'] = 'reader',
+): OrdinationApplicationDraft {
+  const base = emptyOrdinationDraft('ord-1', rank);
   return {
     ...base,
     nominee: {
@@ -53,29 +56,35 @@ describe('dates', () => {
 
 describe('validateOrdinationDraft', () => {
   it('accepts a complete reader nomination', () => {
-    expect(validateOrdinationDraft(draft(), 'reader', '2026-12-06')).toEqual([]);
+    expect(validateOrdinationDraft(draft(), '2026-12-06')).toEqual([]);
+  });
+
+  it('asks for the rank, since one ordination takes all three', () => {
+    expect(validateOrdinationDraft(draft({}, ''), '2026-12-06')).toEqual([
+      'Choose the rank the nominee is put forward for.',
+    ]);
   });
 
   it('asks a minor for a parent', () => {
     const value = draft();
     value.parents = [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }];
-    const errors = validateOrdinationDraft(value, 'reader', '2026-12-06');
+    const errors = validateOrdinationDraft(value, '2026-12-06');
     expect(errors.some((error) => error.includes('parent’s name'))).toBe(true);
   });
 
   it('does not ask an adult reader for a parent', () => {
     const value = draft({ dateOfBirth: '2000-01-01' });
     value.parents = [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }];
-    expect(validateOrdinationDraft(value, 'reader', '2026-12-06')).toEqual([]);
+    expect(validateOrdinationDraft(value, '2026-12-06')).toEqual([]);
   });
 
   it('asks a subdeacon for study or profession rather than a grade', () => {
-    const errors = validateOrdinationDraft(draft({ dateOfBirth: '1995-01-01' }), 'subdeacon', '2026-12-06');
+    const errors = validateOrdinationDraft(draft({ dateOfBirth: '1995-01-01' }, 'subdeacon'), '2026-12-06');
     expect(errors).toEqual(['Enter the nominee’s level of study or professional position.']);
   });
 
   it('never refuses an under-age nominee — that is the priest’s call', () => {
-    expect(validateOrdinationDraft(draft({ dateOfBirth: '2020-01-01' }), 'cantor', '2026-12-06')).toEqual([]);
+    expect(validateOrdinationDraft(draft({ dateOfBirth: '2020-01-01' }, 'cantor'), '2026-12-06')).toEqual([]);
   });
 });
 
@@ -90,6 +99,11 @@ describe('parsing', () => {
     expect(parsed).not.toHaveProperty('status');
     expect(parsed).not.toHaveProperty('review');
     expect(parsed).not.toHaveProperty('signatures');
+  });
+
+  it('keeps a real rank from the sender and drops a made-up one', () => {
+    expect(parseOrdinationDraft({ ...draft(), rank: 'subdeacon' }).rank).toBe('subdeacon');
+    expect(parseOrdinationDraft({ ...draft(), rank: 'deacon' }).rank).toBe('');
   });
 
   it('keeps no more than three signatures, and only PNG ones', () => {

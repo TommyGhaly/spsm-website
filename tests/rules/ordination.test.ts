@@ -40,7 +40,6 @@ const everyScreenButOrdination = Object.fromEntries(
 );
 
 const ordination = {
-  rank: 'reader',
   date: '2026-12-06',
   open: true,
   churchName: 'St. Philopater Mercurius & St. Mina Coptic Orthodox Church',
@@ -113,9 +112,9 @@ describe('ordinations', () => {
     await assertFails(addDoc(collection(asAnon(env).firestore(), 'ordinations'), ordination));
   });
 
-  it('refuses a rank that is not one of the three, and keys it does not know', async () => {
+  it('refuses keys it does not know — a rank included, which belongs to each nomination', async () => {
     const db = asPriest(env).firestore();
-    await assertFails(addDoc(collection(db, 'ordinations'), { ...ordination, rank: 'deacon' }));
+    await assertFails(addDoc(collection(db, 'ordinations'), { ...ordination, rank: 'reader' }));
     await assertFails(addDoc(collection(db, 'ordinations'), { ...ordination, extra: true }));
   });
 

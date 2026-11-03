@@ -9,10 +9,12 @@
  *
  * The website's part is everything up to the paper:
  *
- *   1. An ordination admin opens an **ordination** — a rank and a date.
+ *   1. An ordination admin opens an **ordination** — a date. One ordination
+ *      takes all three ranks; the diocese still gets a packet per rank.
  *   2. A nominee, or a parent for a child, fills the nominee page in on
- *      /forms/ordination. That posts to the `ordinationApply` Function, which
- *      is the only writer of `ordinationApplications`.
+ *      /forms/ordination, choosing the date and the rank. That posts to the
+ *      `ordinationApply` Function, which is the only writer of
+ *      `ordinationApplications`.
  *   3. An admin approves or rejects each one. Approving is where the questions
  *      the priest answers *about* the nominee get answered, and where a priest
  *      signs with the signature they drew once on the signatures tab.
@@ -107,7 +109,8 @@ export const ORDINATION_QUESTIONS: Record<OrdinationRank, readonly { key: string
 
 /**
  * The cover page has twenty rows and no continuation sheet, so an ordination
- * can approve twenty and no more. The admin screen refuses the twenty-first.
+ * can approve twenty of each rank and no more. The admin screen refuses the
+ * twenty-first.
  */
 export const ORDINATION_MAX_NOMINEES = 20;
 
@@ -118,8 +121,11 @@ export const ORDINATION_MAX_SIGNATURES = 3;
 /* Ordinations                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One ordination day. It has no rank: each nomination carries its own, and the
+ * admin screen prints one diocese packet per rank from the nominations for it.
+ */
 export interface Ordination {
-  rank: OrdinationRank;
   /** The proposed date of ordination, `YYYY-MM-DD`. */
   date: string;
   /** Whether /forms/ordination offers it. Closing it keeps every application. */
@@ -161,7 +167,6 @@ export function parseOrdination(raw: unknown): Ordination {
   const doc = record(raw);
   const date = text(doc['date'], 10);
   return {
-    rank: isOrdinationRank(doc['rank']) ? doc['rank'] : 'reader',
     date: isCalendarDay(date) ? date : '',
     open: doc['open'] === true,
     churchName: text(doc['churchName']),
@@ -172,9 +177,9 @@ export function parseOrdination(raw: unknown): Ordination {
   };
 }
 
-/** "Reader (Anaghnostis) · 6 December 2026" */
-export function ordinationTitle(ordination: Pick<Ordination, 'rank' | 'date'>): string {
-  return `${ordinationRankLabel(ordination.rank)} · ${longDay(ordination.date)}`;
+/** "Ordination on 6 December 2026" */
+export function ordinationTitle(ordination: Pick<Ordination, 'date'>): string {
+  return `Ordination on ${longDay(ordination.date)}`;
 }
 
 const MONTHS = [
@@ -243,6 +248,8 @@ export interface OrdinationNominee {
 /** What the public form sends. Everything else on an application is the parish's. */
 export interface OrdinationApplicationDraft {
   ordinationId: string;
+  /** The rank the nominee is put forward for. Empty until the sender chooses. */
+  rank: OrdinationRank | '';
   nominee: OrdinationNominee;
   /** Cantor and reader only. Always two entries, either of which may be blank. */
   parents: OrdinationContact[];
@@ -284,7 +291,7 @@ export interface OrdinationReview {
 }
 
 export interface OrdinationApplication extends OrdinationApplicationDraft {
-  /** Copied from the ordination when filed, so a list can be read without a join. */
+  /** Always one of the three once filed; the Function refuses a draft without one. */
   rank: OrdinationRank;
   status: OrdinationStatus;
   review: OrdinationReview | null;
@@ -304,9 +311,13 @@ export function emptyOrdinationContact(): OrdinationContact {
   return { name: '', phone: '', email: '' };
 }
 
-export function emptyOrdinationDraft(ordinationId = ''): OrdinationApplicationDraft {
+export function emptyOrdinationDraft(
+  ordinationId = '',
+  rank: OrdinationRank | '' = '',
+): OrdinationApplicationDraft {
   return {
     ordinationId,
+    rank,
     nominee: {
       name: '',
       address: '',
@@ -341,6 +352,7 @@ export function parseOrdinationDraft(raw: unknown): OrdinationApplicationDraft {
   const dateOfBirth = text(nominee['dateOfBirth'], 10);
   return {
     ordinationId: text(doc['ordinationId'], 100),
+    rank: isOrdinationRank(doc['rank']) ? doc['rank'] : '',
     nominee: {
       name: text(nominee['name']),
       address: text(nominee['address'], 300),
@@ -414,14 +426,18 @@ export function parseOrdinationApplication(raw: unknown): OrdinationApplication 
  */
 export function validateOrdinationDraft(
   draft: OrdinationApplicationDraft,
-  rank: OrdinationRank,
   ordinationDate: string,
 ): string[] {
   const errors: string[] = [];
   const nominee = draft.nominee;
-  const info = ORDINATION_RANK_INFO[rank];
 
   if (!draft.ordinationId) errors.push('Choose the ordination this nomination is for.');
+  if (!draft.rank) {
+    // Which fields the page has follows the rank, so nothing past here applies.
+    errors.push('Choose the rank the nominee is put forward for.');
+    return errors;
+  }
+  const info = ORDINATION_RANK_INFO[draft.rank];
   if (!nominee.name) errors.push('Enter the nominee’s full name.');
   if (!nominee.address) errors.push('Enter the nominee’s address.');
   if (!nominee.dateOfBirth) errors.push('Enter the nominee’s date of birth.');

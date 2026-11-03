@@ -6,6 +6,7 @@ import {
   ORDINATION_MAX_NOMINEES,
   ORDINATION_MAX_SIGNATURES,
   ORDINATION_QUESTIONS,
+  ORDINATION_RANKS,
   ORDINATION_RANK_INFO,
   ageOn,
   formDay,
@@ -16,6 +17,7 @@ import {
   validateOrdinationApproval,
   type Ordination,
   type OrdinationApplication,
+  type OrdinationRank,
   type OrdinationSignature,
   type OrdinationSignatureProfile,
   type OrdinationStatus,
@@ -59,9 +61,11 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  *     and at least one signature; rejecting needs neither.
  *   - **Approved** ones can be printed one at a time, gain a second or third
  *     priest's signature, or be moved back.
- *   - The **application** button at the top prints the diocese's full packet:
- *     the cover page naming every approved nominee, the requirements signed by
- *     every priest who signed any of them, and a page per nominee.
+ *   - Nominations are listed by rank, because the diocese takes one packet
+ *     per rank. Each rank's **application** button prints its full packet:
+ *     the cover page naming every approved nominee of that rank, the
+ *     requirements signed by every priest who signed any of them, and a page
+ *     per nominee.
  *
  * The id is read off `location` rather than `useSearchParams`, which would
  * take the route out of the static export; see `GalleryShell`.
@@ -97,17 +101,19 @@ export function NominationsScreen() {
       .catch((cause: Error) => console.warn('[ordination] could not read your signature', cause));
   }, [session.canEdit, session.uid]);
 
-  const approved = (applications ?? []).filter((row) => row.status === 'approved');
+  const approvedOf = (rank: OrdinationRank) =>
+    (applications ?? []).filter((row) => row.rank === rank && row.status === 'approved');
 
-  async function printApplication(mode: 'open' | 'download') {
+  async function printApplication(rank: OrdinationRank, mode: 'open' | 'download') {
+    const approved = approvedOf(rank);
     if (!ordination || approved.length === 0) return;
     const tab = mode === 'open' ? reserveTab() : null;
     setBusy(true);
     try {
       const { buildOrdinationPacket, downloadPdf, openPdf, packetFilename } = await packet();
-      const bytes = await buildOrdinationPacket(ordination, approved);
+      const bytes = await buildOrdinationPacket(ordination, rank, approved);
       if (mode === 'open') openPdf(bytes, tab);
-      else downloadPdf(bytes, packetFilename(ordination.rank, ordination.date, 'application'));
+      else downloadPdf(bytes, packetFilename(rank, ordination.date, 'application'));
     } catch (cause) {
       tab?.close();
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -142,23 +148,6 @@ export function NominationsScreen() {
       session={session}
       tab="home"
       title={ordination ? ordinationTitle(ordination) : 'Nominations'}
-      actions={
-        approved.length > 0 ? (
-          <>
-            <button type="button" className="button" disabled={busy} onClick={() => void printApplication('open')}>
-              {busy ? 'Building…' : `Print application (${approved.length})`}
-            </button>
-            <button
-              type="button"
-              className="button button--ghost"
-              disabled={busy}
-              onClick={() => void printApplication('download')}
-            >
-              Download
-            </button>
-          </>
-        ) : null
-      }
     >
       {error ? <OrdinationError error={error} /> : null}
 
@@ -187,26 +176,67 @@ export function NominationsScreen() {
                 </div>
               ) : null}
 
-              {groups.map((group) => {
-                const rows = applications.filter((row) => row.status === group.status);
-                if (rows.length === 0 && !group.empty) return null;
+              {applications.length === 0 ? (
+                <p className="note ordination-group">
+                  No nominations yet. They arrive here from the Forms page while this ordination is
+                  open.
+                </p>
+              ) : null}
+
+              {ORDINATION_RANKS.map((rank) => {
+                const ofRank = applications.filter((row) => row.rank === rank);
+                if (ofRank.length === 0) return null;
+                const approved = approvedOf(rank);
                 return (
-                  <section key={group.status} className="ordination-group">
-                    <h3>
-                      {group.title} <span className="ordination-count">{rows.length}</span>
-                    </h3>
-                    {rows.length === 0 ? <p className="note">{group.empty}</p> : null}
-                    {rows.map((row) => (
-                      <Nomination
-                        key={row.id}
-                        application={row}
-                        ordination={ordination}
-                        session={session}
-                        mine={mine}
-                        approvedCount={approved.length}
-                        onError={setError}
-                      />
-                    ))}
+                  <section key={rank} className="ordination-group ordination-rank">
+                    <div className="ordination-rank__head">
+                      <h3>
+                        {ordinationRankLabel(rank)} <span className="ordination-count">{ofRank.length}</span>
+                      </h3>
+                      {approved.length > 0 ? (
+                        <p className="ordination-actions">
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busy}
+                            onClick={() => void printApplication(rank, 'open')}
+                          >
+                            {busy ? 'Building…' : `Print application (${approved.length})`}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            disabled={busy}
+                            onClick={() => void printApplication(rank, 'download')}
+                          >
+                            Download
+                          </button>
+                        </p>
+                      ) : null}
+                    </div>
+                    {groups.map((group) => {
+                      const rows = ofRank.filter((row) => row.status === group.status);
+                      if (rows.length === 0 && !group.empty) return null;
+                      return (
+                        <div key={group.status} className="ordination-status">
+                          <h4>
+                            {group.title} <span className="ordination-count">{rows.length}</span>
+                          </h4>
+                          {rows.length === 0 ? <p className="note">{group.empty}</p> : null}
+                          {rows.map((row) => (
+                            <Nomination
+                              key={row.id}
+                              application={row}
+                              ordination={ordination}
+                              session={session}
+                              mine={mine}
+                              approvedCount={approved.length}
+                              onError={setError}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })}
                   </section>
                 );
               })}
@@ -253,9 +283,9 @@ function OrdinationSettings({
 
   return (
     <section className="camp-step ordination-settings">
-      <h3>{ordinationRankLabel(ordination.rank)}</h3>
+      <h3>{longDay(ordination.date)}</h3>
       <p>
-        {longDay(ordination.date)} · {ordination.open ? 'Taking nominations on the Forms page' : 'Closed to new nominations'}
+        {ordination.open ? 'Taking nominations on the Forms page' : 'Closed to new nominations'}
         {deadline ? ` · Due at the diocese by ${deadline}` : ''}
       </p>
       <p className="ordination-actions">
@@ -401,7 +431,9 @@ function Nomination({
     if (status === 'approved') {
       const errors = validateOrdinationApproval(rank, answers, signatures);
       if (application.status !== 'approved' && approvedCount >= ORDINATION_MAX_NOMINEES) {
-        errors.push(`The diocese's cover page has room for ${ORDINATION_MAX_NOMINEES} nominees, and this ordination already has that many.`);
+        errors.push(
+          `The diocese's cover page has room for ${ORDINATION_MAX_NOMINEES} nominees, and this ordination already has that many ${info.title.toLowerCase()}s.`,
+        );
       }
       setProblems(errors);
       if (errors.length > 0) return;

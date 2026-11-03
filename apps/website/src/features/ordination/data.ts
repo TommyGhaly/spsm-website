@@ -44,7 +44,7 @@ export const DEFAULT_CHURCH_NAME = 'St. Philopater Mercurius & St. Mina Coptic O
 
 /** Soonest first, so the next ordination is the top of the list. */
 function byDate(a: WithId<Ordination>, b: WithId<Ordination>): number {
-  return a.date.localeCompare(b.date) || a.rank.localeCompare(b.rank);
+  return a.date.localeCompare(b.date);
 }
 
 /** The ordinations the public form offers. */
@@ -89,7 +89,7 @@ export function watchOrdination(
 }
 
 export async function createOrdination(
-  input: Pick<Ordination, 'rank' | 'date' | 'churchName' | 'churchAddress'>,
+  input: Pick<Ordination, 'date' | 'churchName' | 'churchAddress'>,
   uid: string,
 ): Promise<string> {
   const written = await addDoc(collection(db(), COLLECTIONS.ordinations), {

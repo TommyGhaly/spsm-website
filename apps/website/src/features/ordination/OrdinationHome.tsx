@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import {
-  ORDINATION_RANKS,
-  ORDINATION_RANK_INFO,
   isCalendarDay,
   longDay,
-  ordinationRankLabel,
   type Ordination,
-  type OrdinationRank,
   type OrdinationStatus,
 } from '@spsm/shared';
 import { getParishConfig } from '@/lib/config';
@@ -25,8 +21,8 @@ import { useOrdinationAdmin } from './useOrdinationAdmin';
 /**
  * /admin/ordination — every ordination, and the form that opens a new one.
  *
- * An ordination is a rank and a date, and opening one is what puts the card on
- * /forms. Each is a card leading to its nominations, with the counts an admin
+ * An ordination is a date, taking nominations for every rank, and opening one
+ * is what puts the card on /forms. Each is a card leading to its nominations, with the counts an admin
  * scans for: how many are waiting, how many are approved.
  */
 export function OrdinationHome() {
@@ -93,9 +89,9 @@ function OrdinationCards({
           <li key={row.id}>
             <a className="camp-card" href={`/admin/ordination/nominations?id=${encodeURIComponent(row.id)}`}>
               <span className="camp-card__eyebrow">
-                {longDay(row.date)} · {row.open ? 'Taking nominations' : 'Closed'}
+                {row.open ? 'Taking nominations' : 'Closed'}
               </span>
-              <span className="camp-card__title">{ordinationRankLabel(row.rank)}</span>
+              <span className="camp-card__title">{longDay(row.date)}</span>
               <span className="camp-card__blurb">
                 {tally.pending} waiting · {tally.approved} approved
                 {tally.rejected ? ` · ${tally.rejected} not approved` : ''}
@@ -109,7 +105,6 @@ function OrdinationCards({
 }
 
 function NewOrdination({ uid }: { uid: string | null }) {
-  const [rank, setRank] = useState<OrdinationRank>('reader');
   const [date, setDate] = useState('');
   const [churchName, setChurchName] = useState(DEFAULT_CHURCH_NAME);
   const [churchAddress, setChurchAddress] = useState('');
@@ -142,7 +137,7 @@ function NewOrdination({ uid }: { uid: string | null }) {
     setProblem('');
     try {
       const id = await createOrdination(
-        { rank, date, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
+        { date, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
         uid,
       );
       window.location.href = `/admin/ordination/nominations?id=${encodeURIComponent(id)}`;
@@ -157,27 +152,11 @@ function NewOrdination({ uid }: { uid: string | null }) {
       <h3>Open an ordination</h3>
       <p className="note">
         Opening one puts a nomination form for it on the website&rsquo;s Forms page until you
-        close it.
+        close it. Families choose the rank — cantor, reader or subdeacon — on the form, and
+        each rank prints as its own application for the diocese.
       </p>
       {problem ? <p className="ordination-problem">{problem}</p> : null}
       <div className="camp-grid">
-        <label className="camp-field">
-          <span className="camp-field__label">Rank</span>
-          <select
-            className="input"
-            value={rank}
-            onChange={(event) => setRank(event.target.value as OrdinationRank)}
-          >
-            {ORDINATION_RANKS.map((value) => (
-              <option key={value} value={value}>
-                {ordinationRankLabel(value)}
-              </option>
-            ))}
-          </select>
-          <span className="camp-field__hint">
-            Completed {ORDINATION_RANK_INFO[rank].minimumAge} years of age, per the diocese.
-          </span>
-        </label>
         <label className="camp-field">
           <span className="camp-field__label">Date of ordination</span>
           <input type="date" className="input" value={date} onChange={(event) => setDate(event.target.value)} />

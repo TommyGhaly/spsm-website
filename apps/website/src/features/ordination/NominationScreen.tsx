@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import {
+  ORDINATION_RANKS,
   ORDINATION_RANK_INFO,
   ageOn,
+  isOrdinationRank,
   emptyOrdinationDraft,
   ordinationRankLabel,
   ordinationTitle,
@@ -12,6 +14,7 @@ import {
   type OrdinationApplicationDraft,
   type OrdinationContact,
   type OrdinationNominee,
+  type OrdinationRank,
 } from '@spsm/shared';
 import { BackLink } from '@/components/BackLink';
 import { PageBody } from '@/components/PageBody';
@@ -26,23 +29,30 @@ const TITLE = 'Nomination for ordination';
  *
  * ---------------------------------------------------------------------------
  * The nominee page of the diocese's form, online. A nominee — or a parent, for
- * a cantor or a reader — picks the ordination and gives the details the page
- * asks for. Nobody signs in; the camp's servant sign-up is the model.
+ * a cantor or a reader — picks the ordination's date and the rank, and gives
+ * the details the page asks for. Nobody signs in; the camp's servant sign-up is the model.
  *
  * What is deliberately not here is the half of the page the priest writes:
  * the questions about attendance, conduct and the father of confession's
  * approval. Those are answered on the admin screen, by the parish, when the
  * nomination is approved. The form says so, so nobody wonders where they went.
  *
- * Which fields show follows the rank of the ordination chosen: a cantor's and
- * a reader's page has a school grade and two parents, a subdeacon's has a
- * level of study or profession and no parents.
+ * Which fields show follows the rank chosen: a cantor's and a reader's page
+ * has a school grade and two parents, a subdeacon's has a level of study or
+ * profession and no parents. One ordination takes every rank, so the rank is
+ * the sender's choice rather than the ordination's.
  * ---------------------------------------------------------------------------
  */
 export function NominationScreen() {
   const [ordinations, setOrdinations] = useState<WithId<Ordination>[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState<OrdinationApplicationDraft>(() => emptyOrdinationDraft());
+
+  // `?rank=reader` preselects the rank, alongside `?ordination=` below.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('rank');
+    if (isOrdinationRank(wanted)) setDraft((current) => ({ ...current, rank: wanted }));
+  }, []);
   const [errors, setErrors] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -128,7 +138,7 @@ export function NominationScreen() {
   }
 
   const ordination = ordinations.find((row) => row.id === draft.ordinationId) ?? null;
-  const rank = ordination?.rank ?? null;
+  const rank = draft.rank || null;
   const info = rank ? ORDINATION_RANK_INFO[rank] : null;
   const nominee = draft.nominee;
   const age = ordination ? ageOn(nominee.dateOfBirth, ordination.date) : null;
@@ -146,7 +156,7 @@ export function NominationScreen() {
       setErrors(['Choose the ordination this nomination is for.']);
       return;
     }
-    const problems = validateOrdinationDraft(draft, ordination.rank, ordination.date);
+    const problems = validateOrdinationDraft(draft, ordination.date);
     setErrors(problems);
     if (problems.length > 0) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -186,27 +196,46 @@ export function NominationScreen() {
 
       <section className="camp-step">
         <h3>Which ordination</h3>
-        <label className="camp-field">
-          <span className="camp-field__label">Rank and date</span>
-          <select
-            className="input"
-            value={draft.ordinationId}
-            onChange={(event) => setDraft({ ...draft, ordinationId: event.target.value })}
-          >
-            <option value="">Choose one</option>
-            {ordinations.map((row) => (
-              <option key={row.id} value={row.id}>
-                {ordinationTitle(row)}
-              </option>
-            ))}
-          </select>
-          {info ? (
-            <span className="camp-field__hint">
-              The diocese asks that a {info.title.toLowerCase()} has completed {info.minimumAge}{' '}
-              years of age.
-            </span>
-          ) : null}
-        </label>
+        <div className="camp-grid">
+          <label className="camp-field">
+            <span className="camp-field__label">Date</span>
+            <select
+              className="input"
+              value={draft.ordinationId}
+              onChange={(event) => setDraft({ ...draft, ordinationId: event.target.value })}
+            >
+              <option value="">Choose one</option>
+              {ordinations.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {ordinationTitle(row)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="camp-field">
+            <span className="camp-field__label">Rank</span>
+            <select
+              className="input"
+              value={draft.rank}
+              onChange={(event) =>
+                setDraft({ ...draft, rank: event.target.value as OrdinationRank | '' })
+              }
+            >
+              <option value="">Choose one</option>
+              {ORDINATION_RANKS.map((value) => (
+                <option key={value} value={value}>
+                  {ordinationRankLabel(value)}
+                </option>
+              ))}
+            </select>
+            {info ? (
+              <span className="camp-field__hint">
+                The diocese asks that a {info.title.toLowerCase()} has completed {info.minimumAge}{' '}
+                years of age.
+              </span>
+            ) : null}
+          </label>
+        </div>
       </section>
 
       {ordination && rank && info ? (

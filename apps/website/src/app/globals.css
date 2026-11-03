@@ -20056,8 +20056,14 @@ span.gallery-figure__frame {
 
 /* ---- the rails, in a section ------------------------------------------- */
 
-.rail--gallery {
-  --rail-fade: clamp(1rem, 3vw, 2.25rem);
+/* No faded ends on the events pages' rails — the ministries on /events and the
+   picture wheels on an event's own page — or on the homepage's activities,
+   shelf and clergy. Tiles run clean to the edge. */
+.rail--gallery .rail--endless,
+.rail--programs .rail--endless,
+.rail--shelf .rail--endless,
+.rail--clergy .rail--endless {
+  mask-image: none;
 }
 
 /*
@@ -41488,6 +41494,36 @@ body.is-camp-dragging {
 }
 
 .ordination-group > h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+}
+
+/* A rank's heading, with its own Print application beside it. */
+.ordination-rank__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs, 0.5rem) var(--space-md, 1rem);
+}
+
+.ordination-rank__head > h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+  margin: 0;
+}
+
+.ordination-rank__head > .ordination-actions {
+  margin: 0;
+}
+
+.ordination-status {
+  margin-top: var(--space-md, 1rem);
+}
+
+.ordination-status > h4 {
   display: flex;
   align-items: baseline;
   gap: 0.6ch;

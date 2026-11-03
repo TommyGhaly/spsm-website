@@ -4,7 +4,8 @@ import {
   COLLECTIONS,
   formDay,
   ORDINATION_RANK_INFO,
-  ordinationTitle,
+  longDay,
+  ordinationRankLabel,
   parseOrdination,
   parseOrdinationDraft,
   validateOrdinationDraft,
@@ -24,10 +25,10 @@ const REVIEW_URL = 'https://spsmwayland.org/admin/ordination';
  * A Function rather than a rule-checked client write, for the reasons
  * `camp/servantRequest.ts` gives, and one of them matters more here:
  *
- *   - **The ordination is read, not trusted.** The rank is copied from the
- *     ordination document, and an ordination that is closed or does not exist
- *     refuses the nomination. A hand-made request cannot file a cantor under
- *     the subdeacons' ordination, or under one the parish has closed.
+ *   - **The ordination is read, not trusted.** An ordination that is closed
+ *     or does not exist refuses the nomination, and its date is what the
+ *     nominee's age is checked against. A hand-made request cannot file a
+ *     nomination under one the parish has closed.
  *   - **The review is not the sender's.** `status`, `review` and `signatures`
  *     are written here as pending, empty and none. Whatever arrived under those
  *     names is dropped by `parseOrdinationDraft` before anything is stored, so
@@ -82,8 +83,8 @@ export const ordinationApply = onRequest(
       return;
     }
 
-    const problems = validateOrdinationDraft(draft, ordination.rank, ordination.date);
-    if (problems.length > 0) {
+    const problems = validateOrdinationDraft(draft, ordination.date);
+    if (problems.length > 0 || !draft.rank) {
       res.status(400).json({ errors: problems });
       return;
     }
@@ -92,8 +93,8 @@ export const ordinationApply = onRequest(
       ...draft,
       // Only a cantor's and a reader's page has parents on it, so a
       // subdeacon's stores none rather than two the form never showed.
-      parents: ORDINATION_RANK_INFO[ordination.rank].minor ? draft.parents : [],
-      rank: ordination.rank,
+      parents: ORDINATION_RANK_INFO[draft.rank].minor ? draft.parents : [],
+      rank: draft.rank,
       status: 'pending',
       review: null,
       signatures: [],
@@ -125,7 +126,7 @@ export const ordinationApply = onRequest(
         console.warn('[ordination] nobody holds the ordination screen, so nobody was emailed.');
         return;
       }
-      const message = nominationEmail(to, ordination, draft.nominee.name, draft.submittedBy);
+      const message = nominationEmail(to, ordination, application, draft.submittedBy);
       await db.collection(COLLECTIONS.mail).doc(`ordination-${id}`).create(message);
     } catch (error) {
       console.error('[ordination] could not queue the notification email', error);
@@ -153,10 +154,11 @@ async function adminEmails(): Promise<string[]> {
 function nominationEmail(
   to: string[],
   ordination: Ordination,
-  nominee: string,
+  application: Pick<OrdinationApplication, 'rank' | 'nominee'>,
   submittedBy: string,
 ): MailDocument {
-  const title = ordinationTitle(ordination);
+  const nominee = application.nominee.name;
+  const title = `${ordinationRankLabel(application.rank)} at the ordination on ${longDay(ordination.date)}`;
   const by = submittedBy ? ` It was sent by ${submittedBy}.` : '';
   const text =
     `${nominee} has been nominated for ${title}.${by}\n\n` +

@@ -270,16 +270,17 @@ export async function buildNomineePacket(application: OrdinationApplication): Pr
 }
 
 /**
- * The whole application for one ordination: the cover page naming every
- * approved nominee, the signed requirements, a page for each nominee, and the
+ * The whole application for one rank at one ordination: the cover page naming
+ * every approved nominee of that rank, the signed requirements, a page for each nominee, and the
  * guidelines.
  */
 export async function buildOrdinationPacket(
   ordination: Ordination,
+  rank: OrdinationRank,
   approved: readonly OrdinationApplication[],
 ): Promise<Uint8Array> {
-  const { source, output, font, bold, pages } = await begin(ordination.rank);
-  const layout = ORDINATION_PACKET_LAYOUT[ordination.rank];
+  const { source, output, font, bold, pages } = await begin(rank);
+  const layout = ORDINATION_PACKET_LAYOUT[rank];
   const continued: Continued[] = [];
 
   const [cover, signatures] = await output.copyPages(source, [pages.cover, pages.signatures]);
@@ -293,7 +294,7 @@ export async function buildOrdinationPacket(
   });
 
   output.addPage(signatures!);
-  await drawSignatures(output, signatures!, font, ordination.rank, packetSigners(approved));
+  await drawSignatures(output, signatures!, font, rank, packetSigners(approved));
 
   /*
    * Every nominee page and the guidelines in one `copyPages` call. Copied one
@@ -311,7 +312,7 @@ export async function buildOrdinationPacket(
   output.addPage(copied[approved.length]!);
   addContinuation(output, font, bold, continued);
 
-  output.setTitle(`${ordinationRankLabel(ordination.rank)} — ${formDay(ordination.date)}`);
+  output.setTitle(`${ordinationRankLabel(rank)} — ${formDay(ordination.date)}`);
   return output.save();
 }
 
