@@ -66,6 +66,7 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  *     needs neither.
  *   - **Approved** ones can be printed one at a time, gain a second or third
  *     signature, or be moved back.
+ *   - Any nomination, whatever its status, can be deleted.
  *   - Nominations are listed by rank, because the diocese takes one packet
  *     per rank. Each rank's **application** button prints its full packet:
  *     the cover page naming every approved nominee of that rank, the
@@ -684,18 +685,28 @@ function Nomination({
                 <button type="button" className="button button--ghost" disabled={saving} onClick={() => void decide('pending')}>
                   Move back to waiting
                 </button>
-                <button
-                  type="button"
-                  className="button button--danger"
-                  onClick={() => {
-                    if (!window.confirm(`Delete the nomination of ${nominee.name} for good?`)) return;
-                    void deleteApplication(application.id).catch((cause: Error) => onError(cause.message));
-                  }}
-                >
-                  Delete
-                </button>
               </>
             ) : null}
+            {/*
+             * On every nomination, not only a rejected one: a duplicate, a test,
+             * or one sent by mistake should not have to be rejected first to be
+             * got rid of. Nobody is emailed, and nothing reads it back.
+             */}
+            <button
+              type="button"
+              className="button button--danger"
+              disabled={saving}
+              onClick={() => {
+                const warning =
+                  application.status === 'approved'
+                    ? `Delete the approved nomination of ${nominee.name}? Its answers and ${signatures.length === 1 ? 'signature' : 'signatures'} go with it, and it leaves the printed application.`
+                    : `Delete the nomination of ${nominee.name}? This cannot be undone.`;
+                if (!window.confirm(warning)) return;
+                void deleteApplication(application.id).catch((cause: Error) => onError(cause.message));
+              }}
+            >
+              Delete
+            </button>
           </p>
         </div>
       ) : null}
