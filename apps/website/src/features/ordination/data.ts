@@ -6,6 +6,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -182,6 +183,18 @@ export async function deleteApplication(id: string): Promise<void> {
 export async function readSignatureProfile(uid: string): Promise<OrdinationSignatureProfile> {
   const snapshot = await getDoc(doc(db(), COLLECTIONS.ordinationSignatures, uid));
   return parseOrdinationSignatureProfile(snapshot.data());
+}
+
+/**
+ * Every priest with a signature on file, so whoever prepares a nomination can
+ * put any of them on it. The rules let anybody with the screen read them all.
+ */
+export async function listSignatureProfiles(): Promise<WithId<OrdinationSignatureProfile>[]> {
+  const snapshot = await getDocs(collection(db(), COLLECTIONS.ordinationSignatures));
+  return snapshot.docs
+    .map((entry) => ({ id: entry.id, ...parseOrdinationSignatureProfile(entry.data()) }))
+    .filter((profile) => profile.image)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function saveSignatureProfile(

@@ -4,6 +4,7 @@ import {
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
   ageOn,
+  composeOrdinationAnswer,
   emptyOrdinationDraft,
   formDay,
   isCalendarDay,
@@ -11,6 +12,7 @@ import {
   nomineeFieldValues,
   parseOrdinationApplication,
   parseOrdinationDraft,
+  splitOrdinationAnswer,
   validateOrdinationApproval,
   validateOrdinationDraft,
   type OrdinationApplicationDraft,
@@ -118,11 +120,57 @@ describe('parsing', () => {
 });
 
 describe('approval', () => {
-  it('needs every answer and a signature', () => {
+  const signature = { uid: 'a', name: 'A', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02' };
+  const answered = () =>
+    Object.fromEntries(
+      ORDINATION_QUESTIONS.reader.map((q) => [
+        q.key,
+        composeOrdinationAnswer(q, { choice: q.choices[0]!, detail: q.detailFirst ? 'Fr. Mina' : '' }),
+      ]),
+    );
+
+  it('needs a choice for every question and a signature', () => {
     expect(validateOrdinationApproval('reader', {}, [])).toHaveLength(ORDINATION_QUESTIONS.reader.length + 1);
-    const answers = Object.fromEntries(ORDINATION_QUESTIONS.reader.map((q) => [q.key, 'Yes']));
-    const signature = { uid: 'a', name: 'A', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02' };
-    expect(validateOrdinationApproval('reader', answers, [signature])).toEqual([]);
+    expect(validateOrdinationApproval('reader', answered(), [signature])).toEqual([]);
+  });
+
+  it('needs the father of confession named, not only approved', () => {
+    const answers = { ...answered(), fatherOfConfession: 'Approved' };
+    expect(validateOrdinationApproval('reader', answers, [signature])).toHaveLength(1);
+  });
+
+  it('does not count an answer typed before there were choices', () => {
+    const answers = { ...answered(), conduct: 'He is well regarded' };
+    expect(validateOrdinationApproval('reader', answers, [signature])).toHaveLength(1);
+  });
+});
+
+describe('answers', () => {
+  const conduct = ORDINATION_QUESTIONS.reader.find((q) => q.key === 'conduct')!;
+  const confession = ORDINATION_QUESTIONS.reader.find((q) => q.key === 'fatherOfConfession')!;
+
+  it('prints the choice, then any detail', () => {
+    expect(composeOrdinationAnswer(conduct, { choice: 'Yes', detail: '' })).toBe('Yes');
+    expect(composeOrdinationAnswer(conduct, { choice: 'Yes', detail: 'Serves on Sundays' })).toBe('Yes — Serves on Sundays');
+  });
+
+  it('prints the father of confession before whether he approved', () => {
+    expect(composeOrdinationAnswer(confession, { choice: 'Approved', detail: 'Fr. Mina' })).toBe('Fr. Mina — Approved');
+  });
+
+  it('takes apart what it put together', () => {
+    for (const [question, parts] of [
+      [conduct, { choice: 'No', detail: 'Spoke to his family' }],
+      [conduct, { choice: 'Yes', detail: '' }],
+      [confession, { choice: 'Not yet approved', detail: 'Fr. Mina' }],
+      [confession, { choice: 'Approved', detail: 'Fr. Mina' }],
+    ] as const) {
+      expect(splitOrdinationAnswer(question, composeOrdinationAnswer(question, parts))).toEqual(parts);
+    }
+  });
+
+  it('keeps an old free-text answer whole, as the detail', () => {
+    expect(splitOrdinationAnswer(conduct, 'He is well regarded')).toEqual({ choice: '', detail: 'He is well regarded' });
   });
 });
 

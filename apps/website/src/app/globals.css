@@ -41617,6 +41617,26 @@ body.is-camp-dragging {
   }
 }
 
+/* A diocese question: its choices as panels, with the detail line beside them.
+   A fieldset so the choices are grouped under the question for a screen
+   reader; the browser's own border and padding are not wanted. */
+.ordination-question {
+  border: 0;
+  margin: 0 0 var(--space-md, 1rem);
+  padding: 0;
+  min-width: 0;
+}
+
+.ordination-question > legend {
+  padding: 0;
+  margin-bottom: var(--space-xs, 0.4rem);
+}
+
+.ordination-question > .choice {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  margin-block: var(--space-xs, 0.4rem);
+}
+
 .ordination-signatures {
   list-style: none;
   margin: 0;

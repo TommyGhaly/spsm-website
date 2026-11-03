@@ -9,11 +9,13 @@ import {
   ORDINATION_RANKS,
   ORDINATION_RANK_INFO,
   ageOn,
+  composeOrdinationAnswer,
   formDay,
   isCalendarDay,
   longDay,
   ordinationRankLabel,
   ordinationTitle,
+  splitOrdinationAnswer,
   validateOrdinationApproval,
   type Ordination,
   type OrdinationApplication,
@@ -25,7 +27,7 @@ import {
 import {
   deleteApplication,
   deleteOrdination,
-  readSignatureProfile,
+  listSignatureProfiles,
   saveReview,
   updateOrdination,
   watchApplications,
@@ -56,11 +58,14 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  * The whole review happens here:
  *
  *   - **Waiting** nominations open into the diocese's questions, which the
- *     parish answers, and a Sign button that adds the signed-in priest's
- *     signature from /admin/ordination/signature. Approving needs every answer
- *     and at least one signature; rejecting needs neither.
+ *     parish answers by picking Yes or No (and so on) with an optional line of
+ *     detail, and a button per priest with a signature on file at
+ *     /admin/ordination/signature. Whoever is preparing the nomination adds
+ *     them, up to the form's three, so it does not take three sign-ins.
+ *     Approving needs every answer and at least one signature; rejecting
+ *     needs neither.
  *   - **Approved** ones can be printed one at a time, gain a second or third
- *     priest's signature, or be moved back.
+ *     signature, or be moved back.
  *   - Nominations are listed by rank, because the diocese takes one packet
  *     per rank. Each rank's **application** button prints its full packet:
  *     the cover page naming every approved nominee of that rank, the
@@ -76,7 +81,7 @@ export function NominationsScreen() {
   const [id, setId] = useState<string | null>(null);
   const [ordination, setOrdination] = useState<WithId<Ordination> | null | undefined>(undefined);
   const [applications, setApplications] = useState<WithId<OrdinationApplication>[] | null>(null);
-  const [mine, setMine] = useState<OrdinationSignatureProfile | null>(null);
+  const [onFile, setOnFile] = useState<WithId<OrdinationSignatureProfile>[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -95,11 +100,11 @@ export function NominationsScreen() {
   }, [session.canEdit, id]);
 
   useEffect(() => {
-    if (!session.canEdit || !session.uid) return;
-    readSignatureProfile(session.uid)
-      .then(setMine)
-      .catch((cause: Error) => console.warn('[ordination] could not read your signature', cause));
-  }, [session.canEdit, session.uid]);
+    if (!session.canEdit) return;
+    listSignatureProfiles()
+      .then(setOnFile)
+      .catch((cause: Error) => console.warn('[ordination] could not read the signatures on file', cause));
+  }, [session.canEdit]);
 
   const approvedOf = (rank: OrdinationRank) =>
     (applications ?? []).filter((row) => row.rank === rank && row.status === 'approved');
@@ -167,11 +172,12 @@ export function NominationsScreen() {
                 onError={setError}
               />
 
-              {mine && !mine.image ? (
+              {onFile && onFile.length === 0 ? (
                 <div className="notice">
                   <p>
-                    You have no signature on file, so you cannot sign nominations yet.{' '}
-                    <a href="/admin/ordination/signature">Draw one</a> — parish priests only.
+                    No priest has a signature on file, so nothing can be signed yet. Each parish
+                    priest <a href="/admin/ordination/signature">draws theirs</a> once, signed in as
+                    themselves.
                   </p>
                 </div>
               ) : null}
@@ -229,7 +235,7 @@ export function NominationsScreen() {
                               application={row}
                               ordination={ordination}
                               session={session}
-                              mine={mine}
+                              onFile={onFile ?? []}
                               approvedCount={approved.length}
                               onError={setError}
                             />
@@ -369,7 +375,7 @@ function today(): string {
 function startingAnswers(application: OrdinationApplication): Record<string, string> {
   const answers = { ...(application.review?.answers ?? {}) };
   if (!answers['fatherOfConfession'] && application.nominee.fatherOfConfession) {
-    answers['fatherOfConfession'] = `${application.nominee.fatherOfConfession} — `;
+    answers['fatherOfConfession'] = application.nominee.fatherOfConfession;
   }
   return answers;
 }
@@ -378,14 +384,14 @@ function Nomination({
   application,
   ordination,
   session,
-  mine,
+  onFile,
   approvedCount,
   onError,
 }: {
   application: WithId<OrdinationApplication>;
   ordination: WithId<Ordination>;
   session: OrdinationAdminSession;
-  mine: OrdinationSignatureProfile | null;
+  onFile: WithId<OrdinationSignatureProfile>[];
   approvedCount: number;
   onError: (message: string) => void;
 }) {
@@ -409,14 +415,14 @@ function Nomination({
   const { nominee, rank } = application;
   const info = ORDINATION_RANK_INFO[rank];
   const age = ageOn(nominee.dateOfBirth, ordination.date);
-  const signedByMe = signatures.some((signature) => signature.uid === session.uid);
-  const canSign = Boolean(mine?.image) && !signedByMe && signatures.length < ORDINATION_MAX_SIGNATURES;
+  const unsigned = signatures.length < ORDINATION_MAX_SIGNATURES
+    ? onFile.filter((profile) => !signatures.some((signature) => signature.uid === profile.id))
+    : [];
 
-  function sign() {
-    if (!session.uid || !mine?.image) return;
+  function sign(profile: WithId<OrdinationSignatureProfile>) {
     setSignatures([
       ...signatures,
-      { uid: session.uid, name: mine.name || session.name, image: mine.image, signedOn: today() },
+      { uid: profile.id, name: profile.name, image: profile.image, signedOn: today() },
     ]);
     setDirty(true);
   }
@@ -547,21 +553,43 @@ function Nomination({
             <>
               <h4>The parish&rsquo;s answers</h4>
               <p className="note">Printed on the nominee&rsquo;s page of the diocese&rsquo;s form.</p>
-              {ORDINATION_QUESTIONS[rank].map((question) => (
-                <label key={question.key} className="camp-field">
-                  <span className="camp-field__label">{question.label}</span>
-                  <textarea
+              {ORDINATION_QUESTIONS[rank].map((question) => {
+                const parts = splitOrdinationAnswer(question, answers[question.key] ?? '');
+                const set = (patch: Partial<typeof parts>) => {
+                  setAnswers({ ...answers, [question.key]: composeOrdinationAnswer(question, { ...parts, ...patch }) });
+                  setDirty(true);
+                };
+                const detail = (
+                  <input
                     className="input"
-                    rows={2}
+                    placeholder={question.detailHint}
+                    aria-label={question.detailFirst ? 'Father of confession' : `Detail for: ${question.label}`}
                     maxLength={ORDINATION_ANSWER_MAX}
-                    value={answers[question.key] ?? ''}
-                    onChange={(event) => {
-                      setAnswers({ ...answers, [question.key]: event.target.value });
-                      setDirty(true);
-                    }}
+                    value={parts.detail}
+                    onChange={(event) => set({ detail: event.target.value })}
                   />
-                </label>
-              ))}
+                );
+                return (
+                  <fieldset key={question.key} className="camp-field ordination-question">
+                    <legend className="camp-field__label">{question.label}</legend>
+                    {question.detailFirst ? detail : null}
+                    <div className="choice">
+                      {question.choices.map((choice) => (
+                        <button
+                          key={choice}
+                          type="button"
+                          className={parts.choice === choice ? 'choice__opt is-on' : 'choice__opt'}
+                          aria-pressed={parts.choice === choice}
+                          onClick={() => set({ choice: parts.choice === choice ? '' : choice })}
+                        >
+                          <span className="choice__name">{choice}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {question.detailFirst ? null : detail}
+                  </fieldset>
+                );
+              })}
 
               <h4>Signatures</h4>
               {signatures.length === 0 ? <p className="note">Not signed yet.</p> : null}
@@ -580,11 +608,11 @@ function Nomination({
                 ))}
               </ul>
               <p className="ordination-actions">
-                {canSign ? (
-                  <button type="button" className="button button--ghost" onClick={sign}>
-                    Sign as {mine?.name || session.name}
+                {unsigned.map((profile) => (
+                  <button key={profile.id} type="button" className="button button--ghost" onClick={() => sign(profile)}>
+                    Add {profile.name}&rsquo;s signature
                   </button>
-                ) : null}
+                ))}
               </p>
             </>
           ) : null}

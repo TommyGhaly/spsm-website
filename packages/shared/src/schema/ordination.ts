@@ -73,6 +73,63 @@ export function ordinationRankLabel(rank: OrdinationRank): string {
 }
 
 /**
+ * One of the diocese's questions, and how the admin screen asks it.
+ *
+ * Every question is answered by picking one of `choices`, with an optional
+ * line of detail. What is stored — and printed — is still a single line of
+ * text: the choice, then the detail after a dash ("Yes — serves at the altar
+ * on Sundays"). Keeping the stored shape a string is what lets a nomination
+ * reviewed before the choices existed print and reopen unchanged.
+ *
+ * The father of confession is the one question whose detail is required and
+ * goes first, because the question asks *who* before it asks whether: "Fr. Mina
+ * — Approved".
+ */
+export interface OrdinationQuestion {
+  key: string;
+  label: string;
+  choices: readonly string[];
+  /** The detail box's placeholder. */
+  detailHint: string;
+  /** Required, and printed before the choice rather than after it. */
+  detailFirst?: boolean;
+}
+
+const YES_NO = ['Yes', 'No'] as const;
+
+const ATTENDANCE_FAMILY: OrdinationQuestion = {
+  key: 'attendance',
+  label: 'Is the nominee and his family a consistent and active attendee of this parish?',
+  choices: YES_NO,
+  detailHint: 'Anything to add (optional)',
+};
+const FATHER_OF_CONFESSION: OrdinationQuestion = {
+  key: 'fatherOfConfession',
+  label: 'Who is the nominee’s Father of Confession, and has he approved the nomination for ordination?',
+  choices: ['Approved', 'Not yet approved'],
+  detailHint: 'e.g. Fr. Mina',
+  detailFirst: true,
+};
+const CONDUCT: OrdinationQuestion = {
+  key: 'conduct',
+  label: 'Does the nominee possess a reputation of good conduct, becoming of a servant in this parish?',
+  choices: YES_NO,
+  detailHint: 'Anything to add (optional)',
+};
+const INTERPERSONAL: OrdinationQuestion = {
+  key: 'interpersonal',
+  label: 'Does the nominee possess good interpersonal skills at church and in his secular life?',
+  choices: YES_NO,
+  detailHint: 'Anything to add (optional)',
+};
+const criteria = (rank: string): OrdinationQuestion => ({
+  key: 'criteria',
+  label: `Has the nominee met the requirement criteria for the rank of ${rank}?`,
+  choices: YES_NO,
+  detailHint: 'Anything to add (optional)',
+});
+
+/**
  * The questions on each rank's nominee page, in the order the page asks them.
  *
  * The keys are what `OrdinationReview.answers` is keyed by, and the order is
@@ -81,31 +138,70 @@ export function ordinationRankLabel(rank: OrdinationRank): string {
  * different order — criteria before father of confession — so each rank has
  * its own list rather than a shared one with extras appended.
  */
-export const ORDINATION_QUESTIONS: Record<OrdinationRank, readonly { key: string; label: string }[]> = {
-  cantor: [
-    { key: 'attendance', label: 'Is the nominee and his family a consistent and active attendee of this parish?' },
-    { key: 'fatherOfConfession', label: 'Who is the nominee’s Father of Confession, and has he approved the nomination for ordination?' },
-    { key: 'criteria', label: 'Has the nominee met the requirement criteria for the rank of Cantor (Epsaltos)?' },
-    { key: 'conduct', label: 'Does the nominee possess a reputation of good conduct, becoming of a servant in this parish?' },
-    { key: 'interpersonal', label: 'Does the nominee possess good interpersonal skills at church and in his secular life?' },
-  ],
-  reader: [
-    { key: 'attendance', label: 'Is the nominee and his family a consistent and active attendee of this parish?' },
-    { key: 'fatherOfConfession', label: 'Who is the nominee’s Father of Confession, and has he approved the nomination for ordination?' },
-    { key: 'criteria', label: 'Has the nominee met the requirement criteria for the rank of Reader (Anaghnostis)?' },
-    { key: 'conduct', label: 'Does the nominee possess a reputation of good conduct, becoming of a servant in this parish?' },
-    { key: 'interpersonal', label: 'Does the nominee possess good interpersonal skills at church and in his secular life?' },
-  ],
+export const ORDINATION_QUESTIONS: Record<OrdinationRank, readonly OrdinationQuestion[]> = {
+  cantor: [ATTENDANCE_FAMILY, FATHER_OF_CONFESSION, criteria('Cantor (Epsaltos)'), CONDUCT, INTERPERSONAL],
+  reader: [ATTENDANCE_FAMILY, FATHER_OF_CONFESSION, criteria('Reader (Anaghnostis)'), CONDUCT, INTERPERSONAL],
   subdeacon: [
-    { key: 'attendance', label: 'Is the nominee a consistent and active attendee of this parish?' },
-    { key: 'criteria', label: 'Has the nominee met the requirement criteria for the rank of Subdeacon (Epidiacon)?' },
-    { key: 'fatherOfConfession', label: 'Who is the nominee’s Father of Confession, and has he approved the nomination for ordination?' },
-    { key: 'conduct', label: 'Does the nominee possess a reputation of good conduct, becoming of a servant in this parish?' },
-    { key: 'ministry', label: 'Does the nominee oversee or take part in a current ministry in this parish?' },
-    { key: 'leadership', label: 'Does the nominee portray leadership and mentoring skills?' },
-    { key: 'interpersonal', label: 'Does the nominee possess good interpersonal skills at church and in his secular life?' },
+    { ...ATTENDANCE_FAMILY, label: 'Is the nominee a consistent and active attendee of this parish?' },
+    criteria('Subdeacon (Epidiacon)'),
+    FATHER_OF_CONFESSION,
+    CONDUCT,
+    {
+      key: 'ministry',
+      label: 'Does the nominee oversee or take part in a current ministry in this parish?',
+      choices: YES_NO,
+      detailHint: 'Which ministry (optional)',
+    },
+    {
+      key: 'leadership',
+      label: 'Does the nominee portray leadership and mentoring skills?',
+      choices: YES_NO,
+      detailHint: 'Anything to add (optional)',
+    },
+    INTERPERSONAL,
   ],
 };
+
+/** Between the choice and the detail in a stored answer. */
+const ANSWER_SEPARATOR = ' — ';
+
+/** A stored answer taken apart. `choice` is empty when none of the choices matches. */
+export interface OrdinationAnswerParts {
+  choice: string;
+  detail: string;
+}
+
+/** The line stored and printed for a choice and its detail. */
+export function composeOrdinationAnswer(question: OrdinationQuestion, parts: OrdinationAnswerParts): string {
+  const choice = parts.choice.trim();
+  const detail = parts.detail.trim();
+  if (!choice) return detail;
+  if (!detail) return choice;
+  return question.detailFirst
+    ? `${detail}${ANSWER_SEPARATOR}${choice}`
+    : `${choice}${ANSWER_SEPARATOR}${detail}`;
+}
+
+/**
+ * The reverse of `composeOrdinationAnswer`. An answer typed before there were
+ * choices matches none of them and comes back whole as the detail, so nothing
+ * anybody wrote is lost by reopening it.
+ */
+export function splitOrdinationAnswer(question: OrdinationQuestion, answer: string): OrdinationAnswerParts {
+  const text = answer.trim();
+  // Longest first, so "Not yet approved" is not read as "…approved".
+  const choices = [...question.choices].sort((a, b) => b.length - a.length);
+  for (const choice of choices) {
+    if (text === choice) return { choice, detail: '' };
+    if (question.detailFirst && text.endsWith(`${ANSWER_SEPARATOR}${choice}`)) {
+      return { choice, detail: text.slice(0, -(ANSWER_SEPARATOR.length + choice.length)) };
+    }
+    if (!question.detailFirst && text.startsWith(`${choice}${ANSWER_SEPARATOR}`)) {
+      return { choice, detail: text.slice(choice.length + ANSWER_SEPARATOR.length) };
+    }
+  }
+  return { choice: '', detail: text };
+}
 
 /**
  * The cover page has twenty rows and no continuation sheet, so an ordination
@@ -472,8 +568,8 @@ export function validateOrdinationDraft(
 }
 
 /**
- * What an approval needs before it can be saved: an answer to every question
- * and at least one priest's signature.
+ * What an approval needs before it can be saved: a choice for every question,
+ * the father of confession's name, and at least one priest's signature.
  */
 export function validateOrdinationApproval(
   rank: OrdinationRank,
@@ -482,8 +578,11 @@ export function validateOrdinationApproval(
 ): string[] {
   const errors: string[] = [];
   for (const question of ORDINATION_QUESTIONS[rank]) {
-    if (!(answers[question.key] ?? '').trim()) {
+    const parts = splitOrdinationAnswer(question, answers[question.key] ?? '');
+    if (!parts.choice) {
       errors.push(`Answer “${question.label}”`);
+    } else if (question.detailFirst && !parts.detail) {
+      errors.push(`Name the father of confession in “${question.label}”`);
     }
   }
   if (signatures.length === 0) errors.push('A parish priest needs to sign before this is approved.');
