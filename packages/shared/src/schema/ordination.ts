@@ -203,13 +203,6 @@ export function splitOrdinationAnswer(question: OrdinationQuestion, answer: stri
   return { choice: '', detail: text };
 }
 
-/**
- * The cover page has twenty rows and no continuation sheet, so an ordination
- * can approve twenty of each rank and no more. The admin screen refuses the
- * twenty-first.
- */
-export const ORDINATION_MAX_NOMINEES = 20;
-
 /** The diocese's form has three lines for parish priests. */
 export const ORDINATION_MAX_SIGNATURES = 3;
 

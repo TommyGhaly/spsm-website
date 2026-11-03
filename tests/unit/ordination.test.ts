@@ -4,6 +4,8 @@ import {
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
   ageOn,
+  combinedCoverTitle,
+  coverRowName,
   composeOrdinationAnswer,
   emptyOrdinationDraft,
   formDay,
@@ -230,5 +232,22 @@ describe('packet layout', () => {
     expect(lines[1]!.text).toBe('Met');
     expect(lines[2]!.text).toBe('Fr. Mina');
     expect(lines[1]!.blank.y).toBeGreaterThan(lines[2]!.blank.y);
+  });
+});
+
+describe('combined cover', () => {
+  it('names every rank on the application in the title', () => {
+    expect(combinedCoverTitle(['cantor', 'reader', 'subdeacon'])).toBe('Diaconate Ranks of Cantor, Reader and Subdeacon');
+    expect(combinedCoverTitle(['cantor', 'subdeacon'])).toBe('Diaconate Ranks of Cantor and Subdeacon');
+  });
+
+  it('keeps the diocese’s own title when there is only one rank', () => {
+    expect(combinedCoverTitle(['reader'])).toBe('Diaconate Rank of Reader (Anaghnostis)');
+  });
+
+  it('puts the rank beside each name', () => {
+    const application = { ...draft(), rank: 'subdeacon' as const };
+    application.nominee.name = 'Mina Guirguis';
+    expect(coverRowName(application)).toBe('Mina Guirguis (Subdeacon)');
   });
 });

@@ -23,7 +23,9 @@
 
 import {
   ORDINATION_QUESTIONS,
+  ORDINATION_RANK_INFO,
   formDay,
+  ordinationRankLabel,
   type OrdinationApplication,
   type OrdinationRank,
 } from '../schema/ordination.js';
@@ -174,6 +176,66 @@ export const ORDINATION_PACKET_LAYOUT: Record<OrdinationRank, OrdinationPacketLa
     },
   },
 };
+
+/** A rectangle to paint white, in the same points as a blank. */
+export interface PacketMask {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * One cover page for every rank at an ordination.
+ *
+ * The diocese prints a cover per rank, and each names its rank twice — in the
+ * title ("Diaconate Rank of Reader (Anaghnostis)") and in the sentence above
+ * the names ("…nominated for the ordination to the rank of Reader…"). The
+ * parish sends one cover with everybody on it, so those two are painted over
+ * and reworded, and each name carries its own rank instead.
+ *
+ * The reader's cover is the base: it and the subdeacon's are titled
+ * "Application for Nomination" where the cantor's says "Recommendation", and
+ * the three are otherwise identical. Measured with pdf.js like everything
+ * above; the masks run a few points past the text on every side.
+ */
+export const ORDINATION_COMBINED_COVER = {
+  template: 'reader' as OrdinationRank,
+  /** "Diaconate Rank of …", 16pt on a 706.4 baseline. */
+  title: {
+    mask: { x: 140, y: 700, width: 332, height: 24 } satisfies PacketMask,
+    baseline: 706.4,
+    size: 16,
+  },
+  /** The two-line sentence, 12pt bold on 577.8 and 557.1. */
+  sentence: {
+    mask: { x: 34, y: 552, width: 544, height: 40 } satisfies PacketMask,
+    baselines: [577.8, 557.1] as const,
+    x: 36,
+    width: 540,
+    size: 12,
+  },
+} as const;
+
+/** The cover's title once it names more than one rank. */
+export function combinedCoverTitle(ranks: readonly OrdinationRank[]): string {
+  if (ranks.length === 1) return `Diaconate Rank of ${ordinationRankLabel(ranks[0]!)}`;
+  const titles = ranks.map((rank) => ORDINATION_RANK_INFO[rank].title);
+  const list = titles.length === 2
+    ? titles.join(' and ')
+    : `${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
+  return `Diaconate Ranks of ${list}`;
+}
+
+/** The cover's sentence, rank-neutral: the rank is beside each name. */
+export const COMBINED_COVER_SENTENCE =
+  'The following person(s) have been nominated for the ordination to the rank shown beside each name by ' +
+  'the parish priest(s) and the head(s) of the diaconate ministry in the above parish.';
+
+/** "Mina Guirguis (Reader)" — a cover row. */
+export function coverRowName(application: Pick<OrdinationApplication, 'rank' | 'nominee'>): string {
+  return `${application.nominee.name} (${ORDINATION_RANK_INFO[application.rank].title})`;
+}
 
 /**
  * What goes in each blank on one nominee's page, already formatted.

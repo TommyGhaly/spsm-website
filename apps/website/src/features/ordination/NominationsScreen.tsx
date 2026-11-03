@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import {
   ORDINATION_ANSWER_MAX,
-  ORDINATION_MAX_NOMINEES,
   ORDINATION_MAX_SIGNATURES,
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
@@ -67,11 +66,11 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  *   - **Approved** ones can be printed one at a time, gain a second or third
  *     signature, or be moved back.
  *   - Any nomination, whatever its status, can be deleted.
- *   - Nominations are listed by rank, because the diocese takes one packet
- *     per rank. Each rank's **application** button prints its full packet:
- *     the cover page naming every approved nominee of that rank, the
- *     requirements signed by every priest who signed any of them, and a page
- *     per nominee.
+ *   - Nominations are listed by rank, which is how the reviewers read them,
+ *     but the **application** is one file for the whole ordination: a single
+ *     cover naming every approved nominee with their rank beside them, then
+ *     each rank's requirements, signed by every priest who signed any of that
+ *     rank's nominees, and a page per nominee.
  *
  * The id is read off `location` rather than `useSearchParams`, which would
  * take the route out of the static export; see `GalleryShell`.
@@ -107,19 +106,17 @@ export function NominationsScreen() {
       .catch((cause: Error) => console.warn('[ordination] could not read the signatures on file', cause));
   }, [session.canEdit]);
 
-  const approvedOf = (rank: OrdinationRank) =>
-    (applications ?? []).filter((row) => row.rank === rank && row.status === 'approved');
+  const approved = (applications ?? []).filter((row) => row.status === 'approved');
 
-  async function printApplication(rank: OrdinationRank, mode: 'open' | 'download') {
-    const approved = approvedOf(rank);
+  async function printApplication(mode: 'open' | 'download') {
     if (!ordination || approved.length === 0) return;
     const tab = mode === 'open' ? reserveTab() : null;
     setBusy(true);
     try {
-      const { buildOrdinationPacket, downloadPdf, openPdf, packetFilename } = await packet();
-      const bytes = await buildOrdinationPacket(ordination, rank, approved);
+      const { buildOrdinationApplication, downloadPdf, openPdf, packetFilename } = await packet();
+      const bytes = await buildOrdinationApplication(ordination, approved);
       if (mode === 'open') openPdf(bytes, tab);
-      else downloadPdf(bytes, packetFilename(rank, ordination.date, 'application'));
+      else downloadPdf(bytes, packetFilename(null, ordination.date, 'application'));
     } catch (cause) {
       tab?.close();
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -183,6 +180,27 @@ export function NominationsScreen() {
                 </div>
               ) : null}
 
+              {approved.length > 0 ? (
+                <p className="ordination-actions ordination-group">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={busy}
+                    onClick={() => void printApplication('open')}
+                  >
+                    {busy ? 'Building…' : `Print application (${approved.length})`}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    disabled={busy}
+                    onClick={() => void printApplication('download')}
+                  >
+                    Download
+                  </button>
+                </p>
+              ) : null}
+
               {applications.length === 0 ? (
                 <p className="note ordination-group">
                   No nominations yet. They arrive here from the Forms page while this ordination is
@@ -193,33 +211,12 @@ export function NominationsScreen() {
               {ORDINATION_RANKS.map((rank) => {
                 const ofRank = applications.filter((row) => row.rank === rank);
                 if (ofRank.length === 0) return null;
-                const approved = approvedOf(rank);
                 return (
                   <section key={rank} className="ordination-group ordination-rank">
                     <div className="ordination-rank__head">
                       <h3>
                         {ordinationRankLabel(rank)} <span className="ordination-count">{ofRank.length}</span>
                       </h3>
-                      {approved.length > 0 ? (
-                        <p className="ordination-actions">
-                          <button
-                            type="button"
-                            className="button"
-                            disabled={busy}
-                            onClick={() => void printApplication(rank, 'open')}
-                          >
-                            {busy ? 'Building…' : `Print application (${approved.length})`}
-                          </button>
-                          <button
-                            type="button"
-                            className="button button--ghost"
-                            disabled={busy}
-                            onClick={() => void printApplication(rank, 'download')}
-                          >
-                            Download
-                          </button>
-                        </p>
-                      ) : null}
                     </div>
                     {groups.map((group) => {
                       const rows = ofRank.filter((row) => row.status === group.status);
@@ -237,7 +234,6 @@ export function NominationsScreen() {
                               ordination={ordination}
                               session={session}
                               onFile={onFile ?? []}
-                              approvedCount={approved.length}
                               onError={setError}
                             />
                           ))}
@@ -386,14 +382,12 @@ function Nomination({
   ordination,
   session,
   onFile,
-  approvedCount,
   onError,
 }: {
   application: WithId<OrdinationApplication>;
   ordination: WithId<Ordination>;
   session: OrdinationAdminSession;
   onFile: WithId<OrdinationSignatureProfile>[];
-  approvedCount: number;
   onError: (message: string) => void;
 }) {
   const [open, setOpen] = useState(application.status === 'pending');
@@ -445,11 +439,6 @@ function Nomination({
     if (!session.uid) return;
     if (status === 'approved') {
       const errors = validateOrdinationApproval(rank, answers, signatures);
-      if (application.status !== 'approved' && approvedCount >= ORDINATION_MAX_NOMINEES) {
-        errors.push(
-          `The diocese's cover page has room for ${ORDINATION_MAX_NOMINEES} nominees, and this ordination already has that many ${info.title.toLowerCase()}s.`,
-        );
-      }
       setProblems(errors);
       if (errors.length > 0) return;
     } else {

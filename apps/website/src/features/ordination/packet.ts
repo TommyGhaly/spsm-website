@@ -2,8 +2,13 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import {
+  COMBINED_COVER_SENTENCE,
+  ORDINATION_COMBINED_COVER,
   ORDINATION_MAX_SIGNATURES,
   ORDINATION_PACKET_LAYOUT,
+  ORDINATION_RANKS,
+  combinedCoverTitle,
+  coverRowName,
   formDay,
   nomineeAnswerLines,
   nomineeFieldValues,
@@ -25,9 +30,10 @@ import {
  *   - **One nominee's packet** — the requirements page with the priests'
  *     signatures, that nominee's page, and the guidelines. This is the
  *     diocese's "blank" form, filled in.
- *   - **The ordination's application** — the cover page listing the church and
- *     every approved nominee, the signed requirements page, a nominee page for
- *     each of them, and the guidelines. The whole submission in one file.
+ *   - **The ordination's application** — one cover page listing the church and
+ *     every approved nominee of every rank, each with their rank beside their
+ *     name, then each rank's signed requirements, nominee pages and
+ *     guidelines. The whole submission in one file.
  *
  * Built in the browser with pdf-lib. Where each thing goes is
  * `ORDINATION_PACKET_LAYOUT` in @spsm/shared, which is pure data so the same
@@ -270,49 +276,95 @@ export async function buildNomineePacket(application: OrdinationApplication): Pr
 }
 
 /**
- * The whole application for one rank at one ordination: the cover page naming
- * every approved nominee of that rank, the signed requirements, a page for each nominee, and the
- * guidelines.
+ * The whole application for one ordination, every rank together: one cover
+ * naming every approved nominee with their rank beside them, then, rank by
+ * rank, that rank's signed requirements, a page for each of its nominees, and
+ * its guidelines.
+ *
+ * The cover is the one thing shared across ranks. Each rank's requirements,
+ * nominee page and guidelines say different things, so those still come from
+ * that rank's own form. A cover holds twenty names; a twenty-first starts a
+ * second copy of it rather than being left off.
  */
-export async function buildOrdinationPacket(
+export async function buildOrdinationApplication(
   ordination: Ordination,
-  rank: OrdinationRank,
   approved: readonly OrdinationApplication[],
 ): Promise<Uint8Array> {
-  const { source, output, font, bold, pages } = await begin(rank);
-  const layout = ORDINATION_PACKET_LAYOUT[rank];
+  const ranks = ORDINATION_RANKS.filter((rank) => approved.some((row) => row.rank === rank));
+  // Rank by rank, so the cover reads in the same order as the pages behind it.
+  const ordered = ranks.flatMap((rank) => approved.filter((row) => row.rank === rank));
+  const output = await PDFDocument.create();
+  const font = await output.embedFont(StandardFonts.TimesRoman);
+  const bold = await output.embedFont(StandardFonts.TimesRomanBold);
   const continued: Continued[] = [];
 
-  const [cover, signatures] = await output.copyPages(source, [pages.cover, pages.signatures]);
-  output.addPage(cover!);
-  drawFitted(cover!, font, ordination.churchName, layout.cover.churchName);
-  drawFitted(cover!, font, ordination.churchAddress, layout.cover.churchAddress);
-  approved.slice(0, layout.cover.rows.length).forEach((application, index) => {
-    const row = layout.cover.rows[index]!;
-    drawFitted(cover!, font, application.nominee.name, row.name);
-    drawFitted(cover!, font, formDay(application.nominee.dateOfBirth), row.dateOfBirth);
+  const combined = ORDINATION_COMBINED_COVER;
+  const coverSource = await PDFDocument.load(await template(combined.template));
+  const coverLayout = ORDINATION_PACKET_LAYOUT[combined.template];
+  const perCover = coverLayout.cover.rows.length;
+  const chunks = Array.from({ length: Math.max(1, Math.ceil(ordered.length / perCover)) }, (_, at) =>
+    ordered.slice(at * perCover, (at + 1) * perCover),
+  );
+  const covers = await output.copyPages(coverSource, chunks.map(() => coverLayout.pages.cover));
+  const title = printable(bold, combinedCoverTitle(ranks));
+  const sentence = wrap(bold, COMBINED_COVER_SENTENCE, combined.sentence.size, combined.sentence.width);
+
+  chunks.forEach((chunk, at) => {
+    const cover = covers[at]!;
+    output.addPage(cover);
+    for (const mask of [combined.title.mask, combined.sentence.mask]) {
+      cover.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
+    }
+    cover.drawText(title, {
+      x: (cover.getWidth() - bold.widthOfTextAtSize(title, combined.title.size)) / 2,
+      y: combined.title.baseline,
+      size: combined.title.size,
+      font: bold,
+      color: rgb(0, 0, 0),
+    });
+    sentence.slice(0, combined.sentence.baselines.length).forEach((line, index) => {
+      cover.drawText(line, {
+        x: combined.sentence.x,
+        y: combined.sentence.baselines[index]!,
+        size: combined.sentence.size,
+        font: bold,
+        color: rgb(0, 0, 0),
+      });
+    });
+    drawFitted(cover, font, ordination.churchName, coverLayout.cover.churchName);
+    drawFitted(cover, font, ordination.churchAddress, coverLayout.cover.churchAddress);
+    chunk.forEach((application, index) => {
+      const row = coverLayout.cover.rows[index]!;
+      drawFitted(cover, font, coverRowName(application), row.name);
+      drawFitted(cover, font, formDay(application.nominee.dateOfBirth), row.dateOfBirth);
+    });
   });
 
-  output.addPage(signatures!);
-  await drawSignatures(output, signatures!, font, rank, packetSigners(approved));
-
-  /*
-   * Every nominee page and the guidelines in one `copyPages` call. Copied one
-   * at a time, each page brought its own copy of the crest and the cross, and
-   * twenty nominees made a two-megabyte file; copied together they share one.
-   */
-  const copied = await output.copyPages(source, [
-    ...approved.map(() => pages.nominee),
-    pages.guidelines,
-  ]);
-  approved.forEach((application, index) => {
-    output.addPage(copied[index]!);
-    drawNominee(copied[index]!, font, application, continued);
-  });
-  output.addPage(copied[approved.length]!);
+  for (const rank of ranks) {
+    const ofRank = ordered.filter((row) => row.rank === rank);
+    const source = await PDFDocument.load(await template(rank));
+    const pages = ORDINATION_PACKET_LAYOUT[rank].pages;
+    /*
+     * The rank's pages in one `copyPages` call. Copied one at a time, each page
+     * brought its own copy of the crest and the cross, and twenty nominees made
+     * a two-megabyte file; copied together they share one.
+     */
+    const copied = await output.copyPages(source, [
+      pages.signatures,
+      ...ofRank.map(() => pages.nominee),
+      pages.guidelines,
+    ]);
+    output.addPage(copied[0]!);
+    await drawSignatures(output, copied[0]!, font, rank, packetSigners(ofRank));
+    ofRank.forEach((application, index) => {
+      output.addPage(copied[index + 1]!);
+      drawNominee(copied[index + 1]!, font, application, continued);
+    });
+    output.addPage(copied[ofRank.length + 1]!);
+  }
   addContinuation(output, font, bold, continued);
 
-  output.setTitle(`${ordinationRankLabel(rank)} — ${formDay(ordination.date)}`);
+  output.setTitle(`Ordination nominations — ${formDay(ordination.date)}`);
   return output.save();
 }
 
@@ -337,9 +389,12 @@ export function openPdf(bytes: Uint8Array, tab: Window | null): void {
   setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
 }
 
-/** "Reader 2026-12-06 Mina Guirguis.pdf" — sorts by ordination in a folder. */
-export function packetFilename(rank: OrdinationRank, date: string, name?: string): string {
-  const title = ordinationRankLabel(rank).split(' ')[0];
+/**
+ * "Reader 2026-12-06 Mina Guirguis.pdf" for one nominee, "Ordination
+ * 2026-12-06 application.pdf" for the whole thing — sorts by ordination in a folder.
+ */
+export function packetFilename(rank: OrdinationRank | null, date: string, name?: string): string {
+  const title = rank ? ordinationRankLabel(rank).split(' ')[0] : 'Ordination';
   const safe = (value: string) => value.replace(/[\\/:*?"<>|]+/g, '').trim();
   return `${safe([title, date, name].filter(Boolean).join(' '))}.pdf`;
 }
