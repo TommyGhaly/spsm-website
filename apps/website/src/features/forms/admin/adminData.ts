@@ -170,7 +170,7 @@ export async function setFormFlags(
  * signer's own uid on both branches.
  */
 export async function setFormsPageConfig(
-  patch: Partial<Pick<FormsPageConfig, 'nfcFormSlug' | 'campOrder'>>,
+  patch: Partial<Pick<FormsPageConfig, 'nfcFormSlug' | 'campOrder' | 'ordinationOrder'>>,
 ): Promise<void> {
   await setDoc(
     doc(db(), COLLECTIONS.config, CONFIG_DOC_FORMS),

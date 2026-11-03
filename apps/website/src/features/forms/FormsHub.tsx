@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import {
   CAMP_FORM_SLUG,
   DEFAULT_FORMS_PAGE_CONFIG,
+  ORDINATION_FORM_SLUG,
   builtInForms,
   type FormDefinition,
   type FormsPageConfig,
@@ -146,12 +147,12 @@ const SHOW_CAMP: boolean = true;
  * Unlike the camp card this one is absent until proven present: it shows only
  * while some ordination is open, because a parish is preparing one a few times
  * a year and a card leading to "nothing is open" the rest of the time is noise
- * on the page a car-park tag lands on. Ordered just after the camp's default.
+ * on the page a car-park tag lands on. Where it sits is `ordinationOrder` in
+ * `config/forms`, set by dragging its row in the forms drawer like the camp's.
  * Website only — the SPSM-Connect app's hub does not list it.
  */
-const ORDINATION_CARD: HubCard = {
-  slug: 'ordination',
-  order: 1010,
+const ORDINATION_CARD: Omit<HubCard, 'order'> = {
+  slug: ORDINATION_FORM_SLUG,
   href: '/forms/ordination',
   title: 'Nomination for ordination',
   blurb:
@@ -292,7 +293,7 @@ export function FormsHub() {
       : cards;
   const ordinationsOpen = useOrdinationsOpen();
   const shown = ordinationsOpen
-    ? [...visible, ORDINATION_CARD].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+    ? [...visible, { ...ORDINATION_CARD, order: config.ordinationOrder }].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
     : visible;
 
   return (

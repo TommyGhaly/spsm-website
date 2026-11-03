@@ -12,6 +12,7 @@ import {
   CAMP_FORM_SLUG,
   DEFAULT_FORMS_PAGE_CONFIG,
   NO_PAYMENT,
+  ORDINATION_FORM_SLUG,
   isBuiltInForm,
   keepsNoSubmissions,
   toFormSlug,
@@ -247,7 +248,7 @@ function AdminDrawer({ onClose }: { onClose: () => void }) {
  * `firestore.rules` refuses the delete regardless of what this draws.
  */
 function isPermanent(form: WithId<FormDraft>): boolean {
-  return isBuiltInForm(form.id) || form.kind === 'vehicle' || isCampRow(form);
+  return isBuiltInForm(form.id) || form.kind === 'vehicle' || isRouteRow(form);
 }
 
 /**
@@ -281,6 +282,21 @@ function isPermanent(form: WithId<FormDraft>): boolean {
  */
 function isCampRow(form: WithId<FormDraft>): boolean {
   return form.id === CAMP_FORM_SLUG;
+}
+
+/**
+ * The nomination for ordination's row, which is the camp's row again: a card
+ * on the hub with a route of its own and no form document, here so it can be
+ * dragged and chosen as the tap destination. It is shown on the hub while an
+ * ordination is taking nominations, which the Ordinations screen decides.
+ */
+function isOrdinationRow(form: WithId<FormDraft>): boolean {
+  return form.id === ORDINATION_FORM_SLUG;
+}
+
+/** A row backed by a route rather than a `forms` document. */
+function isRouteRow(form: WithId<FormDraft>): boolean {
+  return isCampRow(form) || isOrdinationRow(form);
 }
 
 /**
@@ -323,17 +339,32 @@ function campRow(order: number): WithId<FormDraft> {
   };
 }
 
+/** The nomination for ordination as a row, like `campRow`. */
+function ordinationRow(order: number): WithId<FormDraft> {
+  return {
+    ...blankForm(ORDINATION_FORM_SLUG),
+    id: ORDINATION_FORM_SLUG,
+    title: 'Nomination for ordination',
+    blurb: '',
+    icon: 'file',
+    order,
+    published: true,
+    open: true,
+  };
+}
+
 /**
- * The forms and the camp, in one list, sorted the way the hub sorts them.
+ * The forms, the camp and the nomination, in one list, sorted the way the hub
+ * sorts them.
  *
  * Same tie-break as `sortForms` in `../data`: `order`, then title, so two rows
  * left on the same number still come out in an order somebody can explain.
  */
-function withCampRow(
+function withRouteRows(
   forms: readonly WithId<FormDraft>[],
-  campOrder: number,
+  config: FormsPageConfig,
 ): WithId<FormDraft>[] {
-  return [...forms, campRow(campOrder)].sort(
+  return [...forms, campRow(config.campOrder), ordinationRow(config.ordinationOrder)].sort(
     (a, b) => a.order - b.order || a.title.localeCompare(b.title),
   );
 }
@@ -381,7 +412,7 @@ function FormsList({
 
   if (forms === null) return <p className="note">Loading…</p>;
 
-  const rows = moved ?? withCampRow(forms, config.campOrder);
+  const rows = moved ?? withRouteRows(forms, config);
 
   /**
    * Renumber the whole list on the server.
@@ -390,30 +421,35 @@ function FormsList({
    * `setFormOrder` for why a swap does not work when most forms share
    * `order: 100`.
    *
-   * The camp's row is pulled out and sent somewhere else. It is not a document
-   * in `forms` and never will be, so its position is a field on `config/forms`
+   * The camp's and the nomination's rows are pulled out and sent somewhere
+   * else. Neither is a document in `forms`, so their positions are fields on
+   * `config/forms`
    * — but it is numbered from the same sequence as everything above and below
-   * it, which is what lets the hub sort one list by one field. Its slot in the
-   * numbering is left empty rather than closed up, so a form does not jump past
-   * the camp because the camp is stored elsewhere.
+   * them, which is what lets the hub sort one list by one field. Their slots in
+   * the numbering are left empty rather than closed up, so a form does not jump
+   * past the camp because the camp is stored elsewhere.
    */
   function commit(next: WithId<FormDraft>[]) {
     setMoved(next);
     const numbered = next.map((form, index) => ({ form, order: (index + 1) * 10 }));
     const camp = numbered.find((entry) => isCampRow(entry.form));
+    const ordination = numbered.find((entry) => isOrdinationRow(entry.form));
+    const settings: Partial<Pick<FormsPageConfig, 'campOrder' | 'ordinationOrder'>> = {};
+    // Only what moved. A drag two rows down the list should not write a
+    // settings document that says exactly what it said before.
+    if (camp && camp.order !== config.campOrder) settings.campOrder = camp.order;
+    if (ordination && ordination.order !== config.ordinationOrder) {
+      settings.ordinationOrder = ordination.order;
+    }
 
     void Promise.all([
       setFormOrder(
         numbered
-          .filter((entry) => !isCampRow(entry.form))
+          .filter((entry) => !isRouteRow(entry.form))
           .map((entry) => ({ id: entry.form.id, order: entry.order })),
         new Map(next.map((form) => [form.id, form.order])),
       ),
-      // Only when it moved. A drag two rows down the list should not write a
-      // settings document that says exactly what it said before.
-      camp && camp.order !== config.campOrder
-        ? setFormsPageConfig({ campOrder: camp.order })
-        : Promise.resolve(),
+      Object.keys(settings).length > 0 ? setFormsPageConfig(settings) : Promise.resolve(),
     ]).then(() => {
       // Let the server's answer take over again. Without this the local array
       // outlives the edit and hides anything a second administrator changed.
@@ -773,7 +809,7 @@ function FormsList({
             </button>
 
             <div className="fxa__row-main">
-              {isCampRow(form) ? (
+              {isRouteRow(form) ? (
                 /*
                   Not a button. Everything else in this column opens the
                   builder, and there is no form document behind this row to open
@@ -792,13 +828,25 @@ function FormsList({
               )}
               <span className="fxa__row-meta">
                 /forms/{form.slug} ·{' '}
-                {isCampRow(form) ? 'the camp’s own sign-up' : KIND_LABEL[form.kind]}
-                {!isCampRow(form) && form.payment.enabled && ' · takes payment'}
+                {isCampRow(form)
+                  ? 'the camp’s own sign-up'
+                  : isOrdinationRow(form)
+                    ? 'the Ordinations screen’s own form'
+                    : KIND_LABEL[form.kind]}
+                {!isRouteRow(form) && form.payment.enabled && ' · takes payment'}
               </span>
             </div>
 
             <div className="fxa__row-flags">
-              {isCampRow(form) ? (
+              {isOrdinationRow(form) ? (
+                // The same sentence as the camp's, for the same reason.
+                <p className="fxa__fixed">
+                  <small>
+                    Shown while an ordination is taking nominations. Open and close it under{' '}
+                    <strong>Ordinations</strong>.
+                  </small>
+                </p>
+              ) : isCampRow(form) ? (
                 /*
                   A sentence where Published and Open would be. Whether the
                   camp is on the hub is the camp's decision and is made on its

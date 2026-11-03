@@ -524,8 +524,8 @@ service cloud.firestore {
      * one a tap lands on, and where the summer camp sits in the list.
      *
      * Neither value authorizes anything. `nfcFormSlug` names a form that is
-     * public the moment it is published, and `campOrder` is a position in a
-     * list — so the worst a bad write can do is send a tap to the wrong parish
+     * public the moment it is published, and `campOrder` and `ordinationOrder`
+     * are positions in a list — so the worst a bad write can do is send a tap to the wrong parish
      * form, which is a thing the same person can already do by editing the form
      * itself. `parseFormsPageConfig` bounds both on the way out.
      *
@@ -539,13 +539,13 @@ service cloud.firestore {
 
       allow create: if hasScreen('forms')
         && request.resource.data.keys().hasOnly(
-             ['nfcFormSlug', 'campOrder', 'updatedAt', 'updatedBy'])
+             ['nfcFormSlug', 'campOrder', 'ordinationOrder', 'updatedAt', 'updatedBy'])
         && isFormsPageConfig(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
 
       allow update: if hasScreen('forms')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-             ['nfcFormSlug', 'campOrder', 'updatedAt', 'updatedBy'])
+             ['nfcFormSlug', 'campOrder', 'ordinationOrder', 'updatedAt', 'updatedBy'])
         && isFormsPageConfig(request.resource.data)
         && request.resource.data.updatedBy == request.auth.uid;
 
@@ -559,7 +559,10 @@ service cloud.firestore {
       return (!('nfcFormSlug' in data)
                || (data.nfcFormSlug is string && data.nfcFormSlug.size() <= 120))
         && (!('campOrder' in data)
-             || (data.campOrder is int && data.campOrder >= 0 && data.campOrder <= 100000));
+             || (data.campOrder is int && data.campOrder >= 0 && data.campOrder <= 100000))
+        && (!('ordinationOrder' in data)
+             || (data.ordinationOrder is int && data.ordinationOrder >= 0
+                 && data.ordinationOrder <= 100000));
     }
 
     match /events/{eventId} {

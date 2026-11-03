@@ -19,10 +19,19 @@ import {
 
 describe('parseFormsPageConfig', () => {
   it('reads a slug and a position', () => {
-    expect(parseFormsPageConfig({ nfcFormSlug: CAMP_FORM_SLUG, campOrder: 15 })).toEqual({
+    expect(
+      parseFormsPageConfig({ nfcFormSlug: CAMP_FORM_SLUG, campOrder: 15, ordinationOrder: 25 }),
+    ).toEqual({
       nfcFormSlug: CAMP_FORM_SLUG,
       campOrder: 15,
+      ordinationOrder: 25,
     });
+  });
+
+  it('puts the nomination just after the camp when no one has moved either', () => {
+    const config = parseFormsPageConfig({ ordinationOrder: 'first' });
+    expect(config.ordinationOrder).toBe(DEFAULT_FORMS_PAGE_CONFIG.ordinationOrder);
+    expect(config.ordinationOrder).toBeGreaterThan(config.campOrder);
   });
 
   it('trims what somebody typed in the console', () => {
@@ -69,6 +78,7 @@ describe('parseFormsPageConfig', () => {
     expect(parseFormsPageConfig({ campOrder: -40 }).campOrder).toBe(0);
     expect(parseFormsPageConfig({ campOrder: 10 ** 9 }).campOrder).toBe(100_000);
     expect(parseFormsPageConfig({ campOrder: 12.6 }).campOrder).toBe(13);
+    expect(parseFormsPageConfig({ ordinationOrder: -5 }).ordinationOrder).toBe(0);
   });
 
   it('matches the committed default when the document is empty', () => {

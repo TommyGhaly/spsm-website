@@ -362,6 +362,14 @@ describe('the forms grant', () => {
     await assertSucceeds(
       setDoc(doc(db, 'config/forms'), settings({ campOrder: 30 }), { merge: true }),
     );
+    // The nomination for ordination is placed, and tapped to, the same way.
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'config/forms'),
+        settings({ nfcFormSlug: 'ordination', ordinationOrder: 40 }),
+        { merge: true },
+      ),
+    );
 
     // The public reads it — the hub and the tag's own page both do, signed out.
     await assertSucceeds(getDoc(doc(asAnonymousSession(env).firestore(), 'config/forms')));
@@ -377,6 +385,9 @@ describe('the forms grant', () => {
     // destination is a slug.
     await assertFails(
       setDoc(doc(db, 'config/forms'), settings({ campOrder: -1 }), { merge: true }),
+    );
+    await assertFails(
+      setDoc(doc(db, 'config/forms'), settings({ ordinationOrder: -1 }), { merge: true }),
     );
     await assertFails(
       setDoc(doc(db, 'config/forms'), settings({ nfcFormSlug: 7 }), { merge: true }),

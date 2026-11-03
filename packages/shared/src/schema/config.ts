@@ -1409,6 +1409,13 @@ export const CONFIG_DOC_FORMS = 'forms';
 export const CAMP_FORM_SLUG = 'summer-camp';
 
 /**
+ * The nomination for ordination, named the same way and for the same reason:
+ * a card on the hub with a route of its own (`/forms/ordination`) and no
+ * `forms` document, which the office can move and can point the tag at.
+ */
+export const ORDINATION_FORM_SLUG = 'ordination';
+
+/**
  * Where a tap lands, and where the camp sits, decided by the office.
  *
  * ---------------------------------------------------------------------------
@@ -1457,12 +1464,20 @@ export interface FormsPageConfig {
    * it, which is where it was appended before this existed.
    */
   campOrder: number;
+
+  /**
+   * Where the nomination for ordination sits, on the same scale and for the
+   * same reason as `campOrder`. 1010 puts it just after the camp on a parish
+   * that has moved neither.
+   */
+  ordinationOrder: number;
 }
 
 /** The hub as it behaved before anybody set either of these. */
 export const DEFAULT_FORMS_PAGE_CONFIG: FormsPageConfig = {
   nfcFormSlug: 'vehicle-registration',
   campOrder: 1000,
+  ordinationOrder: 1010,
 };
 
 /**
@@ -1475,12 +1490,13 @@ export const DEFAULT_FORMS_PAGE_CONFIG: FormsPageConfig = {
  */
 export function parseFormsPageConfig(raw: unknown): FormsPageConfig {
   const doc = asRecord(raw);
-  const order = doc?.['campOrder'];
+  const position = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.min(100_000, Math.max(0, Math.round(value)))
+      : fallback;
   return {
     nfcFormSlug: str(doc?.['nfcFormSlug']) || DEFAULT_FORMS_PAGE_CONFIG.nfcFormSlug,
-    campOrder:
-      typeof order === 'number' && Number.isFinite(order)
-        ? Math.min(100_000, Math.max(0, Math.round(order)))
-        : DEFAULT_FORMS_PAGE_CONFIG.campOrder,
+    campOrder: position(doc?.['campOrder'], DEFAULT_FORMS_PAGE_CONFIG.campOrder),
+    ordinationOrder: position(doc?.['ordinationOrder'], DEFAULT_FORMS_PAGE_CONFIG.ordinationOrder),
   };
 }
