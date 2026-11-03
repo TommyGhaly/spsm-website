@@ -367,16 +367,25 @@ export function NominationScreen() {
             </label>
           </section>
 
-          <p>
-            <button
-              type="button"
-              className="button camp-public__send"
-              disabled={sending}
-              onClick={() => void send()}
-            >
-              {sending ? 'Sending…' : `Send my nomination for ${ordinationRankLabel(rank)}`}
-            </button>
-          </p>
+          {/* The camp sign-up's send panel: a full accent button on a soft
+              ground. The panel class goes on the wrapper, not the button —
+              on the button it replaced the accent fill with the pale wash. */}
+          <div className="camp-public__send">
+            <p>
+              <button
+                type="button"
+                className="button"
+                disabled={sending}
+                onClick={() => void send()}
+              >
+                {sending ? 'Sending…' : `Send my nomination for ${ordinationRankLabel(rank)}`}
+              </button>
+            </p>
+            <p className="note">
+              It goes straight to the parish priests. You will not be able to read it back or
+              change it here.
+            </p>
+          </div>
         </>
       ) : null}
     </>,
