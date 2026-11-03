@@ -159,6 +159,22 @@ describe('applications', () => {
     );
   });
 
+  it('let an admin take signatures off a nomination, their own or another priest’s', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'ordinationApplications', 'app-1'), {
+        signatures: [{ uid: 'priest-2', name: 'Fr. B', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02' }],
+      });
+    });
+    const db = asPriest(env).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'ordinationApplications', 'app-1'), {
+        signatures: [],
+        updatedAt: new Date(),
+        updatedBy: 'priest-1',
+      }),
+    );
+  });
+
   it('refuse an admin changing what the family sent', async () => {
     const db = asPriest(env).firestore();
     await assertFails(
@@ -220,5 +236,9 @@ describe('signatures', () => {
 
   it('let a priest delete their own', async () => {
     await assertSucceeds(deleteDoc(doc(asSecondPriest(env).firestore(), 'ordinationSignatures', 'priest-2')));
+  });
+
+  it('refuse deleting somebody else’s', async () => {
+    await assertFails(deleteDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-2')));
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ORDINATION_SIGNATURE_IMAGE_MAX, type OrdinationSignatureProfile } from '@spsm/shared';
-import { readSignatureProfile, saveSignatureProfile } from './data';
+import { deleteSignatureProfile, readSignatureProfile, saveSignatureProfile } from './data';
 import { OrdinationError, OrdinationShell } from './OrdinationShell';
 import { SignaturePad, type SignaturePadHandle } from './SignaturePad';
 import { useOrdinationAdmin } from './useOrdinationAdmin';
@@ -12,7 +12,8 @@ import { useOrdinationAdmin } from './useOrdinationAdmin';
  *
  * It is kept on `ordinationSignatures/{uid}`, which only they can write, and
  * copied onto each nomination they sign. Redrawing it changes what they sign
- * from now on and nothing they have already signed.
+ * from now on and nothing they have already signed — and so does deleting it:
+ * the nominations keep their copies until somebody removes them there.
  */
 export function SignatureScreen() {
   const session = useOrdinationAdmin();
@@ -22,6 +23,7 @@ export function SignatureScreen() {
   const [blank, setBlank] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -57,6 +59,24 @@ export function SignatureScreen() {
       setProfile({ name: name.trim() || session.name, image });
       pad.current?.clear();
       setSaved(true);
+      setDeleted(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!session.uid) return;
+    if (!window.confirm('Delete your signature on file? Nominations you have already signed keep it.')) return;
+    setSaving(true);
+    setError('');
+    try {
+      await deleteSignatureProfile(session.uid);
+      setProfile({ name: profile?.name ?? '', image: '' });
+      setSaved(false);
+      setDeleted(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -86,6 +106,19 @@ export function SignatureScreen() {
               </p>
             )}
             {saved ? <p className="note">Saved. It will be used on everything you sign from now on.</p> : null}
+            {deleted ? (
+              <p className="note">
+                Deleted. Nominations you already signed still carry it; remove it from each one on
+                its nomination if it should not be sent.
+              </p>
+            ) : null}
+            {profile?.image ? (
+              <p className="ordination-actions">
+                <button type="button" className="button button--danger" disabled={saving} onClick={() => void remove()}>
+                  Delete my signature
+                </button>
+              </p>
+            ) : null}
           </section>
 
           <section className="camp-step ordination-panel">

@@ -421,8 +421,16 @@ function Nomination({
     setDirty(true);
   }
 
-  function unsign() {
-    setSignatures(signatures.filter((signature) => signature.uid !== session.uid));
+  /**
+   * Any signature, not only the signed-in priest's: a priest who has left, or
+   * a signature added to the wrong nominee, has to be removable by whoever is
+   * preparing the packet. Somebody else's asks first.
+   */
+  function unsign(signature: OrdinationSignature) {
+    if (signature.uid !== session.uid && !window.confirm(`Remove ${signature.name}'s signature from this nomination?`)) {
+      return;
+    }
+    setSignatures(signatures.filter((entry) => entry.uid !== signature.uid));
     setDirty(true);
   }
 
@@ -565,6 +573,9 @@ function Nomination({
                     <span>
                       {signature.name} · {formDay(signature.signedOn)}
                     </span>
+                    <button type="button" className="button button--quiet" onClick={() => unsign(signature)}>
+                      {signature.uid === session.uid ? 'Remove my signature' : 'Remove'}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -572,11 +583,6 @@ function Nomination({
                 {canSign ? (
                   <button type="button" className="button button--ghost" onClick={sign}>
                     Sign as {mine?.name || session.name}
-                  </button>
-                ) : null}
-                {signedByMe ? (
-                  <button type="button" className="button button--quiet" onClick={unsign}>
-                    Remove my signature
                   </button>
                 ) : null}
               </p>
