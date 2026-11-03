@@ -10,6 +10,7 @@ import {
 } from '@spsm/shared';
 import { Icon, isIconName } from '@/components/Icon';
 import { useCampSignUpOpen } from '@/features/camp';
+import { useOrdinationsOpen } from '@/features/ordination';
 import { watchFormsPageConfig, watchPublishedForms } from './data';
 import { useFormsAdmin } from './useFormsAdmin';
 
@@ -140,6 +141,27 @@ const CAMP_CARD: Omit<HubCard, 'order'> = {
 const SHOW_CAMP: boolean = true;
 
 /**
+ * The nomination for ordination, at its own route like the camp's.
+ *
+ * Unlike the camp card this one is absent until proven present: it shows only
+ * while some ordination is open, because a parish is preparing one a few times
+ * a year and a card leading to "nothing is open" the rest of the time is noise
+ * on the page a car-park tag lands on. Ordered just after the camp's default.
+ * Website only — the SPSM-Connect app's hub does not list it.
+ */
+const ORDINATION_CARD: HubCard = {
+  slug: 'ordination',
+  order: 1010,
+  href: '/forms/ordination',
+  title: 'Nomination for ordination',
+  blurb:
+    'Put forward a cantor, reader or subdeacon for ordination. The parish priests review every nomination before it goes to the diocese.',
+  icon: 'file',
+  image: null,
+  external: false,
+};
+
+/**
  * The two forms that are always on this page.
  *
  * ---------------------------------------------------------------------------
@@ -268,6 +290,10 @@ export function FormsHub() {
           (a, b) => a.order - b.order || a.title.localeCompare(b.title),
         )
       : cards;
+  const ordinationsOpen = useOrdinationsOpen();
+  const shown = ordinationsOpen
+    ? [...visible, ORDINATION_CARD].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+    : visible;
 
   return (
     <>
@@ -276,7 +302,7 @@ export function FormsHub() {
       </p>
 
       <ul className="forms">
-        {visible.map((card) => (
+        {shown.map((card) => (
           <li key={card.slug}>
             <FormCard card={card} />
           </li>

@@ -131,6 +131,15 @@ export const ADMIN_SCREENS = [
    * ---------------------------------------------------------------------------
    */
   'finance',
+  /**
+   * Nominations for ordination: opening an ordination, approving or rejecting
+   * each nominee, signing, and printing the diocese's packets.
+   *
+   * Opens personal data — a minor's date of birth and their parents' phone
+   * numbers — and the parish's written testimony about each nominee. Give it to
+   * the priests and to whoever prepares the paperwork for them.
+   */
+  'ordination',
   /** Vehicle registrations from the car-park NFC tag. */
   'parking',
   /**

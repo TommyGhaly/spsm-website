@@ -580,7 +580,21 @@ function PanelAdminLinks() {
  * one landed.
  */
 function DoorGlyph({ glyph }: { glyph: AdminSection['glyph'] }) {
-  return glyph === 'camp' ? <CampGlyph /> : <FinanceGlyph />;
+  if (glyph === 'camp') return <CampGlyph />;
+  if (glyph === 'ordination') return <OrdinationGlyph />;
+  return <FinanceGlyph />;
+}
+
+/**
+ * A cross. Decorative — the row it sits in carries the label.
+ */
+function OrdinationGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 3v18M6.5 8.5h11" />
+    </svg>
+  );
 }
 
 /**

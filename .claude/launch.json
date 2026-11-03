@@ -137,6 +137,21 @@
         "dev:emulated:seventh"
       ],
       "port": 3450
+    },
+    {
+      "name": "website-emulated-functions-3150",
+      "cwd": "apps/website",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "FUNCTIONS_EMULATOR_ORIGIN=http://127.0.0.1:5001",
+        "NEXT_DIST_DIR=.next-emulated-3150",
+        "NEXT_PUBLIC_USE_EMULATORS=1",
+        "PORT=3150",
+        "npx",
+        "next",
+        "dev"
+      ],
+      "port": 3150
     }
   ],
   "//website-emulated-3100": "A second server against the emulators on :3100, with its own dist dir, so it coexists with whatever is already on :3000. Needs the emulator suite running (`npm run emulators`, then `npm run seed:emulator`); it is the way to try a destructive action without doing it to the parish, and the way to hold a signed-in role without the Microsoft popup.",
@@ -150,5 +165,6 @@
   "//website-real-3800": "One port past 3700. On Aug 29 peer sessions held :3000 and :3300 through :3700 at once.",
   "//website-emulated-3350": "A sixth emulated server, on :3350. On Sep 2 peer sessions held :3100, :3200, :3250 and :3900 at once; the emulated backend is the only way to be signed in with a camp grant without the parish Entra directory, so the spare is worth adding rather than stopping somebody else's server.",
   "//website-emulated-3250": "A fifth server against the emulators, on :3250. :3100, :3200 and :3900 were all held by peer sessions on Aug 31. Not :4000 — that is the Firebase emulator UI, and taking it hides the data browser these servers exist to be checked against.",
-  "//website-emulated-3450": "A seventh emulated server, on :3450. On Sep 2 peer sessions held :3100, :3200, :3250, :3350 and :3900 at once."
+  "//website-emulated-3450": "A seventh emulated server, on :3450. On Sep 2 peer sessions held :3100, :3200, :3250, :3350 and :3900 at once.",
+  "//website-emulated-functions-3150": "Against the emulators *including Functions*: /api/* goes to the local Functions emulator instead of the deployed site. Needed for a Function that is not deployed yet (ordinationApply was the first). Start `firebase emulators:start --only auth,firestore,functions,storage` and seed first."
 }

@@ -316,7 +316,7 @@ const audit = (uid = null) => ({ createdAt: new Date(), updatedAt: new Date(), u
 // here — they are the superadmin's, and the allocation screen does not offer
 // them. See packages/shared/src/screens.ts.
 const EVERY_AREA = [
-  'events', 'bulletin', 'bookstore', 'camp', 'forms', 'finance',
+  'events', 'bulletin', 'bookstore', 'camp', 'forms', 'finance', 'ordination',
   'parking', 'servants', 'content', 'theme',
 ];
 

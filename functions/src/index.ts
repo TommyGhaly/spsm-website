@@ -105,6 +105,8 @@ export { formUploadUrl } from './forms/uploadUrl.js';
  */
 export { campServantRequest } from './camp/servantRequest.js';
 
+export { ordinationApply } from './ordination/apply.js';
+
 /*
  * A servant deleting their own account.
  *

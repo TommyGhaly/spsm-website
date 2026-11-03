@@ -70,7 +70,7 @@ export interface AdminSection {
    * question "what are this person's sections", and the alternative is
    * `HeaderAuth` matching on `href`, which is a second list to keep in step.
    */
-  glyph: 'camp' | 'finance';
+  glyph: 'camp' | 'finance' | 'ordination';
 }
 
 /**
@@ -205,6 +205,23 @@ export function useAdminAccess(enabled = true): AdminAccess {
             blurb:
               'Registrations, groups and the daily register, with the season, the week ' +
               'dates, the fee and the two forms\u2019 switches.',
+          });
+        }
+
+        /*
+         * Ordinations. Another back office with no public page to edit in
+         * place: the nominations, the parish's answers about each nominee,
+         * the priests' signatures and the diocese's printed form.
+         */
+        if (canAdminScreen(claims, screens, 'ordination')) {
+          sections.push({
+            href: '/admin/ordination',
+            title: 'Ordinations',
+            menuLabel: 'Ordinations',
+            glyph: 'ordination',
+            blurb:
+              'Nominations for cantor, reader and subdeacon: review and sign each one, ' +
+              'and print the diocese\u2019s form.',
           });
         }
 

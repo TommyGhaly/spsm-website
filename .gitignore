@@ -53,6 +53,8 @@ out/
 # The -3450 entry's. Six emulated ports are now spoken for; a seventh will need
 # a line here too, which is the cost of a `NEXT_DIST_DIR` per server.
 .next-emulated-3450/
+# The -3150 entry, which also routes /api/* to the Functions emulator.
+.next-emulated-3150/
 .next-real-3300/
 .next-real-3400/
 .next-real-3500/

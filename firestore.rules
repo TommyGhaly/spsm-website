@@ -1625,6 +1625,65 @@ service cloud.firestore {
       allow delete: if runsCamp();
     }
 
+    /*
+     * Ordinations, and the nominations for them.
+     *
+     * -----------------------------------------------------------------------
+     * Three collections, all behind the `ordination` screen except one read.
+     *
+     * `ordinations` is a rank and a date. It is public to read because the
+     * nomination form lists the open ones to people with no account, and there
+     * is nothing on it a parish newsletter would not print.
+     *
+     * `ordinationApplications` is shaped like `campServantRequests`: only the
+     * `ordinationApply` Function creates one, because the rank is copied from
+     * the ordination and an application must arrive pending, unanswered and
+     * unsigned. An admin may then change the review and nothing else — the
+     * nominee's details are what the family sent, and the packet the diocese
+     * receives should print exactly that.
+     *
+     * `ordinationSignatures/{uid}` is one priest's drawn signature. Only they
+     * may write it. Everybody with the screen may read it, which is what lets
+     * the screen show who has a signature on file.
+     * -----------------------------------------------------------------------
+     */
+    match /ordinations/{ordinationId} {
+      allow read: if true;
+      allow create, update: if hasScreen('ordination')
+        && request.resource.data.keys().hasOnly(
+             ['rank', 'date', 'open', 'churchName', 'churchAddress', 'createdAt', 'updatedAt', 'updatedBy'])
+        && request.resource.data.rank in ['cantor', 'reader', 'subdeacon']
+        && request.resource.data.date is string
+        && request.resource.data.open is bool;
+      allow delete: if hasScreen('ordination');
+    }
+
+    match /ordinationApplications/{applicationId} {
+      allow get, list: if hasScreen('ordination');
+
+      // The Function only. See above.
+      allow create: if false;
+
+      allow update: if hasScreen('ordination')
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'review', 'signatures', 'updatedAt', 'updatedBy'])
+        && request.resource.data.status in ['pending', 'approved', 'rejected']
+        && request.resource.data.signatures is list
+        && request.resource.data.signatures.size() <= 3;
+
+      allow delete: if hasScreen('ordination');
+    }
+
+    match /ordinationSignatures/{uid} {
+      allow read: if hasScreen('ordination');
+      allow create, update: if isSelf(uid) && hasScreen('ordination')
+        && request.resource.data.keys().hasOnly(['name', 'image', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.image is string
+        && request.resource.data.image.size() <= 150000;
+      allow delete: if isSelf(uid);
+    }
+
     match /campRegistrations/{registrationId} {
       /*
        * One condition for both, and the bug that used to live here is worth

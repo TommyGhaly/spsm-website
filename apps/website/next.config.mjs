@@ -155,6 +155,10 @@ if (process.env.NODE_ENV === 'development') {
         source: '/api/camp/servant-request',
         destination: `${origin}/${project}/${region}/campServantRequest`,
       },
+      {
+        source: '/api/ordination/apply',
+        destination: `${origin}/${project}/${region}/ordinationApply`,
+      },
       /*
        * A servant deleting their own account. Authenticated, unlike the two
        * above — but it needs listing here for the same reason they do: the path

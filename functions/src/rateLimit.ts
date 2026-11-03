@@ -92,6 +92,12 @@ export const BUDGETS = {
    */
   campServantRequest: 5,
   /**
+   * A nomination for ordination. A parish sends a handful of these a year, a
+   * family might send two brothers in a minute, and nothing legitimate sends a
+   * sixth.
+   */
+  ordinationApply: 5,
+  /**
    * Asking for a signed URL to upload one gallery photograph.
    *
    * Sixty, because this is called once per *file* and a batch is sixty files —
@@ -192,6 +198,7 @@ export const CAPS = {
   orderLookup: 10,
   formSubmit: 20,
   campServantRequest: 10,
+  ordinationApply: 5,
   /**
    * Handing out signed upload URLs. Cheap per call — it verifies two tokens,
    * touches a counter and signs a string, and never sees a byte of the

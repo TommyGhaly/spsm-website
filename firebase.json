@@ -26,6 +26,11 @@
         "function": "campServantRequest"
       },
       {
+        "//ordination": "A nomination for ordination, from /forms/ordination. Unauthenticated like the camp sign-up, and above the /forms/** glob for the same first-match reason.",
+        "source": "/api/ordination/apply",
+        "function": "ordinationApply"
+      },
+      {
         "//account": "A servant deleting their own account. Authenticated \u2014 it acts on whoever the verified ID token says is calling and takes no uid from the request body, so there is no version of this endpoint that deletes somebody else. Above the /forms/** glob for the same first-match reason as the two entries before it.",
         "source": "/api/account/delete",
         "function": "deleteOwnAccount"

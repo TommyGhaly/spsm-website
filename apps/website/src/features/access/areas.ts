@@ -150,6 +150,20 @@ export const AREA_CAMP: AccessArea = {
 };
 
 /**
+ * Ordinations — the nominations, the parish's testimony about each nominee,
+ * and the priests' signatures. Worded heavily because it opens a child's date
+ * of birth and their parents' numbers.
+ */
+export const AREA_ORDINATION: AccessArea = {
+  key: 'ordination',
+  label: 'Ordinations',
+  blurb:
+    'Opening an ordination, approving or rejecting each nominee, signing, and printing the diocese’s form. Emailed when a nomination arrives.',
+  caveat:
+    'Personal data, much of it about children — dates of birth and parents’ phone numbers — and the parish’s written answers about each nominee. Anybody given this can sign with their own signature, so give it to the priests and whoever prepares the paperwork for them.',
+};
+
+/**
  * Money.
  *
  * The caveat used to say that this row reached one of the three places the
@@ -308,6 +322,7 @@ export const AREA_EVENTS: AccessArea = {
 export const ACCESS_AREAS: readonly AccessArea[] = [
   AREA_PROGRAMS,
   AREA_CAMP,
+  AREA_ORDINATION,
   AREA_EVENTS,
   AREA_CONTENT,
   AREA_FORMS,
@@ -318,9 +333,9 @@ export const ACCESS_AREAS: readonly AccessArea[] = [
 /**
  * The rows that are a plain screen flag, in page order.
  *
- * These six, and only these six, are the screens something in this codebase
- * actually gates on — `useCampAdmin`, `useEventsAdmin`, `useAboutAdmin`,
- * `useFormsAdmin`, `useBookstoreAdmin` and `useFinanceAdmin`, plus the
+ * These seven, and only these seven, are the screens something in this codebase
+ * actually gates on — `useCampAdmin`, `useOrdinationAdmin`, `useEventsAdmin`,
+ * `useAboutAdmin`, `useFormsAdmin`, `useBookstoreAdmin` and `useFinanceAdmin`, plus the
  * calendar's own `canAdmin('events')`. Ticking any of them changes what
  * somebody sees on their next page load, which is the property the long note at
  * the top of this file is about.
@@ -338,6 +353,7 @@ export const ACCESS_AREAS: readonly AccessArea[] = [
  */
 export const SCREEN_AREAS: readonly (AccessArea & { key: AdminScreen })[] = [
   AREA_CAMP,
+  AREA_ORDINATION,
   AREA_EVENTS,
   AREA_CONTENT,
   AREA_FORMS,

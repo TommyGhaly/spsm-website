@@ -204,6 +204,23 @@ export const COLLECTIONS = {
    * FAULT_TTL_DAYS.
    */
   faults: 'faults',
+  /**
+   * One ordination the parish is preparing: a rank and a date. Public to read,
+   * because the nomination form lists the open ones to people with no account.
+   * See `schema/ordination.ts`.
+   */
+  ordinations: 'ordinations',
+  /**
+   * A nomination for one of those ordinations, written only by the
+   * `ordinationApply` Function and read only by the `ordination` screen. It
+   * holds a minor's date of birth and parents' contact details.
+   */
+  ordinationApplications: 'ordinationApplications',
+  /**
+   * One priest's drawn signature, keyed by their uid, stamped onto every
+   * packet they sign.
+   */
+  ordinationSignatures: 'ordinationSignatures',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
