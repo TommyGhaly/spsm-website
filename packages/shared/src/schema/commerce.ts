@@ -136,8 +136,11 @@ export interface Product extends AuditFields, Publishable {
    *
    * Counted here, not in Square — the parish's choice, so the counts are the
    * website's alone and an in-person sale on the register does not lower them.
-   * The checkout Function lowers a size's count when it sells online and refuses
-   * a size at zero; `stockCount` is not consulted for these. A size's add-on is
+   * The checkout Function takes a size out of stock in the same transaction
+   * that records the order, before the card is charged, and refuses it when too
+   * few are left; a declined card, a failed payment or a restocked refund puts
+   * it back (see `payments/clothing.ts`, `takeSizes` and `returnSizes`).
+   * `stockCount` is not consulted for these. A size's add-on is
    * charged as a modifier on the Square line — see `buildSquareOrder`.
    */
   sizes?: ProductSize[] | null;
@@ -184,6 +187,13 @@ export interface Order extends AuditFields {
    */
   buyerFirstName?: string;
   buyerLastName?: string;
+  /**
+   * A number to ring about the order — a size that has run out, a parcel the
+   * post office returned, books waiting after Liturgy. As the buyer typed it,
+   * cleaned by `cleanPhone`. Optional because orders taken before it was asked
+   * for do not have one.
+   */
+  buyerPhone?: string;
   /**
    * `contactEmail` lowercased, because that is the only form a query can match.
    *
@@ -233,8 +243,14 @@ export interface Order extends AuditFields {
   idempotencyKey: string;
 
   /**
-   * Set once checkout has lowered the clothing size counts for this order, so a
-   * retried request cannot lower them twice. Absent on orders with no sizes.
+   * True while this order is holding clothing sizes out of stock.
+   *
+   * Checkout takes the sizes in the same transaction that first writes the
+   * order — *before* the card is charged — so two buyers cannot both pay for
+   * the last shirt. It goes back to false when they are put back: a declined
+   * card, a failed or cancelled payment, or a refund staff chose to restock.
+   * The flag is what makes both moves happen once, however many times a retry
+   * or a redelivered webhook reaches them. Absent on orders with no sizes.
    */
   sizesCounted?: boolean;
 
@@ -265,6 +281,13 @@ export interface OrderRefund {
   refundedBy: string;
   refundedByEmail: string;
   refundedAt: Timestamped;
+  /**
+   * Whether the sizes on this order go back into stock once Square says the
+   * refund completed. Staff choose — a shirt that was never handed over goes
+   * back on the shelf, one that was worn does not. Absent on older refunds and
+   * on any order without sizes, and absent means no.
+   */
+  restock?: boolean;
 }
 
 export interface OrderLineItem {

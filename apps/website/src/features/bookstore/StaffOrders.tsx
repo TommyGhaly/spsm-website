@@ -342,6 +342,7 @@ function OrderRow({
 
       <p className="bkorder__contact">
         <a href={`mailto:${order.contactEmail}`}>{order.contactEmail}</a>
+        {order.buyerPhone && <a href={`tel:${order.buyerPhone.replace(/[^\d+]/g, '')}`}>{order.buyerPhone}</a>}
         <span className="bkorder__ref">{order.id}</span>
       </p>
 
@@ -412,6 +413,10 @@ function RefundDialog({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState('');
+  /* Asked only when there is clothing on the order. Ticked, because the usual
+     refund is for something never handed over; a worn shirt is unticked. */
+  const sized = (order.lineItems ?? []).some((line) => line.size);
+  const [restock, setRestock] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -421,7 +426,7 @@ function RefundDialog({
     setError(null);
     try {
       const { refundOrder } = await import('./adminData');
-      await refundOrder(order.id, reason.trim());
+      await refundOrder(order.id, reason.trim(), sized && restock);
       onDone();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The refund could not be sent.');
@@ -449,6 +454,13 @@ function RefundDialog({
             autoFocus
           />
         </label>
+
+        {sized && (
+          <label className="bkmodal__check">
+            <input type="checkbox" checked={restock} onChange={(event) => setRestock(event.target.checked)} />
+            <span>Put the sizes back in stock once the refund goes through</span>
+          </label>
+        )}
 
         {error && (
           <p className="bkmodal__error" role="alert">

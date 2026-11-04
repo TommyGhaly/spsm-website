@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { COLLECTIONS, type Order } from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
+import { returnSizesIfDue } from './sizeStock.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
@@ -83,7 +84,10 @@ export const squareRefund = onRequest(
       return;
     }
 
-    const body = (req.body ?? {}) as { orderId?: unknown; reason?: unknown };
+    const body = (req.body ?? {}) as { orderId?: unknown; reason?: unknown; restock?: unknown };
+    // Only `true` restocks. Older copies of the app and site send nothing,
+    // and for them the sizes stay sold, which is what a refund always did.
+    const restock = body.restock === true;
     const orderId = typeof body.orderId === 'string' ? body.orderId.trim() : '';
     // Required, and required for a reason: an untraceable refund on a parish's
     // books is the thing an audit asks about first.
@@ -175,10 +179,27 @@ export const squareRefund = onRequest(
           refundedBy: caller?.uid ?? '',
           refundedByEmail: caller?.email ?? '',
           refundedAt: FieldValue.serverTimestamp(),
+          restock,
         },
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: caller?.uid ?? null,
       });
+
+      /*
+       * The sizes normally go back when `refund.updated` says COMPLETED — the
+       * webhook reads `restock` off the record just written. But a refund can
+       * complete at once, and that event can land before the write above did,
+       * finding no `restock` to read. So look once more now: if the order is
+       * already refunded, put them back here. `sizesCounted` keeps the webhook
+       * and this from both doing it.
+       */
+      if (restock) {
+        try {
+          await returnSizesIfDue(db, ref, 'refunded', { onlyIfAlready: true });
+        } catch (cause) {
+          console.error(`[refund] sizes not restocked for ${orderId}`, cause);
+        }
+      }
 
       res.status(200).json({ ok: true, refundId: json.refund.id, status: json.refund.status });
     } catch (error) {

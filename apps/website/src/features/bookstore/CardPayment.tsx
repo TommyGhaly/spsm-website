@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { looksLikeEmail, usableZip } from '@spsm/shared';
+import { cleanPhone, looksLikeEmail, usableZip } from '@spsm/shared';
 import { money } from './Shop';
 import { squarePayments, type SquareCard } from './squareSdk';
 import { useSquareWallets, type WalletKind } from './useSquareWallets';
@@ -101,6 +101,9 @@ export function CardPayment({
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  /* A number to ring if a size has run out or the order is waiting. Checked
+     the way the Function checks it, so a typo is caught before the card. */
+  const [phone, setPhone] = useState('');
   const [shipping, setShipping] = useState(false);
   const [address, setAddress] = useState({ line1: '', line2: '', city: '', state: '', postalCode: '' });
   const quote = useShippingQuote({ enabled: shipping, cart, postalCode: address.postalCode });
@@ -164,6 +167,7 @@ export function CardPayment({
   const shippingIncomplete =
     shipping && !(address.line1.trim() && address.city.trim() && address.state.trim() && address.postalCode.trim());
   const named = firstName.trim().length > 0 && lastName.trim().length > 0;
+  const phoned = cleanPhone(phone) !== null;
   /*
    * What will actually be charged, which is the books plus delivery if delivery
    * was chosen — and it must agree with `functions/src/checkout.ts`, which
@@ -224,6 +228,7 @@ export function CardPayment({
     wallets.status === 'working' ||
     !looksLikeEmail(email) ||
     !named ||
+    !phoned ||
     shippingIncomplete ||
     quoting;
 
@@ -250,6 +255,7 @@ export function CardPayment({
           email: email.trim(),
           firstName: firstName.trim(),
           lastName: lastName.trim(),
+          phone: phone.trim(),
           fulfillment: shipping ? 'ship' : 'pickup',
           address: shipping ? address : undefined,
           idempotencyKey: idempotencyKey.current,
@@ -422,6 +428,25 @@ export function CardPayment({
               onChange={(event) => setEmail(event.target.value)}
               placeholder="you@example.com"
             />
+
+            <label className="pay__label pay__label--stacked" htmlFor="pay-phone">
+              A phone number, in case there is a question about the order
+            </label>
+            <input
+              id="pay-phone"
+              type="tel"
+              value={phone}
+              autoComplete="tel"
+              inputMode="tel"
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="(508) 555-0134"
+              aria-invalid={phone.trim() !== '' && !phoned}
+            />
+            {phone.trim() !== '' && !phoned ? (
+              <p className="pay__hint" role="alert">
+                That does not look like a phone number — ten digits, with the area code.
+              </p>
+            ) : null}
           </div>
         </li>
 
@@ -544,8 +569,8 @@ export function CardPayment({
             */}
             <WalletButtons
               wallets={wallets}
-              disabled={!named || !looksLikeEmail(email) || status !== 'ready' || quoting}
-              disabledHint="Add your name and email above first — the order is put aside under that name."
+              disabled={!named || !looksLikeEmail(email) || !phoned || status !== 'ready' || quoting}
+              disabledHint="Add your name, email and phone above first — the order is put aside under that name."
               onPay={payWithWallet}
             />
 

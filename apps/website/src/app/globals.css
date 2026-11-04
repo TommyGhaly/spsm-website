@@ -25441,6 +25441,22 @@ body.is-editing:has(.inspector-col.is-dragging) {
   border-radius: var(--radius-sm, 0.35rem);
 }
 
+/* The refund dialog's "put the sizes back" choice. A row, not the field grid:
+   the box sits beside its sentence. */
+.bkmodal__check {
+  display: flex;
+  gap: var(--space-sm, 0.6rem);
+  align-items: flex-start;
+  margin-bottom: var(--space-md, 1rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink, #2f2723);
+}
+
+.bkmodal__check input {
+  margin-top: 0.15rem;
+}
+
 .bkmodal__error {
   margin: 0 0 var(--space-md, 1rem);
   font-family: var(--font-ui, system-ui, sans-serif);

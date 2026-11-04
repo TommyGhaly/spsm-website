@@ -14,11 +14,16 @@ import {
   taxPercentage,
   buildSquareOrder,
   cleanName,
+  cleanPhone,
   cleanSizes,
   isUsableAddress,
   looksLikeEmail,
   normalizeEmail,
+  mayMoveOrder,
   parseBookstoreConfig,
+  shouldReturnSizes,
+  sizeDemand,
+  takeSizes,
   usableZip,
   verifyQuote,
   type BookstoreConfig,
@@ -26,6 +31,7 @@ import {
 } from '@spsm/shared';
 import { callerOf } from './httpAuth.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
+import { needsRetake, readSizeRetake, readSizeReturn } from './sizeStock.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_ENVIRONMENT,
@@ -215,6 +221,7 @@ export const squareCheckout = onRequest(
       email?: unknown;
       firstName?: unknown;
       lastName?: unknown;
+      phone?: unknown;
       fulfillment?: unknown;
       address?: Record<string, string>;
       idempotencyKey?: unknown;
@@ -251,6 +258,20 @@ export const squareCheckout = onRequest(
     const lastName = cleanName(body.lastName);
     if (!firstName || !lastName) {
       res.status(400).json({ error: 'A first and last name are needed for the order.' });
+      return;
+    }
+    /*
+     * A number to ring about the order. Asked for by the shop, the app and the
+     * App Clip — but optional *here* for now, because copies of the app already
+     * installed from the App Store do not send one, and refusing them would stop
+     * those parishioners paying at all until they update. Sent and malformed is
+     * still refused: that is a typo the buyer can fix. Make it required once the
+     * builds without the field have aged out.
+     */
+    const phoneSent = typeof body.phone === 'string' && body.phone.trim() !== '';
+    const phone = cleanPhone(body.phone);
+    if (phoneSent && !phone) {
+      res.status(400).json({ error: 'That phone number does not look right — please check it.' });
       return;
     }
     if (shipping && !isUsableAddress(body.address ?? {})) {
@@ -353,6 +374,13 @@ export const squareCheckout = onRequest(
         : line,
     );
     const taxing = taxedLines.some((line) => 'applied_taxes' in line);
+
+    /*
+     * Set the moment Square says the card was charged. The catch at the bottom
+     * reads it: after this point "Nothing was charged" is a lie that invites the
+     * buyer to pay twice, so a failure tells them the opposite.
+     */
+    let charged: { orderId: string; status: string; total: number } | null = null;
 
     try {
       // ── 1. Square builds and prices the order ────────────────────────────
@@ -476,48 +504,6 @@ export const squareCheckout = onRequest(
         return;
       }
 
-      // ── 2. Charge it, for exactly what Square said it costs ──────────────
-      const payRes = await fetch(`${host}/v2/payments`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          idempotency_key: idempotencyKey,
-          source_id: sourceId,
-          location_id: locationId,
-          order_id: orderId,
-          amount_money: { amount: total, currency: orderJson.order?.total_money?.currency ?? 'USD' },
-          buyer_email_address: email,
-          ...(shipping && body.address
-            ? {
-                shipping_address: {
-                  address_line_1: body.address['line1'],
-                  address_line_2: body.address['line2'] ?? '',
-                  locality: body.address['city'],
-                  administrative_district_level_1: body.address['state'],
-                  postal_code: body.address['postalCode'],
-                  country: 'US',
-                },
-              }
-            : {}),
-        }),
-      });
-      const payJson = (await payRes.json()) as {
-        payment?: { id?: string; status?: string };
-        errors?: { detail?: string; code?: string }[];
-      };
-
-      if (!payRes.ok || !payJson.payment?.id) {
-        const detail = payJson.errors?.[0];
-        console.error('[checkout] payment failed', JSON.stringify(payJson.errors));
-        // Square's decline messages are written for buyers, so pass one
-        // through rather than replacing it with something vaguer.
-        res.status(402).json({ error: detail?.detail ?? 'The card was declined.' });
-        return;
-      }
-
-      // ── 3. Record it ─────────────────────────────────────────────────────
-      const status = payJson.payment.status === 'COMPLETED' ? 'paid' : 'pending';
-
       /*
        * Unit prices, taken from the order Square priced.
        *
@@ -544,127 +530,316 @@ export const squareCheckout = onRequest(
         }
       }
 
-      await db
-        .collection(COLLECTIONS.orders)
-        .doc(orderId)
-        .set(
-          {
-            squareOrderId: orderId,
-            squarePaymentId: payJson.payment.id,
-            /*
-             * The uid when the buyer happens to be signed in, null otherwise.
-             *
-             * Nearly always null, and that is not a defect: sign-in on this
-             * site is Microsoft-only and restricted to the parish tenant, so a
-             * parishioner cannot have an account. A servant buying a book from
-             * their own laptop can, and attributing that order costs one header
-             * read. Buyers find their orders by receipt instead — see
-             * functions/src/orders.ts.
-             *
-             * Read from a verified ID token, never from the request body. A
-             * uid the browser could name is a uid the browser could choose.
-             */
-            memberUid: (await callerOf(req))?.uid ?? null,
-            contactEmail: email,
-            // The only form a lookup query can match. See the note on
-            // `contactEmailLower` in schema/commerce.ts.
-            contactEmailLower: normalizeEmail(email),
-            // Who the books are for. Not the cardholder name — see the note in
-            // schema/commerce.ts.
-            buyerFirstName: firstName,
-            buyerLastName: lastName,
-            lineItems: built.items.map((item) => {
-              const unit = pricedByUid.get(item.uid);
-              return {
-                productId: item.slug,
-                name: item.name,
-                quantity: item.quantity,
-                unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
-                sku: catalog.get(item.slug)?.sku ?? null,
-                ...(item.size ? { size: item.size } : {}),
-              };
-            }),
-            total: { amount: total, currency: 'USD' },
-            // What Square charged as tax, never our own arithmetic.
-            tax: { amount: taxCharged, currency: 'USD' },
-            status,
-            fulfillment: 'unfulfilled',
-            shipping,
-            shippingAddress: shipping ? (body.address ?? null) : null,
-            ...(shipping ? { shippingService: postage.label } : {}),
-            /*
-             * The total's parts, recorded so the metrics and the finance page
-             * can show books, tax and delivery separately rather than working
-             * them back out of the total. All from Square's priced order except
-             * delivery, which is the figure this Function put on it.
-             */
-            subtotal: { amount: total - taxCharged - (shipping ? postage.cents : 0), currency: 'USD' },
-            shippingCents: shipping ? postage.cents : 0,
-            handlingCents: shipping ? postage.handling : 0,
-            idempotencyKey,
+      // ── 2. Record it — before any money moves ────────────────────────────
+      /*
+       * ---------------------------------------------------------------------
+       * Written first, so a paid order can never be one we have no record of.
+       *
+       * This used to charge the card and *then* write the order. When that
+       * write failed, the buyer was told "Nothing was charged" with the money
+       * gone, and the webhook — which ignores payments for orders it has never
+       * heard of, because the register's in-person sales arrive there too —
+       * ignored this one as well. Everything the buyer typed was lost with it:
+       * their name, how to reach them, whether to post it and where.
+       *
+       * Now everything the buyer told us is on file, as `pending`, before
+       * Square is asked for a penny. If the write after the charge fails, the
+       * order is still here, and Square's `payment.updated` webhook finds it by
+       * id and marks it paid. A declined card marks it `failed`, which the staff
+       * lists and the takings both leave out.
+       *
+       * The clothing sizes are taken in the same transaction, so this is also
+       * what stops two buyers paying for the last shirt: the second one is told
+       * it has gone *before* their card is touched. Checking the count here and
+       * lowering it after payment, as this did, let both through.
+       * ---------------------------------------------------------------------
+       */
+      const orderRef = db.collection(COLLECTIONS.orders).doc(orderId);
+      const demand = sizeDemand(built.items);
+      const memberUid = (await callerOf(req))?.uid ?? null;
+      const record = {
+        squareOrderId: orderId,
+        /*
+         * The uid when the buyer happens to be signed in, null otherwise.
+         *
+         * Nearly always null, and that is not a defect: sign-in on this site is
+         * Microsoft-only and restricted to the parish tenant, so a parishioner
+         * cannot have an account. A servant buying a book from their own laptop
+         * can, and attributing that order costs one header read. Buyers find
+         * their orders by receipt instead — see functions/src/orders.ts.
+         *
+         * Read from a verified ID token, never from the request body. A uid the
+         * browser could name is a uid the browser could choose.
+         */
+        memberUid,
+        contactEmail: email,
+        // The only form a lookup query can match. See the note on
+        // `contactEmailLower` in schema/commerce.ts.
+        contactEmailLower: normalizeEmail(email),
+        // Who the books are for. Not the cardholder name — see the note in
+        // schema/commerce.ts.
+        buyerFirstName: firstName,
+        buyerLastName: lastName,
+        ...(phone ? { buyerPhone: phone } : {}),
+        lineItems: built.items.map((item) => {
+          const unit = pricedByUid.get(item.uid);
+          return {
+            productId: item.slug,
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: typeof unit === 'number' ? { amount: unit, currency: 'USD' } : null,
+            sku: catalog.get(item.slug)?.sku ?? null,
+            ...(item.size ? { size: item.size } : {}),
+          };
+        }),
+        total: { amount: total, currency: 'USD' },
+        // What Square charged as tax, never our own arithmetic.
+        tax: { amount: taxCharged, currency: 'USD' },
+        shipping,
+        shippingAddress: shipping ? (body.address ?? null) : null,
+        ...(shipping ? { shippingService: postage.label } : {}),
+        /*
+         * The total's parts, recorded so the metrics and the finance page can
+         * show books, tax and delivery separately rather than working them back
+         * out of the total. All from Square's priced order except delivery,
+         * which is the figure this Function put on it.
+         */
+        subtotal: { amount: total - taxCharged - (shipping ? postage.cents : 0), currency: 'USD' },
+        shippingCents: shipping ? postage.cents : 0,
+        handlingCents: shipping ? postage.handling : 0,
+        idempotencyKey,
+        /*
+         * `refund` is deliberately NOT written here, not even as null.
+         *
+         * This write merges, and Square returns the original order for a
+         * repeated idempotency key — so this block can run a second time for one
+         * purchase. Writing `refund: null` would then erase a refund that had
+         * already been issued, and the order would read as never refunded while
+         * the money was gone. Absent means not refunded; readers treat it that
+         * way.
+         */
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: null,
+      };
+
+      let held: { short: { slug: string; size: string; left: number }[] };
+      try {
+        held = await db.runTransaction(async (tx) => {
+          const slugsWithSizes = [...new Set(demand.map((entry) => entry.slug))];
+          const productRefs = slugsWithSizes.map((slug) => db.collection(COLLECTIONS.products).doc(slug));
+          const [existing, ...productSnaps] = await Promise.all([
+            tx.get(orderRef),
+            ...productRefs.map((ref) => tx.get(ref)),
+          ]);
+
+          /*
+           * The same purchase arriving again — a double-tap, or the app
+           * retrying after a dropped connection. Square hands back the same
+           * order id for the same key, so this document may already be paid,
+           * refunded, or marked ready by a volunteer. Those are left exactly as
+           * they are: only the buyer's own details are refreshed.
+           */
+          const status = existing.get('status');
+          const settled = existing.exists && status !== 'pending' && status !== 'failed' && status !== 'canceled';
+          const holding = existing.get('sizesCounted') === true;
+
+          const write: Record<string, unknown> = { ...record };
+          if (!existing.exists) {
+            write['status'] = 'pending';
+            write['fulfillment'] = 'unfulfilled';
             // The webhook fills this as events arrive; starting it empty means
             // the first one is never mistaken for a replay.
-            appliedEventIds: [],
-            /*
-             * `refund` is deliberately NOT written here, not even as null.
-             *
-             * This write is a `set(..., { merge: true })`, and Square returns
-             * the original order for a repeated idempotency key — so this block
-             * can run a second time for one purchase. Writing `refund: null`
-             * would then erase a refund that had already been issued, and the
-             * order would read as never refunded while the money was gone.
-             * Absent means not refunded; readers treat it that way.
-             */
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-            updatedBy: null,
-          },
-          // Merge, because the webhook can beat this write: a COMPLETED payment
-          // fires an event before this request has finished, and a plain set()
-          // would erase the status that event just applied.
-          { merge: true },
-        );
+            write['appliedEventIds'] = [];
+            write['createdAt'] = FieldValue.serverTimestamp();
+          } else if (!settled) {
+            write['status'] = 'pending';
+          }
+
+          const short: { slug: string; size: string; left: number }[] = [];
+          const sizeWrites: (() => void)[] = [];
+          if (demand.length > 0 && !holding && !settled) {
+            productSnaps.forEach((snap, index) => {
+              const slug = slugsWithSizes[index]!;
+              const sizes = snap.exists ? cleanSizes(snap.get('sizes')) : null;
+              if (!sizes) {
+                // No longer clothing at all — staff cleared its sizes after
+                // the basket was filled. Nothing to take from, so nothing sold.
+                for (const entry of demand.filter((one) => one.slug === slug)) {
+                  short.push({ slug, size: entry.size, left: 0 });
+                }
+                return;
+              }
+              const taken = takeSizes(sizes, slug, demand);
+              short.push(...taken.short.map((one) => ({ slug, ...one })));
+              sizeWrites.push(() =>
+                tx.update(productRefs[index]!, { sizes: taken.next, updatedAt: FieldValue.serverTimestamp() }),
+              );
+            });
+            if (short.length > 0) return { short };
+            sizeWrites.forEach((apply) => apply());
+            write['sizesCounted'] = true;
+          }
+
+          tx.set(orderRef, write, { merge: true });
+          return { short };
+        });
+      } catch (cause) {
+        // Before the card: true, and the buyer can simply try again.
+        console.error(`[checkout] could not record ${orderId} before charging`, cause);
+        res.status(503).json({ error: 'The order could not be saved, so nothing was charged. Please try again.' });
+        return;
+      }
+
+      if (held.short.length > 0) {
+        const first = held.short[0]!;
+        const name = catalog.get(first.slug)?.name ?? 'That item';
+        res.status(409).json({
+          error:
+            first.left > 0
+              ? `Only ${first.left} of ${name} in size ${first.size} ${first.left === 1 ? 'is' : 'are'} left. Please change the basket and try again. Nothing was charged.`
+              : `${name} in size ${first.size} has just sold out. Please change the basket and try again. Nothing was charged.`,
+          code: 'size-sold-out',
+          rejected: held.short.map((one) => ({
+            slug: one.slug,
+            reason: one.left > 0 ? 'not-enough' : 'sold-out',
+            size: one.size,
+          })),
+        });
+        return;
+      }
+
+      // ── 3. Charge it, for exactly what Square said it costs ──────────────
+      let payRes: Response;
+      let payJson: {
+        payment?: { id?: string; status?: string };
+        errors?: { detail?: string; code?: string }[];
+      };
+      try {
+        payRes = await fetch(`${host}/v2/payments`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            idempotency_key: idempotencyKey,
+            source_id: sourceId,
+            location_id: locationId,
+            order_id: orderId,
+            amount_money: { amount: total, currency: orderJson.order?.total_money?.currency ?? 'USD' },
+            buyer_email_address: email,
+            ...(shipping && body.address
+              ? {
+                  shipping_address: {
+                    address_line_1: body.address['line1'],
+                    address_line_2: body.address['line2'] ?? '',
+                    locality: body.address['city'],
+                    administrative_district_level_1: body.address['state'],
+                    postal_code: body.address['postalCode'],
+                    country: 'US',
+                  },
+                }
+              : {}),
+          }),
+        });
+        payJson = (await payRes.json()) as typeof payJson;
+      } catch (cause) {
+        /*
+         * No answer from Square, so no way to know whether the card was
+         * charged. The order stays `pending` with its sizes held: if the
+         * payment went through, Square's webhook marks it paid; a retry with the
+         * same key gets the same payment rather than a second one. Telling the
+         * buyer either "paid" or "not charged" would be a guess.
+         */
+        console.error(`[checkout] PAYMENT OUTCOME UNKNOWN — order=${orderId}`, cause);
+        res.status(502).json({
+          error:
+            'We could not hear back from the card processor. Check your email for a receipt from Square ' +
+            'before trying again — if one has arrived, you have paid and the order is on file.',
+          code: 'payment-unknown',
+        });
+        return;
+      }
+
+      if (!payRes.ok || !payJson.payment?.id) {
+        const detail = payJson.errors?.[0];
+        console.error('[checkout] payment failed', JSON.stringify(payJson.errors));
+        /*
+         * A 4xx is Square refusing — a decline, a bad nonce — and nothing was
+         * charged: put the sizes back and mark the order failed, so the shirt is
+         * for sale again at once. A 5xx is Square's own fault, and whether the
+         * charge happened is as unknown as a dropped connection; that order is
+         * left pending for the webhook to settle.
+         */
+        /*
+         * One exception among the 4xxs: IDEMPOTENCY_KEY_REUSED is Square saying
+         * this key already has a payment — the first tap's, whose answer was
+         * lost. That payment may well have succeeded, so it is as unknown as a
+         * 5xx and nothing is released.
+         *
+         * And the release itself only acts on an order still `pending`, in one
+         * transaction, so no answer from Square can mark a paid order failed or
+         * put its sizes back.
+         */
+        const reused = payJson.errors?.some((error) => error.code === 'IDEMPOTENCY_KEY_REUSED') === true;
+        if (payRes.status < 500 && !reused) {
+          try {
+            await db.runTransaction(async (tx) => {
+              const snap = await tx.get(orderRef);
+              if (snap.get('status') !== 'pending') return;
+              const order = snap.data() ?? {};
+              const putBack = shouldReturnSizes('failed', order) ? await readSizeReturn(tx, db, orderRef, order) : null;
+              putBack?.();
+              tx.update(orderRef, { status: 'failed', updatedAt: FieldValue.serverTimestamp() });
+            });
+          } catch (cause) {
+            console.error(`[checkout] could not release ${orderId} after a decline`, cause);
+          }
+        }
+        // Square's decline messages are written for buyers, so pass one
+        // through rather than replacing it with something vaguer.
+        res.status(402).json({ error: detail?.detail ?? 'The card was declined.' });
+        return;
+      }
+
+      // ── 4. Mark it paid ──────────────────────────────────────────────────
+      const paymentId = payJson.payment.id;
+      const status = payJson.payment.status === 'COMPLETED' ? 'paid' : 'pending';
+      charged = { orderId, status, total };
 
       /*
-       * Clothing sizes are counted on the website, so selling one is this
-       * Function's to record — Square's count is not the one the shop reads.
+       * In a transaction so it never moves an order backwards: the webhook can
+       * beat this write, since a COMPLETED payment fires an event before this
+       * request has finished, and writing `pending` over the `paid` it applied
+       * would hide a paid order from the staff lists.
        *
-       * In a transaction, and once per order: a retry with the same
-       * idempotency key reaches this line again for the same purchase (Square
-       * returns the original order), so the order document carries a flag and
-       * a second pass finds it set. A count never goes below zero — two buyers
-       * racing for the last shirt both paid, and a negative number would only
-       * hide that from whoever reads the panel.
-       *
-       * After the money has moved and inside a catch, like the email: a failed
-       * count is a number to correct by hand, not a reason to tell a buyer
-       * whose card was charged that checkout failed.
+       * A failure here is logged loudly and otherwise survived. The order and
+       * everything the buyer typed are already on file, and the webhook will
+       * mark it paid by its id — so the buyer is told the truth: it worked.
        */
-      if (built.items.some((item) => item.size)) {
-        try {
-          await db.runTransaction(async (tx) => {
-            const orderRef = db.collection(COLLECTIONS.orders).doc(orderId);
-            const slugs = [...new Set(built.items.filter((item) => item.size).map((item) => item.slug))];
-            const refs = slugs.map((slug) => db.collection(COLLECTIONS.products).doc(slug));
-            const [orderSnap, ...productSnaps] = await Promise.all([tx.get(orderRef), ...refs.map((ref) => tx.get(ref))]);
-            if (orderSnap.get('sizesCounted') === true) return;
-
-            productSnaps.forEach((snap, index) => {
-              const sizes = cleanSizes(snap.get('sizes'));
-              if (!sizes) return;
-              const next = sizes.map((size) => {
-                const sold = built.items
-                  .filter((item) => item.slug === slugs[index] && item.size === size.label)
-                  .reduce((sum, item) => sum + item.quantity, 0);
-                return sold > 0 ? { ...size, count: Math.max(0, size.count - sold) } : size;
-              });
-              tx.update(refs[index]!, { sizes: next, updatedAt: FieldValue.serverTimestamp() });
-            });
-            tx.update(orderRef, { sizesCounted: true });
+      try {
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(orderRef);
+          const current = snap.get('status');
+          // A failed order found paid after all had its sizes put back; take
+          // them again so the shelf agrees with what was sold.
+          const order = snap.data() ?? {};
+          const retake =
+            current !== 'pending' && mayMoveOrder(current, status) && needsRetake(status, order)
+              ? await readSizeRetake(tx, db, orderRef, order)
+              : null;
+          retake?.();
+          tx.update(orderRef, {
+            squarePaymentId: paymentId,
+            ...(current === 'pending' || current === 'failed' ? { status } : {}),
+            updatedAt: FieldValue.serverTimestamp(),
           });
-        } catch (cause) {
-          console.error(`[checkout] size counts not lowered for ${orderId}`, cause);
-        }
+        });
+      } catch (cause) {
+        console.error(
+          // No buyer details in the log: unlike the old order of steps, they
+          // are already in the order document, and logs are kept far longer.
+          `[checkout] PAID BUT NOT MARKED — order=${orderId} payment=${paymentId}. ` +
+            'The order is on file as pending; the payment webhook should mark it paid.',
+          cause,
+        );
       }
 
       /*
@@ -731,6 +906,17 @@ export const squareCheckout = onRequest(
 
       res.status(200).json({ ok: true, orderId, status, total });
     } catch (error) {
+      /*
+       * Everything after the charge has its own catch, so this should be
+       * unreachable once money has moved — but if it is ever reached, the one
+       * sentence it must not say is "nothing was charged". The order is on file
+       * from before the charge, so the buyer is told it went through.
+       */
+      if (charged) {
+        console.error(`[checkout] PAID, then failed — order=${charged.orderId}`, error);
+        if (!res.headersSent) res.status(200).json({ ok: true, ...charged });
+        return;
+      }
       console.error('[checkout] unexpected failure', error);
       res.status(500).json({ error: 'Checkout failed. Nothing was charged.' });
     }

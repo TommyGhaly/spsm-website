@@ -98,7 +98,8 @@ export async function setFulfillment(orderId: string, fulfillment: FulfillmentSt
  * runtime. The ID token goes in the header and is re-verified there — nothing
  * here is the check.
  */
-export async function refundOrder(orderId: string, reason: string): Promise<void> {
+/** `restock` puts the order's clothing sizes back on the shelf once the refund completes. */
+export async function refundOrder(orderId: string, reason: string, restock = false): Promise<void> {
   const user = auth().currentUser;
   if (!user) throw new Error('Your session has expired. Sign in again.');
 
@@ -108,7 +109,7 @@ export async function refundOrder(orderId: string, reason: string): Promise<void
       'Content-Type': 'application/json',
       Authorization: `Bearer ${await user.getIdToken()}`,
     },
-    body: JSON.stringify({ orderId, reason }),
+    body: JSON.stringify({ orderId, reason, restock }),
   });
 
   const body = (await response.json().catch(() => ({}))) as { error?: string };
