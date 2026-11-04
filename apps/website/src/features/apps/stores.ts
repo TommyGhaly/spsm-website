@@ -131,7 +131,7 @@ export const PARISH_APPS: readonly ParishApp[] = [
     icon: 'app-spsm-connect',
     // 2: the seal's white field carried down under the saints' feet, 2026-10-25.
     iconVersion: 2,
+    ios: 'https://apps.apple.com/us/app/spsm-connect/id6812929115',
     android: 'https://play.google.com/store/apps/details?id=org.spsm.connect',
-    pending: 'Not on the App Store yet. The iPhone version is on its way.',
   },
 ];
