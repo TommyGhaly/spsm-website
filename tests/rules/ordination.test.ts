@@ -118,6 +118,13 @@ describe('ordinations', () => {
     await assertFails(addDoc(collection(db, 'ordinations'), { ...ordination, extra: true }));
   });
 
+  it('takes a last day to apply as a string, and nothing else', async () => {
+    const db = asPriest(env).firestore();
+    await assertSucceeds(addDoc(collection(db, 'ordinations'), { ...ordination, closesOn: '2026-11-20' }));
+    await assertFails(addDoc(collection(db, 'ordinations'), { ...ordination, closesOn: 20261120 }));
+    await assertSucceeds(updateDoc(doc(db, 'ordinations', 'ord-1'), { closesOn: '2026-11-27' }));
+  });
+
   it('lets an admin close one', async () => {
     const db = asPriest(env).firestore();
     await assertSucceeds(updateDoc(doc(db, 'ordinations', 'ord-1'), { open: false }));

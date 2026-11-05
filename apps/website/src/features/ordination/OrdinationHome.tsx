@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import {
+  PARISH_TIME_ZONE,
   isCalendarDay,
   longDay,
+  ordinationAccepting,
+  todayIn,
   type Ordination,
   type OrdinationStatus,
 } from '@spsm/shared';
@@ -89,7 +92,11 @@ function OrdinationCards({
           <li key={row.id}>
             <a className="camp-card" href={`/admin/ordination/nominations?id=${encodeURIComponent(row.id)}`}>
               <span className="camp-card__eyebrow">
-                {row.open ? 'Taking nominations' : 'Closed'}
+                {ordinationAccepting(row, todayIn(PARISH_TIME_ZONE))
+                  ? row.closesOn
+                    ? `Taking nominations through ${longDay(row.closesOn)}`
+                    : 'Taking nominations'
+                  : 'Closed'}
               </span>
               <span className="camp-card__title">{longDay(row.date)}</span>
               <span className="camp-card__blurb">
@@ -106,6 +113,7 @@ function OrdinationCards({
 
 function NewOrdination({ uid }: { uid: string | null }) {
   const [date, setDate] = useState('');
+  const [closesOn, setClosesOn] = useState('');
   const [churchName, setChurchName] = useState(DEFAULT_CHURCH_NAME);
   const [churchAddress, setChurchAddress] = useState('');
   const [saving, setSaving] = useState(false);
@@ -133,11 +141,19 @@ function NewOrdination({ uid }: { uid: string | null }) {
       setProblem('Choose the date of the ordination.');
       return;
     }
+    if (!isCalendarDay(closesOn)) {
+      setProblem('Choose the last day to apply.');
+      return;
+    }
+    if (closesOn > date) {
+      setProblem('The last day to apply has to be on or before the ordination.');
+      return;
+    }
     setSaving(true);
     setProblem('');
     try {
       const id = await createOrdination(
-        { date, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
+        { date, closesOn, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
         uid,
       );
       window.location.href = `/admin/ordination/nominations?id=${encodeURIComponent(id)}`;
@@ -151,8 +167,8 @@ function NewOrdination({ uid }: { uid: string | null }) {
     <section className="camp-step ordination-new">
       <h3>Open an ordination</h3>
       <p className="note">
-        Opening one puts a nomination form for it on the website&rsquo;s Forms page until you
-        close it. Families choose the rank — cantor, reader or subdeacon — on the form, and
+        Opening one puts a nomination form for it on the website&rsquo;s Forms page through
+        the last day to apply, or until you close it sooner. Families choose the rank — cantor, reader or subdeacon — on the form, and
         each rank prints as its own application for the diocese.
       </p>
       {problem ? <p className="ordination-problem">{problem}</p> : null}
@@ -160,6 +176,16 @@ function NewOrdination({ uid }: { uid: string | null }) {
         <label className="camp-field">
           <span className="camp-field__label">Date of ordination</span>
           <input type="date" className="input" value={date} onChange={(event) => setDate(event.target.value)} />
+        </label>
+        <label className="camp-field">
+          <span className="camp-field__label">Last day to apply</span>
+          <input
+            type="date"
+            className="input"
+            value={closesOn}
+            max={date || undefined}
+            onChange={(event) => setClosesOn(event.target.value)}
+          />
         </label>
       </div>
       <div className="camp-grid">

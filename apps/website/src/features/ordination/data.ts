@@ -16,8 +16,11 @@ import {
 } from 'firebase/firestore';
 import {
   COLLECTIONS,
+  PARISH_TIME_ZONE,
+  ordinationAccepting,
   parseOrdination,
   parseOrdinationApplication,
+  todayIn,
   parseOrdinationSignatureProfile,
   toDate,
   type Ordination,
@@ -48,7 +51,12 @@ function byDate(a: WithId<Ordination>, b: WithId<Ordination>): number {
   return a.date.localeCompare(b.date);
 }
 
-/** The ordinations the public form offers. */
+/**
+ * The ordinations the public form offers: open, and not past their last day to
+ * apply. The day is checked on each snapshot, so a tab left open overnight
+ * drops one on the next change rather than at midnight; the Function refuses
+ * a late nomination either way.
+ */
 export function watchOpenOrdinations(
   onChange: (rows: WithId<Ordination>[]) => void,
   onError: (error: Error) => void,
@@ -57,7 +65,10 @@ export function watchOpenOrdinations(
     query(collection(db(), COLLECTIONS.ordinations), where('open', '==', true)),
     (snapshot) =>
       onChange(
-        snapshot.docs.map((entry) => ({ id: entry.id, ...parseOrdination(entry.data()) })).sort(byDate),
+        snapshot.docs
+          .map((entry) => ({ id: entry.id, ...parseOrdination(entry.data()) }))
+          .filter((row) => ordinationAccepting(row, todayIn(PARISH_TIME_ZONE)))
+          .sort(byDate),
       ),
     (cause) => onError(cause),
   );
@@ -90,7 +101,7 @@ export function watchOrdination(
 }
 
 export async function createOrdination(
-  input: Pick<Ordination, 'date' | 'churchName' | 'churchAddress'>,
+  input: Pick<Ordination, 'date' | 'closesOn' | 'churchName' | 'churchAddress'>,
   uid: string,
 ): Promise<string> {
   const written = await addDoc(collection(db(), COLLECTIONS.ordinations), {
@@ -105,7 +116,7 @@ export async function createOrdination(
 
 export async function updateOrdination(
   id: string,
-  patch: Partial<Pick<Ordination, 'date' | 'open' | 'churchName' | 'churchAddress'>>,
+  patch: Partial<Pick<Ordination, 'date' | 'open' | 'closesOn' | 'churchName' | 'churchAddress'>>,
   uid: string,
 ): Promise<void> {
   await updateDoc(doc(db(), COLLECTIONS.ordinations, id), {

@@ -7,14 +7,17 @@ import {
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
   ORDINATION_RANK_INFO,
+  PARISH_TIME_ZONE,
   ageOn,
   composeOrdinationAnswer,
   formDay,
   isCalendarDay,
   longDay,
+  ordinationAccepting,
   ordinationRankLabel,
   ordinationTitle,
   splitOrdinationAnswer,
+  todayIn,
   validateOrdinationApproval,
   type Ordination,
   type OrdinationApplication,
@@ -266,6 +269,7 @@ function OrdinationSettings({
 }) {
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(ordination.date);
+  const [closesOn, setClosesOn] = useState(ordination.closesOn);
   const [churchName, setChurchName] = useState(ordination.churchName);
   const [churchAddress, setChurchAddress] = useState(ordination.churchAddress);
 
@@ -276,6 +280,8 @@ function OrdinationSettings({
       onError(cause instanceof Error ? cause.message : String(cause));
     }
   }
+
+  const accepting = ordinationAccepting(ordination, todayIn(PARISH_TIME_ZONE));
 
   const deadline = (() => {
     if (!isCalendarDay(ordination.date)) return '';
@@ -288,7 +294,11 @@ function OrdinationSettings({
     <section className="camp-step ordination-settings">
       <h3>{longDay(ordination.date)}</h3>
       <p>
-        {ordination.open ? 'Taking nominations on the Forms page' : 'Closed to new nominations'}
+        {accepting
+          ? `Taking nominations on the Forms page${ordination.closesOn ? ` through ${longDay(ordination.closesOn)}` : ''}`
+          : ordination.open && ordination.closesOn
+            ? `Closed: the last day to apply was ${longDay(ordination.closesOn)}. Move it later to reopen.`
+            : 'Closed to new nominations'}
         {deadline ? ` · Due at the diocese by ${deadline}` : ''}
       </p>
       <p className="ordination-actions">
@@ -326,6 +336,16 @@ function OrdinationSettings({
               <input type="date" className="input" value={date} onChange={(event) => setDate(event.target.value)} />
             </label>
             <label className="camp-field">
+              <span className="camp-field__label">Last day to apply</span>
+              <input
+                type="date"
+                className="input"
+                value={closesOn}
+                max={date || undefined}
+                onChange={(event) => setClosesOn(event.target.value)}
+              />
+            </label>
+            <label className="camp-field">
               <span className="camp-field__label">Church name</span>
               <input className="input" value={churchName} onChange={(event) => setChurchName(event.target.value)} />
             </label>
@@ -338,13 +358,13 @@ function OrdinationSettings({
             <button
               type="button"
               className="button"
-              disabled={!isCalendarDay(date)}
+              disabled={!isCalendarDay(date) || (closesOn !== '' && (!isCalendarDay(closesOn) || closesOn > date))}
               onClick={() =>
                 uid &&
                 void run(async () => {
                   await updateOrdination(
                     ordination.id,
-                    { date, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
+                    { date, closesOn, churchName: churchName.trim(), churchAddress: churchAddress.trim() },
                     uid,
                   );
                   setEditing(false);

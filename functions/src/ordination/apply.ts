@@ -5,9 +5,12 @@ import {
   formDay,
   ORDINATION_RANK_INFO,
   longDay,
+  PARISH_TIME_ZONE,
+  ordinationAccepting,
   ordinationRankLabel,
   parseOrdination,
   parseOrdinationDraft,
+  todayIn,
   validateOrdinationDraft,
   type Ordination,
   type OrdinationApplication,
@@ -35,8 +38,8 @@ const REVIEW_URL = 'https://spsmwayland.org/admin/ordination';
  *     no request can approve itself or arrive already signed.
  *   - **Rules cannot rate-limit** an endpoint anybody can post to.
  *
- * It then emails the people holding the `ordination` screen. The email names
- * the nominee and the ordination and nothing more — the parents' numbers and
+ * It then emails each person holding the `ordination` screen, one message
+ * apiece. The email names the nominee and the ordination and nothing more — the parents' numbers and
  * the date of birth stay behind the sign-in.
  * ---------------------------------------------------------------------------
  */
@@ -78,8 +81,11 @@ export const ordinationApply = onRequest(
       return;
     }
 
-    if (!ordination.open) {
-      res.status(409).json({ errors: ['This ordination is no longer taking nominations.'] });
+    if (!ordinationAccepting(ordination, todayIn(PARISH_TIME_ZONE))) {
+      const why = ordination.open && ordination.closesOn
+        ? `Nominations closed after ${longDay(ordination.closesOn)}.`
+        : 'This ordination is no longer taking nominations.';
+      res.status(409).json({ errors: [why] });
       return;
     }
 
@@ -126,10 +132,17 @@ export const ordinationApply = onRequest(
         console.warn('[ordination] nobody holds the ordination screen, so nobody was emailed.');
         return;
       }
-      const message = nominationEmail(to, ordination, application, draft.submittedBy);
-      await db.collection(COLLECTIONS.mail).doc(`ordination-${id}`).create(message);
+      // One email per admin rather than one to all of them: nobody sees the
+      // others' addresses, and an address the mail service rejects fails only
+      // its own message instead of the whole send.
+      const batch = db.batch();
+      to.forEach((address, index) => {
+        const message = nominationEmail([address], ordination, application, draft.submittedBy);
+        batch.create(db.collection(COLLECTIONS.mail).doc(`ordination-${id}-${index}`), message);
+      });
+      await batch.commit();
     } catch (error) {
-      console.error('[ordination] could not queue the notification email', error);
+      console.error('[ordination] could not queue the notification emails', error);
     }
   },
 );

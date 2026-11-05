@@ -1654,9 +1654,10 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if hasScreen('ordination')
         && request.resource.data.keys().hasOnly(
-             ['date', 'open', 'churchName', 'churchAddress', 'createdAt', 'updatedAt', 'updatedBy'])
+             ['date', 'open', 'closesOn', 'churchName', 'churchAddress', 'createdAt', 'updatedAt', 'updatedBy'])
         && request.resource.data.date is string
-        && request.resource.data.open is bool;
+        && request.resource.data.open is bool
+        && (!('closesOn' in request.resource.data) || request.resource.data.closesOn is string);
       allow delete: if hasScreen('ordination');
     }
 

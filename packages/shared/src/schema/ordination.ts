@@ -220,6 +220,13 @@ export interface Ordination {
   /** Whether /forms/ordination offers it. Closing it keeps every application. */
   open: boolean;
   /**
+   * The last day nominations are taken, `YYYY-MM-DD`, inclusive and read in
+   * the parish's time zone. The form shows it, and after it the ordination
+   * stops taking nominations as if an admin had closed it — `open` is left
+   * alone, so moving the date later reopens it. Empty for no close date.
+   */
+  closesOn: string;
+  /**
    * The church's name and "address, city, state" as the cover page prints
    * them. Filled from `config/parish` when the ordination is created and kept
    * on the ordination after that, so a packet printed next year says what the
@@ -258,12 +265,24 @@ export function parseOrdination(raw: unknown): Ordination {
   return {
     date: isCalendarDay(date) ? date : '',
     open: doc['open'] === true,
+    closesOn: isCalendarDay(text(doc['closesOn'], 10)) ? text(doc['closesOn'], 10) : '',
     churchName: text(doc['churchName']),
     churchAddress: text(doc['churchAddress']),
     createdAt: (doc['createdAt'] as Timestamped | undefined) ?? null,
     updatedAt: (doc['updatedAt'] as Timestamped | undefined) ?? null,
     updatedBy: typeof doc['updatedBy'] === 'string' ? doc['updatedBy'] : null,
   };
+}
+
+/**
+ * Whether the form takes nominations for it on `today` (`YYYY-MM-DD` in the
+ * parish's zone): open, and not past its last day. The day itself still counts.
+ */
+export function ordinationAccepting(
+  ordination: Pick<Ordination, 'open' | 'closesOn'>,
+  today: string,
+): boolean {
+  return ordination.open && (!ordination.closesOn || today <= ordination.closesOn);
 }
 
 /** "Ordination on 6 December 2026" */

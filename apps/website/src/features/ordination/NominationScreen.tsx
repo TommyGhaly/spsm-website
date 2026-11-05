@@ -173,6 +173,12 @@ export function NominationScreen() {
         reader or subdeacon here. The parish priests review every nomination and answer the
         diocese&rsquo;s questions about you themselves before anything is sent.
       </p>
+      {ordination.closesOn ? (
+        <p className="notice">
+          <strong>Last day to apply: {longDay(ordination.closesOn)}.</strong> Nominations close at
+          the end of that day.
+        </p>
+      ) : null}
 
       {errors.length > 0 ? (
         <div className="notice notice--warn">

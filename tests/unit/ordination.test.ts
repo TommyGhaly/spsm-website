@@ -12,6 +12,8 @@ import {
   isCalendarDay,
   nomineeAnswerLines,
   nomineeFieldValues,
+  ordinationAccepting,
+  parseOrdination,
   parseOrdinationApplication,
   parseOrdinationDraft,
   splitOrdinationAnswer,
@@ -249,5 +251,26 @@ describe('combined cover', () => {
     const application = { ...draft(), rank: 'subdeacon' as const };
     application.nominee.name = 'Mina Guirguis';
     expect(coverRowName(application)).toBe('Mina Guirguis (Subdeacon)');
+  });
+});
+
+describe('ordinationAccepting', () => {
+  const open = { open: true, closesOn: '2026-11-20' };
+
+  it('takes nominations through the last day, and not after', () => {
+    expect(ordinationAccepting(open, '2026-11-19')).toBe(true);
+    expect(ordinationAccepting(open, '2026-11-20')).toBe(true);
+    expect(ordinationAccepting(open, '2026-11-21')).toBe(false);
+  });
+
+  it('closes by hand whatever the date, and has no end without one', () => {
+    expect(ordinationAccepting({ ...open, open: false }, '2026-11-01')).toBe(false);
+    expect(ordinationAccepting({ open: true, closesOn: '' }, '2099-01-01')).toBe(true);
+  });
+
+  it('reads a missing or malformed close date as none', () => {
+    expect(parseOrdination({ date: '2026-12-06', open: true }).closesOn).toBe('');
+    expect(parseOrdination({ date: '2026-12-06', open: true, closesOn: '2026-02-30' }).closesOn).toBe('');
+    expect(parseOrdination({ date: '2026-12-06', open: true, closesOn: '2026-11-20' }).closesOn).toBe('2026-11-20');
   });
 });
