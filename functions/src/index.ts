@@ -6,6 +6,8 @@ import { FieldValue, getFirestore, type DocumentSnapshot } from 'firebase-admin/
 import {
   COLLECTIONS,
   interpretSquareWebhook,
+  mayMoveOrder,
+  shouldReturnSizes,
   verifySquareWebhookSignature,
   type OrderStatusUpdate,
 } from '@spsm/shared';
@@ -22,6 +24,8 @@ export { enforceTenantOnCreate, mirrorGrantsToClaims } from './auth.js';
 // Bookstore checkout. Prices from Square's own catalog, never from the request.
 // Live USPS postage for delivered orders, signed so checkout can trust it.
 export { squareCheckout, shippingQuote } from './checkout.js';
+// Orders checkout recorded but nobody settled — asks Square and marks them paid or failed.
+export { settleStaleOrders } from './staleOrders.js';
 
 // A buyer finding their own orders with no account, because on this site they
 // cannot have one. The credential is a receipt: order number plus the email it
@@ -53,6 +57,7 @@ export {
 // there about what it cannot do (re-bake the optimised covers).
 export { syncSquareCatalog, refreshSquareCatalog } from './catalogSync.js';
 import { mirrorCatalog } from './catalogSync.js';
+import { needsRetake, readSizeRetake, readSizeReturn } from './sizeStock.js';
 
 // Refunding an order in full. The parish publishes a no-returns policy; this is
 // the door for the exceptions to it, and it records who made one and why.
@@ -448,6 +453,52 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
     const applied: string[] = snapshot.get('appliedEventIds') ?? [];
     if (applied.includes(update.eventId)) return false;
 
+    /*
+     * A failure for a payment that is not this order's payment any more.
+     *
+     * A declined card is one payment on the order; the card that worked a
+     * minute later is another. Square's events for the two can arrive in either
+     * order, and the late "failed" for the first must not mark a paid order
+     * failed — or, now that a failure puts clothing back on the shelf, sell the
+     * buyer's shirt a second time. Recorded as seen, and otherwise ignored.
+     */
+    const current = snapshot.get('squarePaymentId');
+    if (
+      (update.status === 'failed' || update.status === 'canceled') &&
+      update.squarePaymentId &&
+      typeof current === 'string' &&
+      current !== update.squarePaymentId
+    ) {
+      tx.update(ref, { appliedEventIds: [...applied, update.eventId].slice(-50) });
+      return false;
+    }
+
+    /*
+     * A payment that failed or was cancelled sold nothing, so any clothing
+     * sizes checkout took for it go back on the shelf; a refund staff chose to
+     * restock does the same. In this transaction, and guarded by the order's
+     * `sizesCounted`, so a redelivered event cannot put them back twice. Read
+     * here, written after — Firestore wants every read first.
+     */
+    /*
+     * Forwards only. Square's events arrive late and out of order: an APPROVED
+     * after COMPLETED must not hide a paid order back in `pending`, and a
+     * cancellation of a refunded order must not put its sizes back. Seen, and
+     * otherwise ignored.
+     */
+    if (!mayMoveOrder(snapshot.get('status'), update.status)) {
+      tx.update(ref, { appliedEventIds: [...applied, update.eventId].slice(-50) });
+      return false;
+    }
+
+    const order = snapshot.data() ?? {};
+    const moveSizes = shouldReturnSizes(update.status, order)
+      ? await readSizeReturn(tx, db, ref, order)
+      : needsRetake(update.status, order) && snapshot.get('status') !== 'pending'
+        ? await readSizeRetake(tx, db, ref, order)
+        : null;
+
+    moveSizes?.();
     tx.update(ref, {
       status: update.status,
       // Only when the event carried one. `interpretSquareWebhook` returns null

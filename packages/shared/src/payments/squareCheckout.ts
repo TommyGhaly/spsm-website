@@ -233,3 +233,28 @@ export function cleanName(value: unknown): string | null {
 export function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
 }
+
+/** Long enough for `+44 (0) 20 7946 0958 ext. 12`, short enough to be a field. */
+export const MAX_PHONE = 30;
+
+/**
+ * A phone number as the buyer typed it, trimmed, or null when it is not one.
+ *
+ * Checked by its digits, so `(508) 555-0134`, `508.555.0134` and
+ * `+1 508 555 0134` all pass and are kept exactly as written — the volunteer
+ * ringing it reads it, and a number reformatted by us is one more thing to get
+ * wrong. Ten to fifteen digits: a US number with or without its country code,
+ * and room for a visitor's foreign one (E.164 stops at fifteen). Anything but
+ * digits, spaces, `+ - . ( )` and an extension is refused, because a wallet or
+ * a hand-built request putting something else in this field means it is not a
+ * phone number.
+ */
+export function cleanPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  if (trimmed.length === 0 || trimmed.length > MAX_PHONE) return null;
+  if (!/^\+?[\d\s().-]+(?:\s*(?:x|ext\.?)\s*\d{1,6})?$/i.test(trimmed)) return null;
+  const main = trimmed.replace(/\s*(?:x|ext\.?)\s*\d{1,6}$/i, '');
+  const digits = main.replace(/\D/g, '').length;
+  return digits >= 10 && digits <= 15 ? trimmed : null;
+}
