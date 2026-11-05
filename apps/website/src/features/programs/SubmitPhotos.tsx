@@ -149,6 +149,17 @@ export function SubmitPhotos({
    * anything, and the panel is where the form gets the room it actually needs.
    */
   const [open, setOpen] = useState(false);
+
+  /*
+   * `#add-photos` opens the panel on arrival. It is what `/c/photos` links to
+   * for a phone with no App Clip — Android, mostly — so a tag by the door lands
+   * on the form already open, at the parish's priority level, the way the clip
+   * does, rather than on a gallery with a button somewhere above it.
+   */
+  useEffect(() => {
+    if (window.location.hash === '#add-photos') setOpen(true);
+  }, []);
+
   const [picked, setPicked] = useState<Picked[]>([]);
   /**
    * What the batch control is showing.

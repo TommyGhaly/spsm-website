@@ -6,8 +6,8 @@
   <title>Parish Forms — St. Philopater &amp; St. Mina</title>
   <meta name="description" content="Fill in a church form from your phone.">
   <meta name="theme-color" content="#481010">
-  <!-- No Smart App Banner: SPSM Connect has no App Store id yet. See make-clip-pages.mjs. -->
-  <link rel="canonical" href="https://www.spsmwayland.org/forms">
+  <meta name="apple-itunes-app" content="app-id=6812929115, app-clip-bundle-id=org.spsm.connect.Clip">
+  <link rel="canonical" href="https://www.spsmwayland.org/parking">
   <!--
     Written by scripts/make-clip-pages.mjs. Do not edit by hand.
 
@@ -71,7 +71,8 @@
       font-size: 0.8125rem;
       color: #6f5f5a;
     }
-    footer a { color: #992a21; }
+    footer a, .app a { color: #992a21; }
+    .app { margin: 1.25rem 0 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 0.875rem; color: #6f5f5a; }
     @media (prefers-reduced-motion: no-preference) { a.action { transition: background 120ms ease; } }
   </style>
 </head>
@@ -80,8 +81,9 @@
     <p class="eyebrow">St. Philopater Mercurius &amp; St. Mina</p>
     <h1>Parish Forms</h1>
     <p class="lede">Fill in a church form from your phone.</p>
-    <p>Registrations, requests and the contact form — no account needed for any of them.</p>
-    <a class="action" href="/forms">See the forms</a>
+    <p>The form the church has put on this tag. No account needed.</p>
+    <a class="action" id="action" href="/parking">Open the form</a>
+    <p class="app">On Android? <a href="https://play.google.com/store/apps/details?id=org.spsm.connect">Get SPSM Connect on Google Play</a>, and this tag opens the app.</p>
     <footer>
       Coptic Orthodox Church, Wayland, Massachusetts ·
       <a href="/">spsmwayland.org</a>

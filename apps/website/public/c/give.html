@@ -6,7 +6,7 @@
   <title>Give — St. Philopater &amp; St. Mina</title>
   <meta name="description" content="Make an offering to the church.">
   <meta name="theme-color" content="#481010">
-  <!-- No Smart App Banner: SPSM Connect has no App Store id yet. See make-clip-pages.mjs. -->
+  <meta name="apple-itunes-app" content="app-id=6812929115, app-clip-bundle-id=org.spsm.connect.Clip">
   <link rel="canonical" href="https://www.spsmwayland.org/giving">
   <!--
     Written by scripts/make-clip-pages.mjs. Do not edit by hand.
@@ -71,7 +71,8 @@
       font-size: 0.8125rem;
       color: #6f5f5a;
     }
-    footer a { color: #992a21; }
+    footer a, .app a { color: #992a21; }
+    .app { margin: 1.25rem 0 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 0.875rem; color: #6f5f5a; }
     @media (prefers-reduced-motion: no-preference) { a.action { transition: background 120ms ease; } }
   </style>
 </head>
@@ -81,7 +82,8 @@
     <h1>Give</h1>
     <p class="lede">Make an offering to the church.</p>
     <p>Giving goes through Tithe.ly, the church’s own giving provider — one-off or recurring, by card, Apple Pay or Google Pay.</p>
-    <a class="action" href="/giving">Go to the giving page</a>
+    <a class="action" id="action" href="/giving">Go to the giving page</a>
+    <p class="app">On Android? <a href="https://play.google.com/store/apps/details?id=org.spsm.connect">Get SPSM Connect on Google Play</a>, and this tag opens the app.</p>
     <footer>
       Coptic Orthodox Church, Wayland, Massachusetts ·
       <a href="/">spsmwayland.org</a>

@@ -11,5 +11,18 @@
         "10:86:89:F2:39:66:29:AC:42:BC:C6:34:4E:E4:EC:66:28:9A:0A:47:30:BD:1E:E5:63:AF:9C:71:09:D8:75:E2"
       ]
     }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.spsm.connect",
+      "sha256_cert_fingerprints": [
+        "8F:0D:55:1C:C6:7F:FB:75:B6:1F:E8:A5:95:EE:19:84:9C:20:7D:56:03:44:EE:D4:53:C5:79:73:41:C3:2A:20",
+        "5C:4A:92:8C:FC:7C:01:5E:89:46:35:52:6C:A3:AE:6D:A6:50:EA:AC:D2:CA:4E:DA:A3:BD:4D:D8:14:A9:38:0D"
+      ]
+    }
   }
 ]

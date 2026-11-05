@@ -57,17 +57,20 @@ const out = join(root, 'apps/website/public/c');
 const ORIGIN = 'https://www.spsmwayland.org';
 
 /**
- * The Smart App Banner, once SPSM Connect has an App Store id.
+ * The Smart App Banner: SPSM Connect's App Store id, now that it has one —
+ * the same `id6812929115` `features/apps/stores.ts` links.
  *
- * It cannot be written yet — the app is unreleased — and an `app-id` that is
- * wrong is worse than one that is absent: Safari would offer a stranger's app
- * above the church's own page. `features/apps/stores.ts` carries the same gap
- * and says so. Set this to the ten-digit id and re-run.
- *
- * Taksis's page is the shape to copy:
- *   <meta name="apple-itunes-app" content="app-id=6743824691, app-clip-bundle-id=com.tghaly.taksis.Clip">
+ * An `app-id` that is wrong is worse than one that is absent (Safari would
+ * offer a stranger's app above the church's own page), which is why this was
+ * empty until the listing existed. Taksis's page is the same shape.
  */
-const APP_STORE_ID = process.env.SPSM_CONNECT_APP_STORE_ID ?? '';
+const APP_STORE_ID = process.env.SPSM_CONNECT_APP_STORE_ID ?? '6812929115';
+
+/**
+ * The app on Google Play, for the reader these pages mostly have: an Android
+ * phone, which has no App Clip and lands here from every tag.
+ */
+const PLAY_URL = 'https://play.google.com/store/apps/details?id=org.spsm.connect';
 const CLIP_BUNDLE_ID = 'org.spsm.connect.Clip';
 
 /**
@@ -154,17 +157,33 @@ const EXPERIENCES = [
     slug: 'forms',
     title: 'Parish Forms',
     blurb: 'Fill in a church form from your phone.',
-    body: 'Registrations, requests and the contact form — no account needed for any of them.',
-    action: 'See the forms',
-    sitePath: '/forms',
+    /*
+     * `/parking`, not `/forms`: the clip opens the one form the office has put
+     * on the tag, and so does this. `/parking` draws the vehicle registration
+     * at once and `NfcRedirect` moves on to `config/forms.nfcFormSlug` when the
+     * office has chosen another — the same setting the clip reads.
+     */
+    body: 'The form the church has put on this tag. No account needed.',
+    action: 'Open the form',
+    sitePath: '/parking',
   },
   {
     slug: 'photos',
     title: 'Send a Photograph',
     blurb: 'Add a photograph to the parish galleries.',
-    body: 'Photographs from parish events go to the ministry they belong to, and somebody from the church looks at everything before it appears.',
-    action: 'See the galleries',
+    body: 'Your photo goes to the event the church has chosen, and you can change it. Somebody from the church looks at every photo before it appears.',
+    action: 'Send a photo',
     sitePath: '/events',
+    /*
+     * The clip sends to `config/events.mainSection`, and so should this. A
+     * static page cannot know which ministry that is, so the link starts at
+     * `/events` and the page asks Firestore — the same two public reads the
+     * clip makes — then points the button at that ministry's gallery with its
+     * Add photos panel open (`#add-photos`, read by `SubmitPhotos`). The
+     * gallery's own upload form preselects the parish's priority level, as the
+     * clip does, and offers the rest.
+     */
+    resolve: 'mainSection',
   },
 ];
 
@@ -181,7 +200,32 @@ function escape(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function page({ slug, title, blurb, body, action, sitePath }) {
+/**
+ * The two public reads that find the main section's gallery.
+ *
+ * No API key: the Firestore REST API serves whatever `firestore.rules` makes
+ * public without one, and `config/*` and published `programs` both are. A
+ * failed read leaves the button on `/events`, which still works.
+ */
+const RESOLVE_MAIN_SECTION = `
+  <script>
+    (function () {
+      var base = 'https://firestore.googleapis.com/v1/projects/spsm-database/databases/(default)/documents/';
+      var link = document.getElementById('action');
+      function read(path) {
+        return fetch(base + path).then(function (r) { return r.ok ? r.json() : null; });
+      }
+      read('config/events').then(function (config) {
+        var id = config && config.fields && config.fields.mainSection && config.fields.mainSection.stringValue;
+        return id ? read('programs/' + encodeURIComponent(id)) : null;
+      }).then(function (program) {
+        var slug = program && program.fields && program.fields.slug && program.fields.slug.stringValue;
+        if (slug) link.href = '/events/' + encodeURIComponent(slug) + '#add-photos';
+      }).catch(function () {});
+    })();
+  </script>`;
+
+function page({ slug, title, blurb, body, action, sitePath, resolve }) {
   const banner = APP_STORE_ID
     ? `\n  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-clip-bundle-id=${CLIP_BUNDLE_ID}">`
     : `\n  <!-- No Smart App Banner: SPSM Connect has no App Store id yet. See make-clip-pages.mjs. -->`;
@@ -258,7 +302,8 @@ function page({ slug, title, blurb, body, action, sitePath }) {
       font-size: 0.8125rem;
       color: ${color.inkFaint};
     }
-    footer a { color: ${color.accent}; }
+    footer a, .app a { color: ${color.accent}; }
+    .app { margin: 1.25rem 0 0; font-family: ${uiStack}; font-size: 0.875rem; color: ${color.inkFaint}; }
     @media (prefers-reduced-motion: no-preference) { a.action { transition: background 120ms ease; } }
   </style>
 </head>
@@ -268,12 +313,13 @@ function page({ slug, title, blurb, body, action, sitePath }) {
     <h1>${escape(title)}</h1>
     <p class="lede">${escape(blurb)}</p>
     <p>${escape(body)}</p>
-    <a class="action" href="${sitePath}">${escape(action)}</a>
+    <a class="action" id="action" href="${sitePath}">${escape(action)}</a>
+    <p class="app">On Android? <a href="${PLAY_URL}">Get SPSM Connect on Google Play</a>, and this tag opens the app.</p>
     <footer>
       Coptic Orthodox Church, Wayland, Massachusetts ·
       <a href="/">spsmwayland.org</a>
     </footer>
-  </main>
+  </main>${resolve === 'mainSection' ? RESOLVE_MAIN_SECTION : ''}
 </body>
 </html>
 `;
