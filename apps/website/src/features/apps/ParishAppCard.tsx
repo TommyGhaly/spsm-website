@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
+import { Icon } from '@/components/Icon';
 import { StoreBadges } from '@/components/StoreBadges';
 import type { ParishApp } from './stores';
 
@@ -16,6 +18,12 @@ import type { ParishApp } from './stores';
  * judgements that have to be made the same way on both pages, and would drift
  * the first time only one copy was edited.
  * ---------------------------------------------------------------------------
+ *
+ * Drawn the way the App Clip's Apps screen draws it (`AppsView.swift` in
+ * SPSM-Connect): the icon beside an eyebrow and the name, a sentence, a row of
+ * feature chips, a hairline, then the badges — with a stripe of the app's tone
+ * down the leading edge. `dark` is the clip's SPSM Connect card, where the
+ * features are a grid of gold-marked tiles rather than chips.
  */
 export function ParishAppCard({
   app,
@@ -41,6 +49,16 @@ export function ParishAppCard({
    * link back to where you are standing.
    */
   showMore = true,
+  /** The deep-red card, for the one app the page features. */
+  dark = false,
+  /** Replaces the eyebrow ("The church's own", "By Tithe.ly"). */
+  eyebrow,
+  /** A line under the badges, small and soft. */
+  footnote,
+  /** The card's `id`, so the hero's icons can link down to it. */
+  id,
+  /** Its place in the stack, which staggers its arrival. */
+  index = 0,
 }: {
   app: ParishApp;
   as?: 'li' | 'div';
@@ -48,71 +66,101 @@ export function ParishAppCard({
   // `exactOptionalPropertyTypes` — see the same note on SectionHeading.
   what?: string | undefined;
   showMore?: boolean;
+  dark?: boolean;
+  eyebrow?: string | undefined;
+  footnote?: string | undefined;
+  id?: string | undefined;
+  index?: number;
 }) {
   const v = app.iconVersion ? `?v=${app.iconVersion}` : '';
+  const className = [
+    'app-card',
+    dark ? 'app-card--dark' : app.tone && `app-card--${app.tone}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <Tag className="app-card app-card--iconed">
-      {app.icon ? (
-        /*
-          Decorative, hence the empty alt: the app's name is right beside it and
-          a screen reader announcing both says "Taksis Taksis".
+    <Tag className={className} id={id} style={{ '--rise-index': index } as CSSProperties}>
+      <div className="app-card__head">
+        {app.icon ? (
+          /*
+            Decorative, hence the empty alt: the app's name is right beside it and
+            a screen reader announcing both says "Taksis Taksis".
 
-          `width`/`height` reserve the square before the file arrives, so the
-          text does not jump left as each icon loads. The rounded corner is CSS —
-          see `.app-card__icon`, and the note in the pipeline about why it is not
-          baked into the pixels.
-        */
-        <img
-          className="app-card__icon"
-          src={`/img/${app.icon}-128.webp${v}`}
-          srcSet={`/img/${app.icon}-128.webp${v} 2x, /img/${app.icon}-192.webp${v} 3x`}
-          alt=""
-          aria-hidden="true"
-          width={64}
-          height={64}
-          loading="lazy"
-          decoding="async"
-        />
-      ) : (
-        /*
-          An empty square where the icon would be, on an app that has none.
+            `width`/`height` reserve the square before the file arrives, so the
+            text does not jump left as each icon loads. The rounded corner is CSS —
+            see `.app-card__icon`, and the note in the pipeline about why it is not
+            baked into the pixels.
+          */
+          <img
+            className="app-card__icon"
+            src={`/img/${app.icon}-128.webp${v}`}
+            srcSet={`/img/${app.icon}-128.webp${v} 2x, /img/${app.icon}-192.webp${v} 3x`}
+            alt=""
+            aria-hidden="true"
+            width={64}
+            height={64}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          /*
+            An empty square where the icon would be, on an app that has none.
 
-          Not a placeholder mark and deliberately not one: inventing artwork for
-          an unbuilt app is the single thing on this page that could mislead
-          somebody. It is an outline holding the column open, so the cards start
-          their names in the same place instead of one sitting 80px to the left
-          of the others — which reads as a mistake rather than as meaning.
-        */
-        <span className="app-card__icon app-card__icon--none" aria-hidden="true" />
+            Not a placeholder mark and deliberately not one: inventing artwork for
+            an unbuilt app is the single thing on this page that could mislead
+            somebody.
+          */
+          <span className="app-card__icon app-card__icon--none" aria-hidden="true" />
+        )}
+
+        <div className="app-card__titles">
+          {/* The publisher, when it is somebody else, tells a parishioner why the
+              app they install is not called St. Philopater Mercurius & St. Mina —
+              which is the difference between finding it in a store search and
+              giving up. The parish's own say so instead. */}
+          <p className="app-card__eyebrow">
+            {dark && <span className="app-card__dot" aria-hidden="true" />}
+            {eyebrow ?? (app.by ? `By ${app.by}` : 'The church’s own')}
+          </p>
+          <h3 className="app-card__name">{app.name}</h3>
+        </div>
+      </div>
+
+      <p className="app-card__what">{what ?? app.what}</p>
+
+      {app.features && app.features.length > 0 && (
+        <ul className={dark ? 'app-card__grid' : 'app-card__chips'}>
+          {app.features.map((feature) => (
+            <li key={feature.label}>
+              <Icon name={feature.icon} size={dark ? 18 : 15} />
+              {feature.label}
+            </li>
+          ))}
+        </ul>
       )}
 
-      <div className="app-card__body">
-        <h3 className="app-card__name">
-          {app.name}
-          {/* The publisher, only when it is somebody else. Saying "by the parish"
-              on the parish's own site is noise; saying "by Tithe.ly" tells a
-              parishioner why the app they install is not called St. Philopater
-              Mercurius & St. Mina — which is the difference between finding it in
-              a store search and giving up. */}
-          {app.by && <span className="app-card__by">by {app.by}</span>}
-        </h3>
-
-        <p className="app-card__what">{what ?? app.what}</p>
-
-        {app.unreleased ? (
-          <p className="app-card__unreleased">{app.unreleased}</p>
-        ) : (
+      {app.unreleased ? (
+        <p className="app-card__unreleased">{app.unreleased}</p>
+      ) : (
+        /* A hairline above the badges, because the badge is artwork and not this
+           card's type: without it the black pill sits directly under the chips
+           and reads as one more of them rather than as the thing to tap. */
+        <div className="app-card__get">
           <StoreBadges ios={app.ios} android={app.android} appName={app.name} />
-        )}
+        </div>
+      )}
 
-        {app.pending && <p className="app-card__unreleased">{app.pending}</p>}
+      {app.pending && <p className="app-card__unreleased">{app.pending}</p>}
 
-        {showMore && app.more && (
-          <p className="app-card__more">
-            <Link href={app.more.href}>{app.more.label}</Link>
-          </p>
-        )}
-      </div>
+      {footnote && <p className="app-card__footnote">{footnote}</p>}
+
+      {showMore && app.more && (
+        <p className="app-card__more">
+          <Link href={app.more.href}>{app.more.label}</Link>
+        </p>
+      )}
     </Tag>
   );
 }
