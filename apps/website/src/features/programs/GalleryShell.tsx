@@ -651,9 +651,9 @@ function LevelView({
   /*
    * The randomizer, when it is on: this visit's pictures as a run of random
    * grids and wheels, in place of the page's own block, its bands and the "Also
-   * from here" strip. See `gallery/randomizer.ts`. On by default for a page with
-   * levels inside it, which is what stops a year of camp drawing its whole
-   * archive at once.
+   * from here" strip. See `gallery/randomizer.ts`. On by default for every page,
+   * days included, which is what stops a year of camp drawing its whole archive
+   * at once.
    */
   // Memoised, both: they are dependencies of the shuffle below, and a fresh
   // object each render would reshuffle the page every time anything re-rendered.
@@ -668,8 +668,8 @@ function LevelView({
     (Array.isArray(storedBands) && storedBands.length > 0) ||
     (Array.isArray(storedFeatured) && storedFeatured.length > 0);
   const randomizer = useMemo(
-    () => randomDraft ?? resolveRandomizer(storedRandomizer, children.length > 0 && !arranged),
-    [randomDraft, storedRandomizer, children.length, arranged],
+    () => randomDraft ?? resolveRandomizer(storedRandomizer, !arranged),
+    [randomDraft, storedRandomizer, arranged],
   );
   const blacklist = useMemo(
     () =>

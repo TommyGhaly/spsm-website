@@ -207,8 +207,8 @@ export interface Program extends AuditFields, Publishable {
 
   /**
    * This page's randomizer — see `resolveRandomizer` in gallery/randomizer.ts.
-   * Absent reads as on for a page with levels inside it that has no picked
-   * pictures or blocks of its own, and off otherwise.
+   * Absent reads as on for a page that has no picked pictures or blocks of its
+   * own, and off otherwise.
    */
   randomizer?: unknown;
 
@@ -458,8 +458,8 @@ export interface ProgramEvent extends AuditFields, Publishable {
 
   /**
    * This page's randomizer — see `resolveRandomizer` in gallery/randomizer.ts.
-   * Absent reads as on for a page with levels inside it that has no picked
-   * pictures or blocks of its own, and off otherwise.
+   * Absent reads as on for a page that has no picked pictures or blocks of its
+   * own, and off otherwise.
    */
   randomizer?: unknown;
 
