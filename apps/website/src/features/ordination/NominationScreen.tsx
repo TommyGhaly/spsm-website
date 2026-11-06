@@ -169,9 +169,9 @@ export function NominationScreen() {
     <>
       <h2>{TITLE}</h2>
       <p className="camp-public__intro">
-        For the ordination on {longDay(ordination.date)}. Put yourself forward as a cantor,
-        reader or subdeacon here. The parish priests review every nomination and answer the
-        diocese&rsquo;s questions about you themselves before anything is sent.
+        For the ordination on {longDay(ordination.date)}, please fill out this form by choosing
+        the deacon rank you are asking for. Then the priests will review every nomination. You
+        will be notified of their decision through one of the church deacons.
       </p>
       {ordination.closesOn ? (
         <p className="notice">
