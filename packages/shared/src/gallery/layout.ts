@@ -62,6 +62,9 @@ const TALL: readonly [number, number] = [4, 6];
  */
 const NARROWEST_SPAN = Math.min(WIDE[0], HALF[0], THIRD[0], TALL[0]);
 
+/** The shortest box auto-layout will ever draw. See `open` in `packGallery`. */
+const SHORTEST_SPAN = Math.min(WIDE[1], HALF[1], THIRD[1], TALL[1]);
+
 /**
  * Pick a shape for one photograph from its proportions.
  *
@@ -124,6 +127,33 @@ export function packGallery(items: readonly Placeable[]): PlacedItem[] {
     placed.push({ id: item.id, placement, auto: false });
   }
 
+  /*
+   * Whether any box could still start on this row: a free window as wide as
+   * the narrowest shape and as tall as the shortest. Width alone is not enough
+   * — the packing leaves four-wide gaps one row tall all the way down, which no
+   * shape fits.
+   */
+  const open = (row: number) => {
+    for (let col = 1; col <= GALLERY_COLUMNS - NARROWEST_SPAN + 1; col += 1) {
+      if (free({ col, row, colSpan: NARROWEST_SPAN, rowSpan: SHORTEST_SPAN })) return true;
+    }
+    return false;
+  };
+
+  /*
+   * The first row a box could still start on.
+   *
+   * The scan below used to start at row 1 for every photograph, so the
+   * thousandth one walked past every row the first 999 had filled. That is
+   * quadratic: 2,000 photographs took two seconds and 6,193 (Summer Camp 2025,
+   * since the archive import) took twenty-two in Node, and minutes on a
+   * phone, where the app froze on "Opening the gallery…". Cells are only ever
+   * taken, never freed, so a row that is not `open` stays that way, and no
+   * candidate can start on it. Skipping those rows changes nothing about where
+   * anything lands.
+   */
+  let floor = 1;
+
   let autoIndex = 0;
   for (const item of items) {
     if (item.layout) continue;
@@ -131,10 +161,12 @@ export function packGallery(items: readonly Placeable[]): PlacedItem[] {
     const [colSpan, rowSpan] = shapeFor(item.aspect, autoIndex);
     autoIndex += 1;
 
+    while (!open(floor)) floor += 1;
+
     // Scan for the first gap. Unbounded downward: there is always a free row
     // below everything placed so far, so this cannot fail to terminate.
     let placement: GridPlacement | null = null;
-    for (let row = 1; placement === null; row += 1) {
+    for (let row = floor; placement === null; row += 1) {
       for (let col = 1; col <= GALLERY_COLUMNS - colSpan + 1; col += 1) {
         const candidate = { col, row, colSpan, rowSpan };
         if (free(candidate)) {
