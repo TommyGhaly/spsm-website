@@ -8504,15 +8504,132 @@ main {
 
 /* ---- /apps: the parish's apps ------------------------------------------ *
  *
- * A stacked list, not a grid. Each card is a name, a sentence and two badges
- * whose height the vendors fix, so three side by side would be three tall
- * columns of mostly air. See features/apps/ParishAppList.tsx.
+ * Drawn the way the App Clip's Apps screen is (`AppsView.swift` in
+ * SPSM-Connect): a deep-red hero holding all three icons, then a stack of cards
+ * with a stripe of the app's tone down the leading edge, feature chips, and a
+ * dark card for SPSM Connect. A stacked list, not a grid — see
+ * features/apps/ParishAppList.tsx.
  */
+
+.apps-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+  border-radius: 18px;
+  background: linear-gradient(
+    135deg,
+    var(--color-deep, #481010),
+    var(--color-accent-strong, #731d16)
+  );
+  color: var(--color-ink-inverse, #f9efec);
+  animation: app-rise 450ms ease-out both;
+}
+
+/* A gold ring, half off the corner: the one ornament, the colour of the
+   eyebrow it sits above. */
+.apps-hero::after {
+  content: '';
+  position: absolute;
+  top: -5.5rem;
+  right: -4rem;
+  width: 13rem;
+  height: 13rem;
+  border: 1.5px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.apps-hero__eyebrow,
+.app-card__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.apps-hero__eyebrow {
+  color: var(--color-gold, #b08d43);
+}
+
+.apps-hero__title {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
+  font-size: var(--type-title, clamp(1.75rem, 4vw, 2.25rem));
+  line-height: var(--leading-snug, 1.2);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.apps-hero__note {
+  margin: 0.4rem 0 0;
+  max-width: 40rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  line-height: var(--leading-normal, 1.5);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 80%, transparent);
+}
+
+.apps-hero__icons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 30rem;
+  margin: var(--space-lg, 1.5rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.apps-hero__icons a {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border-radius: 12px;
+  color: var(--color-ink-inverse, #f9efec);
+  text-decoration: none;
+  text-align: center;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.apps-hero__icons a:hover {
+  transform: translateY(-2px);
+}
+
+.apps-hero__icons a:active {
+  transform: scale(0.94);
+}
+
+.apps-hero__icons a:focus-visible {
+  outline: 2px solid var(--color-gold, #b08d43);
+  outline-offset: 2px;
+}
+
+/* The store's own rounding ratio, and a shadow cast *by* the icon rather than
+   drawn on it, so the artwork is unchanged. */
+.apps-hero__icon {
+  display: block;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 22.5%;
+  border: 1px solid color-mix(in srgb, var(--color-ink-inverse, #f9efec) 20%, transparent);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.3);
+}
+
+.apps-hero__name {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  line-height: 1.2;
+}
 
 .app-cards {
   display: grid;
   gap: var(--space-md, 1rem);
-  margin: var(--space-lg, 1.75rem) 0 0;
+  margin: var(--space-md, 1rem) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -8523,86 +8640,105 @@ main {
  * itself cannot be one, and it takes no hover or focus styling for that reason.
  */
 .app-card {
+  --app-tone: var(--color-accent, #992a21);
+  /* The eyebrow's colour: the tone, darkened where the tone itself is too pale
+     to read as small type on paper. Gold is 2.9:1 there. */
+  --app-label: var(--app-tone);
+  position: relative;
+  overflow: hidden;
   padding: var(--space-lg, 1.75rem);
+  padding-left: calc(var(--space-lg, 1.75rem) + 4px);
   background: var(--color-paper-raised, #fdf7f4);
   border: 1px solid var(--color-rule, #e0cac3);
-  border-radius: var(--radius-md, 10px);
+  border-radius: 14px;
+  /* The hero's icons link here; keep the card clear of the sticky masthead. */
+  scroll-margin-top: calc(var(--masthead-h, 5rem) + 1rem);
 }
 
-/*
- * The icon beside the words.
- *
- * Grid rather than flex so the text column is a real track — `minmax(0, 1fr)`,
- * which is what stops a long unbroken word in the sentence from pushing the card
- * wider than the page. That failure has happened here before, on the admin at
- * 375px.
- *
- * Every card takes this, including the one with no icon: it gets an empty
- * outline instead, so the three names start in the same place. See the note in
- * ParishAppList.
- */
-.app-card--iconed {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+/* The stripe down the leading edge: the card's colour, never the icon's. */
+.app-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--app-tone);
+}
+
+.app-card--gold {
+  --app-tone: var(--color-gold, #b08d43);
+  --app-label: #7a5f24;
+}
+
+.app-card--azure {
+  --app-tone: var(--color-azure, #2f5d8a);
+}
+
+/* Cards arrive in turn, rising a few points as they fade in. The blanket
+   reduced-motion rule near the top of this sheet cuts it to nothing. */
+.app-cards .app-card {
+  animation: app-rise 450ms ease-out both;
+  animation-delay: calc(var(--rise-index, 0) * 80ms);
+}
+
+@keyframes app-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.app-card__head {
+  display: flex;
+  align-items: center;
   gap: var(--space-md, 1rem);
-  align-items: start;
+}
+
+.app-card__titles {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.app-card__eyebrow {
+  color: var(--app-label);
 }
 
 /*
- * The corner is rounded here and not in the file.
+ * The corner is rounded here and not in the file. Every store draws an app icon
+ * with the corner rounded and every artwork file ships square, because the
+ * rounding is the platform's, not the artist's. 22.5% is Apple's own ratio.
  *
- * Every store draws an app icon with the corner rounded and every artwork file
- * ships square, because the rounding is the platform's, not the artist's. Doing
- * it in CSS is the same arrangement: the bytes in `public/img/` are the icon as
- * published, and this is presentation. 22.5% is Apple's own ratio.
- *
- * The hairline matters more than it looks: Taksis's icon is a photograph of an
- * icon with a pale ground, and against paper its top-left corner simply
- * disappeared without an edge to sit in.
+ * The hairline matters more than it looks: Taksis's icon has a pale ground, and
+ * against paper its corner disappeared without an edge to sit in.
  */
 .app-card__icon {
+  flex-shrink: 0;
   width: 4rem;
   height: 4rem;
   border-radius: 22.5%;
   border: 1px solid var(--color-rule, #e0cac3);
-  /* The source files are opaque squares; this keeps a future transparent one
-     from showing the card through it. */
-  background: var(--color-paper, #f6e8e3);
+  background: var(--color-paper-sunken, #eeddd7);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--color-ink, #1c1614) 18%, transparent);
 }
 
-/* The empty one. Dashed and unfilled, which is the ordinary way of drawing a
-   slot with nothing in it yet — and it cannot be mistaken for a mark. */
+/* The empty one. Dashed and unfilled — it cannot be mistaken for a mark. */
 .app-card__icon--none {
   display: block;
   background: none;
+  box-shadow: none;
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--color-rule, #e0cac3) 80%, transparent);
 }
 
 .app-card__name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-sm, 0.5rem);
   margin: 0;
   font-family: var(--font-display, 'EB Garamond', Georgia, serif);
-  font-size: var(--type-subheading, 1.1875rem);
+  font-size: var(--type-heading, 1.375rem);
   line-height: var(--leading-snug, 1.25);
   color: var(--color-ink, #2c2320);
 }
 
-/* Sans, small and soft: it is a footnote to the name, not part of it. */
-.app-card__by {
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-micro, 0.8125rem);
-  font-weight: 500;
-  letter-spacing: var(--tracking-wide, 0.04em);
-  text-transform: uppercase;
-  color: var(--color-ink-soft, #4b413e);
-}
-
 .app-card__what {
-  margin: var(--space-sm, 0.5rem) 0 0;
+  margin: var(--space-md, 1rem) 0 0;
   max-width: 42rem;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
@@ -8610,13 +8746,49 @@ main {
   color: var(--color-ink-soft, #4b413e);
 }
 
+/* What the app holds, a word apiece: glanced at rather than read. */
+.app-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: var(--space-md, 1rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-card__chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--app-tone) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-tone) 10%, transparent);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink, #1c1614);
+}
+
+.app-card__chips svg {
+  color: var(--app-tone);
+  stroke-width: 2;
+}
+
+/* A hairline above the badges: the badge is artwork and not this card's type,
+   and without the rule it reads as one more chip. */
+.app-card__get {
+  margin-top: var(--space-md, 1rem);
+  padding-top: var(--space-md, 1rem);
+  border-top: 1px solid var(--color-rule, #e0cac3);
+}
+
+.app-card__get .store-badges {
+  margin-top: 0;
+}
+
 /*
- * Where the badges would be, on an app that has none — and under the one badge
- * an app on a single store has, saying the other store is still to come.
- *
- * Deliberately quiet — no pill, no accent colour, no "coming soon" badge of our
- * own. It is a sentence saying there is nothing to install, and dressing it up
- * as an announcement would make an unbuilt app look like a released one.
+ * Where the badges would be, on an app that has none — deliberately quiet, no
+ * pill and no "coming soon" badge of our own.
  */
 .app-card__unreleased {
   margin: var(--space-md, 1rem) 0 0;
@@ -8626,78 +8798,138 @@ main {
   color: var(--color-ink-soft, #4b413e);
 }
 
-.app-card__more {
+.app-card__more,
+.app-card__footnote {
   margin: var(--space-md, 1rem) 0 0;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
 }
 
+/* ---- the dark card: SPSM Connect, as the clip draws it ----------------- */
+
+.app-card--dark {
+  --app-tone: var(--color-gold, #b08d43);
+  --app-label: var(--color-gold, #b08d43);
+  padding-left: var(--space-lg, 1.75rem);
+  border: 0;
+  border-radius: 18px;
+  background: var(--color-deep, #481010);
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.app-card--dark::before {
+  content: none;
+}
+
+.app-card--dark .app-card__icon {
+  border-color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 20%, transparent);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.35);
+}
+
+.app-card--dark .app-card__name {
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.app-card--dark .app-card__what {
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 82%, transparent);
+}
+
+.app-card--dark .app-card__get {
+  border-top-color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 14%, transparent);
+}
+
+.app-card--dark .app-card__footnote {
+  margin-top: var(--space-sm, 0.6rem);
+  font-size: var(--type-micro, 0.8125rem);
+  color: color-mix(in srgb, var(--color-ink-inverse, #f9efec) 65%, transparent);
+}
+
+.app-card--dark .app-card__more a {
+  color: var(--color-gold, #b08d43);
+}
+
+/* A small gold dot that breathes. Still, under Reduce Motion. */
+.app-card__dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-gold, #b08d43);
+}
+
+.app-card__dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 40%, transparent);
+  animation: app-dot 1.6s ease-out infinite;
+}
+
+@keyframes app-dot {
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.app-card__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-width: 36rem;
+  margin: var(--space-md, 1rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-card__grid li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.07);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 500;
+  color: var(--color-ink-inverse, #f9efec);
+}
+
+.app-card__grid svg {
+  flex-shrink: 0;
+  color: var(--color-gold, #b08d43);
+  stroke-width: 2;
+}
+
 /*
- * Less padding on a phone, and it is the badges that ask for it.
- *
- * At 375px a card padded by `--space-lg` leaves 283px of usable width, which was
- * two pixels short of the badge pair and dropped the Play badge onto its own
- * line on the most common phone there is. This gives it 307. The pair is 270px
- * at this width — see the `--store-badge-height` override beside `.store-badge`,
- * which is the other half of the same fix.
+ * Less padding on a phone, and it is the badges that ask for it: at 375px a
+ * card padded by `--space-lg` was two pixels short of the badge pair.
  */
 @media (max-width: 30rem) {
   .app-card {
     padding: var(--space-md, 1rem);
+    padding-left: calc(var(--space-md, 1rem) + 4px);
   }
 
-  /* Smaller with it, and a tighter gap: 64px of icon plus 1rem either side is a
-     third of a 375px card, and the sentence beside it was setting four words to
-     the line. */
+  .app-card--dark {
+    padding-left: var(--space-md, 1rem);
+  }
+
   .app-card__icon {
-    width: 3rem;
-    height: 3rem;
+    width: 3.25rem;
+    height: 3.25rem;
   }
 
-  .app-card--iconed {
-    gap: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  .app-card__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /*
-   * On a phone the icon keeps the name company and nothing else.
-   *
-   * A 48px icon and its gap take 56px out of a 307px card, which leaves 251 for
-   * the two store badges — they need 270 side by side, so they were dropping one
-   * under the other and the card grew a third of its height for nothing.
-   *
-   * `display: contents` lifts the body's children into the card's own grid so
-   * the sentence and the badges can span both columns, sitting under the icon
-   * rather than beside it. The alternative was a second wrapper element in the
-   * markup that exists only below 30rem.
-   */
-  .app-card__body {
-    display: contents;
-  }
-
-  /* Centred against the icon rather than aligned to its top edge: the name is
-     one short line and a 48px square, and top-aligning them leaves the word
-     riding high above the middle of the picture. */
-  .app-card__name {
-    align-self: center;
-  }
-
-  .app-card__what,
-  .app-card__unreleased,
-  .app-card__more,
-  .app-card .store-badges {
-    grid-column: 1 / -1;
-  }
-
-  /* The body's own top margins did the spacing when it was a block; as grid
-     items the `gap` does, and both together is a gap and a half. */
-  .app-card__what,
-  .app-card .store-badges {
-    margin-top: 0;
+  .apps-hero__icon {
+    width: 3.25rem;
+    height: 3.25rem;
   }
 }
-
-/* The badges sit under the sentence; on the first card of a stack the list's own
-   top margin is enough, so nothing extra is added here. */
 
 /* ---- /more: the links the header keeps in one menu ---------------------- *
  *

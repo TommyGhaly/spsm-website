@@ -298,6 +298,52 @@ const ICONS = {
       <path d="M9 13h6M9 17h4" />
     </>
   ),
+  /*
+   * The five below are the feature chips on `/apps`, which say in a word what
+   * each app holds — the same words the App Clip's Apps screen uses.
+   */
+  /** Taksis keeps the parish's vehicles. */
+  car: (
+    <>
+      <path d="M5 16.5V12l1.8-4.6A2 2 0 0 1 8.7 6h6.6a2 2 0 0 1 1.9 1.4L19 12v4.5" />
+      <path d="M4 16.5h16" />
+      <path d="M5 12h14" />
+      <circle cx="8" cy="16.5" r="1.6" />
+      <circle cx="16" cy="16.5" r="1.6" />
+    </>
+  ),
+  /** Giving on a schedule. */
+  repeat: (
+    <>
+      <path d="M17 3l3 3-3 3" />
+      <path d="M4 11V9a3 3 0 0 1 3-3h13" />
+      <path d="M7 21l-3-3 3-3" />
+      <path d="M20 13v2a3 3 0 0 1-3 3H4" />
+    </>
+  ),
+  /** A parent and a child: the children's accounts in Taksis. */
+  users: (
+    <>
+      <circle cx="9" cy="7.5" r="3" />
+      <path d="M3.5 20v-1a5.5 5.5 0 0 1 11 0v1" />
+      <circle cx="17" cy="10" r="2.2" />
+      <path d="M15.5 15a4 4 0 0 1 5 3.9V20" />
+    </>
+  ),
+  /** The bookstore. */
+  book: (
+    <>
+      <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z" />
+      <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3" />
+    </>
+  ),
+  /** Reminders. */
+  bell: (
+    <>
+      <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof ICONS;

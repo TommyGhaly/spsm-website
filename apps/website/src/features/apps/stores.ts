@@ -10,6 +10,11 @@
  * entry — and a store link that goes to the wrong product sends a parishioner
  * to something they cannot use and cannot tell is wrong.
  */
+import type { IconName } from '@/components/Icon';
+
+/** One chip under an app's sentence: what it holds, in a word. */
+export type AppFeature = { icon: IconName; label: string };
+
 export type ParishApp = {
   /** The name as it appears on the store listing. */
   name: string;
@@ -58,6 +63,18 @@ export type ParishApp = {
   pending?: string;
   /** A page on this site that says more, when there is one. */
   more?: { href: string; label: string };
+  /**
+   * The card's stripe and chip colour — the card's, never the icon's, which is
+   * somebody else's trademark where the app is somebody else's. Matches the
+   * App Clip's Apps screen (`AppsView.swift` in SPSM-Connect): gold for
+   * Taksis, azure for Tithe.ly.
+   */
+  tone?: 'gold' | 'azure' | 'accent';
+  /**
+   * What the app holds, a word apiece, drawn as chips under the sentence. The
+   * clip's words, so a card read on the website and one read off a tag agree.
+   */
+  features?: readonly AppFeature[];
 };
 
 /**
@@ -87,6 +104,11 @@ export const TITHELY_APP: ParishApp = {
   ios: 'https://apps.apple.com/us/app/tithe-ly/id694740700',
   android: 'https://play.google.com/store/apps/details?id=ly.tithe.tithely',
   more: { href: '/giving', label: 'How the church receives an offering' },
+  tone: 'azure',
+  features: [
+    { icon: 'gift', label: 'Give once' },
+    { icon: 'repeat', label: 'Or on a schedule' },
+  ],
 };
 
 export const PARISH_APPS: readonly ParishApp[] = [
@@ -107,6 +129,13 @@ export const PARISH_APPS: readonly ParishApp[] = [
     icon: 'app-taksis',
     ios: 'https://apps.apple.com/us/app/taksis/id6743824691',
     android: 'https://play.google.com/store/apps/details?id=com.tghaly.taksis',
+    tone: 'gold',
+    features: [
+      { icon: 'calendar', label: 'Schedules' },
+      { icon: 'check', label: 'Attendance' },
+      { icon: 'users', label: 'Children’s accounts' },
+      { icon: 'car', label: 'Vehicles' },
+    ],
   },
   TITHELY_APP,
   {
@@ -115,12 +144,11 @@ export const PARISH_APPS: readonly ParishApp[] = [
      * The parish's second app, and the second part of the three-part program the
      * website is the first part of.
      *
-     * On Google Play and not yet on the App Store. The Play URL has been opened;
-     * there is no App Store URL to open, so the card shows the one badge it can
-     * and says the iPhone version is still to come — with no date, for the same
-     * reason `unreleased` has none.
+     * On both stores. `/apps` draws its card dark, as the App Clip does, and
+     * lists what the app holds in a grid rather than chips.
      */
-    what: 'Our newer app, for everyone rather than for servants.',
+    what:
+      'Our newer app, for everyone rather than for servants — the parish’s calendar, galleries, forms and bookstore in one place.',
     /*
      * The parish's own seal on the brand ground, which is the icon the app
      * ships and the one Apple has — not an invention for a card, which is what
@@ -133,5 +161,14 @@ export const PARISH_APPS: readonly ParishApp[] = [
     iconVersion: 2,
     ios: 'https://apps.apple.com/us/app/spsm-connect/id6812929115',
     android: 'https://play.google.com/store/apps/details?id=org.spsm.connect',
+    tone: 'accent',
+    features: [
+      { icon: 'calendar', label: 'Calendar' },
+      { icon: 'photos', label: 'Galleries' },
+      { icon: 'file', label: 'Forms' },
+      { icon: 'book', label: 'Bookstore' },
+      { icon: 'gift', label: 'Offering' },
+      { icon: 'bell', label: 'Reminders' },
+    ],
   },
 ];

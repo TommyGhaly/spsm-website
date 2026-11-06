@@ -1,3 +1,4 @@
+import { appAnchor } from './AppsHero';
 import { ParishAppCard } from './ParishAppCard';
 import { PARISH_APPS } from './stores';
 
@@ -6,23 +7,31 @@ import { PARISH_APPS } from './stores';
  *
  * A list rather than a grid of tiles: each card is an icon, a name, a sentence
  * and two badges whose height the vendors fix, so three of them side by side
- * would be three tall columns of mostly air. Stacked, each one reads as a
- * paragraph with a button in it, which is what it is.
+ * would be three tall columns of mostly air.
  *
- * The card itself is `ParishAppCard`, because `/giving` shows the Tithe.ly one
- * on its own — see the note there.
+ * SPSM Connect's card is drawn dark, as the App Clip draws it: it is the app
+ * for everyone, and the one the page most wants installed.
  *
  * A server component — nothing here has state, and the badges and icons are
- * static `<img>` tags. It costs the page no JavaScript at all, which is worth
- * saying because the last two pages that grew a list of links grew a client
- * component with it.
+ * static `<img>` tags.
  */
 export function ParishAppList() {
   return (
     <ul className="app-cards">
-      {PARISH_APPS.map((app) => (
-        <ParishAppCard key={app.name} app={app} />
-      ))}
+      {PARISH_APPS.map((app, index) => {
+        const featured = app.name === 'SPSM Connect';
+        return (
+          <ParishAppCard
+            key={app.name}
+            app={app}
+            id={appAnchor(app.name)}
+            index={index + 1}
+            dark={featured}
+            eyebrow={featured ? 'New on both stores' : undefined}
+            footnote={featured ? 'Free, and from the church’s own developer account.' : undefined}
+          />
+        );
+      })}
     </ul>
   );
 }
