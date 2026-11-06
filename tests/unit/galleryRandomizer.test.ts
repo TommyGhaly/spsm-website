@@ -54,7 +54,7 @@ const many = (prefix: string, level: string, n: number) =>
 const media = [...many('m', 'monday', 30), ...many('t', 'tuesday', 30), ...many('w', 'week-2', 30)];
 
 describe('resolveRandomizer', () => {
-  it('is on by default for a page with levels inside it, off for a leaf', () => {
+  it('is on by default for an unarranged page, off for an arranged one', () => {
     expect(resolveRandomizer(undefined, true)).toEqual({
       enabled: true,
       count: DEFAULT_RANDOM_COUNT,

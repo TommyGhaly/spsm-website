@@ -824,7 +824,7 @@ export async function setSectionLayout(
  * Save one page's randomizer. The whole object, for the reason `setSectionLayout`
  * writes the whole layout: a partial nested object replaces rather than merges.
  * Written explicitly even when it matches the default, so turning a page's
- * randomizer *off* sticks — absent would read back as on for a page with levels.
+ * randomizer *off* sticks — absent would read back as on for an unarranged page.
  */
 export async function setRandomizer(
   target: SectionTarget,

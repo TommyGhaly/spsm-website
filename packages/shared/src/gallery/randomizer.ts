@@ -5,9 +5,9 @@
  * Asked for on 2026-11-01, the day the camp archive went in and "Summer Camp
  * 2025" became six thousand photographs — which, since the summary lost its
  * ceiling (see the note above `nodeSummary`), it tried to draw all at once and
- * froze the tab. A page with levels inside it now randomizes by default, at
- * `DEFAULT_RANDOM_COUNT`; an administrator can change the number, ask for so many
- * from each child, turn it off, or turn it on for a leaf.
+ * froze the tab. Every page now randomizes by default, at `DEFAULT_RANDOM_COUNT`;
+ * an administrator can change the number, ask for so many from each child, or
+ * turn it off.
  *
  * Pure, and seeded: the page passes one seed per visit, so a re-render keeps the
  * same pictures while the next visit gets new ones, and a test can pin a seed.
@@ -29,7 +29,7 @@ import {
   type SummaryMedia,
 } from './tree.js';
 
-/** What a page with levels inside it shows until somebody says otherwise. */
+/** What a page shows until somebody says otherwise. */
 export const DEFAULT_RANDOM_COUNT = 40;
 
 /** The most a randomizer may be asked for — a page, not the archive. */
@@ -57,10 +57,9 @@ const clampCount = (value: unknown, fallback: number): number =>
 /**
  * Read one back, filling the defaults.
  *
- * Absent means **on when `onByDefault`** — which the page passes for a level with
- * levels inside it that nobody has arranged by hand — and off otherwise. A day
- * page shows its whole day, which is what it is for; a year left alone would
- * otherwise try to draw its entire subtree.
+ * Absent means **on when `onByDefault`** — which the page passes for any level
+ * nobody has arranged by hand, days included — and off otherwise, so a page with
+ * picked pictures or blocks of its own keeps its design.
  */
 export function resolveRandomizer(value: unknown, onByDefault: boolean): RandomizerSettings {
   const source =
