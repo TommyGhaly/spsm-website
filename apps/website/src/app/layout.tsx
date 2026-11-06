@@ -35,6 +35,16 @@ export const metadata: Metadata = {
   },
   description:
     'St. Philopater Mercurius & St. Mina Coptic Orthodox Church in Wayland, Massachusetts — liturgy times, the church calendar, and ministries.',
+  /*
+   * Safari's own Smart App Banner for SPSM Connect — the bar iOS draws above
+   * the page with the app's icon and a Get / Open button. Safari owns it: it
+   * shows only in Safari on an iPhone or iPad, says "Open" when the app is
+   * already installed, and remembers when the visitor closes it. There is
+   * nothing to style and nothing on Android, which has no equivalent for a
+   * store app. The id is the one in SPSM Connect's App Store URL in
+   * features/apps/stores.ts.
+   */
+  itunes: { appId: '6812929115' },
   openGraph: {
     type: 'website',
     siteName: 'St. Philopater Mercurius & St. Mina Coptic Orthodox Church',
