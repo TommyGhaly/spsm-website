@@ -41921,3 +41921,21 @@ body.is-camp-dragging {
   touch-action: none;
   cursor: crosshair;
 }
+
+/* An ordination card with its print button: the button cannot go inside the
+   card's anchor, so it sits over the card's bottom edge instead, and the card
+   keeps room for it. Reads as one card with a footer action. */
+.ordination-card {
+  position: relative;
+}
+
+.ordination-card:has(.ordination-card__print) > .camp-card {
+  padding-bottom: calc(var(--space-lg, 1.5rem) + 2.75rem);
+}
+
+.ordination-card__print {
+  position: absolute;
+  left: var(--space-lg, 1.5rem);
+  bottom: var(--space-lg, 1.5rem);
+  margin: 0;
+}
