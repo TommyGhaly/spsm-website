@@ -14,12 +14,14 @@ import { getParishConfig } from '@/lib/config';
 import {
   DEFAULT_CHURCH_NAME,
   createOrdination,
+  readApplications,
   watchApplicationCounts,
   watchOrdinations,
   type WithId,
 } from './data';
 import { OrdinationError, OrdinationShell } from './OrdinationShell';
 import { useOrdinationAdmin } from './useOrdinationAdmin';
+import { approvalListHtml, openApprovalList } from './approvalList';
 
 /**
  * /admin/ordination — every ordination, and the form that opens a new one.
@@ -77,6 +79,18 @@ export function OrdinationHome() {
   );
 }
 
+/** The tab opens inside the click so it is not a blocked pop-up; the nominations are read after. */
+async function printApprovalList(ordination: WithId<Ordination>) {
+  const tab = window.open('', '_blank');
+  tab?.document.write('<p style="font-family:system-ui;padding:2rem">Preparing the list…</p>');
+  try {
+    openApprovalList(tab, approvalListHtml(ordination, await readApplications(ordination.id)));
+  } catch (cause) {
+    tab?.close();
+    window.alert(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
 function OrdinationCards({
   rows,
   counts,
@@ -104,6 +118,17 @@ function OrdinationCards({
                 {tally.rejected ? ` · ${tally.rejected} not approved` : ''}
               </span>
             </a>
+            {tally.pending + tally.approved > 0 ? (
+              <p className="ordination-actions">
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => void printApprovalList(row)}
+                >
+                  Print approval list
+                </button>
+              </p>
+            ) : null}
           </li>
         );
       })}

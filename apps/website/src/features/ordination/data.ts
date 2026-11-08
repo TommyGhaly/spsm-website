@@ -165,6 +165,14 @@ export function watchApplications(
  * Writes an admin's decision. The rules allow these four fields and refuse a
  * write that touches the nominee's own details.
  */
+/** Every nomination for one ordination, read once (for printing). */
+export async function readApplications(ordinationId: string): Promise<WithId<OrdinationApplication>[]> {
+  const snapshot = await getDocs(
+    query(collection(db(), COLLECTIONS.ordinationApplications), where('ordinationId', '==', ordinationId)),
+  );
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...parseOrdinationApplication(entry.data()) }));
+}
+
 export async function saveReview(
   id: string,
   input: {
