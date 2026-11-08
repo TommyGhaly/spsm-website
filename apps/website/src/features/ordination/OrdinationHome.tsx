@@ -103,7 +103,7 @@ function OrdinationCards({
       {rows.map((row) => {
         const tally = counts.get(row.id) ?? { pending: 0, approved: 0, rejected: 0 };
         return (
-          <li key={row.id}>
+          <li key={row.id} className="ordination-card">
             <a className="camp-card" href={`/admin/ordination/nominations?id=${encodeURIComponent(row.id)}`}>
               <span className="camp-card__eyebrow">
                 {ordinationAccepting(row, todayIn(PARISH_TIME_ZONE))
@@ -119,10 +119,10 @@ function OrdinationCards({
               </span>
             </a>
             {tally.pending + tally.approved > 0 ? (
-              <p className="ordination-actions">
+              <p className="ordination-card__print">
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="button button--quiet button--small"
                   onClick={() => void printApprovalList(row)}
                 >
                   Print approval list
