@@ -37,6 +37,7 @@ import {
   type WithId,
 } from './data';
 import { OrdinationError, OrdinationShell } from './OrdinationShell';
+import { approvalListHtml, openApprovalList } from './approvalList';
 
 /*
  * pdf-lib is a few hundred kilobytes and only needed when somebody prints, so
@@ -181,6 +182,24 @@ export function NominationsScreen() {
                     themselves.
                   </p>
                 </div>
+              ) : null}
+
+              {applications.some((row) => row.status !== 'rejected') ? (
+                <p className="ordination-actions ordination-group">
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => {
+                      try {
+                        openApprovalList(window.open('', '_blank'), approvalListHtml(ordination, applications));
+                      } catch (cause) {
+                        setError(cause instanceof Error ? cause.message : String(cause));
+                      }
+                    }}
+                  >
+                    Print approval list
+                  </button>
+                </p>
               ) : null}
 
               {approved.length > 0 ? (
