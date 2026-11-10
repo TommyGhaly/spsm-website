@@ -51,6 +51,7 @@ export * from './camp/allocationWorkbook.js';
 export * from './schema/taksis.js';
 export * from './schema/ordination.js';
 export * from './ordination/packetLayout.js';
+export * from './ordination/emails.js';
 
 export * from './payments/provider.js';
 export * from './payments/squareCatalog.js';

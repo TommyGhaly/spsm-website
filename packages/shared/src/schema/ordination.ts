@@ -82,7 +82,7 @@ export function ordinationRankLabel(rank: OrdinationRank): string {
  * reviewed before the choices existed print and reopen unchanged.
  *
  * The father of confession is the one question whose detail is required and
- * goes first, because the question asks *who* before it asks whether: "Fr. Mina
+ * goes first, because the question asks *who* before it asks whether: "Fr. Youhanna
  * — Approved".
  */
 export interface OrdinationQuestion {
@@ -173,10 +173,13 @@ export interface OrdinationAnswerParts {
 
 /** The line stored and printed for a choice and its detail. */
 export function composeOrdinationAnswer(question: OrdinationQuestion, parts: OrdinationAnswerParts): string {
+  // The detail is kept as typed, trailing space and line breaks included: this
+  // runs on every keystroke, and trimming here ate the space before each next
+  // word. Saving trims it (`tidyOrdinationAnswer`).
   const choice = parts.choice.trim();
-  const detail = parts.detail.trim();
+  const detail = parts.detail;
   if (!choice) return detail;
-  if (!detail) return choice;
+  if (!detail.trim()) return choice;
   return question.detailFirst
     ? `${detail}${ANSWER_SEPARATOR}${choice}`
     : `${choice}${ANSWER_SEPARATOR}${detail}`;
@@ -188,11 +191,11 @@ export function composeOrdinationAnswer(question: OrdinationQuestion, parts: Ord
  * anybody wrote is lost by reopening it.
  */
 export function splitOrdinationAnswer(question: OrdinationQuestion, answer: string): OrdinationAnswerParts {
-  const text = answer.trim();
+  const text = answer;
   // Longest first, so "Not yet approved" is not read as "…approved".
   const choices = [...question.choices].sort((a, b) => b.length - a.length);
   for (const choice of choices) {
-    if (text === choice) return { choice, detail: '' };
+    if (text.trim() === choice) return { choice, detail: '' };
     if (question.detailFirst && text.endsWith(`${ANSWER_SEPARATOR}${choice}`)) {
       return { choice, detail: text.slice(0, -(ANSWER_SEPARATOR.length + choice.length)) };
     }
@@ -201,6 +204,12 @@ export function splitOrdinationAnswer(question: OrdinationQuestion, answer: stri
     }
   }
   return { choice: '', detail: text };
+}
+
+/** An answer as saved: choice and detail each trimmed. */
+export function tidyOrdinationAnswer(question: OrdinationQuestion, answer: string): string {
+  const parts = splitOrdinationAnswer(question, answer);
+  return composeOrdinationAnswer(question, { choice: parts.choice, detail: parts.detail.trim() });
 }
 
 /**
@@ -398,6 +407,8 @@ export interface OrdinationApplicationDraft {
   parents: OrdinationContact[];
   /** Who filled the form in, when it was not the nominee. */
   submittedBy: string;
+  /** Their email, so the received/decision emails reach them as well as the nominee. */
+  submittedByEmail: string;
   /** Anything the sender wants the parish to know. */
   message: string;
 }
@@ -435,12 +446,30 @@ export interface OrdinationReview {
   decidedOn: string;
 }
 
+/**
+ * Which email an admin sent about a decision. `needsFather` is a rejection of
+ * the online nomination because the nominee's father of confession is not one
+ * of the parish's priests: the printed packet goes with it for him to sign.
+ */
+export const ORDINATION_EMAIL_KINDS = ['approved', 'rejected', 'needsFather'] as const;
+export type OrdinationEmailKind = (typeof ORDINATION_EMAIL_KINDS)[number];
+
+export interface OrdinationEmailSent {
+  kind: OrdinationEmailKind;
+  /** `YYYY-MM-DD` */
+  sentOn: string;
+  sentByName: string;
+  to: string[];
+}
+
 export interface OrdinationApplication extends OrdinationApplicationDraft {
   /** Always one of the three once filed; the Function refuses a draft without one. */
   rank: OrdinationRank;
   status: OrdinationStatus;
   review: OrdinationReview | null;
   signatures: OrdinationSignature[];
+  /** Written by `ordinationNotify` only; the newest last. */
+  emailsSent: OrdinationEmailSent[];
   submittedAt?: Timestamped | null;
   updatedAt?: Timestamped | null;
   updatedBy?: string | null;
@@ -475,6 +504,7 @@ export function emptyOrdinationDraft(
     },
     parents: [emptyOrdinationContact(), emptyOrdinationContact()],
     submittedBy: '',
+    submittedByEmail: '',
     message: '',
   };
 }
@@ -510,6 +540,7 @@ export function parseOrdinationDraft(raw: unknown): OrdinationApplicationDraft {
     },
     parents: [parseContact(parents[0]), parseContact(parents[1])],
     submittedBy: text(doc['submittedBy']),
+    submittedByEmail: text(doc['submittedByEmail']),
     message: text(doc['message'], 2_000),
   };
 }
@@ -561,10 +592,37 @@ export function parseOrdinationApplication(raw: unknown): OrdinationApplication 
         .map(parseSignature)
         .filter((signature): signature is OrdinationSignature => signature !== null),
     ),
+    emailsSent: (Array.isArray(doc['emailsSent']) ? doc['emailsSent'] : []).flatMap((raw) => {
+      const entry = record(raw);
+      const kind = entry['kind'];
+      if (!(ORDINATION_EMAIL_KINDS as readonly unknown[]).includes(kind)) return [];
+      return [
+        {
+          kind: kind as OrdinationEmailKind,
+          sentOn: text(entry['sentOn'], 10),
+          sentByName: text(entry['sentByName']),
+          to: (Array.isArray(entry['to']) ? entry['to'] : []).map((to) => text(to)).filter(Boolean),
+        },
+      ];
+    }),
     submittedAt: (doc['submittedAt'] as Timestamped | undefined) ?? null,
     updatedAt: (doc['updatedAt'] as Timestamped | undefined) ?? null,
     updatedBy: typeof doc['updatedBy'] === 'string' ? doc['updatedBy'] : null,
   };
+}
+
+/**
+ * Who hears about a nomination: the nominee, and whoever filled it in for them.
+ * Lower-cased and de-duplicated, so a parent who typed their own address twice
+ * gets one message.
+ */
+export function ordinationRecipients(
+  application: Pick<OrdinationApplicationDraft, 'nominee' | 'submittedByEmail'>,
+): string[] {
+  const all = [application.nominee.email, application.submittedByEmail]
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  return [...new Set(all)];
 }
 
 /**
@@ -598,6 +656,9 @@ export function validateOrdinationDraft(
   }
   if (nominee.email && !looksLikeEmail(nominee.email)) {
     errors.push('The nominee’s email address does not look right.');
+  }
+  if (draft.submittedByEmail && !looksLikeEmail(draft.submittedByEmail)) {
+    errors.push('Your email address does not look right.');
   }
   if (info.minor && !nominee.schoolGrade) errors.push('Enter the nominee’s school grade.');
   if (!info.minor && !nominee.occupation) {

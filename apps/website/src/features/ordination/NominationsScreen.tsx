@@ -13,15 +13,19 @@ import {
   composeOrdinationAnswer,
   formDay,
   isCalendarDay,
+  ordinationDecisionEmail,
+  ordinationRecipients,
   longDay,
   ordinationAccepting,
   ordinationRankLabel,
   ordinationTitle,
   splitOrdinationAnswer,
+  tidyOrdinationAnswer,
   todayIn,
   validateOrdinationApproval,
   type Ordination,
   type OrdinationApplication,
+  type OrdinationEmailKind,
   type OrdinationRank,
   type OrdinationSignature,
   type OrdinationSignatureProfile,
@@ -39,6 +43,13 @@ import {
 } from './data';
 import { OrdinationError, OrdinationShell } from './OrdinationShell';
 import { approvalListHtml, openApprovalList } from './approvalList';
+import {
+  ATTACHMENTS_MAX_BYTES,
+  bytesToBase64,
+  fileToAttachment,
+  sendDecisionEmail,
+  type EmailAttachment,
+} from './notify';
 
 /*
  * pdf-lib is a few hundred kilobytes and only needed when somebody prints, so
@@ -495,7 +506,11 @@ function Nomination({
           status,
           review: {
             answers: Object.fromEntries(
-              Object.entries(answers).map(([key, value]) => [key, value.trim().slice(0, ORDINATION_ANSWER_MAX)]),
+              Object.entries(answers).map(([key, value]) => {
+                const question = ORDINATION_QUESTIONS[rank].find((q) => q.key === key);
+                const tidy = question ? tidyOrdinationAnswer(question, value) : value.trim();
+                return [key, tidy.slice(0, ORDINATION_ANSWER_MAX)];
+              }),
             ),
             note: note.trim(),
             decidedByUid: session.uid,
@@ -577,7 +592,7 @@ function Nomination({
             {application.message ? (
               <>
                 <dt>Their note</dt>
-                <dd>{application.message}</dd>
+                <dd style={{ whiteSpace: 'pre-wrap' }}>{application.message}</dd>
               </>
             ) : null}
           </dl>
@@ -592,11 +607,22 @@ function Nomination({
                   setAnswers({ ...answers, [question.key]: composeOrdinationAnswer(question, { ...parts, ...patch }) });
                   setDirty(true);
                 };
-                const detail = (
+                // A name is one line; anything else may want a second line or a gap.
+                const detail = question.detailFirst ? (
                   <input
                     className="input"
                     placeholder={question.detailHint}
-                    aria-label={question.detailFirst ? 'Father of confession' : `Detail for: ${question.label}`}
+                    aria-label="Father of confession"
+                    maxLength={ORDINATION_ANSWER_MAX}
+                    value={parts.detail}
+                    onChange={(event) => set({ detail: event.target.value })}
+                  />
+                ) : (
+                  <textarea
+                    className="input"
+                    rows={2}
+                    placeholder={question.detailHint}
+                    aria-label={`Detail for: ${question.label}`}
                     maxLength={ORDINATION_ANSWER_MAX}
                     value={parts.detail}
                     onChange={(event) => set({ detail: event.target.value })}
@@ -673,7 +699,7 @@ function Nomination({
             <span className="camp-field__label">Note for the admins (not printed)</span>
             <textarea
               className="input"
-              rows={2}
+              rows={4}
               value={note}
               onChange={(event) => {
                 setNote(event.target.value);
@@ -692,6 +718,16 @@ function Nomination({
             </div>
           ) : null}
 
+          {application.status !== 'pending' && !dirty ? (
+            <DecisionEmail
+              key={application.status}
+              application={application}
+              ordination={ordination}
+              session={session}
+              onError={onError}
+            />
+          ) : null}
+
           <p className="ordination-actions">
             {application.status === 'pending' ? (
               <>
@@ -706,7 +742,7 @@ function Nomination({
                   className="button button--danger"
                   disabled={saving}
                   onClick={() => {
-                    if (window.confirm(`Reject the nomination of ${nominee.name}? Nobody is emailed.`)) void decide('rejected');
+                    if (window.confirm(`Reject the nomination of ${nominee.name}? Nobody is emailed until you send it.`)) void decide('rejected');
                   }}
                 >
                   Reject
@@ -764,3 +800,217 @@ function Nomination({
     </article>
   );
 }
+
+/**
+ * The email to the nominee (and whoever filled the form in) about a decision.
+ *
+ * Nothing is sent by approving or rejecting; this panel appears once the
+ * decision is saved, starts from the parish's default wording, and sends only
+ * when the admin presses Send. A rejection is one of two kinds: a reason the
+ * admin types, or "the father of confession must sign the printed form", which
+ * attaches that nominee's packet automatically. Either kind, and an approval,
+ * can carry files of the admin's own.
+ */
+function DecisionEmail({
+  application,
+  ordination,
+  session,
+  onError,
+}: {
+  application: WithId<OrdinationApplication>;
+  ordination: WithId<Ordination>;
+  session: OrdinationAdminSession;
+  onError: (message: string) => void;
+}) {
+  const approved = application.status === 'approved';
+  const [kind, setKind] = useState<OrdinationEmailKind>(approved ? 'approved' : 'rejected');
+  const [reason, setReason] = useState('');
+  const [edited, setEdited] = useState(false);
+  const starting = (k: OrdinationEmailKind, why: string) => ordinationDecisionEmail(k, application, ordination, why);
+  const [subject, setSubject] = useState(() => starting(kind, '').subject);
+  const [text, setText] = useState(() => starting(kind, '').text);
+  const [files, setFiles] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
+  const [sentTo, setSentTo] = useState<string[] | null>(null);
+
+  const to = ordinationRecipients(application);
+  const last = application.emailsSent[application.emailsSent.length - 1];
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  // The packet is ~250 KB of the allowance when it goes along.
+  const allowance = ATTACHMENTS_MAX_BYTES - (kind === 'needsFather' ? 260_000 : 0);
+
+  function restart(nextKind: OrdinationEmailKind, nextReason: string) {
+    const draft = starting(nextKind, nextReason);
+    setSubject(draft.subject);
+    setText(draft.text);
+    setEdited(false);
+  }
+
+  async function send() {
+    if (!window.confirm(`Send this email to ${to.join(' and ')}?`)) return;
+    setSending(true);
+    try {
+      const attachments: EmailAttachment[] = await Promise.all(files.map(fileToAttachment));
+      if (kind === 'needsFather') {
+        const { buildNomineePacket, packetFilename } = await packet();
+        const bytes = await buildNomineePacket(application);
+        attachments.unshift({
+          filename: packetFilename(application.rank, ordination.date, application.nominee.name),
+          contentType: 'application/pdf',
+          content: bytesToBase64(bytes),
+        });
+      }
+      const sent = await sendDecisionEmail({
+        applicationId: application.id,
+        kind,
+        subject,
+        text,
+        sentByName: session.name,
+        attachments,
+      });
+      setSentTo(sent);
+      setFiles([]);
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (to.length === 0) {
+    return <p className="note">No email address was given on this nomination, so nobody can be emailed about it.</p>;
+  }
+
+  return (
+    <section className="ordination-email">
+      <h4>Email the nominee</h4>
+      <p className="note">
+        To {to.join(' and ')}.
+        {last ? ` Last emailed ${formDay(last.sentOn)} by ${last.sentByName}.` : ' Nothing has been sent yet.'}
+      </p>
+
+      {!approved ? (
+        <div className="choice" role="radiogroup" aria-label="Why it was not approved">
+          {(
+            [
+              ['rejected', 'Give a reason'],
+              ['needsFather', 'Father of confession must sign the printed form'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={kind === value ? 'choice__opt is-on' : 'choice__opt'}
+              aria-pressed={kind === value}
+              onClick={() => {
+                if (edited && !window.confirm('Replace the message you edited with the default for this choice?')) return;
+                setKind(value);
+                restart(value, reason);
+              }}
+            >
+              <span className="choice__name">{label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {kind === 'rejected' ? (
+        <label className="camp-field">
+          <span className="camp-field__label">Reason (added to the message)</span>
+          <textarea
+            className="input"
+            rows={2}
+            value={reason}
+            onChange={(event) => {
+              setReason(event.target.value);
+              if (!edited) restart('rejected', event.target.value);
+            }}
+          />
+        </label>
+      ) : null}
+
+      <label className="camp-field">
+        <span className="camp-field__label">Subject</span>
+        <input
+          className="input"
+          maxLength={200}
+          value={subject}
+          onChange={(event) => {
+            setSubject(event.target.value);
+            setEdited(true);
+          }}
+        />
+      </label>
+      <label className="camp-field">
+        <span className="camp-field__label">Message</span>
+        <textarea
+          className="input"
+          rows={9}
+          maxLength={10_000}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setEdited(true);
+          }}
+        />
+      </label>
+
+      <div className="camp-field">
+        <span className="camp-field__label">Attachments</span>
+        <ul className="ordination-attachments">
+          {kind === 'needsFather' ? (
+            <li>
+              The nominee&rsquo;s printed form (PDF) <span className="note">— attached automatically</span>
+            </li>
+          ) : null}
+          {files.map((file, index) => (
+            <li key={`${file.name}-${index}`}>
+              {file.name} <span className="note">({Math.ceil(file.size / 1024)} KB)</span>{' '}
+              <button
+                type="button"
+                className="button button--quiet"
+                onClick={() => setFiles(files.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <input
+          type="file"
+          multiple
+          aria-label="Attach files"
+          onChange={(event) => {
+            const picked = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            setFiles([...files, ...picked].slice(0, kind === 'needsFather' ? 4 : 5));
+          }}
+        />
+        {totalBytes > allowance ? (
+          <p className="ordination-problem">
+            The attachments are too large together — keep them under {Math.floor(allowance / 1024)} KB.
+          </p>
+        ) : null}
+      </div>
+
+      {sentTo ? <p className="notice">Sent to {sentTo.join(' and ')}.</p> : null}
+
+      <p className="ordination-actions">
+        <button
+          type="button"
+          className="button"
+          disabled={sending || !subject.trim() || !text.trim() || totalBytes > allowance}
+          onClick={() => void send()}
+        >
+          {sending ? 'Sending…' : 'Send email'}
+        </button>
+        {edited ? (
+          <button type="button" className="button button--quiet" onClick={() => restart(kind, reason)}>
+            Reset to default wording
+          </button>
+        ) : null}
+      </p>
+    </section>
+  );
+}
+

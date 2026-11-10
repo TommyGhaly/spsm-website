@@ -97,6 +97,8 @@ export const BUDGETS = {
    * sixth.
    */
   ordinationApply: 5,
+  /** An admin emailing a nominee. Behind sign-in; a burst is a mistake. */
+  ordinationNotify: 20,
   /**
    * Asking for a signed URL to upload one gallery photograph.
    *
@@ -199,6 +201,7 @@ export const CAPS = {
   formSubmit: 20,
   campServantRequest: 10,
   ordinationApply: 5,
+  ordinationNotify: 5,
   /**
    * Handing out signed upload URLs. Cheap per call — it verifies two tokens,
    * touches a counter and signs a string, and never sees a byte of the

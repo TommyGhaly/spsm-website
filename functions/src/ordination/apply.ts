@@ -8,6 +8,9 @@ import {
   PARISH_TIME_ZONE,
   ordinationAccepting,
   ordinationRankLabel,
+  ordinationEmailHtml,
+  ordinationReceivedEmail,
+  ordinationRecipients,
   parseOrdination,
   parseOrdinationDraft,
   todayIn,
@@ -104,6 +107,7 @@ export const ordinationApply = onRequest(
       status: 'pending',
       review: null,
       signatures: [],
+      emailsSent: [],
       updatedBy: null,
     };
 
@@ -125,6 +129,22 @@ export const ordinationApply = onRequest(
     // into an error the sender sees — the only thing it would tell them to do
     // is send it again.
     res.json({ applicationId: id });
+
+    // The nominee's (and the sender's) receipt. Its own try, so a failure
+    // here does not keep the priests from hearing about it, or the reverse.
+    try {
+      const recipients = ordinationRecipients(application);
+      if (recipients.length > 0) {
+        const received = ordinationReceivedEmail(application, ordination);
+        const message: MailDocument = {
+          to: recipients,
+          message: { ...received, html: ordinationEmailHtml(received.text) },
+        };
+        await db.collection(COLLECTIONS.mail).doc(`ordination-${id}-received`).create(message);
+      }
+    } catch (error) {
+      console.error('[ordination] could not queue the received email', error);
+    }
 
     try {
       const to = await adminEmails();
