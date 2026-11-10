@@ -210,31 +210,36 @@ describe('applications', () => {
 });
 
 describe('signatures', () => {
-  const mine = { name: 'Fr. A', image: 'data:image/png;base64,AAAA', updatedAt: new Date() };
+  const mine = { name: 'Fr. A', image: 'data:image/png;base64,AAAA', ownerUid: 'priest-1', updatedAt: new Date() };
 
-  it('let a priest save their own', async () => {
-    await assertSucceeds(setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-1'), mine));
-  });
-
-  it('let a deacon save theirs as a deacon, and refuse a made-up role', async () => {
+  it('let an admin add several, for anyone', async () => {
     const db = asPriest(env).firestore();
-    await assertSucceeds(setDoc(doc(db, 'ordinationSignatures', 'priest-1'), { ...mine, role: 'deacon' }));
-    await assertFails(setDoc(doc(db, 'ordinationSignatures', 'priest-1'), { ...mine, role: 'bishop' }));
+    await assertSucceeds(setDoc(doc(db, 'ordinationSignatures', 'sig-a'), mine));
+    await assertSucceeds(setDoc(doc(db, 'ordinationSignatures', 'sig-b'), { ...mine, name: 'Fr. C' }));
+    await assertSucceeds(setDoc(doc(db, 'ordinationSignatures', 'sig-c'), { ...mine, name: 'Dn. D', role: 'deacon' }));
   });
 
-  it('refuse writing somebody else’s', async () => {
-    await assertFails(setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-2'), mine));
+  it('refuse a made-up role or a blank name', async () => {
+    const db = asPriest(env).firestore();
+    await assertFails(setDoc(doc(db, 'ordinationSignatures', 'sig-a'), { ...mine, role: 'bishop' }));
+    await assertFails(setDoc(doc(db, 'ordinationSignatures', 'sig-a'), { ...mine, name: '' }));
+  });
+
+  it('refuse adding one owned by somebody else', async () => {
+    await assertFails(
+      setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'sig-a'), { ...mine, ownerUid: 'priest-2' }),
+    );
   });
 
   it('refuse somebody without the screen keeping one', async () => {
     await assertFails(
-      setDoc(doc(asEveryOtherArea(env).firestore(), 'ordinationSignatures', 'every-area-1'), mine),
+      setDoc(doc(asEveryOtherArea(env).firestore(), 'ordinationSignatures', 'sig-x'), { ...mine, ownerUid: 'every-area-1' }),
     );
   });
 
   it('refuse an image larger than the cap', async () => {
     await assertFails(
-      setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-1'), {
+      setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'sig-a'), {
         ...mine,
         image: `data:image/png;base64,${'A'.repeat(150_001)}`,
       }),
@@ -247,11 +252,14 @@ describe('signatures', () => {
     await assertFails(getDoc(doc(asEveryOtherArea(env).firestore(), 'ordinationSignatures', 'priest-2')));
   });
 
-  it('let a priest delete their own', async () => {
+  it('let the owner of an older one (kept at their uid) delete it', async () => {
     await assertSucceeds(deleteDoc(doc(asSecondPriest(env).firestore(), 'ordinationSignatures', 'priest-2')));
   });
 
-  it('refuse deleting somebody else’s', async () => {
-    await assertFails(deleteDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-2')));
+  it('refuse changing or deleting somebody else’s', async () => {
+    const db = asPriest(env).firestore();
+    await assertFails(setDoc(doc(db, 'ordinationSignatures', 'priest-2'), mine));
+    await assertFails(deleteDoc(doc(db, 'ordinationSignatures', 'priest-2')));
   });
 });
+

@@ -425,6 +425,7 @@ export type OrdinationStatus = (typeof ORDINATION_STATUSES)[number];
  * holds its own signature reprints identically for as long as it exists.
  */
 export interface OrdinationSignature {
+  /** The `ordinationSignatures` document it was copied from. */
   uid: string;
   name: string;
   /** A `data:image/png;base64,…` URL. */
@@ -433,6 +434,19 @@ export interface OrdinationSignature {
   signedOn: string;
   /** Which line it goes on: a priest's or the deacon's. */
   role: OrdinationSignerRole;
+  /**
+   * The admin who put it on the nomination, which need not be the signer:
+   * any admin may sign with any signature on file. Never printed. Absent on
+   * signatures added before this was recorded.
+   */
+  signedByUid?: string;
+  signedByName?: string;
+}
+
+/** Two signatures belong to the same person when their names match, ignoring case and spacing. */
+export function sameOrdinationSigner(a: { name: string }, b: { name: string }): boolean {
+  const key = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+  return key(a.name) === key(b.name);
 }
 
 export interface OrdinationReview {
@@ -557,6 +571,8 @@ function parseSignature(raw: unknown): OrdinationSignature | null {
     image,
     signedOn: isCalendarDay(signedOn) ? signedOn : '',
     role: isSignerRole(doc['role']) ? doc['role'] : 'priest',
+    ...(text(doc['signedByUid'], 128) ? { signedByUid: text(doc['signedByUid'], 128) } : {}),
+    ...(text(doc['signedByName']) ? { signedByName: text(doc['signedByName']) } : {}),
   };
 }
 
@@ -715,17 +731,30 @@ export function validateOrdinationApproval(
   return errors;
 }
 
-/** The signature record the rules allow a priest or deacon to keep. */
+/**
+ * One signature on file: whose it is, which line it signs, and the image.
+ *
+ * Any ordination admin may add as many as they like — their own, or another
+ * priest's or deacon's from a scan — and every admin may sign with any of
+ * them. The same person can have several (full name, initials, …); they are
+ * told apart by name, see `sameOrdinationSigner`.
+ */
 export interface OrdinationSignatureProfile {
   name: string;
   /** Whether they sign on a priest's line or the deacon's. */
   role: OrdinationSignerRole;
   /** A `data:image/png;base64,…` URL, or empty when none has been drawn. */
   image: string;
+  /** The admin who added it, and the only one who may change or delete it. */
+  ownerUid: string;
   updatedAt?: Timestamped | null;
 }
 
-export function parseOrdinationSignatureProfile(raw: unknown): OrdinationSignatureProfile {
+/**
+ * `id` is the document's: signatures saved before there could be several were
+ * kept at `ordinationSignatures/{uid}` with no owner field, so that uid owns them.
+ */
+export function parseOrdinationSignatureProfile(raw: unknown, id = ''): OrdinationSignatureProfile {
   const doc = record(raw);
   const image = typeof doc['image'] === 'string' && doc['image'].startsWith('data:image/png;base64,')
     ? doc['image']
@@ -734,6 +763,7 @@ export function parseOrdinationSignatureProfile(raw: unknown): OrdinationSignatu
     name: text(doc['name']),
     role: isSignerRole(doc['role']) ? doc['role'] : 'priest',
     image,
+    ownerUid: text(doc['ownerUid'], 128) || id,
     updatedAt: (doc['updatedAt'] as Timestamped | undefined) ?? null,
   };
 }

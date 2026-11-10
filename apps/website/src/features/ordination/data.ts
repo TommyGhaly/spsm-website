@@ -5,7 +5,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -199,37 +198,37 @@ export async function deleteApplication(id: string): Promise<void> {
 /* Signatures                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export async function readSignatureProfile(uid: string): Promise<OrdinationSignatureProfile> {
-  const snapshot = await getDoc(doc(db(), COLLECTIONS.ordinationSignatures, uid));
-  return parseOrdinationSignatureProfile(snapshot.data());
-}
-
 /**
- * Every priest and deacon with a signature on file, so whoever prepares a nomination can
- * put any of them on it. The rules let anybody with the screen read them all.
+ * Every signature on file, so whoever prepares a nomination can put any of
+ * them on it. The rules let anybody with the screen read them all.
  */
 export async function listSignatureProfiles(): Promise<WithId<OrdinationSignatureProfile>[]> {
   const snapshot = await getDocs(collection(db(), COLLECTIONS.ordinationSignatures));
   return snapshot.docs
-    .map((entry) => ({ id: entry.id, ...parseOrdinationSignatureProfile(entry.data()) }))
+    .map((entry) => ({ id: entry.id, ...parseOrdinationSignatureProfile(entry.data(), entry.id) }))
     .filter((profile) => profile.image)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Adds a new signature owned by `uid`, or replaces one of theirs when `id` is given. */
 export async function saveSignatureProfile(
   uid: string,
   input: Pick<OrdinationSignatureProfile, 'name' | 'role' | 'image'>,
-): Promise<void> {
-  await setDoc(doc(db(), COLLECTIONS.ordinationSignatures, uid), {
+  id?: string,
+): Promise<string> {
+  const ref = id ? doc(db(), COLLECTIONS.ordinationSignatures, id) : doc(collection(db(), COLLECTIONS.ordinationSignatures));
+  await setDoc(ref, {
     name: input.name,
     role: input.role,
     image: input.image,
+    ownerUid: uid,
     updatedAt: serverTimestamp(),
   });
+  return ref.id;
 }
 
-export async function deleteSignatureProfile(uid: string): Promise<void> {
-  await deleteDoc(doc(db(), COLLECTIONS.ordinationSignatures, uid));
+export async function deleteSignatureProfile(id: string): Promise<void> {
+  await deleteDoc(doc(db(), COLLECTIONS.ordinationSignatures, id));
 }
 
 /** How many applications each ordination has, by status — the counts on the list. */

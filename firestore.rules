@@ -1645,9 +1645,9 @@ service cloud.firestore {
      * nominee's details are what the family sent, and the packet the diocese
      * receives should print exactly that.
      *
-     * `ordinationSignatures/{uid}` is one priest's or deacon's drawn signature. Only they
-     * may write it. Everybody with the screen may read it, which is what lets
-     * the screen show who has a signature on file.
+     * `ordinationSignatures/{id}` is one signature on file. Any admin may add
+     * them, for anyone, and only whoever added one may change or delete it.
+     * Everybody with the screen may read and sign with all of them.
      * -----------------------------------------------------------------------
      */
     match /ordinations/{ordinationId} {
@@ -1678,15 +1678,27 @@ service cloud.firestore {
       allow delete: if hasScreen('ordination');
     }
 
-    match /ordinationSignatures/{uid} {
+    match /ordinationSignatures/{signatureId} {
       allow read: if hasScreen('ordination');
-      allow create, update: if isSelf(uid) && hasScreen('ordination')
-        && request.resource.data.keys().hasOnly(['name', 'role', 'image', 'updatedAt'])
-        && request.resource.data.name is string
-        && (!('role' in request.resource.data) || request.resource.data.role in ['priest', 'deacon'])
-        && request.resource.data.image is string
-        && request.resource.data.image.size() <= 150000;
-      allow delete: if isSelf(uid);
+      // Any admin adds as many as they like, for anyone; it is theirs to
+      // change or delete. Ones saved before there could be several sit at
+      // the owner's uid with no ownerUid.
+      allow create: if hasScreen('ordination') && validSignature()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if hasScreen('ordination') && validSignature()
+        && request.resource.data.ownerUid == request.auth.uid
+        && resource.data.get('ownerUid', signatureId) == request.auth.uid;
+      allow delete: if hasScreen('ordination')
+        && resource.data.get('ownerUid', signatureId) == request.auth.uid;
+
+      function validSignature() {
+        return request.resource.data.keys().hasOnly(['name', 'role', 'image', 'ownerUid', 'updatedAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && (!('role' in request.resource.data) || request.resource.data.role in ['priest', 'deacon'])
+          && request.resource.data.image is string
+          && request.resource.data.image.size() <= 150000;
+      }
     }
 
     match /campRegistrations/{registrationId} {

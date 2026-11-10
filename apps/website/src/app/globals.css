@@ -41942,6 +41942,32 @@ body.is-camp-dragging {
   background: #fff;
 }
 
+.ordination-sign-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+}
+
+.ordination-sign-option img {
+  height: 1.8em;
+  width: auto;
+  max-width: 8rem;
+  object-fit: contain;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm, 6px);
+  background: #fff;
+}
+
+.signature-upload input[type='range'] {
+  width: 100%;
+}
+
+.signature-upload__preview {
+  background:
+    repeating-conic-gradient(rgba(0, 0, 0, 0.06) 0 25%, transparent 0 50%) 0 0 / 16px 16px,
+    #fff;
+}
+
 .signature-on-file {
   margin: 0;
   display: grid;

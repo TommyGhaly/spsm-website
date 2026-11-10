@@ -24,7 +24,7 @@ export interface OrdinationShellProps {
 
 const TABS: { id: OrdinationShellProps['tab']; href: string; label: string }[] = [
   { id: 'home', href: '/admin/ordination', label: 'Ordinations' },
-  { id: 'signature', href: '/admin/ordination/signature', label: 'My signature' },
+  { id: 'signature', href: '/admin/ordination/signature', label: 'Signatures' },
 ];
 
 export function OrdinationShell({ session, tab, title, actions, children }: OrdinationShellProps) {

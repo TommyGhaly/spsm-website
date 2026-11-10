@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   ORDINATION_ANSWER_MAX,
   ORDINATION_MAX_SIGNATURES_BY_ROLE,
+  sameOrdinationSigner,
   ORDINATION_SIGNER_ROLES,
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
@@ -190,9 +191,9 @@ export function NominationsScreen() {
               {onFile && onFile.length === 0 ? (
                 <div className="notice">
                   <p>
-                    No priest has a signature on file, so nothing can be signed yet. Each parish
-                    priest <a href="/admin/ordination/signature">draws theirs</a> once, signed in as
-                    themselves.
+                    No signature is on file, so nothing can be signed yet.{' '}
+                    <a href="/admin/ordination/signature">Add one</a> by drawing it or uploading a
+                    photo of it.
                   </p>
                 </div>
               ) : null}
@@ -536,14 +537,22 @@ function Nomination({
   // three priests and one deacon, as on the form.
   const roleFull = (role: OrdinationSignature['role']) =>
     signatures.filter((signature) => signature.role === role).length >= ORDINATION_MAX_SIGNATURES_BY_ROLE[role];
+  // One signature per person, whichever of theirs on file is picked.
   const unsigned = onFile.filter(
-    (profile) => !roleFull(profile.role) && !signatures.some((signature) => signature.uid === profile.id),
+    (profile) => !roleFull(profile.role) && !signatures.some((signature) => sameOrdinationSigner(signature, profile)),
   );
 
   function sign(profile: WithId<OrdinationSignatureProfile>) {
     setSignatures([
       ...signatures,
-      { uid: profile.id, name: profile.name, image: profile.image, signedOn: today(), role: profile.role },
+      {
+        uid: profile.id,
+        name: profile.name,
+        image: profile.image,
+        signedOn: today(),
+        role: profile.role,
+        ...(session.uid ? { signedByUid: session.uid, signedByName: session.name } : {}),
+      },
     ]);
     setDirty(true);
   }
@@ -554,7 +563,7 @@ function Nomination({
    * preparing the packet. Somebody else's asks first.
    */
   function unsign(signature: OrdinationSignature) {
-    if (signature.uid !== session.uid && !window.confirm(`Remove ${signature.name}'s signature from this nomination?`)) {
+    if (signature.signedByUid !== session.uid && signature.uid !== session.uid && !window.confirm(`Remove ${signature.name}'s signature from this nomination?`)) {
       return;
     }
     setSignatures(signatures.filter((entry) => entry.uid !== signature.uid));
@@ -745,9 +754,12 @@ function Nomination({
                           <img src={signature.image} alt={`${signature.name}'s signature`} />
                           <span>
                             {signature.name} · {formDay(signature.signedOn)}
+                            {signature.signedByName && !sameOrdinationSigner(signature, { name: signature.signedByName })
+                              ? ` · added by ${signature.signedByName}`
+                              : ''}
                           </span>
                           <button type="button" className="button button--quiet" onClick={() => unsign(signature)}>
-                            {signature.uid === session.uid ? 'Remove my signature' : 'Remove'}
+                            Remove
                           </button>
                         </li>
                       ))}
@@ -755,8 +767,15 @@ function Nomination({
                     {canAdd.length > 0 ? (
                       <p className="ordination-actions">
                         {canAdd.map((profile) => (
-                          <button key={profile.id} type="button" className="button button--ghost" onClick={() => sign(profile)}>
-                            Add {profile.name}&rsquo;s signature
+                          <button
+                            key={profile.id}
+                            type="button"
+                            className="button button--ghost ordination-sign-option"
+                            onClick={() => sign(profile)}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- a data URL; there is nothing for next/image to optimise. */}
+                            <img src={profile.image} alt="" />
+                            Sign as {profile.name}
                           </button>
                         ))}
                       </p>
