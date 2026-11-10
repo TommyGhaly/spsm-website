@@ -52,12 +52,20 @@ export function ordinationDecisionEmail(
 
   if (kind === 'approved') {
     return {
-      subject: `Nomination approved: ${application.nominee.name}`,
+      subject: `Ordination approved: ${application.nominee.name}`,
       text:
-        hello +
-        `The nomination of ${application.nominee.name} for ${what} has been approved.\n\n` +
-        'The parish will send the signed form to the diocese. We will be in touch with the details of the day.' +
-        sign,
+        'Hello, your ordination application has been reviewed by the priests and the deacons and you have been approved.\n\n' +
+        'Please review the requirements and duties for your rank. I have attached the files for all ranks. ' +
+        'These are the expectations for all new ordinations coming from the diocese.\n\n' +
+        'As a reminder, you must have a diocese tonia for the ordination. HG Bishop David has made it clear that ordinations require diocese-approved tonias. ' +
+        'If you will be ordained a reader or subdeacon, you will also need an epitrachelion (patrasheel). ' +
+        'If you do not have one, please see someone at the bookstore to purchase one.\n\n' +
+        'If you or your child were approved for the rank of chanter and you/he is/are under 8 years of age, ' +
+        'you/he will have to have your father attend liturgy with you as a deacon. ' +
+        'You will only be able to dress as a deacon if your/his father who is a deacon attends and watches over you/him.\n\n' +
+        'If you have any questions, please contact Deacon Severus Ghaly or Deacon Peter Awadalla or Deacon Kyrillos Bebawy.\n\n' +
+        'God bless.\n\n' +
+        'SPSM Coptic Deacon Service Committee',
     };
   }
 
@@ -97,3 +105,10 @@ export function ordinationEmailHtml(text: string): string {
     .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
     .join('\n');
 }
+
+/** The diocese's requirements and duties for every rank, attached to each approval email. */
+export const ORDINATION_REQUIREMENTS_FILES = [
+  { path: '/ordination/requirements/cantor-epsaltos-requirements-and-duties.pdf', filename: 'Cantor (Epsaltos) - Requirements and Duties.pdf' },
+  { path: '/ordination/requirements/reader-anaghnostis-requirements-and-duties.pdf', filename: 'Reader (Anaghnostis) - Requirements and Duties.pdf' },
+  { path: '/ordination/requirements/subdeacon-epidiacon-requirements-and-duties.pdf', filename: 'Subdeacon (Epidiacon) - Requirements and Duties.pdf' },
+] as const;
