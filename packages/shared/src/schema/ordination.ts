@@ -688,6 +688,13 @@ export function validateOrdinationDraft(
  * What an approval needs before it can be saved: a choice for every question,
  * the father of confession's name, and at least one priest's signature.
  */
+/**
+ * TEMPORARY (Nov 2026): off so nominations can be approved and the decision
+ * emails sent on the priest's verbal approval; he will sign the printed
+ * packet in person. Set back to `true` once that is done.
+ */
+export const REQUIRE_PRIEST_SIGNATURE = false;
+
 export function validateOrdinationApproval(
   rank: OrdinationRank,
   answers: Record<string, string>,
@@ -702,7 +709,7 @@ export function validateOrdinationApproval(
       errors.push(`Name the father of confession in “${question.label}”`);
     }
   }
-  if (!signatures.some((signature) => signature.role === 'priest')) {
+  if (REQUIRE_PRIEST_SIGNATURE && !signatures.some((signature) => signature.role === 'priest')) {
     errors.push('A parish priest needs to sign before this is approved.');
   }
   return errors;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ORDINATION_ANSWER_MAX,
   ORDINATION_MAX_SIGNATURES_BY_ROLE,
@@ -99,6 +99,8 @@ export function NominationsScreen() {
   const [onFile, setOnFile] = useState<WithId<OrdinationSignatureProfile>[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Bumped by "Expand all" / "Collapse all"; every fold follows the latest. */
+  const [foldAll, setFoldAll] = useState<FoldSignal>({ open: true, n: 0 });
 
   useEffect(() => {
     setId(new URLSearchParams(window.location.search).get('id') ?? '');
@@ -241,24 +243,54 @@ export function NominationsScreen() {
                 </p>
               ) : null}
 
+              {applications.length > 0 ? (
+                <p className="ordination-actions ordination-group">
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => setFoldAll((last) => ({ open: true, n: last.n + 1 }))}
+                  >
+                    Expand all
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => setFoldAll((last) => ({ open: false, n: last.n + 1 }))}
+                  >
+                    Collapse all
+                  </button>
+                </p>
+              ) : null}
+
               {ORDINATION_RANKS.map((rank) => {
                 const ofRank = applications.filter((row) => row.rank === rank);
                 if (ofRank.length === 0) return null;
                 return (
-                  <section key={rank} className="ordination-group ordination-rank">
-                    <div className="ordination-rank__head">
-                      <h3>
+                  <Fold
+                    key={rank}
+                    as="section"
+                    className="ordination-group ordination-rank"
+                    signal={foldAll}
+                    head={
+                      <h3 className="ordination-fold__title">
                         {ordinationRankLabel(rank)} <span className="ordination-count">{ofRank.length}</span>
                       </h3>
-                    </div>
+                    }
+                  >
                     {groups.map((group) => {
                       const rows = ofRank.filter((row) => row.status === group.status);
                       if (rows.length === 0 && !group.empty) return null;
                       return (
-                        <div key={group.status} className="ordination-status">
-                          <h4>
-                            {group.title} <span className="ordination-count">{rows.length}</span>
-                          </h4>
+                        <Fold
+                          key={group.status}
+                          className="ordination-status"
+                          signal={foldAll}
+                          head={
+                            <h4 className="ordination-fold__title">
+                              {group.title} <span className="ordination-count">{rows.length}</span>
+                            </h4>
+                          }
+                        >
                           {rows.length === 0 ? <p className="note">{group.empty}</p> : null}
                           {rows.map((row) => (
                             <Nomination
@@ -268,12 +300,13 @@ export function NominationsScreen() {
                               session={session}
                               onFile={onFile ?? []}
                               onError={setError}
+                              signal={foldAll}
                             />
                           ))}
-                        </div>
+                        </Fold>
                       );
                     })}
-                  </section>
+                  </Fold>
                 );
               })}
             </>
@@ -427,20 +460,59 @@ function startingAnswers(application: OrdinationApplication): Record<string, str
   return answers;
 }
 
+/** A request from "Expand all" / "Collapse all"; `n` changes on every click. */
+type FoldSignal = { open: boolean; n: number };
+
+/** A heading that folds away what is under it, and follows Expand/Collapse all. */
+function Fold({
+  as: Tag = 'div',
+  className,
+  head,
+  signal,
+  children,
+}: {
+  as?: 'div' | 'section';
+  className: string;
+  head: ReactNode;
+  signal: FoldSignal;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    if (signal.n > 0) setOpen(signal.open);
+  }, [signal]);
+  return (
+    <Tag className={className}>
+      <button type="button" className="ordination-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="ordination-fold__chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        {head}
+      </button>
+      {open ? children : null}
+    </Tag>
+  );
+}
+
 function Nomination({
   application,
   ordination,
   session,
   onFile,
   onError,
+  signal,
 }: {
   application: WithId<OrdinationApplication>;
   ordination: WithId<Ordination>;
   session: OrdinationAdminSession;
   onFile: WithId<OrdinationSignatureProfile>[];
   onError: (message: string) => void;
+  signal: FoldSignal;
 }) {
   const [open, setOpen] = useState(application.status === 'pending');
+  useEffect(() => {
+    if (signal.n > 0) setOpen(signal.open);
+  }, [signal]);
   const [answers, setAnswers] = useState(() => startingAnswers(application));
   const [note, setNote] = useState(application.review?.note ?? '');
   const [signatures, setSignatures] = useState<OrdinationSignature[]>(application.signatures);

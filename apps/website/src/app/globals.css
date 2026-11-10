@@ -41771,6 +41771,37 @@ body.is-camp-dragging {
   margin-top: var(--space-md, 1rem);
 }
 
+.ordination-fold {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ordination-fold__chevron {
+  display: inline-block;
+  width: 1.2ch;
+  color: var(--color-text-muted, currentColor);
+}
+
+.ordination-fold__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+  margin: 0;
+}
+
+.ordination-status > .ordination-fold {
+  margin-bottom: var(--space-sm, 0.75rem);
+}
+
 .ordination-status > h4 {
   display: flex;
   align-items: baseline;

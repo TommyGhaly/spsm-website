@@ -19,6 +19,7 @@ import {
   splitOrdinationAnswer,
   tidyOrdinationAnswer,
   validateOrdinationApproval,
+  REQUIRE_PRIEST_SIGNATURE,
   validateOrdinationDraft,
   type OrdinationApplicationDraft,
   ordinationRecipients,
@@ -139,7 +140,7 @@ describe('parsing', () => {
     expect(parsed.signatures.map((s) => s.uid)).toEqual(['d1', 'p1', 'p2', 'p3']);
   });
 
-  it('will not approve on a deacon’s signature alone', () => {
+  it.skipIf(!REQUIRE_PRIEST_SIGNATURE)('will not approve on a deacon’s signature alone', () => {
     const deacon = { uid: 'd', name: 'D', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02', role: 'deacon' as const };
     expect(validateOrdinationApproval('cantor', {}, [deacon])).toContain(
       'A parish priest needs to sign before this is approved.',
@@ -158,7 +159,7 @@ describe('approval', () => {
     );
 
   it('needs a choice for every question and a signature', () => {
-    expect(validateOrdinationApproval('reader', {}, [])).toHaveLength(ORDINATION_QUESTIONS.reader.length + 1);
+    expect(validateOrdinationApproval('reader', {}, [])).toHaveLength(ORDINATION_QUESTIONS.reader.length + (REQUIRE_PRIEST_SIGNATURE ? 1 : 0));
     expect(validateOrdinationApproval('reader', answered(), [signature])).toEqual([]);
   });
 
