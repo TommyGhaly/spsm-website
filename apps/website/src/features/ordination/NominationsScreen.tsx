@@ -929,9 +929,10 @@ function DecisionEmail({
   const last = application.emailsSent[application.emailsSent.length - 1];
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   // The packet is ~250 KB of the allowance when it goes along.
-  // The three requirements PDFs are ~125 KB when an approval goes out.
-  const allowance = ATTACHMENTS_MAX_BYTES - (kind === 'needsFather' ? 260_000 : kind === 'approved' ? 130_000 : 0);
-  const fixedCount = kind === 'needsFather' ? 1 : kind === 'approved' ? ORDINATION_REQUIREMENTS_FILES.length : 0;
+  // An approval carries the requirements PDF for the nominee's rank (up to ~60 KB).
+  const requirements = ORDINATION_REQUIREMENTS_FILES[application.rank];
+  const allowance = ATTACHMENTS_MAX_BYTES - (kind === 'needsFather' ? 260_000 : kind === 'approved' ? 65_000 : 0);
+  const fixedCount = kind === 'needsFather' || kind === 'approved' ? 1 : 0;
 
   function restart(nextKind: OrdinationEmailKind, nextReason: string) {
     const draft = starting(nextKind, nextReason);
@@ -946,18 +947,13 @@ function DecisionEmail({
     try {
       const attachments: EmailAttachment[] = await Promise.all(files.map(fileToAttachment));
       if (kind === 'approved') {
-        const requirements = await Promise.all(
-          ORDINATION_REQUIREMENTS_FILES.map(async ({ path, filename }) => {
-            const response = await fetch(path);
-            if (!response.ok) throw new Error(`Could not load ${filename}.`);
-            return {
-              filename,
-              contentType: 'application/pdf',
-              content: bytesToBase64(new Uint8Array(await response.arrayBuffer())),
-            };
-          }),
-        );
-        attachments.unshift(...requirements);
+        const response = await fetch(requirements.path);
+        if (!response.ok) throw new Error(`Could not load ${requirements.filename}.`);
+        attachments.unshift({
+          filename: requirements.filename,
+          contentType: 'application/pdf',
+          content: bytesToBase64(new Uint8Array(await response.arrayBuffer())),
+        });
       }
       if (kind === 'needsFather') {
         const { buildNomineePacket, packetFilename } = await packet();
@@ -1071,13 +1067,11 @@ function DecisionEmail({
               The nominee&rsquo;s printed form (PDF) <span className="note">— attached automatically</span>
             </li>
           ) : null}
-          {kind === 'approved'
-            ? ORDINATION_REQUIREMENTS_FILES.map(({ filename }) => (
-                <li key={filename}>
-                  {filename} <span className="note">— attached automatically</span>
-                </li>
-              ))
-            : null}
+          {kind === 'approved' ? (
+            <li>
+              {requirements.filename} <span className="note">— attached automatically</span>
+            </li>
+          ) : null}
           {files.map((file, index) => (
             <li key={`${file.name}-${index}`}>
               {file.name} <span className="note">({Math.ceil(file.size / 1024)} KB)</span>{' '}

@@ -4,6 +4,7 @@ import {
   type Ordination,
   type OrdinationApplication,
   type OrdinationEmailKind,
+  type OrdinationRank,
 } from '../schema/ordination.js';
 
 /**
@@ -55,7 +56,7 @@ export function ordinationDecisionEmail(
       subject: `Ordination approved: ${application.nominee.name}`,
       text:
         'Hello, your ordination application has been reviewed by the priests and the deacons and you have been approved.\n\n' +
-        'Please review the requirements and duties for your rank. I have attached the files for all ranks. ' +
+        'Please review the requirements and duties for your rank, which I have attached. ' +
         'These are the expectations for all new ordinations coming from the diocese.\n\n' +
         'As a reminder, you must have a diocese tonia for the ordination. HG Bishop David has made it clear that ordinations require diocese-approved tonias. ' +
         'If you will be ordained a reader or subdeacon, you will also need an epitrachelion (patrasheel). ' +
@@ -106,9 +107,9 @@ export function ordinationEmailHtml(text: string): string {
     .join('\n');
 }
 
-/** The diocese's requirements and duties for every rank, attached to each approval email. */
-export const ORDINATION_REQUIREMENTS_FILES = [
-  { path: '/ordination/requirements/cantor-epsaltos-requirements-and-duties.pdf', filename: 'Cantor (Epsaltos) - Requirements and Duties.pdf' },
-  { path: '/ordination/requirements/reader-anaghnostis-requirements-and-duties.pdf', filename: 'Reader (Anaghnostis) - Requirements and Duties.pdf' },
-  { path: '/ordination/requirements/subdeacon-epidiacon-requirements-and-duties.pdf', filename: 'Subdeacon (Epidiacon) - Requirements and Duties.pdf' },
-] as const;
+/** The diocese's requirements and duties for each rank; an approval email attaches the nominee's. */
+export const ORDINATION_REQUIREMENTS_FILES: Record<OrdinationRank, { path: string; filename: string }> = {
+  cantor: { path: '/ordination/requirements/cantor-epsaltos-requirements-and-duties.pdf', filename: 'Cantor (Epsaltos) - Requirements and Duties.pdf' },
+  reader: { path: '/ordination/requirements/reader-anaghnostis-requirements-and-duties.pdf', filename: 'Reader (Anaghnostis) - Requirements and Duties.pdf' },
+  subdeacon: { path: '/ordination/requirements/subdeacon-epidiacon-requirements-and-duties.pdf', filename: 'Subdeacon (Epidiacon) - Requirements and Duties.pdf' },
+};
