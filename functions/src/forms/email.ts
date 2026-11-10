@@ -15,7 +15,13 @@ import type { FormAnswers, FormDefinition } from '@spsm/shared';
 /** The shape the Trigger Email extension reads out of the `mail` collection. */
 export interface MailDocument {
   to: string[];
-  message: { subject: string; text: string; html: string };
+  message: {
+    subject: string;
+    text: string;
+    html: string;
+    /** Passed to nodemailer as is. Base64 content keeps a PDF intact in Firestore. */
+    attachments?: { filename: string; content: string; encoding: 'base64'; contentType?: string }[];
+  };
 }
 
 export function buildFormEmails(input: {

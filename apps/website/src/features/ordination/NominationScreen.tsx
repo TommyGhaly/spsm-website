@@ -363,6 +363,16 @@ export function NominationScreen() {
               />
             </label>
             <label className="camp-field">
+              <span className="camp-field__label">Your email, to hear back about it too</span>
+              <input
+                className="input"
+                type="email"
+                autoComplete="email"
+                value={draft.submittedByEmail}
+                onChange={(event) => setDraft({ ...draft, submittedByEmail: event.target.value })}
+              />
+            </label>
+            <label className="camp-field">
               <span className="camp-field__label">A note for the parish priests</span>
               <textarea
                 className="input"

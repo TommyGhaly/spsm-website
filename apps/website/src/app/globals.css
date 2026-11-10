@@ -41955,3 +41955,13 @@ body.is-camp-dragging {
 .ordination-signer-group > .note {
   margin: 0;
 }
+
+.ordination-email {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+}
+.ordination-attachments {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+}

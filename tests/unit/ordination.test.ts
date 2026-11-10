@@ -17,9 +17,14 @@ import {
   parseOrdinationApplication,
   parseOrdinationDraft,
   splitOrdinationAnswer,
+  tidyOrdinationAnswer,
   validateOrdinationApproval,
   validateOrdinationDraft,
   type OrdinationApplicationDraft,
+  ordinationRecipients,
+  ordinationDecisionEmail,
+  ordinationReceivedEmail,
+  ordinationEmailHtml,
 } from '@spsm/shared';
 
 function draft(
@@ -148,7 +153,7 @@ describe('approval', () => {
     Object.fromEntries(
       ORDINATION_QUESTIONS.reader.map((q) => [
         q.key,
-        composeOrdinationAnswer(q, { choice: q.choices[0]!, detail: q.detailFirst ? 'Fr. Mina' : '' }),
+        composeOrdinationAnswer(q, { choice: q.choices[0]!, detail: q.detailFirst ? 'Fr. Youhanna' : '' }),
       ]),
     );
 
@@ -177,16 +182,22 @@ describe('answers', () => {
     expect(composeOrdinationAnswer(conduct, { choice: 'Yes', detail: 'Serves on Sundays' })).toBe('Yes — Serves on Sundays');
   });
 
+  it('keeps a space typed at the end of the detail until it is saved', () => {
+    const typing = composeOrdinationAnswer(conduct, { choice: 'Yes', detail: 'Serves ' });
+    expect(splitOrdinationAnswer(conduct, typing)).toEqual({ choice: 'Yes', detail: 'Serves ' });
+    expect(tidyOrdinationAnswer(conduct, `${typing}\n`)).toBe('Yes — Serves');
+  });
+
   it('prints the father of confession before whether he approved', () => {
-    expect(composeOrdinationAnswer(confession, { choice: 'Approved', detail: 'Fr. Mina' })).toBe('Fr. Mina — Approved');
+    expect(composeOrdinationAnswer(confession, { choice: 'Approved', detail: 'Fr. Youhanna' })).toBe('Fr. Youhanna — Approved');
   });
 
   it('takes apart what it put together', () => {
     for (const [question, parts] of [
       [conduct, { choice: 'No', detail: 'Spoke to his family' }],
       [conduct, { choice: 'Yes', detail: '' }],
-      [confession, { choice: 'Not yet approved', detail: 'Fr. Mina' }],
-      [confession, { choice: 'Approved', detail: 'Fr. Mina' }],
+      [confession, { choice: 'Not yet approved', detail: 'Fr. Youhanna' }],
+      [confession, { choice: 'Approved', detail: 'Fr. Youhanna' }],
     ] as const) {
       expect(splitOrdinationAnswer(question, composeOrdinationAnswer(question, parts))).toEqual(parts);
     }
@@ -251,13 +262,13 @@ describe('packet layout', () => {
     const lines = nomineeAnswerLines({
       rank: 'subdeacon',
       review: {
-        answers: { criteria: 'Met', fatherOfConfession: 'Fr. Mina' },
+        answers: { criteria: 'Met', fatherOfConfession: 'Fr. Youhanna' },
         note: '', decidedByUid: '', decidedByName: '', decidedOn: '',
       },
     });
     // Criteria is asked second on the subdeacon's page, before the father of confession.
     expect(lines[1]!.text).toBe('Met');
-    expect(lines[2]!.text).toBe('Fr. Mina');
+    expect(lines[2]!.text).toBe('Fr. Youhanna');
     expect(lines[1]!.blank.y).toBeGreaterThan(lines[2]!.blank.y);
   });
 });
@@ -297,5 +308,34 @@ describe('ordinationAccepting', () => {
     expect(parseOrdination({ date: '2026-12-06', open: true }).closesOn).toBe('');
     expect(parseOrdination({ date: '2026-12-06', open: true, closesOn: '2026-02-30' }).closesOn).toBe('');
     expect(parseOrdination({ date: '2026-12-06', open: true, closesOn: '2026-11-20' }).closesOn).toBe('2026-11-20');
+  });
+});
+
+describe('ordination emails', () => {
+  const application = {
+    ...emptyOrdinationDraft('o1', 'reader'),
+    rank: 'reader' as const,
+    nominee: { ...emptyOrdinationDraft().nominee, name: 'Mina Hanna', email: 'Mina@Example.com', fatherOfConfession: 'Fr. Antony' },
+    submittedByEmail: 'mina@example.com',
+  };
+  const ordination = { date: '2027-01-10' };
+
+  it('emails the nominee and the sender once each', () => {
+    expect(ordinationRecipients(application)).toEqual(['mina@example.com']);
+    expect(ordinationRecipients({ ...application, submittedByEmail: 'dad@example.com' })).toEqual([
+      'mina@example.com',
+      'dad@example.com',
+    ]);
+    expect(ordinationRecipients({ ...application, nominee: { ...application.nominee, email: 'nope' }, submittedByEmail: '' })).toEqual([]);
+  });
+
+  it('puts the reason into a rejection and names the father of confession', () => {
+    expect(ordinationDecisionEmail('rejected', application, ordination, 'Too young this year.').text).toContain('Too young this year.');
+    expect(ordinationDecisionEmail('needsFather', application, ordination).text).toContain('Fr. Antony');
+    expect(ordinationReceivedEmail(application, ordination).subject).toContain('Mina Hanna');
+  });
+
+  it('escapes the HTML part', () => {
+    expect(ordinationEmailHtml('a <b>\n\nc')).toBe('<p>a &lt;b&gt;</p>\n<p>c</p>');
   });
 });
