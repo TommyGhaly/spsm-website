@@ -120,11 +120,30 @@ describe('parsing', () => {
     });
     expect(parsed.signatures).toHaveLength(3);
     expect(parsed.signatures.every((s) => s.image.startsWith('data:image/png'))).toBe(true);
+    // Signed before roles existed: every one of them was a priest's.
+    expect(parsed.signatures.every((s) => s.role === 'priest')).toBe(true);
+  });
+
+  it('keeps three priests and one deacon, whatever order they signed in', () => {
+    const priest = (uid: string) => ({ uid, name: uid, image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02', role: 'priest' });
+    const deacon = (uid: string) => ({ ...priest(uid), role: 'deacon' });
+    const parsed = parseOrdinationApplication({
+      ...draft(),
+      signatures: [deacon('d1'), priest('p1'), deacon('d2'), priest('p2'), priest('p3'), priest('p4')],
+    });
+    expect(parsed.signatures.map((s) => s.uid)).toEqual(['d1', 'p1', 'p2', 'p3']);
+  });
+
+  it('will not approve on a deacon’s signature alone', () => {
+    const deacon = { uid: 'd', name: 'D', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02', role: 'deacon' as const };
+    expect(validateOrdinationApproval('cantor', {}, [deacon])).toContain(
+      'A parish priest needs to sign before this is approved.',
+    );
   });
 });
 
 describe('approval', () => {
-  const signature = { uid: 'a', name: 'A', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02' };
+  const signature = { uid: 'a', name: 'A', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02', role: 'priest' as const };
   const answered = () =>
     Object.fromEntries(
       ORDINATION_QUESTIONS.reader.map((q) => [
@@ -189,6 +208,10 @@ describe('packet layout', () => {
     for (const rank of ORDINATION_RANKS) {
       expect(ORDINATION_PACKET_LAYOUT[rank].cover.rows).toHaveLength(20);
       expect(ORDINATION_PACKET_LAYOUT[rank].signatures).toHaveLength(3);
+      // The deacon's line sits below the last priest's, never on it.
+      expect(ORDINATION_PACKET_LAYOUT[rank].deacon.signature.y).toBeLessThan(
+        ORDINATION_PACKET_LAYOUT[rank].signatures[2]!.signature.y - 30,
+      );
     }
   });
 
@@ -200,6 +223,8 @@ describe('packet layout', () => {
         layout.cover.churchAddress,
         ...layout.cover.rows.flatMap((row) => [row.name, row.dateOfBirth]),
         ...layout.signatures.flatMap((line) => [line.signature, line.date]),
+        layout.deacon.signature,
+        layout.deacon.date,
         ...Object.values(layout.nominee.fields),
         ...layout.nominee.answers,
       ];
