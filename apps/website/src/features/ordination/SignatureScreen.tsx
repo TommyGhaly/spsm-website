@@ -49,9 +49,12 @@ export function SignatureScreen() {
     reload();
   }, [session.canEdit, reload]);
 
+  const prefilled = useRef(false);
   useEffect(() => {
-    if (!name && session.name) setName(session.name);
-  }, [session.name, name]);
+    if (prefilled.current || !session.name) return;
+    prefilled.current = true;
+    setName((current) => current || session.name);
+  }, [session.name]);
 
   const onBlank = useCallback((empty: boolean) => setBlank(empty), []);
 
