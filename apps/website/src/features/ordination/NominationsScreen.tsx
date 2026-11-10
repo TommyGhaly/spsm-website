@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import {
   ORDINATION_ANSWER_MAX,
-  ORDINATION_MAX_SIGNATURES,
+  ORDINATION_MAX_SIGNATURES_BY_ROLE,
+  ORDINATION_SIGNER_ROLES,
   ORDINATION_QUESTIONS,
   ORDINATION_RANKS,
   ORDINATION_RANK_INFO,
@@ -62,19 +63,18 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  *
  *   - **Waiting** nominations open into the diocese's questions, which the
  *     parish answers by picking Yes or No (and so on) with an optional line of
- *     detail, and a button per priest with a signature on file at
+ *     detail, and a button per priest or deacon with a signature on file at
  *     /admin/ordination/signature. Whoever is preparing the nomination adds
- *     them, up to the form's three, so it does not take three sign-ins.
- *     Approving needs every answer and at least one signature; rejecting
- *     needs neither.
- *   - **Approved** ones can be printed one at a time, gain a second or third
- *     signature, or be moved back.
+ *     them, up to the form's three priests and one deacon, so it does not take
+ *     four sign-ins. Approving needs every answer and at least one priest's
+ *     signature; rejecting needs neither.
+ *   - **Approved** ones can be printed one at a time, gain more signatures,
+ *     or be moved back.
  *   - Any nomination, whatever its status, can be deleted.
- *   - Nominations are listed by rank, which is how the reviewers read them,
- *     but the **application** is one file for the whole ordination: a single
- *     cover naming every approved nominee with their rank beside them, then
- *     each rank's requirements, signed by every priest who signed any of that
- *     rank's nominees, and a page per nominee.
+ *   - Nominations are listed by rank, and so is the **application**: each
+ *     rank's own cover listing its approved nominees, then, per nominee, the
+ *     requirements page carrying that nominee's own signatures and their
+ *     nominee page, then the rank's guidelines.
  *
  * The id is read off `location` rather than `useSearchParams`, which would
  * take the route out of the static export; see `GalleryShell`.
@@ -449,14 +449,18 @@ function Nomination({
   const { nominee, rank } = application;
   const info = ORDINATION_RANK_INFO[rank];
   const age = ageOn(nominee.dateOfBirth, ordination.date);
-  const unsigned = signatures.length < ORDINATION_MAX_SIGNATURES
-    ? onFile.filter((profile) => !signatures.some((signature) => signature.uid === profile.id))
-    : [];
+  // Signers not on this nomination yet whose role still has a free line:
+  // three priests and one deacon, as on the form.
+  const roleFull = (role: OrdinationSignature['role']) =>
+    signatures.filter((signature) => signature.role === role).length >= ORDINATION_MAX_SIGNATURES_BY_ROLE[role];
+  const unsigned = onFile.filter(
+    (profile) => !roleFull(profile.role) && !signatures.some((signature) => signature.uid === profile.id),
+  );
 
   function sign(profile: WithId<OrdinationSignatureProfile>) {
     setSignatures([
       ...signatures,
-      { uid: profile.id, name: profile.name, image: profile.image, signedOn: today() },
+      { uid: profile.id, name: profile.name, image: profile.image, signedOn: today(), role: profile.role },
     ]);
     setDirty(true);
   }
@@ -621,28 +625,47 @@ function Nomination({
               })}
 
               <h4>Signatures</h4>
-              {signatures.length === 0 ? <p className="note">Not signed yet.</p> : null}
-              <ul className="ordination-signatures">
-                {signatures.map((signature) => (
-                  <li key={signature.uid}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- a data URL; there is nothing for next/image to optimise. */}
-                    <img src={signature.image} alt={`${signature.name}'s signature`} />
-                    <span>
-                      {signature.name} · {formDay(signature.signedOn)}
-                    </span>
-                    <button type="button" className="button button--quiet" onClick={() => unsign(signature)}>
-                      {signature.uid === session.uid ? 'Remove my signature' : 'Remove'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <p className="ordination-actions">
-                {unsigned.map((profile) => (
-                  <button key={profile.id} type="button" className="button button--ghost" onClick={() => sign(profile)}>
-                    Add {profile.name}&rsquo;s signature
-                  </button>
-                ))}
-              </p>
+              {ORDINATION_SIGNER_ROLES.map((role) => {
+                const ofRole = signatures.filter((signature) => signature.role === role);
+                const max = ORDINATION_MAX_SIGNATURES_BY_ROLE[role];
+                const canAdd = unsigned.filter((profile) => profile.role === role);
+                return (
+                  <div key={role} className="ordination-signer-group">
+                    <h5>
+                      {role === 'priest' ? 'Parish priests' : 'Parish deacon'}{' '}
+                      <span className="ordination-count">
+                        {ofRole.length} of {max}
+                      </span>
+                    </h5>
+                    {ofRole.length === 0 ? (
+                      <p className="note">{role === 'priest' ? 'No priest has signed yet.' : 'The deacon has not signed yet.'}</p>
+                    ) : null}
+                    <ul className="ordination-signatures">
+                      {ofRole.map((signature) => (
+                        <li key={signature.uid}>
+                          {/* eslint-disable-next-line @next/next/no-img-element -- a data URL; there is nothing for next/image to optimise. */}
+                          <img src={signature.image} alt={`${signature.name}'s signature`} />
+                          <span>
+                            {signature.name} · {formDay(signature.signedOn)}
+                          </span>
+                          <button type="button" className="button button--quiet" onClick={() => unsign(signature)}>
+                            {signature.uid === session.uid ? 'Remove my signature' : 'Remove'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {canAdd.length > 0 ? (
+                      <p className="ordination-actions">
+                        {canAdd.map((profile) => (
+                          <button key={profile.id} type="button" className="button button--ghost" onClick={() => sign(profile)}>
+                            Add {profile.name}&rsquo;s signature
+                          </button>
+                        ))}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
             </>
           ) : null}
 

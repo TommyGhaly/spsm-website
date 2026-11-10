@@ -192,12 +192,12 @@ describe('applications', () => {
     await assertFails(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { rank: 'subdeacon' }));
   });
 
-  it('refuse a fourth signature and a status the screen never writes', async () => {
+  it('refuse a fifth signature (three priests and a deacon) and a status the screen never writes', async () => {
     const db = asPriest(env).firestore();
     const signature = { uid: 'x', name: 'x', image: 'data:image/png;base64,AAAA', signedOn: '2026-11-02' };
     await assertFails(
       updateDoc(doc(db, 'ordinationApplications', 'app-1'), {
-        signatures: [signature, signature, signature, signature],
+        signatures: [signature, signature, signature, signature, signature],
       }),
     );
     await assertFails(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { status: 'ordained' }));
@@ -214,6 +214,12 @@ describe('signatures', () => {
 
   it('let a priest save their own', async () => {
     await assertSucceeds(setDoc(doc(asPriest(env).firestore(), 'ordinationSignatures', 'priest-1'), mine));
+  });
+
+  it('let a deacon save theirs as a deacon, and refuse a made-up role', async () => {
+    const db = asPriest(env).firestore();
+    await assertSucceeds(setDoc(doc(db, 'ordinationSignatures', 'priest-1'), { ...mine, role: 'deacon' }));
+    await assertFails(setDoc(doc(db, 'ordinationSignatures', 'priest-1'), { ...mine, role: 'bishop' }));
   });
 
   it('refuse writing somebody else’s', async () => {

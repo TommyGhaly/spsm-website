@@ -64,6 +64,12 @@ export interface OrdinationPacketLayout {
   };
   /** The three PARISH PRIEST(S) SIGNATURE lines, top to bottom. */
   signatures: { signature: PacketBlank; date: PacketBlank }[];
+  /**
+   * The one PARISH DEACON/HEAD of DIACONATE MINISTRY SIGNATURE line below
+   * them. Measured like the rest: "SIGNATURE" ends and the underscores start
+   * at about 107.5, and DATE's underscores at about 410.8, on every rank.
+   */
+  deacon: { signature: PacketBlank; date: PacketBlank };
   nominee: {
     fields: Partial<Record<NomineeField, PacketBlank>>;
     /**
@@ -108,6 +114,10 @@ function signatureLines(rules: [number, number, number]): OrdinationPacketLayout
   }));
 }
 
+function deaconLine(rule: number): OrdinationPacketLayout['deacon'] {
+  return { signature: blank(107.5, rule, 11, 372), date: blank(410.8, rule, 11) };
+}
+
 function answerLines(rules: number[]): PacketBlank[] {
   return rules.map((rule) => ({ x: 38, y: rule + LIFT, width: 534, size: 10 }));
 }
@@ -119,6 +129,7 @@ export const ORDINATION_PACKET_LAYOUT: Record<OrdinationRank, OrdinationPacketLa
     pages: PAGES,
     cover: COVER,
     signatures: signatureLines([192.7, 172.1, 151.3]),
+    deacon: deaconLine(89.3),
     nominee: {
       fields: {
         name: blank(69.4, 633.1, 12),
@@ -141,6 +152,7 @@ export const ORDINATION_PACKET_LAYOUT: Record<OrdinationRank, OrdinationPacketLa
     pages: PAGES,
     cover: COVER,
     signatures: signatureLines([174.9, 154.2, 133.4]),
+    deacon: deaconLine(71.4),
     nominee: {
       fields: {
         name: blank(69.4, 641.1, 12),
@@ -163,6 +175,7 @@ export const ORDINATION_PACKET_LAYOUT: Record<OrdinationRank, OrdinationPacketLa
     pages: PAGES,
     cover: COVER,
     signatures: signatureLines([178.9, 158.3, 137.5]),
+    deacon: deaconLine(75.5),
     nominee: {
       fields: {
         name: blank(69.4, 632.0, 12),

@@ -1645,7 +1645,7 @@ service cloud.firestore {
      * nominee's details are what the family sent, and the packet the diocese
      * receives should print exactly that.
      *
-     * `ordinationSignatures/{uid}` is one priest's drawn signature. Only they
+     * `ordinationSignatures/{uid}` is one priest's or deacon's drawn signature. Only they
      * may write it. Everybody with the screen may read it, which is what lets
      * the screen show who has a signature on file.
      * -----------------------------------------------------------------------
@@ -1672,7 +1672,8 @@ service cloud.firestore {
              .hasOnly(['status', 'review', 'signatures', 'updatedAt', 'updatedBy'])
         && request.resource.data.status in ['pending', 'approved', 'rejected']
         && request.resource.data.signatures is list
-        && request.resource.data.signatures.size() <= 3;
+        // Three priests and one deacon; which is which the screen keeps to.
+        && request.resource.data.signatures.size() <= 4;
 
       allow delete: if hasScreen('ordination');
     }
@@ -1680,8 +1681,9 @@ service cloud.firestore {
     match /ordinationSignatures/{uid} {
       allow read: if hasScreen('ordination');
       allow create, update: if isSelf(uid) && hasScreen('ordination')
-        && request.resource.data.keys().hasOnly(['name', 'image', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'role', 'image', 'updatedAt'])
         && request.resource.data.name is string
+        && (!('role' in request.resource.data) || request.resource.data.role in ['priest', 'deacon'])
         && request.resource.data.image is string
         && request.resource.data.image.size() <= 150000;
       allow delete: if isSelf(uid);

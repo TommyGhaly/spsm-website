@@ -2,13 +2,9 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import {
-  COMBINED_COVER_SENTENCE,
-  ORDINATION_COMBINED_COVER,
-  ORDINATION_MAX_SIGNATURES,
   ORDINATION_PACKET_LAYOUT,
   ORDINATION_RANKS,
-  combinedCoverTitle,
-  coverRowName,
+  capOrdinationSignatures,
   formDay,
   nomineeAnswerLines,
   nomineeFieldValues,
@@ -27,13 +23,13 @@ import {
  * ---------------------------------------------------------------------------
  * Two packets, both built from the rank's own PDF in `public/ordination/`:
  *
- *   - **One nominee's packet** — the requirements page with the priests'
- *     signatures, that nominee's page, and the guidelines. This is the
- *     diocese's "blank" form, filled in.
- *   - **The ordination's application** — one cover page listing the church and
- *     every approved nominee of every rank, each with their rank beside their
- *     name, then each rank's signed requirements, nominee pages and
- *     guidelines. The whole submission in one file.
+ *   - **One nominee's packet** — the requirements page with that nominee's
+ *     priests' and deacon's signatures, their page, and the guidelines. This
+ *     is the diocese's "blank" form, filled in.
+ *   - **The ordination's application** — rank by rank: the rank's own cover
+ *     listing the church and its approved nominees, then for each nominee
+ *     their own signed requirements page and their nominee page, then the
+ *     rank's guidelines. The whole submission in one file.
  *
  * Built in the browser with pdf-lib. Where each thing goes is
  * `ORDINATION_PACKET_LAYOUT` in @spsm/shared, which is pure data so the same
@@ -154,6 +150,33 @@ function drawAnswer(page: PDFPage, font: PDFFont, value: string, blank: PacketBl
   return fits;
 }
 
+/** A drawn signature fitted onto its line, or the signer's name if the image will not embed. */
+async function drawSignature(
+  output: PDFDocument,
+  page: PDFPage,
+  font: PDFFont,
+  signature: OrdinationSignature,
+  line: { signature: PacketBlank; date: PacketBlank },
+): Promise<void> {
+  try {
+    const image = await output.embedPng(signature.image);
+    // Fitted into the line's width and about one and a half lines of height,
+    // sitting on the rule the way a pen would.
+    const scale = Math.min(line.signature.width / image.width, 26 / image.height);
+    page.drawImage(image, {
+      x: line.signature.x,
+      y: line.signature.y - 5,
+      width: image.width * scale,
+      height: image.height * scale,
+    });
+  } catch (error) {
+    console.warn('[ordination] could not draw a signature; printing the name instead', error);
+    drawFitted(page, font, signature.name, line.signature);
+  }
+  drawFitted(page, font, formDay(signature.signedOn), line.date);
+}
+
+/** One nominee's signatures: priests on the three priest lines, the deacon on the deacon line. */
 async function drawSignatures(
   output: PDFDocument,
   page: PDFPage,
@@ -161,26 +184,14 @@ async function drawSignatures(
   rank: OrdinationRank,
   signatures: readonly OrdinationSignature[],
 ): Promise<void> {
-  const lines = ORDINATION_PACKET_LAYOUT[rank].signatures;
-  for (const [index, signature] of signatures.slice(0, ORDINATION_MAX_SIGNATURES).entries()) {
-    const line = lines[index]!;
-    try {
-      const image = await output.embedPng(signature.image);
-      // Fitted into the line's width and about one and a half lines of height,
-      // sitting on the rule the way a pen would.
-      const scale = Math.min(line.signature.width / image.width, 26 / image.height);
-      page.drawImage(image, {
-        x: line.signature.x,
-        y: line.signature.y - 5,
-        width: image.width * scale,
-        height: image.height * scale,
-      });
-    } catch (error) {
-      console.warn('[ordination] could not draw a signature; printing the name instead', error);
-      drawFitted(page, font, signature.name, line.signature);
-    }
-    drawFitted(page, font, formDay(signature.signedOn), line.date);
+  const layout = ORDINATION_PACKET_LAYOUT[rank];
+  const kept = capOrdinationSignatures(signatures);
+  const priests = kept.filter((signature) => signature.role === 'priest');
+  for (const [index, signature] of priests.entries()) {
+    await drawSignature(output, page, font, signature, layout.signatures[index]!);
   }
+  const deacon = kept.find((signature) => signature.role === 'deacon');
+  if (deacon) await drawSignature(output, page, font, deacon, layout.deacon);
 }
 
 function drawNominee(
@@ -234,18 +245,6 @@ function addContinuation(output: PDFDocument, font: PDFFont, bold: PDFFont, cont
   }
 }
 
-/** Distinct signers across a set of applications, each with the latest day they signed. */
-export function packetSigners(applications: readonly OrdinationApplication[]): OrdinationSignature[] {
-  const byUid = new Map<string, OrdinationSignature>();
-  for (const application of applications) {
-    for (const signature of application.signatures) {
-      const seen = byUid.get(signature.uid);
-      if (!seen || signature.signedOn > seen.signedOn) byUid.set(signature.uid, signature);
-    }
-  }
-  return [...byUid.values()].slice(0, ORDINATION_MAX_SIGNATURES);
-}
-
 async function begin(rank: OrdinationRank) {
   const source = await PDFDocument.load(await template(rank));
   const output = await PDFDocument.create();
@@ -276,91 +275,71 @@ export async function buildNomineePacket(application: OrdinationApplication): Pr
 }
 
 /**
- * The whole application for one ordination, every rank together: one cover
- * naming every approved nominee with their rank beside them, then, rank by
- * rank, that rank's signed requirements, a page for each of its nominees, and
- * its guidelines.
+ * The whole application for one ordination, rank by rank — cantors, then
+ * readers, then subdeacons — each from that rank's own form:
  *
- * The cover is the one thing shared across ranks. Each rank's requirements,
- * nominee page and guidelines say different things, so those still come from
- * that rank's own form. A cover holds twenty names; a twenty-first starts a
- * second copy of it rather than being left off.
+ *   - the rank's cover, naming the church and only that rank's approved
+ *     nominees (a cover holds twenty; a twenty-first starts a second copy
+ *     rather than being left off),
+ *   - for each nominee, the requirements page signed by *that nominee's*
+ *     priests and deacon, then their nominee page,
+ *   - the rank's guidelines.
  */
 export async function buildOrdinationApplication(
   ordination: Ordination,
   approved: readonly OrdinationApplication[],
 ): Promise<Uint8Array> {
   const ranks = ORDINATION_RANKS.filter((rank) => approved.some((row) => row.rank === rank));
-  // Rank by rank, so the cover reads in the same order as the pages behind it.
-  const ordered = ranks.flatMap((rank) => approved.filter((row) => row.rank === rank));
   const output = await PDFDocument.create();
   const font = await output.embedFont(StandardFonts.TimesRoman);
   const bold = await output.embedFont(StandardFonts.TimesRomanBold);
   const continued: Continued[] = [];
 
-  const combined = ORDINATION_COMBINED_COVER;
-  const coverSource = await PDFDocument.load(await template(combined.template));
-  const coverLayout = ORDINATION_PACKET_LAYOUT[combined.template];
-  const perCover = coverLayout.cover.rows.length;
-  const chunks = Array.from({ length: Math.max(1, Math.ceil(ordered.length / perCover)) }, (_, at) =>
-    ordered.slice(at * perCover, (at + 1) * perCover),
-  );
-  const covers = await output.copyPages(coverSource, chunks.map(() => coverLayout.pages.cover));
-  const title = printable(bold, combinedCoverTitle(ranks));
-  const sentence = wrap(bold, COMBINED_COVER_SENTENCE, combined.sentence.size, combined.sentence.width);
-
-  chunks.forEach((chunk, at) => {
-    const cover = covers[at]!;
-    output.addPage(cover);
-    for (const mask of [combined.title.mask, combined.sentence.mask]) {
-      cover.drawRectangle({ ...mask, color: rgb(1, 1, 1) });
-    }
-    cover.drawText(title, {
-      x: (cover.getWidth() - bold.widthOfTextAtSize(title, combined.title.size)) / 2,
-      y: combined.title.baseline,
-      size: combined.title.size,
-      font: bold,
-      color: rgb(0, 0, 0),
-    });
-    sentence.slice(0, combined.sentence.baselines.length).forEach((line, index) => {
-      cover.drawText(line, {
-        x: combined.sentence.x,
-        y: combined.sentence.baselines[index]!,
-        size: combined.sentence.size,
-        font: bold,
-        color: rgb(0, 0, 0),
-      });
-    });
-    drawFitted(cover, font, ordination.churchName, coverLayout.cover.churchName);
-    drawFitted(cover, font, ordination.churchAddress, coverLayout.cover.churchAddress);
-    chunk.forEach((application, index) => {
-      const row = coverLayout.cover.rows[index]!;
-      drawFitted(cover, font, coverRowName(application), row.name);
-      drawFitted(cover, font, formDay(application.nominee.dateOfBirth), row.dateOfBirth);
-    });
-  });
-
   for (const rank of ranks) {
-    const ofRank = ordered.filter((row) => row.rank === rank);
+    const ofRank = approved
+      .filter((row) => row.rank === rank)
+      .sort((a, b) => a.nominee.name.localeCompare(b.nominee.name));
     const source = await PDFDocument.load(await template(rank));
-    const pages = ORDINATION_PACKET_LAYOUT[rank].pages;
+    const layout = ORDINATION_PACKET_LAYOUT[rank];
+    const { pages } = layout;
+    const perCover = layout.cover.rows.length;
+    const chunks = Array.from({ length: Math.ceil(ofRank.length / perCover) }, (_, at) =>
+      ofRank.slice(at * perCover, (at + 1) * perCover),
+    );
     /*
      * The rank's pages in one `copyPages` call. Copied one at a time, each page
      * brought its own copy of the crest and the cross, and twenty nominees made
      * a two-megabyte file; copied together they share one.
      */
     const copied = await output.copyPages(source, [
-      pages.signatures,
-      ...ofRank.map(() => pages.nominee),
+      ...chunks.map(() => pages.cover),
+      ...ofRank.flatMap(() => [pages.signatures, pages.nominee]),
       pages.guidelines,
     ]);
-    output.addPage(copied[0]!);
-    await drawSignatures(output, copied[0]!, font, rank, packetSigners(ofRank));
-    ofRank.forEach((application, index) => {
-      output.addPage(copied[index + 1]!);
-      drawNominee(copied[index + 1]!, font, application, continued);
-    });
-    output.addPage(copied[ofRank.length + 1]!);
+    let at = 0;
+
+    for (const chunk of chunks) {
+      const cover = copied[at++]!;
+      output.addPage(cover);
+      drawFitted(cover, font, ordination.churchName, layout.cover.churchName);
+      drawFitted(cover, font, ordination.churchAddress, layout.cover.churchAddress);
+      chunk.forEach((application, index) => {
+        const row = layout.cover.rows[index]!;
+        drawFitted(cover, font, application.nominee.name, row.name);
+        drawFitted(cover, font, formDay(application.nominee.dateOfBirth), row.dateOfBirth);
+      });
+    }
+
+    for (const application of ofRank) {
+      const signatures = copied[at++]!;
+      output.addPage(signatures);
+      await drawSignatures(output, signatures, font, rank, application.signatures);
+      const nominee = copied[at++]!;
+      output.addPage(nominee);
+      drawNominee(nominee, font, application, continued);
+    }
+
+    output.addPage(copied[at]!);
   }
   addContinuation(output, font, bold, continued);
 

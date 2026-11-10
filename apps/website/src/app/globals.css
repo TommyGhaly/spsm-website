@@ -41939,3 +41939,19 @@ body.is-camp-dragging {
   bottom: var(--space-lg, 1.5rem);
   margin: 0;
 }
+
+/* A nomination's signatures, priests and deacon each under their own heading. */
+.ordination-signer-group + .ordination-signer-group {
+  margin-top: var(--space-md, 1.25rem);
+}
+
+.ordination-signer-group > h5 {
+  margin: 0 0 var(--space-xs, 0.5rem);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+}
+
+.ordination-signer-group > .note {
+  margin: 0;
+}

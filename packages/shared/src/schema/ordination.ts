@@ -107,7 +107,7 @@ const FATHER_OF_CONFESSION: OrdinationQuestion = {
   key: 'fatherOfConfession',
   label: 'Who is the nominee’s Father of Confession, and has he approved the nomination for ordination?',
   choices: ['Approved', 'Not yet approved'],
-  detailHint: 'e.g. Fr. Mina',
+  detailHint: 'e.g. Fr. Youhanna',
   detailFirst: true,
 };
 const CONDUCT: OrdinationQuestion = {
@@ -203,8 +203,43 @@ export function splitOrdinationAnswer(question: OrdinationQuestion, answer: stri
   return { choice: '', detail: text };
 }
 
-/** The diocese's form has three lines for parish priests. */
-export const ORDINATION_MAX_SIGNATURES = 3;
+/**
+ * Who signs the diocese's form: up to three parish priests on the PARISH
+ * PRIEST(S) lines, and one parish deacon on the PARISH DEACON/HEAD of
+ * DIACONATE MINISTRY line below them.
+ */
+export const ORDINATION_SIGNER_ROLES = ['priest', 'deacon'] as const;
+export type OrdinationSignerRole = (typeof ORDINATION_SIGNER_ROLES)[number];
+
+export const ORDINATION_SIGNER_ROLE_LABEL: Record<OrdinationSignerRole, string> = {
+  priest: 'Parish priest',
+  deacon: 'Parish deacon',
+};
+
+/** Lines on the form for each role. */
+export const ORDINATION_MAX_SIGNATURES_BY_ROLE: Record<OrdinationSignerRole, number> = {
+  priest: 3,
+  deacon: 1,
+};
+
+/** Every signature line on the form, priests and deacon together. */
+export const ORDINATION_MAX_SIGNATURES = 4;
+
+function isSignerRole(value: unknown): value is OrdinationSignerRole {
+  return (ORDINATION_SIGNER_ROLES as readonly unknown[]).includes(value);
+}
+
+/**
+ * At most three priests and one deacon, first come first kept. A signature
+ * from before roles existed has none and was a priest's.
+ */
+export function capOrdinationSignatures<T extends { role: OrdinationSignerRole }>(signatures: readonly T[]): T[] {
+  const counts: Record<OrdinationSignerRole, number> = { priest: 0, deacon: 0 };
+  return signatures.filter((signature) => {
+    counts[signature.role] += 1;
+    return counts[signature.role] <= ORDINATION_MAX_SIGNATURES_BY_ROLE[signature.role];
+  });
+}
 
 /* -------------------------------------------------------------------------- */
 /* Ordinations                                                                */
@@ -385,6 +420,8 @@ export interface OrdinationSignature {
   image: string;
   /** `YYYY-MM-DD`, printed on the DATE line beside the signature. */
   signedOn: string;
+  /** Which line it goes on: a priest's or the deacon's. */
+  role: OrdinationSignerRole;
 }
 
 export interface OrdinationReview {
@@ -483,7 +520,13 @@ function parseSignature(raw: unknown): OrdinationSignature | null {
   const uid = text(doc['uid'], 128);
   if (!uid || !image.startsWith('data:image/png;base64,')) return null;
   const signedOn = text(doc['signedOn'], 10);
-  return { uid, name: text(doc['name']), image, signedOn: isCalendarDay(signedOn) ? signedOn : '' };
+  return {
+    uid,
+    name: text(doc['name']),
+    image,
+    signedOn: isCalendarDay(signedOn) ? signedOn : '',
+    role: isSignerRole(doc['role']) ? doc['role'] : 'priest',
+  };
 }
 
 function parseReview(raw: unknown): OrdinationReview | null {
@@ -513,10 +556,11 @@ export function parseOrdinationApplication(raw: unknown): OrdinationApplication 
       ? (status as OrdinationStatus)
       : 'pending',
     review: parseReview(doc['review']),
-    signatures: (Array.isArray(doc['signatures']) ? doc['signatures'] : [])
-      .map(parseSignature)
-      .filter((signature): signature is OrdinationSignature => signature !== null)
-      .slice(0, ORDINATION_MAX_SIGNATURES),
+    signatures: capOrdinationSignatures(
+      (Array.isArray(doc['signatures']) ? doc['signatures'] : [])
+        .map(parseSignature)
+        .filter((signature): signature is OrdinationSignature => signature !== null),
+    ),
     submittedAt: (doc['submittedAt'] as Timestamped | undefined) ?? null,
     updatedAt: (doc['updatedAt'] as Timestamped | undefined) ?? null,
     updatedBy: typeof doc['updatedBy'] === 'string' ? doc['updatedBy'] : null,
@@ -597,13 +641,17 @@ export function validateOrdinationApproval(
       errors.push(`Name the father of confession in “${question.label}”`);
     }
   }
-  if (signatures.length === 0) errors.push('A parish priest needs to sign before this is approved.');
+  if (!signatures.some((signature) => signature.role === 'priest')) {
+    errors.push('A parish priest needs to sign before this is approved.');
+  }
   return errors;
 }
 
-/** The signature record the rules allow a priest to keep. */
+/** The signature record the rules allow a priest or deacon to keep. */
 export interface OrdinationSignatureProfile {
   name: string;
+  /** Whether they sign on a priest's line or the deacon's. */
+  role: OrdinationSignerRole;
   /** A `data:image/png;base64,…` URL, or empty when none has been drawn. */
   image: string;
   updatedAt?: Timestamped | null;
@@ -616,6 +664,7 @@ export function parseOrdinationSignatureProfile(raw: unknown): OrdinationSignatu
     : '';
   return {
     name: text(doc['name']),
+    role: isSignerRole(doc['role']) ? doc['role'] : 'priest',
     image,
     updatedAt: (doc['updatedAt'] as Timestamped | undefined) ?? null,
   };

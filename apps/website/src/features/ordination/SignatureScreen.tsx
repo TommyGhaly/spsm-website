@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ORDINATION_SIGNATURE_IMAGE_MAX, type OrdinationSignatureProfile } from '@spsm/shared';
+import {
+  ORDINATION_SIGNATURE_IMAGE_MAX,
+  ORDINATION_SIGNER_ROLES,
+  ORDINATION_SIGNER_ROLE_LABEL,
+  type OrdinationSignatureProfile,
+  type OrdinationSignerRole,
+} from '@spsm/shared';
 import { deleteSignatureProfile, readSignatureProfile, saveSignatureProfile } from './data';
 import { OrdinationError, OrdinationShell } from './OrdinationShell';
 import { SignaturePad, type SignaturePadHandle } from './SignaturePad';
@@ -20,6 +26,7 @@ export function SignatureScreen() {
   const pad = useRef<SignaturePadHandle>(null);
   const [profile, setProfile] = useState<OrdinationSignatureProfile | null>(null);
   const [name, setName] = useState('');
+  const [role, setRole] = useState<OrdinationSignerRole>('priest');
   const [blank, setBlank] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -34,6 +41,7 @@ export function SignatureScreen() {
         if (!live) return;
         setProfile(found);
         setName(found.name || session.name);
+        setRole(found.role);
       })
       .catch((cause: Error) => live && setError(cause.message));
     return () => {
@@ -55,8 +63,8 @@ export function SignatureScreen() {
     setSaving(true);
     setError('');
     try {
-      await saveSignatureProfile(session.uid, { name: name.trim() || session.name, image });
-      setProfile({ name: name.trim() || session.name, image });
+      await saveSignatureProfile(session.uid, { name: name.trim() || session.name, role, image });
+      setProfile({ name: name.trim() || session.name, role, image });
       pad.current?.clear();
       setSaved(true);
       setDeleted(false);
@@ -74,7 +82,7 @@ export function SignatureScreen() {
     setError('');
     try {
       await deleteSignatureProfile(session.uid);
-      setProfile({ name: profile?.name ?? '', image: '' });
+      setProfile({ name: profile?.name ?? '', role, image: '' });
       setSaved(false);
       setDeleted(true);
     } catch (cause) {
@@ -97,12 +105,14 @@ export function SignatureScreen() {
               <figure className="signature-on-file">
                 {/* eslint-disable-next-line @next/next/no-img-element -- a data URL; there is nothing for next/image to optimise. */}
                 <img src={profile.image} alt={`${profile.name}'s signature`} />
-                <figcaption>{profile.name}</figcaption>
+                <figcaption>
+                  {profile.name} · {ORDINATION_SIGNER_ROLE_LABEL[profile.role]}
+                </figcaption>
               </figure>
             ) : (
               <p className="note">
-                None yet. Draw one below. Only parish priests sign the diocese&rsquo;s form, so
-                only they need one.
+                None yet. Draw one below. The diocese&rsquo;s form is signed by up to three
+                parish priests and one parish deacon, so only they need one.
               </p>
             )}
             {saved ? <p className="note">Saved. It will be used on everything you sign from now on.</p> : null}
@@ -128,6 +138,26 @@ export function SignatureScreen() {
               <input className="input" value={name} onChange={(event) => setName(event.target.value)} />
               <span className="camp-field__hint">e.g. Fr. Mina Ibrahim</span>
             </label>
+            <div className="camp-field">
+              <span className="camp-field__label">You sign as</span>
+              <div className="choice">
+                {ORDINATION_SIGNER_ROLES.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={role === option ? 'choice__opt is-on' : 'choice__opt'}
+                    aria-pressed={role === option}
+                    onClick={() => setRole(option)}
+                  >
+                    <span className="choice__name">{ORDINATION_SIGNER_ROLE_LABEL[option]}</span>
+                  </button>
+                ))}
+              </div>
+              <span className="camp-field__hint">
+                Priests sign on the PARISH PRIEST(S) lines, the deacon on the PARISH DEACON/HEAD
+                of DIACONATE MINISTRY line.
+              </span>
+            </div>
             <SignaturePad ref={pad} onChange={setBlank} />
             <p className="ordination-actions">
               <button type="button" className="button" disabled={saving || blank} onClick={() => void save()}>

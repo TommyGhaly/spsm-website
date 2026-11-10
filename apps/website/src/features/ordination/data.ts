@@ -205,7 +205,7 @@ export async function readSignatureProfile(uid: string): Promise<OrdinationSigna
 }
 
 /**
- * Every priest with a signature on file, so whoever prepares a nomination can
+ * Every priest and deacon with a signature on file, so whoever prepares a nomination can
  * put any of them on it. The rules let anybody with the screen read them all.
  */
 export async function listSignatureProfiles(): Promise<WithId<OrdinationSignatureProfile>[]> {
@@ -218,10 +218,11 @@ export async function listSignatureProfiles(): Promise<WithId<OrdinationSignatur
 
 export async function saveSignatureProfile(
   uid: string,
-  input: Pick<OrdinationSignatureProfile, 'name' | 'image'>,
+  input: Pick<OrdinationSignatureProfile, 'name' | 'role' | 'image'>,
 ): Promise<void> {
   await setDoc(doc(db(), COLLECTIONS.ordinationSignatures, uid), {
     name: input.name,
+    role: input.role,
     image: input.image,
     updatedAt: serverTimestamp(),
   });

@@ -301,7 +301,7 @@ export function NominationScreen() {
               <span className="camp-field__label">Father of confession</span>
               <input
                 className="input"
-                placeholder="e.g. Fr. Mina"
+                placeholder="e.g. Fr. Youhanna"
                 value={nominee.fatherOfConfession}
                 onChange={(event) => setNominee({ fatherOfConfession: event.target.value })}
               />
