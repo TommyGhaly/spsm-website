@@ -180,6 +180,23 @@ export function watchPendingForProgram(
 }
 
 /**
+ * How many photographs are waiting, watched — for the badge on "Edit this page".
+ *
+ * The queue itself lives in the editing panel's Photos tab, so with editing off
+ * nothing on the page would say anything was waiting. This is that signal, and
+ * nothing more: no titles, no second round trip. It listens to the same query as
+ * `watchPendingForProgram`, which the SDK shares, so opening the panel while this
+ * is running costs no second listen.
+ */
+export function watchPendingCount(
+  programId: string,
+  onCount: (count: number) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  return onSnapshot(pendingQuery(programId), (snapshot) => onCount(snapshot.size), onError);
+}
+
+/**
  * Attach the level's title to each item.
  *
  * One `in` query per ten ids rather than one read per item: a queue of a hundred

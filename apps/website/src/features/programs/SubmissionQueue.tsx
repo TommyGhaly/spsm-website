@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   flattenGalleryTree,
   submissionTargets,
@@ -34,8 +35,14 @@ import { Icon } from '@/components/Icon';
 /**
  * The photographs parishioners have sent to this ministry, awaiting a decision.
  *
- * Rendered on a ministry's own page — `/events/summercamp` — and only for
- * somebody who administers it. Tommy asked for it there rather than on a screen
+ * Rendered on a ministry's own page — `/events/summercamp` — inside the editing
+ * panel's **Photos** tab, and only for somebody who administers it. It used to be
+ * the last section of the page, outside edit mode; Tommy asked for it in the
+ * top-level edits instead, to *"ditch the process of having to scroll to the very
+ * bottom"*. With editing off, the pending count rides on the "Edit this page"
+ * pill (see `EditToggle`), so photographs waiting are still announced without
+ * anybody pressing a button they had no reason to press.
+ * Tommy asked for it there rather than on a screen
  * of its own: *"at the programs top level will have the photo requests for the
  * admins"*. There is no `/admin` any more and this section is edited in place, so
  * a queue anywhere else would be the one exception.
@@ -300,11 +307,11 @@ export function SubmissionQueue({
   }
 
   return (
-    <section className="review-panel" aria-labelledby="queue-title">
+    <section className="review-panel review-panel--inset" aria-labelledby="queue-title">
       <div className="review-panel__head">
-        <h2 id="queue-title" className="gallery-title gallery-title--small">
-          Photographs sent to {program.name}
-        </h2>
+        <h3 id="queue-title" className="designer__label">
+          Photographs waiting for approval
+        </h3>
         {/*
           The count as a badge rather than only in the sentence below, because it
           is the one number somebody opening this page came for. Zero keeps the
@@ -382,7 +389,12 @@ export function SubmissionQueue({
         </>
       )}
 
-      {viewed && (
+      {/*
+        Portaled to the body: this section lives inside the editing column now,
+        whose scroll area would clip a fixed overlay — the same reason
+        `PictureManager` is mounted outside it.
+      */}
+      {viewed && createPortal(
         <ReviewViewer
           item={viewed}
           position={at + 1}
@@ -407,7 +419,8 @@ export function SubmissionQueue({
             setViewing(shown.length > 1 ? stepFrom(at, 1) : null);
             void act(viewed, 'refuse', viewed.media.programEventId);
           }}
-        />
+        />,
+        document.body,
       )}
     </section>
   );
@@ -427,9 +440,9 @@ const REFUSED_MESSAGE =
  *
  * It sits above the rows rather than floating over them. A bar pinned to the
  * foot of the window is the fashionable answer and is wrong here: this section
- * lives at the bottom of a long public page, so a floating bar would hang over
- * the gallery while somebody scrolled it, and the queue is short enough that the
- * controls are on screen with the first rows anyway.
+ * lives in the editing column, so a floating bar would hang over the page beside
+ * it, and the queue is short enough that the controls are on screen with the
+ * first rows anyway.
  *
  * ## Everything is stated as a count
  *

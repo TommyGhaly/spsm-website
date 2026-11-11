@@ -14915,6 +14915,21 @@ button.sched-month__entry:focus-visible {
   border-top: 1px solid var(--color-rule, #e0cac3);
 }
 
+/*
+ * In the editing column's Photos tab rather than at the foot of the page, so the
+ * rule and the section gap that set it apart from the gallery come off — the tab
+ * is what sets it apart now.
+ */
+.review-panel--inset {
+  margin: 0 0 var(--space-lg, 1.5rem);
+  padding-top: 0;
+  border-top: 0;
+}
+
+.review-panel--inset .review-panel__head h3 {
+  margin: 0;
+}
+
 .review-panel__head {
   display: flex;
   flex-wrap: wrap;
@@ -20833,6 +20848,24 @@ span.gallery-figure__frame {
   font-weight: 600;
   color: var(--color-ink, #1c1614);
   cursor: pointer;
+}
+
+/*
+ * Photographs waiting for approval, on the ministry page. The queue is inside the
+ * editing panel, so this is the only thing that says it has something in it.
+ * Same accent pill as `.review-panel__badge`, the count it summarises.
+ */
+.edit-toggle__badge {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 0.5em;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-accent, #992a21);
+  color: var(--color-ink-inverse, #f9efec);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.4;
+  text-align: center;
 }
 
 /* `.edit-toggle.is-on` was the pill's editing state, in accent red. `EditToggle`

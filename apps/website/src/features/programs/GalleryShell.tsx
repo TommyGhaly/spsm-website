@@ -109,7 +109,7 @@ import { SubmissionQueue } from './SubmissionQueue';
  * and they write the same field the same way — see the note at the top of
  * ./review.
  */
-import { setCaption } from './review';
+import { setCaption, watchPendingCount } from './review';
 import {
   MAX_BANDS,
   addBand,
@@ -557,6 +557,18 @@ function LevelView({
   const [managing, setManaging] = useState(false);
   /* The page column's tab — this page's details, its photographs, or what is inside it. */
   const [pageTab, setPageTab] = useState<'details' | 'photos' | 'inside'>('details');
+  /**
+   * Photographs waiting for approval, ministry page only. Drives the badge on
+   * "Edit this page" and the Photos tab's label — the queue itself is inside that
+   * tab, so with editing off this count is the only thing that says it is there.
+   */
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (node !== null || !admin.ready || !canEdit) return;
+    return watchPendingCount(program.id, setWaiting, (caught) => {
+      console.error('[galleries] could not count the queue:', caught);
+    });
+  }, [node, admin.ready, canEdit, program.id]);
   /** "All of them", held locally so the page redraws the instant it is switched. */
   const [allPictures, setAllPictures] = useState<boolean | null>(null);
   /**
@@ -1905,7 +1917,10 @@ function LevelView({
           <EditTabs
             tabs={[
               { id: 'details', label: 'Details' },
-              { id: 'photos', label: 'Photos' },
+              {
+                id: 'photos',
+                label: !node && waiting > 0 ? `Photos (${waiting} waiting)` : 'Photos',
+              },
               { id: 'inside', label: `${childLabel} (${children.length})` },
             ]}
             value={pageTab}
@@ -1971,6 +1986,19 @@ function LevelView({
             )}
             {pageTab === 'photos' && (
               <>
+            {/*
+              The approval queue, first in the tab, on the ministry page only.
+              It was the last section of the page, outside edit mode; Tommy asked
+              for it here so nobody has to scroll to the very bottom to clear it.
+              See the head of SubmissionQueue.tsx.
+
+              `refresh` rather than a local insert: an approved photograph's file
+              does not exist at the moment of approval, because the Function has
+              not copied it yet. Re-reading is what eventually draws it.
+            */}
+            {!node && (
+              <SubmissionQueue program={program} tree={level.tree} onDecided={refresh} />
+            )}
             <RandomizerPanel
               settings={randomizer}
               levels={children.map((child) => ({ id: child.id, title: child.title }))}
@@ -3172,23 +3200,6 @@ function LevelView({
           hiding the button on every gallery on the site.
         */}
 
-        {/*
-          The approval queue, on the ministry page only, and only for somebody
-          who administers it.
-
-          Last on the page and outside edit mode both, deliberately. It is not a
-          property of what the page shows — it is the parish's inbox — so it does
-          not belong in the properties column, and hiding it behind the edit
-          toggle would mean photographs waiting unseen for however long it takes
-          somebody to press a button they had no reason to press.
-
-          `refresh` rather than a local insert: an approved photograph's file does
-          not exist at the moment of approval, because the Function has not copied
-          it yet. Re-reading is what eventually draws it.
-        */}
-        {node === null && (
-          <SubmissionQueue program={program} tree={level.tree} onDecided={refresh} />
-        )}
       </PageBody>
 
       {open !== null && (
@@ -3200,7 +3211,7 @@ function LevelView({
         />
       )}
 
-      <EditToggle />
+      <EditToggle waiting={node === null ? waiting : 0} />
 
       {/*
         One panel, whatever is selected. The `title`/`kind` pair is what stops the

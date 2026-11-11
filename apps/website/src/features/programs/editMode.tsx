@@ -313,7 +313,16 @@ export function BodyEditingClass() {
  *
  * Renders nothing at all for a visitor. Not hidden with CSS: absent.
  */
-export function EditToggle() {
+export function EditToggle({
+  waiting = 0,
+}: {
+  /**
+   * Photographs waiting for approval. The queue lives in the editing panel's
+   * Photos tab, so with editing off this badge is what says anything is there.
+   * Only the ministry page passes it.
+   */
+  waiting?: number;
+} = {}) {
   const { allowed, on } = useEditMode();
   if (!allowed) return null;
 
@@ -334,11 +343,11 @@ export function EditToggle() {
    */
   if (on) return null;
 
-  return <EditStart />;
+  return <EditStart waiting={waiting} />;
 }
 
 /** The pill that starts editing. Separated only so `EditToggle` reads as a gate. */
-function EditStart() {
+function EditStart({ waiting }: { waiting: number }) {
   const { setOn } = useEditMode();
   return (
     <button
@@ -346,8 +355,18 @@ function EditStart() {
       className="edit-toggle"
       onClick={() => setOn(true)}
       aria-pressed={false}
+      aria-label={
+        waiting > 0
+          ? `Edit this page — ${waiting} ${waiting === 1 ? 'photograph' : 'photographs'} waiting for approval`
+          : undefined
+      }
     >
       Edit this page
+      {waiting > 0 && (
+        <span className="edit-toggle__badge" aria-hidden="true">
+          {waiting}
+        </span>
+      )}
     </button>
   );
 }
