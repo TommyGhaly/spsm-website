@@ -47,6 +47,13 @@ export function StaffOrders() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<DocOf<Order> | null>(null);
+  /*
+   * Orders this screen has sent a refund for, so the row shows it at once.
+   * The reload after a refund also brings back the `refund` record the
+   * Function writes, but until it lands the row would still offer Refund —
+   * and Square takes days, so somebody pressed it again.
+   */
+  const [requested, setRequested] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setList({ kind: 'loading' });
@@ -207,6 +214,7 @@ export function StaffOrders() {
             key={order.id}
             order={order}
             busy={busy.has(order.id)}
+            justRefunded={requested.has(order.id)}
             onAdvance={(to) => void advance(order, to)}
             onRefund={() => setRefunding(order)}
           />
@@ -218,6 +226,8 @@ export function StaffOrders() {
           order={refunding}
           onClose={() => setRefunding(null)}
           onDone={() => {
+            const id = refunding.id;
+            setRequested((was) => new Set(was).add(id));
             setRefunding(null);
             // Re-read here, unlike the fulfilment writes: a refund's `status`
             // is set by Square's webhook rather than by us, so the local copy
@@ -233,17 +243,28 @@ export function StaffOrders() {
 function OrderRow({
   order,
   busy,
+  justRefunded,
   onAdvance,
   onRefund,
 }: {
   order: DocOf<Order>;
   busy: boolean;
+  justRefunded: boolean;
   onAdvance: (to: FulfillmentStatus) => void;
   onRefund: () => void;
 }) {
   const placed = toDate(order.createdAt);
   const name = [order.buyerFirstName, order.buyerLastName].filter(Boolean).join(' ');
   const refunded = order.status === 'refunded';
+  /*
+   * Sent to Square, not finished. The Function records who asked and why the
+   * moment Square accepts it, but `status` only becomes `refunded` when the
+   * webhook says the money has gone back — often days later. In between the
+   * order is still `paid`, and without this the row looked untouched.
+   */
+  const refundPending = order.status === 'paid' && (justRefunded || Boolean(order.refund));
+  const requestedAt = order.refund ? toDate(order.refund.refundedAt) : null;
+  const requestedBy = order.refund?.refundedByEmail;
   const units = (order.lineItems ?? []).reduce((sum, line) => sum + (line.quantity || 0), 0);
   /*
    * The total's parts, the same split the metrics and the finance page use —
@@ -293,7 +314,7 @@ function OrderRow({
           </p>
         </div>
 
-        <StateTag order={order} />
+        <StateTag order={order} refundPending={refundPending} />
       </div>
 
       <ul className="bkorder__lines">
@@ -371,9 +392,19 @@ function OrderRow({
           </>
         )}
 
-        <button type="button" className="bkorder__refund" disabled={busy} onClick={onRefund}>
-          Refund
-        </button>
+        {refundPending ? (
+          <p className="bkorder__refunding" role="status">
+            <Icon name="check" size={14} /> Refund sent to Square
+            {requestedAt &&
+              ` ${requestedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+            {requestedBy && ` by ${requestedBy}`}. It shows as refunded once Square finishes,
+            usually within a few days. No need to press it again.
+          </p>
+        ) : (
+          <button type="button" className="bkorder__refund" disabled={busy} onClick={onRefund}>
+            Refund
+          </button>
+        )}
       </div>
       )}
     </li>
@@ -381,8 +412,9 @@ function OrderRow({
 }
 
 /** The one-word state, said plainly. */
-function StateTag({ order }: { order: DocOf<Order> }) {
+function StateTag({ order, refundPending }: { order: DocOf<Order>; refundPending: boolean }) {
   if (order.status === 'refunded') return <span className="bktag bktag--off">Refunded</span>;
+  if (refundPending) return <span className="bktag bktag--wait">Refund pending</span>;
   if (order.status === 'failed') return <span className="bktag bktag--off">Payment failed</span>;
   if (order.status === 'canceled') return <span className="bktag bktag--off">Cancelled</span>;
   if (order.status === 'pending') return <span className="bktag bktag--wait">Payment pending</span>;

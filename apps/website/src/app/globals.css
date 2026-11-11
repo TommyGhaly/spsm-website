@@ -25570,6 +25570,25 @@ body.is-editing:has(.inspector-col.is-dragging) {
   cursor: default;
 }
 
+/* In place of the Refund button once one has been sent: says it went, so
+   nobody presses it again while Square takes its days. */
+.bkorder__refunding {
+  flex: 1 1 16rem;
+  margin: 0 0 0 auto;
+  max-width: 32rem;
+  padding: 0.4rem 0.65rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  line-height: 1.4;
+  color: var(--color-ink, #2a2220);
+  background: color-mix(in srgb, var(--color-accent-strong, #6d4f28) 8%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+}
+
+.bkorder__refunding svg {
+  vertical-align: -2px;
+}
+
 /* ---- the state word ----------------------------------------------------- */
 
 .bktag {
@@ -26236,6 +26255,69 @@ body.is-editing:has(.inspector-col.is-dragging) {
  * second line instead of squeezing the tiles — the form is inside a card slot
  * about 12rem wide.
  */
+.bknew__pixfield {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.3rem 0;
+  border-radius: var(--radius-sm, 0.35rem);
+  transition: background 120ms ease;
+}
+
+.bknew__pixfield.is-over {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 7%, transparent);
+}
+
+.bknew__pixlabel {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-ink, #2a2220);
+}
+
+.bknew__pix:empty {
+  display: none;
+}
+
+/* The way in for photographs on the add form: a wide, worded drop zone, not a
+   bare "+" that nobody read as "photos go here". */
+.bknew__addpix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem 0.45rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.55rem 0.75rem;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-accent, #992a21);
+  background: color-mix(in srgb, var(--color-accent, #992a21) 4%, var(--color-paper, #fffefb));
+  border: 1.5px dashed color-mix(in srgb, var(--color-accent, #992a21) 55%, transparent);
+  border-radius: var(--radius-sm, 0.35rem);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.bknew__addpix:hover:not(:disabled),
+.bknew__pixfield.is-over .bknew__addpix {
+  background: color-mix(in srgb, var(--color-accent, #992a21) 10%, var(--color-paper, #fffefb));
+  border-color: var(--color-accent, #992a21);
+}
+
+.bknew__addpix:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bknew__addpixhint {
+  flex-basis: 100%;
+  font-weight: 400;
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
 .bknew__pix {
   display: flex;
   flex-wrap: wrap;

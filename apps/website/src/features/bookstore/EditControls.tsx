@@ -2136,6 +2136,13 @@ function NewProduct({
   const [pictures, setPictures] = useState<{ id: string; dataUrl: string }[]>([]);
   const [reading, setReading] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  /* Counted, not a flag — see `Pictures`: dragleave fires on every child. */
+  const [dragOver, setDragOver] = useState(0);
+  const acceptDrag = (event: ReactDragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return false;
+    event.preventDefault();
+    return true;
+  };
 
   const takePictures = async (files: readonly File[]) => {
     const chosen = files.filter((one) => one.type.startsWith('image/'));
@@ -2270,32 +2277,77 @@ function NewProduct({
         front of them, and making them add the book first and photograph it
         second was an extra step for no reason.
       */}
-      <span className="bknew__pix">
-        {pictures.map((picture, index) => (
-          <span className="bkpix__one" key={picture.id}>
-            <img src={picture.dataUrl} alt="" />
-            {index === 0 && <span className="bkpix__cover">cover</span>}
-            <button
-              type="button"
-              className="bkpix__del"
-              disabled={busy}
-              aria-label={`Remove picture ${index + 1}`}
-              title="Remove this picture"
-              onClick={() => setPictures((was) => was.filter((one) => one.id !== picture.id))}
-            >
-              ×
-            </button>
-          </span>
-        ))}
+      {/*
+        Labelled, and the add button says what it does. It was a bare "+" in a
+        dashed square, and a volunteer adding a book did not read that as the
+        place the photographs go.
+      */}
+      <div
+        className={`bknew__pixfield${dragOver > 0 ? ' is-over' : ''}`}
+        onDragEnter={(event) => {
+          if (acceptDrag(event)) setDragOver((n) => n + 1);
+        }}
+        onDragOver={acceptDrag}
+        onDragLeave={() => setDragOver((n) => Math.max(0, n - 1))}
+        onDrop={(event) => {
+          if (!acceptDrag(event)) return;
+          setDragOver(0);
+          if (reading || busy) return;
+          void takePictures(Array.from(event.dataTransfer.files));
+        }}
+      >
+        <span className="bknew__pixlabel">Photos</span>
+        <span className="bknew__pix">
+          {pictures.map((picture, index) => (
+            <span className="bkpix__one" key={picture.id}>
+              <img src={picture.dataUrl} alt="" />
+              {index === 0 && <span className="bkpix__cover">cover</span>}
+              <button
+                type="button"
+                className="bkpix__del"
+                disabled={busy}
+                aria-label={`Remove picture ${index + 1}`}
+                title="Remove this picture"
+                onClick={() => setPictures((was) => was.filter((one) => one.id !== picture.id))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </span>
         <button
           type="button"
-          className="bkpix__add"
+          className="bknew__addpix"
           disabled={reading || busy}
-          title="Add a picture"
-          aria-label="Add a picture to this new book"
           onClick={() => picker.current?.click()}
         >
-          {reading ? '…' : '+'}
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <circle cx="9" cy="10" r="1.6" />
+            <path d="M21 16l-5-5-8 8" />
+          </svg>
+          <span>
+            {reading
+              ? 'Reading…'
+              : dragOver > 0
+                ? 'Drop to add'
+                : pictures.length > 0
+                  ? 'Add another photo'
+                  : 'Add photos'}
+          </span>
+          {!reading && dragOver === 0 && (
+            <span className="bknew__addpixhint">or drag them here</span>
+          )}
         </button>
         <input
           ref={picker}
@@ -2308,7 +2360,7 @@ function NewProduct({
             if (files.length > 0) void takePictures(files);
           }}
         />
-      </span>
+      </div>
 
       <button
         type="button"
@@ -2327,8 +2379,7 @@ function NewProduct({
         Cancel
       </button>
       <p className="bknew__note">
-        Created in Square, which is where the price lives and what the till uses. The
-        picture goes on the card afterwards.
+        Created in Square, which is where the price lives and what the till uses.
       </p>
     </div>
   );
