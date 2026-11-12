@@ -1641,9 +1641,9 @@ service cloud.firestore {
      * `ordinationApplications` is shaped like `campServantRequests`: only the
      * `ordinationApply` Function creates one, because it checks the ordination
      * is open and an application must arrive pending, unanswered and
-     * unsigned. An admin may then change the review and nothing else — the
-     * nominee's details are what the family sent, and the packet the diocese
-     * receives should print exactly that.
+     * unsigned. An admin may then change the review, and may correct what
+     * the family sent — the nominee's details, the parents, the note and the
+     * rank — but never move it to another ordination.
      *
      * `ordinationSignatures/{id}` is one signature on file. Any admin may add
      * them, for anyone, and only whoever added one may change or delete it.
@@ -1669,8 +1669,13 @@ service cloud.firestore {
 
       allow update: if hasScreen('ordination')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'review', 'signatures', 'updatedAt', 'updatedBy'])
+             .hasOnly(['status', 'review', 'signatures', 'updatedAt', 'updatedBy',
+                       'rank', 'nominee', 'parents', 'submittedBy', 'submittedByEmail', 'message'])
         && request.resource.data.status in ['pending', 'approved', 'rejected']
+        && request.resource.data.rank in ['cantor', 'reader', 'subdeacon']
+        && request.resource.data.nominee is map
+        && request.resource.data.parents is list
+        && request.resource.data.parents.size() <= 2
         && request.resource.data.signatures is list
         // Three priests and one deacon; which is which the screen keeps to.
         && request.resource.data.signatures.size() <= 4;

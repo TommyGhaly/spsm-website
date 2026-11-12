@@ -24,8 +24,8 @@ import { asAnon, asSuper, createTestEnv } from './helpers.js';
  *
  * What these assert: the public can list the open ordinations and nothing
  * else; only the Function creates a nomination; an admin may change the review
- * and not what the family sent; and a priest's signature is theirs alone to
- * write.
+ * and correct what the family sent, but not which ordination it is for; and a
+ * priest's signature is theirs alone to write.
  */
 
 let env: RulesTestEnvironment;
@@ -182,14 +182,28 @@ describe('applications', () => {
     );
   });
 
-  it('refuse an admin changing what the family sent', async () => {
+  it('let an admin correct what the family sent, and the rank', async () => {
     const db = asPriest(env).firestore();
-    await assertFails(
+    await assertSucceeds(
       updateDoc(doc(db, 'ordinationApplications', 'app-1'), {
+        nominee: { ...application.nominee, name: 'Somebody Else' },
+        message: 'Corrected',
+        updatedAt: new Date(),
+        updatedBy: 'priest-1',
+      }),
+    );
+    await assertSucceeds(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { rank: 'subdeacon' }));
+  });
+
+  it('refuse a made-up rank, moving it to another ordination, or editing without the screen', async () => {
+    const db = asPriest(env).firestore();
+    await assertFails(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { rank: 'bishop' }));
+    await assertFails(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { ordinationId: 'ord-2' }));
+    await assertFails(
+      updateDoc(doc(asEveryOtherArea(env).firestore(), 'ordinationApplications', 'app-1'), {
         nominee: { ...application.nominee, name: 'Somebody Else' },
       }),
     );
-    await assertFails(updateDoc(doc(db, 'ordinationApplications', 'app-1'), { rank: 'subdeacon' }));
   });
 
   it('refuse a fifth signature (three priests and a deacon) and a status the screen never writes', async () => {

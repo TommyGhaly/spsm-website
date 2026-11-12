@@ -21,12 +21,17 @@ import {
   ordinationAccepting,
   ordinationRankLabel,
   ordinationTitle,
+  parseOrdinationDraft,
   splitOrdinationAnswer,
   tidyOrdinationAnswer,
   todayIn,
   validateOrdinationApproval,
+  validateOrdinationDraft,
   type Ordination,
   type OrdinationApplication,
+  type OrdinationApplicationDraft,
+  type OrdinationContact,
+  type OrdinationNominee,
   type OrdinationEmailKind,
   type OrdinationRank,
   type OrdinationSignature,
@@ -37,6 +42,7 @@ import {
   deleteApplication,
   deleteOrdination,
   listSignatureProfiles,
+  saveApplicationDetails,
   saveReview,
   updateOrdination,
   watchApplications,
@@ -83,7 +89,8 @@ import { useOrdinationAdmin, type OrdinationAdminSession } from './useOrdination
  *     signature; rejecting needs neither.
  *   - **Approved** ones can be printed one at a time, gain more signatures,
  *     or be moved back.
- *   - Any nomination, whatever its status, can be deleted.
+ *   - Any nomination, whatever its status, can have what the family sent
+ *     corrected — the rank included — or be deleted.
  *   - Nominations are listed by rank, and so is the **application**: each
  *     rank's own cover listing its approved nominees, then, per nominee, the
  *     requirements page carrying that nominee's own signatures and their
@@ -520,6 +527,7 @@ function Nomination({
   const [signatures, setSignatures] = useState<OrdinationSignature[]>(application.signatures);
   const [problems, setProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
 
   // A second admin's save arrives through the listener; take it unless this
   // card has been edited, in which case the person typing wins until they save.
@@ -644,7 +652,25 @@ function Nomination({
             </p>
           ) : null}
 
+          {editingDetails ? (
+            <DetailsEditor
+              application={application}
+              ordination={ordination}
+              signatures={signatures}
+              session={session}
+              onDone={() => setEditingDetails(false)}
+              onError={onError}
+            />
+          ) : (
+          <>
+          <p className="ordination-actions">
+            <button type="button" className="button button--ghost" onClick={() => setEditingDetails(true)}>
+              Edit details or rank
+            </button>
+          </p>
           <dl className="ordination-details">
+            <dt>Rank</dt>
+            <dd>{ordinationRankLabel(rank)}</dd>
             <dt>Address</dt>
             <dd>{nominee.address || '—'}</dd>
             <dt>Date of birth</dt>
@@ -665,10 +691,10 @@ function Nomination({
                   <dd>{[parent.name, parent.phone, parent.email].filter(Boolean).join(' · ')}</dd>
                 </div>
               ))}
-            {application.submittedBy ? (
+            {application.submittedBy || application.submittedByEmail ? (
               <>
                 <dt>Sent by</dt>
-                <dd>{application.submittedBy}</dd>
+                <dd>{[application.submittedBy, application.submittedByEmail].filter(Boolean).join(' · ')}</dd>
               </>
             ) : null}
             {application.message ? (
@@ -678,6 +704,8 @@ function Nomination({
               </>
             ) : null}
           </dl>
+          </>
+          )}
 
           {application.status !== 'rejected' ? (
             <>
@@ -890,6 +918,225 @@ function Nomination({
         </div>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * Correcting what the family sent, and the rank, from the admin screen.
+ *
+ * The same fields as the public form and the same checks, so a corrected
+ * nomination prints as cleanly as one that arrived right. The ordination it is
+ * for is not editable. Changing the rank keeps the parish's answers (the
+ * questions share their keys) and the signatures; an approved nomination whose
+ * new rank's page asks a question not yet answered goes back to waiting.
+ */
+function DetailsEditor({
+  application,
+  ordination,
+  signatures,
+  session,
+  onDone,
+  onError,
+}: {
+  application: WithId<OrdinationApplication>;
+  ordination: WithId<Ordination>;
+  signatures: OrdinationSignature[];
+  session: OrdinationAdminSession;
+  onDone: () => void;
+  onError: (message: string) => void;
+}) {
+  const [draft, setDraft] = useState<OrdinationApplicationDraft>(() => ({
+    ordinationId: application.ordinationId,
+    rank: application.rank,
+    nominee: { ...application.nominee },
+    // A subdeacon's nomination is stored without parents; the editor always has two lines.
+    parents: [0, 1].map((at) => ({ name: '', phone: '', email: '', ...application.parents[at] })),
+    submittedBy: application.submittedBy,
+    submittedByEmail: application.submittedByEmail,
+    message: application.message,
+  }));
+  const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const rank = (draft.rank || application.rank) as OrdinationRank;
+  const info = ORDINATION_RANK_INFO[rank];
+  const nominee = draft.nominee;
+  const age = ageOn(nominee.dateOfBirth, ordination.date);
+
+  const setNominee = (patch: Partial<OrdinationNominee>) => setDraft({ ...draft, nominee: { ...nominee, ...patch } });
+  const setParent = (index: number, patch: Partial<OrdinationContact>) =>
+    setDraft({ ...draft, parents: draft.parents.map((parent, at) => (at === index ? { ...parent, ...patch } : parent)) });
+
+  async function save() {
+    if (!session.uid) return;
+    const clean = parseOrdinationDraft(draft);
+    const problems = validateOrdinationDraft({ ...clean, ordinationId: application.ordinationId }, ordination.date);
+    setErrors(problems);
+    if (problems.length > 0 || !clean.rank) return;
+
+    let status: OrdinationStatus | undefined;
+    if (clean.rank !== application.rank && application.status === 'approved') {
+      const missing = validateOrdinationApproval(clean.rank, application.review?.answers ?? {}, signatures);
+      if (missing.length > 0) {
+        const ok = window.confirm(
+          `The ${ORDINATION_RANK_INFO[clean.rank].title.toLowerCase()}'s page asks questions this nomination has not answered yet, so it will move back to waiting. Continue?`,
+        );
+        if (!ok) return;
+        status = 'pending';
+      }
+    }
+
+    setSaving(true);
+    try {
+      await saveApplicationDetails(
+        application.id,
+        {
+          rank: clean.rank,
+          nominee: clean.nominee,
+          parents: ORDINATION_RANK_INFO[clean.rank].minor ? clean.parents : [],
+          submittedBy: clean.submittedBy,
+          submittedByEmail: clean.submittedByEmail,
+          message: clean.message,
+          ...(status ? { status } : {}),
+        },
+        session.uid,
+      );
+      onDone();
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="camp-step ordination-details-editor">
+      <h4>Edit details</h4>
+      {errors.length > 0 ? (
+        <div className="notice notice--warn">
+          <ul>
+            {errors.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <label className="camp-field">
+        <span className="camp-field__label">Rank</span>
+        <select
+          className="input"
+          value={rank}
+          onChange={(event) => setDraft({ ...draft, rank: event.target.value as OrdinationRank })}
+        >
+          {ORDINATION_RANKS.map((value) => (
+            <option key={value} value={value}>
+              {ordinationRankLabel(value)}
+            </option>
+          ))}
+        </select>
+        {rank !== application.rank ? (
+          <span className="camp-field__hint">
+            The parish&rsquo;s answers and signatures stay. Check the criteria answer — it names the rank.
+          </span>
+        ) : null}
+      </label>
+
+      <label className="camp-field">
+        <span className="camp-field__label">Full name</span>
+        <input className="input" autoComplete="off" value={nominee.name} onChange={(event) => setNominee({ name: event.target.value })} />
+      </label>
+      <label className="camp-field">
+        <span className="camp-field__label">Address</span>
+        <input className="input" value={nominee.address} onChange={(event) => setNominee({ address: event.target.value })} />
+      </label>
+      <div className="camp-grid">
+        <label className="camp-field">
+          <span className="camp-field__label">Date of birth</span>
+          <input type="date" className="input" value={nominee.dateOfBirth} onChange={(event) => setNominee({ dateOfBirth: event.target.value })} />
+          {age !== null ? (
+            <span className="camp-field__hint">
+              {age} on the day{age < info.minimumAge ? ` — younger than the ${info.minimumAge} the diocese asks for` : ''}
+            </span>
+          ) : null}
+        </label>
+        {info.minor ? (
+          <label className="camp-field">
+            <span className="camp-field__label">School grade</span>
+            <input className="input" value={nominee.schoolGrade} onChange={(event) => setNominee({ schoolGrade: event.target.value })} />
+          </label>
+        ) : (
+          <label className="camp-field">
+            <span className="camp-field__label">Level of study or professional position</span>
+            <input className="input" value={nominee.occupation} onChange={(event) => setNominee({ occupation: event.target.value })} />
+          </label>
+        )}
+        <label className="camp-field">
+          <span className="camp-field__label">Telephone</span>
+          <input type="tel" className="input" value={nominee.phone} onChange={(event) => setNominee({ phone: event.target.value })} />
+        </label>
+        <label className="camp-field">
+          <span className="camp-field__label">Email</span>
+          <input type="email" className="input" value={nominee.email} onChange={(event) => setNominee({ email: event.target.value })} />
+        </label>
+      </div>
+      <label className="camp-field">
+        <span className="camp-field__label">Father of confession (as the nominee gave it)</span>
+        <input
+          className="input"
+          value={nominee.fatherOfConfession}
+          onChange={(event) => setNominee({ fatherOfConfession: event.target.value })}
+        />
+      </label>
+
+      {info.minor
+        ? draft.parents.map((parent, index) => (
+            <div className="camp-grid" key={index}>
+              <label className="camp-field">
+                <span className="camp-field__label">Parent {index + 1} name</span>
+                <input className="input" value={parent.name} onChange={(event) => setParent(index, { name: event.target.value })} />
+              </label>
+              <label className="camp-field">
+                <span className="camp-field__label">Telephone</span>
+                <input type="tel" className="input" value={parent.phone} onChange={(event) => setParent(index, { phone: event.target.value })} />
+              </label>
+              <label className="camp-field">
+                <span className="camp-field__label">Email</span>
+                <input type="email" className="input" value={parent.email} onChange={(event) => setParent(index, { email: event.target.value })} />
+              </label>
+            </div>
+          ))
+        : null}
+
+      <div className="camp-grid">
+        <label className="camp-field">
+          <span className="camp-field__label">Sent by</span>
+          <input className="input" value={draft.submittedBy} onChange={(event) => setDraft({ ...draft, submittedBy: event.target.value })} />
+        </label>
+        <label className="camp-field">
+          <span className="camp-field__label">Sender&rsquo;s email</span>
+          <input
+            type="email"
+            className="input"
+            value={draft.submittedByEmail}
+            onChange={(event) => setDraft({ ...draft, submittedByEmail: event.target.value })}
+          />
+        </label>
+      </div>
+      <label className="camp-field">
+        <span className="camp-field__label">Their note</span>
+        <textarea className="input" rows={3} value={draft.message} onChange={(event) => setDraft({ ...draft, message: event.target.value })} />
+      </label>
+
+      <p className="ordination-actions">
+        <button type="button" className="button" disabled={saving} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save details'}
+        </button>
+        <button type="button" className="button button--ghost" disabled={saving} onClick={onDone}>
+          Cancel
+        </button>
+      </p>
+    </section>
   );
 }
 

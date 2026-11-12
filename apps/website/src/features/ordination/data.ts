@@ -190,6 +190,28 @@ export async function saveReview(
   });
 }
 
+/**
+ * An admin's correction to what the family sent, and to the rank. The
+ * ordination it is for never changes. `status` goes along when changing the
+ * rank leaves an approval with questions the new rank's page asks unanswered.
+ */
+export async function saveApplicationDetails(
+  id: string,
+  input: Pick<
+    OrdinationApplication,
+    'rank' | 'nominee' | 'parents' | 'submittedBy' | 'submittedByEmail' | 'message'
+  > & { status?: OrdinationStatus },
+  uid: string,
+): Promise<void> {
+  const { status, ...details } = input;
+  await updateDoc(doc(db(), COLLECTIONS.ordinationApplications, id), {
+    ...details,
+    ...(status ? { status } : {}),
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+}
+
 export async function deleteApplication(id: string): Promise<void> {
   await deleteDoc(doc(db(), COLLECTIONS.ordinationApplications, id));
 }
