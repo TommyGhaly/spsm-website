@@ -299,6 +299,46 @@ describe('orders — the fulfilment exception', () => {
     );
   });
 
+  it('records who put an order aside, and lets Undo clear it', async () => {
+    const db = asBookstore(env).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'ready',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        readiedBy: { uid: 'bookstore-1', name: 'Volunteer', email: 'v@example.org', at: serverTimestamp() },
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'unfulfilled',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        readiedBy: null,
+      }),
+    );
+  });
+
+  it('refuses a put-aside attributed to somebody else, or on the wrong step', async () => {
+    const db = asBookstore(env).firestore();
+    await assertFails(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'ready',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        readiedBy: { uid: 'someone-else', name: 'X', email: 'x@example.org', at: serverTimestamp() },
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'collected',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        readiedBy: { uid: 'bookstore-1', name: 'V', email: 'v@example.org', at: serverTimestamp() },
+      }),
+    );
+  });
+
   it('refuses a completer on a step that is not completing it', async () => {
     const db = asBookstore(env).firestore();
     await assertFails(

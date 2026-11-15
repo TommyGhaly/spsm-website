@@ -229,6 +229,12 @@ export interface Order extends AuditFields {
    * was recorded.
    */
   fulfilledBy?: OrderFulfilledBy | null;
+  /**
+   * Who put the order aside for collection (or packed it for posting), and
+   * when. Set on the step to `ready`, cleared to null by Undo. Same rule as
+   * `fulfilledBy`. Absent on orders readied before it was recorded.
+   */
+  readiedBy?: OrderFulfilledBy | null;
 
   /** True when this is being posted rather than collected after Liturgy. */
   shipping: boolean;

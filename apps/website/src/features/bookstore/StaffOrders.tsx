@@ -125,10 +125,17 @@ export function StaffOrders() {
         await setFulfillment(order.id, to);
         const user = auth().currentUser;
         // What the write just stored, so the card names who did it without a re-read.
-        const completed: Partial<Pick<Order, 'fulfilledBy'>> =
-          to === 'collected' && user
-            ? { fulfilledBy: { uid: user.uid, name: user.displayName ?? '', email: user.email ?? '', at: new Date() } }
-            : {};
+        const stamp = user
+          ? { uid: user.uid, name: user.displayName ?? '', email: user.email ?? '', at: new Date() }
+          : null;
+        const completed: Partial<Pick<Order, 'readiedBy' | 'fulfilledBy'>> =
+          to === 'ready' && stamp
+            ? { readiedBy: stamp }
+            : to === 'unfulfilled'
+              ? { readiedBy: null }
+              : to === 'collected' && stamp
+                ? { fulfilledBy: stamp }
+                : {};
         /*
          * Patched locally rather than re-reading the collection.
          *
@@ -272,8 +279,6 @@ function OrderRow({
   const refundPending = order.status === 'paid' && (justRefunded || Boolean(order.refund));
   const requestedAt = order.refund ? toDate(order.refund.refundedAt) : null;
   const requestedBy = order.refund?.refundedByEmail;
-  const completedAt = order.fulfilledBy ? toDate(order.fulfilledBy.at) : null;
-  const completedBy = order.fulfilledBy?.name || order.fulfilledBy?.email;
   const units = (order.lineItems ?? []).reduce((sum, line) => sum + (line.quantity || 0), 0);
   /*
    * The total's parts, the same split the metrics and the finance page use —
@@ -376,13 +381,11 @@ function OrderRow({
         <span className="bkorder__ref">{order.id}</span>
       </p>
 
-      {order.fulfillment === 'collected' && completedBy && (
-        <p className="bkorder__done-by">
-          {order.shipping ? 'Posted' : 'Handed over'} by{' '}
-          <span title={order.fulfilledBy?.email}>{completedBy}</span>
-          {completedAt &&
-            ` on ${completedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-        </p>
+      {order.fulfillment !== 'unfulfilled' && (
+        <StepBy label={order.shipping ? 'Packed' : 'Put aside'} stamp={order.readiedBy} />
+      )}
+      {order.fulfillment === 'collected' && (
+        <StepBy label={order.shipping ? 'Posted' : 'Handed over'} stamp={order.fulfilledBy} />
       )}
 
       {actionable && (
@@ -426,6 +429,19 @@ function OrderRow({
       </div>
       )}
     </li>
+  );
+}
+
+/** "Put aside by Jane Smith on Nov 15" — nothing at all when it wasn't recorded. */
+function StepBy({ label, stamp }: { label: string; stamp: Order['fulfilledBy'] }) {
+  const who = stamp?.name || stamp?.email;
+  if (!stamp || !who) return null;
+  const at = toDate(stamp.at);
+  return (
+    <p className="bkorder__done-by">
+      {label} by <span title={stamp.email}>{who}</span>
+      {at && ` on ${at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+    </p>
   );
 }
 

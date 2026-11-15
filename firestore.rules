@@ -892,24 +892,37 @@ service cloud.firestore {
       // `bookstore` and not `finance`: marking a parcel collected is running
       // the shop, not reading its books. The treasurer sees this order — the
       // read rule above admits them — and cannot advance it.
+      // A staff stamp — who did a step, and when. The uid is pinned to the
+      // caller and the time to the server's clock: a name that could be
+      // written freely would be a name nobody could trust.
+      function stampedByCaller(stamp) {
+        return stamp is map
+          && stamp.keys().hasOnly(['uid', 'name', 'email', 'at'])
+          && stamp.uid == request.auth.uid
+          && stamp.name is string && stamp.name.size() <= 200
+          && stamp.email is string && stamp.email.size() <= 320
+          && stamp.at == request.time;
+      }
+      function changes(field) {
+        return field in request.resource.data.diff(resource.data).affectedKeys();
+      }
+
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['fulfillment', 'updatedAt', 'updatedBy', 'fulfilledBy'])
+             .hasOnly(['fulfillment', 'updatedAt', 'updatedBy', 'readiedBy', 'fulfilledBy'])
         && request.resource.data.fulfillment in ['unfulfilled', 'ready', 'collected']
         && request.resource.data.updatedBy == request.auth.uid
-        // Who completed it. Only alongside marking it collected, only as the
-        // caller, and only at the server's time — a name that could be
-        // written freely would be a name nobody could trust.
-        && (!('fulfilledBy' in request.resource.data.diff(resource.data).affectedKeys())
+        // Who put it aside (or packed it): set on the step to `ready`, and
+        // cleared by Undo back to `unfulfilled`.
+        && (!changes('readiedBy')
+            || (request.resource.data.fulfillment == 'ready'
+                && stampedByCaller(request.resource.data.readiedBy))
+            || (request.resource.data.fulfillment == 'unfulfilled'
+                && request.resource.data.readiedBy == null))
+        // Who completed it: only on the step to `collected`.
+        && (!changes('fulfilledBy')
             || (request.resource.data.fulfillment == 'collected'
-                && request.resource.data.fulfilledBy is map
-                && request.resource.data.fulfilledBy.keys().hasOnly(['uid', 'name', 'email', 'at'])
-                && request.resource.data.fulfilledBy.uid == request.auth.uid
-                && request.resource.data.fulfilledBy.name is string
-                && request.resource.data.fulfilledBy.name.size() <= 200
-                && request.resource.data.fulfilledBy.email is string
-                && request.resource.data.fulfilledBy.email.size() <= 320
-                && request.resource.data.fulfilledBy.at == request.time));
+                && stampedByCaller(request.resource.data.fulfilledBy)));
     }
 
     // ---- bookstore statistics ---------------------------------------------

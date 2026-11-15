@@ -72,8 +72,8 @@ export async function listOrders(): Promise<DocOf<Order>[]> {
 /**
  * Move an order along: unfulfilled → ready → collected.
  *
- * The only field a client may change on an order, along with `fulfilledBy` —
- * who completed it — on the step to `collected`. `firestore.rules` enforces
+ * The only field a client may change on an order, along with who did each
+ * step: `readiedBy` on the step to `ready`, `fulfilledBy` on `collected`. `firestore.rules` enforces
  * that with a `hasOnly` on the affected keys, so a write that tried to carry
  * `status` or `total` alongside would be refused entirely rather than partially
  * applied — see tests/rules/bookstore.test.ts.
@@ -89,18 +89,22 @@ export async function setFulfillment(orderId: string, fulfillment: FulfillmentSt
     // The rule requires this to equal the caller's uid, so a write cannot be
     // attributed to somebody else.
     updatedBy: uid,
-    // Completing it records a name staff can read on the card later.
-    ...(fulfillment === 'collected'
-      ? {
-          fulfilledBy: {
-            uid,
-            name: (user.displayName ?? '').slice(0, 200),
-            email: (user.email ?? '').slice(0, 320),
-            at: serverTimestamp(),
-          },
-        }
-      : {}),
+    // Each step records a name staff can read on the card later: who put it
+    // aside, and who handed it over. Undo clears the first.
+    ...(fulfillment === 'ready' ? { readiedBy: staffStamp(uid, user) } : {}),
+    ...(fulfillment === 'unfulfilled' ? { readiedBy: null } : {}),
+    ...(fulfillment === 'collected' ? { fulfilledBy: staffStamp(uid, user) } : {}),
   });
+}
+
+/** Who is doing this, and when — the rule checks the uid and the time. */
+function staffStamp(uid: string, user: { displayName: string | null; email: string | null }) {
+  return {
+    uid,
+    name: (user.displayName ?? '').slice(0, 200),
+    email: (user.email ?? '').slice(0, 320),
+    at: serverTimestamp(),
+  };
 }
 
 /**
