@@ -267,6 +267,50 @@ describe('orders — the fulfilment exception', () => {
     );
   });
 
+  it('records who completed the order, as the caller and at the server time', async () => {
+    const db = asBookstore(env).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'collected',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        fulfilledBy: { uid: 'bookstore-1', name: 'Volunteer', email: 'v@example.org', at: serverTimestamp() },
+      }),
+    );
+  });
+
+  it('refuses a completion attributed to somebody else, or not at the server time', async () => {
+    const db = asBookstore(env).firestore();
+    await assertFails(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'collected',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        fulfilledBy: { uid: 'someone-else', name: 'X', email: 'x@example.org', at: serverTimestamp() },
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'collected',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        fulfilledBy: { uid: 'bookstore-1', name: 'X', email: 'x@example.org', at: new Date(0) },
+      }),
+    );
+  });
+
+  it('refuses a completer on a step that is not completing it', async () => {
+    const db = asBookstore(env).firestore();
+    await assertFails(
+      updateDoc(doc(db, 'orders/order-1'), {
+        fulfillment: 'ready',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'bookstore-1',
+        fulfilledBy: { uid: 'bookstore-1', name: 'V', email: 'v@example.org', at: serverTimestamp() },
+      }),
+    );
+  });
+
   /*
    * The reason `allow write: if false` was there in the first place. Packing a
    * parcel is not the same permission as saying the parcel was paid for.

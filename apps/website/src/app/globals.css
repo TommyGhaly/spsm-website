@@ -25561,6 +25561,19 @@ body.is-editing:has(.inspector-col.is-dragging) {
   overflow-wrap: anywhere;
 }
 
+/* Who completed the order — the name staff ask about when a parcel goes missing. */
+.bkorder__done-by {
+  margin: var(--space-xs, 0.4rem) 0 0;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-micro, 0.8125rem);
+  color: var(--color-ink-faint, #6f5f5a);
+}
+
+.bkorder__done-by span {
+  color: var(--color-ink, #2a2220);
+  font-weight: 600;
+}
+
 .bkorder__actions {
   display: flex;
   flex-wrap: wrap;

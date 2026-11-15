@@ -894,9 +894,22 @@ service cloud.firestore {
       // read rule above admits them — and cannot advance it.
       allow update: if hasScreen('bookstore')
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['fulfillment', 'updatedAt', 'updatedBy'])
+             .hasOnly(['fulfillment', 'updatedAt', 'updatedBy', 'fulfilledBy'])
         && request.resource.data.fulfillment in ['unfulfilled', 'ready', 'collected']
-        && request.resource.data.updatedBy == request.auth.uid;
+        && request.resource.data.updatedBy == request.auth.uid
+        // Who completed it. Only alongside marking it collected, only as the
+        // caller, and only at the server's time — a name that could be
+        // written freely would be a name nobody could trust.
+        && (!('fulfilledBy' in request.resource.data.diff(resource.data).affectedKeys())
+            || (request.resource.data.fulfillment == 'collected'
+                && request.resource.data.fulfilledBy is map
+                && request.resource.data.fulfilledBy.keys().hasOnly(['uid', 'name', 'email', 'at'])
+                && request.resource.data.fulfilledBy.uid == request.auth.uid
+                && request.resource.data.fulfilledBy.name is string
+                && request.resource.data.fulfilledBy.name.size() <= 200
+                && request.resource.data.fulfilledBy.email is string
+                && request.resource.data.fulfilledBy.email.size() <= 320
+                && request.resource.data.fulfilledBy.at == request.time));
     }
 
     // ---- bookstore statistics ---------------------------------------------

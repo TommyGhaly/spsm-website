@@ -219,6 +219,16 @@ export interface Order extends AuditFields {
 
   status: OrderStatus;
   fulfillment: FulfillmentStatus;
+  /**
+   * Who marked the order collected (handed over, or posted), and when.
+   *
+   * `updatedBy` is only the last writer, a bare uid, and changes with every
+   * press. This is the name staff read on the card. Written by the same client
+   * write that moves `fulfillment` to `collected`; the rule pins `uid` to the
+   * caller and `at` to the server clock. Absent on orders completed before it
+   * was recorded.
+   */
+  fulfilledBy?: OrderFulfilledBy | null;
 
   /** True when this is being posted rather than collected after Liturgy. */
   shipping: boolean;
@@ -270,6 +280,14 @@ export interface Order extends AuditFields {
    * erase a real refund on a retry. See the note there.
    */
   refund?: OrderRefund | null;
+}
+
+export interface OrderFulfilledBy {
+  uid: string;
+  /** The staff member's display name from sign-in. Empty when the account has none. */
+  name: string;
+  email: string;
+  at: Timestamped;
 }
 
 export interface OrderRefund {

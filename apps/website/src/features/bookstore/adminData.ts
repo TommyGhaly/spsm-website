@@ -72,14 +72,16 @@ export async function listOrders(): Promise<DocOf<Order>[]> {
 /**
  * Move an order along: unfulfilled → ready → collected.
  *
- * The only field a client may change on an order. `firestore.rules` enforces
+ * The only field a client may change on an order, along with `fulfilledBy` —
+ * who completed it — on the step to `collected`. `firestore.rules` enforces
  * that with a `hasOnly` on the affected keys, so a write that tried to carry
  * `status` or `total` alongside would be refused entirely rather than partially
  * applied — see tests/rules/bookstore.test.ts.
  */
 export async function setFulfillment(orderId: string, fulfillment: FulfillmentStatus): Promise<void> {
-  const uid = auth().currentUser?.uid;
-  if (!uid) throw new Error('Your session has expired. Sign in again.');
+  const user = auth().currentUser;
+  const uid = user?.uid;
+  if (!user || !uid) throw new Error('Your session has expired. Sign in again.');
 
   await updateDoc(doc(db(), COLLECTIONS.orders, orderId), {
     fulfillment,
@@ -87,6 +89,17 @@ export async function setFulfillment(orderId: string, fulfillment: FulfillmentSt
     // The rule requires this to equal the caller's uid, so a write cannot be
     // attributed to somebody else.
     updatedBy: uid,
+    // Completing it records a name staff can read on the card later.
+    ...(fulfillment === 'collected'
+      ? {
+          fulfilledBy: {
+            uid,
+            name: (user.displayName ?? '').slice(0, 200),
+            email: (user.email ?? '').slice(0, 320),
+            at: serverTimestamp(),
+          },
+        }
+      : {}),
   });
 }
 

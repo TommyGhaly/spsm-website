@@ -121,7 +121,14 @@ export function StaffOrders() {
       setBusy((current) => new Set(current).add(order.id));
       try {
         const { setFulfillment } = await import('./adminData');
+        const { auth } = await import('@/lib/auth');
         await setFulfillment(order.id, to);
+        const user = auth().currentUser;
+        // What the write just stored, so the card names who did it without a re-read.
+        const completed: Partial<Pick<Order, 'fulfilledBy'>> =
+          to === 'collected' && user
+            ? { fulfilledBy: { uid: user.uid, name: user.displayName ?? '', email: user.email ?? '', at: new Date() } }
+            : {};
         /*
          * Patched locally rather than re-reading the collection.
          *
@@ -136,7 +143,7 @@ export function StaffOrders() {
             ? {
                 kind: 'ready',
                 orders: current.orders.map((row) =>
-                  row.id === order.id ? { ...row, fulfillment: to } : row,
+                  row.id === order.id ? { ...row, ...completed, fulfillment: to } : row,
                 ),
               }
             : current,
@@ -265,6 +272,8 @@ function OrderRow({
   const refundPending = order.status === 'paid' && (justRefunded || Boolean(order.refund));
   const requestedAt = order.refund ? toDate(order.refund.refundedAt) : null;
   const requestedBy = order.refund?.refundedByEmail;
+  const completedAt = order.fulfilledBy ? toDate(order.fulfilledBy.at) : null;
+  const completedBy = order.fulfilledBy?.name || order.fulfilledBy?.email;
   const units = (order.lineItems ?? []).reduce((sum, line) => sum + (line.quantity || 0), 0);
   /*
    * The total's parts, the same split the metrics and the finance page use —
@@ -366,6 +375,15 @@ function OrderRow({
         {order.buyerPhone && <a href={`tel:${order.buyerPhone.replace(/[^\d+]/g, '')}`}>{order.buyerPhone}</a>}
         <span className="bkorder__ref">{order.id}</span>
       </p>
+
+      {order.fulfillment === 'collected' && completedBy && (
+        <p className="bkorder__done-by">
+          {order.shipping ? 'Posted' : 'Handed over'} by{' '}
+          <span title={order.fulfilledBy?.email}>{completedBy}</span>
+          {completedAt &&
+            ` on ${completedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+        </p>
+      )}
 
       {actionable && (
       <div className="bkorder__actions">
