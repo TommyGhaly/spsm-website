@@ -922,7 +922,15 @@ service cloud.firestore {
         // Who completed it: only on the step to `collected`.
         && (!changes('fulfilledBy')
             || (request.resource.data.fulfillment == 'collected'
-                && stampedByCaller(request.resource.data.fulfilledBy)));
+                && stampedByCaller(request.resource.data.fulfilledBy)))
+        // And the step cannot be taken WITHOUT the name. Optional stamps let a
+        // tab still running the build from before they existed hand an order
+        // over with no name on it (dq3zdYlj…, 2026-11-16). Required, that tab
+        // is refused and the page tells the volunteer to reload.
+        && (!changes('fulfillment')
+            || request.resource.data.fulfillment == 'unfulfilled'
+            || (request.resource.data.fulfillment == 'ready' && changes('readiedBy'))
+            || (request.resource.data.fulfillment == 'collected' && changes('fulfilledBy')));
     }
 
     // ---- bookstore statistics ---------------------------------------------

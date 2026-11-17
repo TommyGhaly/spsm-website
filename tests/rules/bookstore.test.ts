@@ -256,16 +256,39 @@ describe('bookstoreStats', () => {
 });
 
 describe('orders — the fulfilment exception', () => {
-  it('lets the shop mark an order collected', async () => {
+  it('lets the shop put an order aside', async () => {
     const db = asBookstore(env).firestore();
     await assertSucceeds(
       updateDoc(doc(db, 'orders/order-1'), {
         fulfillment: 'ready',
         updatedAt: serverTimestamp(),
         updatedBy: 'bookstore-1',
+        readiedBy: { uid: 'bookstore-1', name: 'Volunteer', email: 'v@example.org', at: serverTimestamp() },
       }),
     );
   });
+
+  /*
+   * What a tab still running the build from before the stamps existed sends.
+   * Accepted, it left an order handed over with no name on it (2026-11-16).
+   */
+  for (const fulfillment of ['ready', 'collected']) {
+    it(`refuses a step to ${fulfillment} with no name on it`, async () => {
+      // The seed is shared across the file, and the test above left order-1
+      // at `ready` — where a write to `ready` is no step at all.
+      await env.withSecurityRulesDisabled((context) =>
+        updateDoc(doc(context.firestore(), 'orders/order-1'), { fulfillment: 'unfulfilled', readiedBy: null }),
+      );
+      const db = asBookstore(env).firestore();
+      await assertFails(
+        updateDoc(doc(db, 'orders/order-1'), {
+          fulfillment,
+          updatedAt: serverTimestamp(),
+          updatedBy: 'bookstore-1',
+        }),
+      );
+    });
+  }
 
   it('records who completed the order, as the caller and at the server time', async () => {
     const db = asBookstore(env).firestore();

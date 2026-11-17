@@ -156,7 +156,17 @@ export function StaffOrders() {
             : current,
         );
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'That change was refused.');
+        const message = cause instanceof Error ? cause.message : '';
+        /*
+         * A refusal from the rules is nearly always a tab left open across a
+         * deploy: the rules moved on and this page's code did not. The raw
+         * "Missing or insufficient permissions" says nothing a volunteer can act on.
+         */
+        setError(
+          message.includes('permission-denied') || message.includes('insufficient permissions')
+            ? 'That change was refused. This page may be out of date: reload it and try again.'
+            : message || 'That change was refused.',
+        );
       } finally {
         setBusy((current) => {
           const next = new Set(current);

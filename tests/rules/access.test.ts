@@ -11,6 +11,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -773,6 +774,7 @@ describe('the bookstore grant', () => {
         fulfillment: 'ready',
         updatedAt: 1,
         updatedBy: 'bookstore-servant',
+        readiedBy: { uid: 'bookstore-servant', name: '', email: '', at: serverTimestamp() },
       }),
     );
   });
