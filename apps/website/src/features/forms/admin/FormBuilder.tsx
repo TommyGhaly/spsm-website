@@ -482,19 +482,9 @@ function Settings({
           <div className="field-row">
             <label className="field">
               <span>Base fee</span>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={(draft.payment.baseCents / 100).toFixed(2)}
-                onChange={(event) =>
-                  edit({
-                    payment: {
-                      ...draft.payment,
-                      baseCents: Math.round(Number(event.target.value) * 100) || 0,
-                    },
-                  })
-                }
+              <MoneyInput
+                cents={draft.payment.baseCents}
+                onChange={(baseCents) => edit({ payment: { ...draft.payment, baseCents } })}
               />
               <small>Charged on any submission. Set 0 to charge only for chosen options.</small>
             </label>
@@ -682,14 +672,9 @@ function FieldEditor({
           {paid && (
             <label className="field field--narrow">
               <span>Price each</span>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={(field.unitPriceCents / 100).toFixed(2)}
-                onChange={(event) =>
-                  onChange({ unitPriceCents: Math.round(Number(event.target.value) * 100) || 0 })
-                }
+              <MoneyInput
+                cents={field.unitPriceCents}
+                onChange={(unitPriceCents) => onChange({ unitPriceCents })}
               />
             </label>
           )}
@@ -703,6 +688,52 @@ function FieldEditor({
       <ConditionEditor field={field} earlier={earlier} onChange={onChange} />
     </div>
   );
+}
+
+/**
+ * A price box in dollars that stores cents.
+ *
+ * It keeps the text being typed as its own state. Deriving the box from
+ * `cents` on every keystroke (`(cents / 100).toFixed(2)`) reformats it mid-edit:
+ * typing "5" into "0.00" becomes "0.005", rounds back to "0.01", and the digit
+ * seems to vanish. Here the text only follows `cents` when it no longer means
+ * the same amount (an outside change), and is tidied to two places on blur.
+ */
+function MoneyInput({
+  cents,
+  onChange,
+  'aria-label': ariaLabel,
+}: {
+  cents: number;
+  onChange: (cents: number) => void;
+  'aria-label'?: string;
+}) {
+  const [text, setText] = useState(() => (cents / 100).toFixed(2));
+
+  useEffect(() => {
+    setText((current) => (toCents(current) === cents ? current : (cents / 100).toFixed(2)));
+  }, [cents]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      value={text}
+      onChange={(event) => {
+        const next = event.target.value;
+        if (!/^\d*\.?\d{0,2}$/.test(next)) return;
+        setText(next);
+        onChange(toCents(next));
+      }}
+      onFocus={(event) => event.target.select()}
+      onBlur={() => setText((cents / 100).toFixed(2))}
+    />
+  );
+}
+
+function toCents(text: string): number {
+  return Math.round(Number(text || 0) * 100) || 0;
 }
 
 function OptionsEditor({
@@ -744,15 +775,10 @@ function OptionsEditor({
             }}
           />
           {paid && (
-            <input
-              type="number"
-              min={0}
-              step="0.01"
+            <MoneyInput
               aria-label={`Price for ${option.label || `option ${index + 1}`}`}
-              value={(option.priceCents / 100).toFixed(2)}
-              onChange={(event) =>
-                setOption(index, { priceCents: Math.round(Number(event.target.value) * 100) || 0 })
-              }
+              cents={option.priceCents}
+              onChange={(priceCents) => setOption(index, { priceCents })}
             />
           )}
           <button
