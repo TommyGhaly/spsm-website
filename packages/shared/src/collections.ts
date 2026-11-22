@@ -205,6 +205,17 @@ export const COLLECTIONS = {
    */
   faults: 'faults',
   /**
+   * NFC tag events — one per `(visit, action)`, plus the markers that stop a
+   * redelivered payment trigger counting money twice. Written only by
+   * `functions/src/nfc.ts`; no client reads or writes them. TTL on `expiresAt`,
+   * NFC_EVENT_TTL_DAYS. See analytics/nfc.ts.
+   */
+  nfcEvents: 'nfcEvents',
+  /** NFC tag counts, `day-YYYY-MM-DD` / `month-YYYY-MM`. Read with the `nfc` grant. */
+  nfcStats: 'nfcStats',
+  /** Money attributed to an NFC tap, same keys. Needs `nfc` and `finance`. */
+  nfcRevenue: 'nfcRevenue',
+  /**
    * One ordination the parish is preparing: a rank and a date. Public to read,
    * because the nomination form lists the open ones to people with no account.
    * See `schema/ordination.ts`.

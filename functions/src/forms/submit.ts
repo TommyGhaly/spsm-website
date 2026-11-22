@@ -7,6 +7,7 @@ import {
   isFormUploadPath,
   identifySubmitter,
   keepsNoSubmissions,
+  parseNfcAttribution,
   parseFormDefinition,
   submissionAnswers,
   validateSubmission,
@@ -86,6 +87,8 @@ export const formSubmit = onRequest(
       answers?: unknown;
       cardToken?: unknown;
       verificationToken?: unknown;
+      /** The NFC tap the form was opened from, if any. See analytics/nfc.ts. */
+      nfc?: unknown;
     };
 
     const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
@@ -93,6 +96,8 @@ export const formSubmit = onRequest(
       ? body.answers
       : {}) as FormAnswers;
     const cardToken = typeof body.cardToken === 'string' ? body.cardToken : null;
+    // Malformed is the same as absent: statistics never fail a submission.
+    const nfc = parseNfcAttribution(body.nfc);
 
     if (!slug) {
       res.status(400).json({ errors: ['No form was named.'] });
@@ -261,6 +266,9 @@ export const formSubmit = onRequest(
         staffNote: null,
         totalCents,
         paymentId,
+        // Read by `onNfcFormSubmitted`, which counts the form and its payment
+        // against the tag. Left off entirely when there was no tap.
+        ...(nfc ? { nfc } : {}),
         submitterUid: null,
         submittedAt: FieldValue.serverTimestamp(),
       });

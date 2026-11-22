@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GIVE_ORIGIN, giveFormUrl, givingUrl } from './config';
+import { reportNfc } from '@/lib/nfc';
 
 /**
  * The give action: Tithe.ly's own hosted form, opened in an overlay on this page.
@@ -140,6 +141,9 @@ export function GiveButton({
         onClick={(event) => {
           // ⌘-click, middle-click, "open in new tab" — someone who asked for a
           // tab gets one, and gets the real URL because the href is real.
+          // Before the early return: a gift opened in a new tab is still a gift
+          // started from the tag, when there was one. See lib/nfc.ts.
+          reportNfc('giveTap');
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
 
           event.preventDefault();

@@ -19,6 +19,7 @@ import {
   isUsableAddress,
   looksLikeEmail,
   normalizeEmail,
+  parseNfcAttribution,
   mayMoveOrder,
   parseBookstoreConfig,
   shouldReturnSizes,
@@ -227,9 +228,13 @@ export const squareCheckout = onRequest(
       idempotencyKey?: unknown;
       /** A signed quote from `/api/shipping/quote`. Optional: absent means flat. */
       shippingOptionId?: unknown;
+      /** The NFC tap this basket came from, if any. See analytics/nfc.ts. */
+      nfc?: unknown;
     };
 
     const sourceId = typeof body.sourceId === 'string' ? body.sourceId : '';
+    // Malformed is the same as absent: statistics never fail a checkout.
+    const nfc = parseNfcAttribution(body.nfc);
     const email = typeof body.email === 'string' ? body.email.trim() : '';
     const shipping = body.fulfillment === 'ship';
     const idempotencyKey =
@@ -608,6 +613,13 @@ export const squareCheckout = onRequest(
         shippingCents: shipping ? postage.cents : 0,
         handlingCents: shipping ? postage.handling : 0,
         idempotencyKey,
+        /*
+         * The tag this purchase started from. Read once, by `onNfcOrderPaid`,
+         * when the order turns paid. Spread rather than written as null for the
+         * same reason `refund` below is left out: this write merges, and a
+         * repeated call must not erase what the first one recorded.
+         */
+        ...(nfc ? { nfc } : {}),
         /*
          * `refund` is deliberately NOT written here, not even as null.
          *

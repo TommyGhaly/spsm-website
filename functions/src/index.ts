@@ -214,6 +214,11 @@ export {
   onCampServantRequest,
 } from './notify/triggers.js';
 
+// NFC tag statistics: the endpoint every tap and step reports to, and the two
+// triggers that credit a tag with the order or the paid form it led to. See
+// packages/shared/src/analytics/nfc.ts for the model and nfc.ts for the writes.
+export { nfcEvent, onNfcOrderPaid, onNfcFormSubmitted } from './nfc.js';
+
 // Declared as secrets, not env vars: these are read from Secret Manager at
 // runtime and never appear in source, in git, or in a deployed bundle.
 const SQUARE_ACCESS_TOKEN = defineSecret('SQUARE_ACCESS_TOKEN');

@@ -1052,6 +1052,47 @@ service cloud.firestore {
         : (doc.slug is string && doc.slug.size() > 0 && doc.slug.size() <= 120 && doc.term == null);
     }
 
+    // ---- NFC tag statistics ----------------------------------------------
+
+    /*
+     * Every tap on a church tag, and every step after one.
+     *
+     * -----------------------------------------------------------------------
+     * Closed to every client, in both directions, unlike `bookstoreEvents`.
+     * The taps arrive through `/api/nfc/event` rather than as client writes,
+     * because two of the three places a tap is counted — the App Clip and the
+     * static fallback pages — have no Firestore SDK to write with. So nothing
+     * here needs to be writable, and nothing that holds a visit id needs to be
+     * readable. `functions/src/nfc.ts` writes with the Admin SDK.
+     * -----------------------------------------------------------------------
+     */
+    match /nfcEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    /*
+     * The counts: taps per tag, how each opened, and the steps after.
+     *
+     * The `nfc` grant, and nothing about a person in them — see
+     * packages/shared/src/analytics/nfc.ts. A plain `list` with no condition
+     * on the document, so the screens can ask for a range of ids.
+     */
+    match /nfcStats/{periodId} {
+      allow read: if hasScreen('nfc');
+      allow write: if false;
+    }
+
+    /*
+     * The money those taps led to — a separate collection *because* it is
+     * money. Rules grant documents, not fields, so the dollars could not sit
+     * beside the counts without reaching everybody who reads the counts. Both
+     * grants, then: whoever looks after the tags, who also keeps the books.
+     */
+    match /nfcRevenue/{periodId} {
+      allow read: if hasScreen('nfc') && hasScreen('finance');
+      allow write: if false;
+    }
+
     /*
      * The rolled-up numbers.
      *

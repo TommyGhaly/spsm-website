@@ -238,6 +238,24 @@ export const FINANCE_SOURCE_ROWS: readonly FinanceSourceRow[] = [
   },
 ] as const;
 
+/**
+ * The NFC tag statistics — taps per tag, App Clip / app / website, and the
+ * steps people took after. See packages/shared/src/analytics/nfc.ts.
+ *
+ * The money is named in the caveat because it is the one thing an
+ * administrator would assume came with the row and does not: `nfcRevenue` is
+ * read with this grant *and* Finance, so the tags can be looked after by
+ * somebody who is not shown the takings.
+ */
+export const AREA_NFC: AccessArea = {
+  key: 'nfc',
+  label: 'NFC tag statistics',
+  blurb:
+    'How many people tap each of the church’s tags, whether it opened the App Clip, the app or the website, and what they did next.',
+  caveat:
+    'Counts only — no names, no phones, nothing that says who tapped. What the taps led people to spend is shown only to somebody who also has Finance. Programming the stickers stays with the superadmin.',
+};
+
 export const AREA_FORMS: AccessArea = {
   key: 'forms',
   label: 'Forms',
@@ -327,6 +345,7 @@ export const ACCESS_AREAS: readonly AccessArea[] = [
   AREA_CONTENT,
   AREA_FORMS,
   AREA_FINANCE,
+  AREA_NFC,
   AREA_BOOKSTORE,
 ] as const;
 
@@ -358,6 +377,7 @@ export const SCREEN_AREAS: readonly (AccessArea & { key: AdminScreen })[] = [
   AREA_CONTENT,
   AREA_FORMS,
   AREA_FINANCE,
+  AREA_NFC,
   AREA_BOOKSTORE,
 ] as readonly (AccessArea & { key: AdminScreen })[];
 

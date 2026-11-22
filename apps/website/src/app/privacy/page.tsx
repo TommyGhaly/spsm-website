@@ -137,7 +137,7 @@ export const metadata: Metadata = {
  * the page shows; it is what the page shows *absent an override*, like every
  * other coded default on it.
  */
-const UPDATED = '2 September 2026';
+const UPDATED = '21 November 2026';
 
 export default async function PrivacyPage() {
   const parish = await getParishConfig();
@@ -200,7 +200,7 @@ export default async function PrivacyPage() {
               trackers, no social media pixels, and no third-party analytics service — not
               Google Analytics, not any other.
             </Editable>
-            <Editable slot="on-its-own-heading.more" as="p" prose>Two things happen without you doing anything:</Editable>
+            <Editable slot="on-its-own-heading.more" as="p" prose>Three things happen without you doing anything:</Editable>
             <ul>
               <Editable slot="on-its-own-heading.item-logs" as="li" prose>
                 <strong>Server logs.</strong> The site is served by Google Firebase Hosting,
@@ -217,6 +217,17 @@ export default async function PrivacyPage() {
                 sixteen-character identifier kept in your browser — not a name, not an email
                 address, and nothing that can be traced back to a person. The individual
                 records are deleted after ninety days; only the totals are kept.
+              </Editable>
+              <Editable slot="on-its-own-heading.item-nfc" as="li" prose>
+                <strong>NFC tag counts.</strong> When you tap one of the church&rsquo;s NFC
+                tags and it opens this site, the site counts the tap — which tag, whether you
+                are on an iPhone, an Android phone or something else — and, for the next half
+                hour in that browser tab, whether you went on to open a form, fill a basket,
+                give or pay, and how much a purchase came to. The tap is given a random
+                identifier that lives only in that tab and is gone when you close it. Nothing
+                about you is recorded: no name, no address, no network address, no location.
+                The individual records are deleted after ninety days; only the totals are kept.
+                Do Not Track turns it off.
               </Editable>
             </ul>
             <Editable slot="on-its-own-heading.foot" as="p" prose>

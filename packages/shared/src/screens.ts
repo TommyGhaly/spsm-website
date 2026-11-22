@@ -143,6 +143,17 @@ export const ADMIN_SCREENS = [
   /** Vehicle registrations from the car-park NFC tag. */
   'parking',
   /**
+   * The NFC tag statistics: how many people tap each tag, whether it opened
+   * the App Clip, the app or the website, and what they did next.
+   *
+   * Counts only, and counts about taps rather than people — see
+   * analytics/nfc.ts. **The money those taps led to is not this flag's.** It
+   * sits in `nfcRevenue`, which firestore.rules opens only to somebody who
+   * holds this *and* `finance`, so the volunteer looking after the tags sees
+   * which ones are used without seeing what the parish took.
+   */
+  'nfc',
+  /**
    * The servants' own rota — `servantEvents`.
    *
    * Writing it, not reading it: anybody signed in may read that collection,

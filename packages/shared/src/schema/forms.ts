@@ -1,4 +1,5 @@
 import type { AuditFields } from './common.js';
+import type { NfcAttribution } from '../analytics/nfc.js';
 
 /**
  * Parish forms: the definitions staff build, and what parishioners send back.
@@ -531,6 +532,8 @@ export interface FormSubmission {
   totalCents: number;
   /** Square's payment id once taken. Null on a free form or a failed charge. */
   paymentId: string | null;
+  /** The NFC tap the form was opened from, if any. See analytics/nfc.ts. */
+  nfc?: NfcAttribution;
 
   /** Set when a signed-in member submitted. Null for a guest, which is the norm. */
   submitterUid: string | null;

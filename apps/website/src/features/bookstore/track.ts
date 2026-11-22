@@ -46,6 +46,7 @@ import {
   type BookstoreEventKind,
   type NormalizedBookstoreEvent,
 } from '@spsm/shared';
+import { reportNfc } from '@/lib/nfc';
 
 const VISITOR_KEY = 'spsm.bookstore.visitor';
 const PARISH_TIME_ZONE = 'America/New_York';
@@ -262,6 +263,9 @@ function attachListeners(): void {
  * them can act on the failure.
  */
 export function track(input: Omit<BookstoreEventInput, 'visitor' | 'day'>): void {
+  // The same two moments are steps in an NFC visit — see lib/nfc.ts, which
+  // honours Do Not Track itself and does nothing without a tap behind it.
+  if (input.kind === 'cartAdd' || input.kind === 'checkoutStart') reportNfc(input.kind);
   if (!trackingAllowed()) return;
 
   const event = normalizeBookstoreEvent({

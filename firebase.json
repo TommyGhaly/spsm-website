@@ -16,6 +16,11 @@
         "function": "formSubmit"
       },
       {
+        "//nfc": "Every NFC tag tap reports here — from the App Clip, the app and the c/*.html fallback pages — and so does each step after one. Unauthenticated, shape-validated, fire-and-forget; see functions/src/nfc.ts. Above the /forms/** glob for the first-match reason the note at the top of this array gives.",
+        "source": "/api/nfc/event",
+        "function": "nfcEvent"
+      },
+      {
         "//forms-upload": "Issues a signed URL for one photograph attached to a form, and is the ONLY way bytes reach formUploads/ now: storage.rules refuses every client create there. It replaced an anonymous `allow create: if isImage()` rule whose only real wall was App Check enforcement on the Storage service — which had to come off on 2026-09-03 because it also refused every <img> on the public site. This endpoint verifies an App Check token in its own code, so that setting does not reach it. Above the /forms/** glob below for the same first-match reason as the entries around it.",
         "source": "/api/forms/upload-url",
         "function": "formUploadUrl"

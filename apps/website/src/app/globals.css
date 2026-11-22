@@ -42166,3 +42166,58 @@ body.is-camp-dragging {
   margin: 0 0 0.5rem;
   padding-left: 1.1rem;
 }
+
+/* ---- /admin/nfc ----------------------------------------------------------
+ * The NFC tag statistics. Everything else on that screen is the finance
+ * screen's own furniture (`fin__*`), on purpose: two report screens side by
+ * side in the same menu should read as one family. These are only the parts
+ * a report of counts needs and a report of money did not.
+ * ------------------------------------------------------------------------- */
+.nfc__platforms {
+  margin-top: var(--space-sm, 0.75rem);
+}
+/* Taps over the period: one bar per day (or month), drawn with divs because
+   it is a shape to glance at, not a chart to read values off — the hover
+   title carries the count. */
+.nfc__series {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 5rem;
+  margin-top: var(--space-md, 1.1rem);
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--color-rule, #e0cac3);
+}
+.nfc__seriesBar {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-accent, #992a21);
+  opacity: 0.8;
+}
+.nfc__seriesBar:hover {
+  opacity: 1;
+}
+/* Eight columns do not fit a phone; the table scrolls inside its own box
+   rather than pushing the page sideways. */
+.nfc__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.nfc__scroll .fin__table {
+  min-width: 36rem;
+}
+/* Each tag's share of every tap, under its name. */
+.nfc__share {
+  display: block;
+  height: 3px;
+  margin-top: 0.3rem;
+  border-radius: 2px;
+  background: var(--color-rule, #e0cac3);
+  overflow: hidden;
+}
+.nfc__share > span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent, #992a21);
+}

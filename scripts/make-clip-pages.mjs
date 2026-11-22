@@ -225,6 +225,55 @@ const RESOLVE_MAIN_SECTION = `
     })();
   </script>`;
 
+/**
+ * The tap, counted — the `web` path of the NFC tag statistics.
+ *
+ * Every other place a tap is counted has a build behind it; this page is a
+ * static file, so the counting is inline. It mints a visit (or keeps the one
+ * this tab already has for this tag, so a reload is not a second tap), posts
+ * the scan to `/api/nfc/event`, and leaves the visit in `sessionStorage` under
+ * `spsm.nfc` for `apps/website/src/lib/nfc.ts` to find once the person follows
+ * the button into the site. Links marked `data-nfc` report their step on the
+ * way out — `sendBeacon` first, because the page is being left.
+ *
+ * Do Not Track is honoured, and any failure is silent: this page's job is the
+ * button, not the statistic. The key, the record's shape and the thirty-minute
+ * window must agree with lib/nfc.ts and packages/shared/src/analytics/nfc.ts.
+ */
+function nfcScript(slug) {
+  return `
+  <script>
+    (function () {
+      try {
+        var dnt = navigator.doNotTrack || window.doNotTrack;
+        if (dnt === '1' || dnt === 'yes') return;
+        var KEY = 'spsm.nfc', WINDOW = 30 * 60 * 1000, now = Date.now(), nfc = null;
+        try {
+          var kept = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+          if (kept && kept.nfc && kept.nfc.slug === '${slug}' && now - kept.lastActive < WINDOW) nfc = kept.nfc;
+        } catch (e) {}
+        if (!nfc) {
+          var bytes = new Uint8Array(8);
+          crypto.getRandomValues(bytes);
+          var visit = Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+          var ua = navigator.userAgent;
+          nfc = { visit: visit, slug: '${slug}', path: 'web', platform: /android/i.test(ua) ? 'android' : /iphone|ipad|ipod/i.test(ua) ? 'ios' : 'web' };
+        }
+        try { sessionStorage.setItem(KEY, JSON.stringify({ nfc: nfc, lastActive: now })); } catch (e) {}
+        var send = function (action) {
+          var body = JSON.stringify({ visit: nfc.visit, slug: nfc.slug, path: nfc.path, platform: nfc.platform, action: action });
+          if (navigator.sendBeacon && navigator.sendBeacon('/api/nfc/event', body)) return;
+          fetch('/api/nfc/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+        };
+        send('scan');
+        Array.prototype.forEach.call(document.querySelectorAll('a[data-nfc]'), function (link) {
+          link.addEventListener('click', function () { send(link.getAttribute('data-nfc')); });
+        });
+      } catch (e) {}
+    })();
+  </script>`;
+}
+
 function page({ slug, title, blurb, body, action, sitePath, resolve }) {
   const banner = APP_STORE_ID
     ? `\n  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-clip-bundle-id=${CLIP_BUNDLE_ID}">`
@@ -314,12 +363,12 @@ function page({ slug, title, blurb, body, action, sitePath, resolve }) {
     <p class="lede">${escape(blurb)}</p>
     <p>${escape(body)}</p>
     <a class="action" id="action" href="${sitePath}">${escape(action)}</a>
-    <p class="app">On Android? <a href="${PLAY_URL}">Get SPSM Connect on Google Play</a>, and this tag opens the app.</p>
+    <p class="app">On Android? <a href="${PLAY_URL}" data-nfc="getApp">Get SPSM Connect on Google Play</a>, and this tag opens the app.</p>
     <footer>
       Coptic Orthodox Church, Wayland, Massachusetts ·
       <a href="/">spsmwayland.org</a>
     </footer>
-  </main>${resolve === 'mainSection' ? RESOLVE_MAIN_SECTION : ''}
+  </main>${resolve === 'mainSection' ? RESOLVE_MAIN_SECTION : ''}${nfcScript(slug)}
 </body>
 </html>
 `;

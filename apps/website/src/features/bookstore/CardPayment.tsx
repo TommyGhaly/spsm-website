@@ -7,6 +7,7 @@ import { squarePayments, type SquareCard } from './squareSdk';
 import { useSquareWallets, type WalletKind } from './useSquareWallets';
 import { WalletButtons } from './WalletButtons';
 import { useShippingQuote } from './useShippingQuote';
+import { nfcBody } from '@/lib/nfc';
 
 /**
  * The card form, and the request that charges it.
@@ -260,6 +261,8 @@ export function CardPayment({
           address: shipping ? address : undefined,
           idempotencyKey: idempotencyKey.current,
           ...(shipping && chosen ? { shippingOptionId: chosen.id } : {}),
+          // The NFC tag this basket came from, if any — see lib/nfc.ts.
+          ...nfcBody(),
         }),
       });
       /*

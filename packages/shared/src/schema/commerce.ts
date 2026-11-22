@@ -1,4 +1,5 @@
 import type { AuditFields, Publishable, Timestamped } from './common.js';
+import type { NfcAttribution } from '../analytics/nfc.js';
 
 /**
  * Bookstore.
@@ -167,6 +168,13 @@ export interface Order extends AuditFields {
   /** Square's order id. Also used as the Firestore doc id. */
   squareOrderId: string;
   squarePaymentId: string | null;
+
+  /**
+   * The NFC tap this order came from, when it came from one. Recorded by
+   * `squareCheckout` and read once, by the trigger that credits the money to
+   * the tag when the order turns `paid`. Absent on everything else.
+   */
+  nfc?: NfcAttribution;
 
   /** Purchaser. Null for a guest checkout, which is nearly all of them. */
   memberUid: string | null;

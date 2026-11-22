@@ -9,6 +9,7 @@ import { FormRenderer } from './FormRenderer';
 import { FormEmbed } from './FormEmbed';
 import { VehicleForm } from './VehicleForm';
 import { readFormBySlug, type WithId } from './data';
+import { reportNfc } from '@/lib/nfc';
 
 /**
  * Whichever form the URL names.
@@ -49,6 +50,8 @@ export function FormScreen() {
 
   useEffect(() => {
     const slug = slugFromPath(window.location.pathname);
+    // A step in an NFC visit, when this form was reached from a tag.
+    reportNfc('formOpen');
     if (!slug) {
       setState({ kind: 'missing' });
       return;

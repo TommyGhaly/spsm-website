@@ -21,6 +21,7 @@ import {
   type FormsPageConfig,
 } from '@spsm/shared';
 import { db } from '@/lib/firebase';
+import { nfcBody } from '@/lib/nfc';
 
 /**
  * Reading form definitions, and sending one back.
@@ -240,7 +241,8 @@ export async function submitForm(input: {
     response = await fetch('/api/forms/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      // The NFC tag this form was reached from, if any — see lib/nfc.ts.
+      body: JSON.stringify({ ...input, ...nfcBody() }),
     });
   } catch {
     // A network failure, not a rejection — worth saying differently, because

@@ -70,7 +70,7 @@ export interface AdminSection {
    * question "what are this person's sections", and the alternative is
    * `HeaderAuth` matching on `href`, which is a second list to keep in step.
    */
-  glyph: 'camp' | 'finance' | 'ordination';
+  glyph: 'camp' | 'finance' | 'ordination' | 'nfc';
 }
 
 /**
@@ -251,6 +251,24 @@ export function useAdminAccess(enabled = true): AdminAccess {
          * prevent, so the row is drawn from what they can actually see rather
          * than from the flag that would let them see it.
          */
+        /*
+         * The NFC tags: how often each is tapped, how it opened, and what
+         * followed. The flag alone draws the row — the money band on that
+         * screen is the part that also needs Finance, and the screen decides
+         * that for itself. See features/nfc/NfcScreen.tsx.
+         */
+        if (canAdminScreen(claims, screens, 'nfc')) {
+          sections.push({
+            href: '/admin/nfc',
+            title: 'NFC tags',
+            menuLabel: 'NFC tags',
+            glyph: 'nfc',
+            blurb:
+              'How often each of the church\u2019s tags is tapped, whether it opened the App Clip, ' +
+              'the app or the website, and what people did next.',
+          });
+        }
+
         const mine = financeSourcesFor(claims, screens, money);
         if (mine.length > 0) {
           sections.push({

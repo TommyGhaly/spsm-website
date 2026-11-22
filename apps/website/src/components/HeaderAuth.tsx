@@ -582,7 +582,21 @@ function PanelAdminLinks() {
 function DoorGlyph({ glyph }: { glyph: AdminSection['glyph'] }) {
   if (glyph === 'camp') return <CampGlyph />;
   if (glyph === 'ordination') return <OrdinationGlyph />;
+  if (glyph === 'nfc') return <NfcGlyph />;
   return <FinanceGlyph />;
+}
+
+/**
+ * Three widening arcs — the contactless mark, which is what a tag is to
+ * anybody holding a phone to one. Decorative, like its neighbours.
+ */
+function NfcGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M8 9.5a4 4 0 0 1 0 5M11.5 7a8 8 0 0 1 0 10M15 4.5a12 12 0 0 1 0 15" />
+    </svg>
+  );
 }
 
 /**

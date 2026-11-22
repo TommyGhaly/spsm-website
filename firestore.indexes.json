@@ -391,6 +391,13 @@
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "comment": "NFC tag events and the markers that stop a redelivered payment trigger crediting money twice. Working material like the bookstore's: the counts in nfcStats and nfcRevenue are the record. Deleted at expiresAt, NFC_EVENT_TTL_DAYS after they were written.",
+      "collectionGroup": "nfcEvents",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

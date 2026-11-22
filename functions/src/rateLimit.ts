@@ -120,6 +120,14 @@ export const BUDGETS = {
    * because emptying a camp's camera roll must not trip halfway through.
    */
   formUpload: 12,
+  /**
+   * An NFC tag tap, or a step after one. Fire-and-forget from the clip, the app
+   * and the fallback pages, so nobody waits on it. Generous for the reason the
+   * header gives: after the Liturgy the whole congregation is one address, and
+   * a hundred people tapping the bookstore tag inside a minute is the tag
+   * working. Each call is one batched write and nothing else.
+   */
+  nfcEvent: 240,
 
   // ── The address gate on authenticated endpoints ───────────────────────────
   /**
@@ -211,6 +219,8 @@ export const CAPS = {
   galleryUpload: 10,
   /** The form path's equivalent, and quieter — nobody sends a batch to a form. */
   formUpload: 5,
+  /** One small batched write per tap. Shedding loses a statistic, not a sale. */
+  nfcEvent: 5,
   /** Must not shed during a rush; a refused checkout is a lost sale. */
   squareCheckout: 20,
   shippingQuote: 10,
