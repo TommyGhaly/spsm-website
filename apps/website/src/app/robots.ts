@@ -38,8 +38,16 @@ export default function robots(): MetadataRoute.Robots {
        *
        * `/forms` itself stays crawlable. The hub is the page worth finding, and
        * it explains what each form is for before anybody opens one.
+       *
+       * `/c/` is the tags themselves — the fallback pages
+       * scripts/make-clip-pages.mjs writes. Each one counts a tap in an inline
+       * script, and a crawler that runs scripts would add taps nobody made to
+       * the NFC statistics. They are doorways with a canonical link elsewhere
+       * anyway, so nothing worth finding is lost. Apple reads
+       * apple-app-site-association, not these pages, so the App Clip and the
+       * app's links are untouched.
        */
-      disallow: ['/parking', '/welcome', '/form', '/forms/'],
+      disallow: ['/parking', '/welcome', '/form', '/forms/', '/c/'],
     },
     sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     host: SITE_ORIGIN,
