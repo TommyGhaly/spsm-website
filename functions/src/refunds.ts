@@ -3,6 +3,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { COLLECTIONS, type Order } from '@spsm/shared';
 import { callerOf, mayManageOrders } from './httpAuth.js';
 import { returnSizesIfDue } from './sizeStock.js';
+import { restockIfDue } from './stockHold.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import {
   SQUARE_ACCESS_TOKEN,
@@ -196,6 +197,8 @@ export const squareRefund = onRequest(
       if (restock) {
         try {
           await returnSizesIfDue(db, ref, 'refunded', { onlyIfAlready: true });
+          // Square's count too, which a refund does not touch on its own.
+          await restockIfDue(db, ref);
         } catch (cause) {
           console.error(`[refund] sizes not restocked for ${orderId}`, cause);
         }

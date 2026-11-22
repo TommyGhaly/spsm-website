@@ -41,6 +41,11 @@ export interface OrderEmailInput {
   buyerName?: string;
   /** True when the order is being delivered rather than collected. */
   shipping: boolean;
+  /**
+   * Paid in cash at the bookstore and handed over there and then — a sale a
+   * volunteer recorded. The receipt then says so instead of "collect it".
+   */
+  handedOver?: boolean;
   lines: readonly OrderEmailLine[];
   /** Order total in integer minor units. */
   total: number;
@@ -91,9 +96,11 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
   const money = (amount: number) => currencyFormat(amount, currency);
 
   // The one sentence the Square receipt cannot carry.
-  const fulfilment = input.shipping
-    ? 'Your order will be delivered to you. The church packs orders by hand, so allow a few days.'
-    : 'Your order will be waiting for you at the bookstore. You can collect it after any Liturgy.';
+  const fulfilment = input.handedOver
+    ? 'Paid in cash at the bookstore and handed over. Thank you.'
+    : input.shipping
+      ? 'Your order will be delivered to you. The church packs orders by hand, so allow a few days.'
+      : 'Your order will be waiting for you at the bookstore. You can collect it after any Liturgy.';
 
   /*
    * The name the order is filed under, on a collection order only.
@@ -104,7 +111,7 @@ export function buildOrderEmail(input: OrderEmailInput): MailDocument {
    * somebody ordered on behalf of a relative.
    */
   const filedUnder =
-    !input.shipping && input.buyerName ? `It is put aside under ${input.buyerName}.` : '';
+    !input.shipping && !input.handedOver && input.buyerName ? `It is put aside under ${input.buyerName}.` : '';
 
   /*
    * "Write to", never "reply to" — and the difference is not pedantry.

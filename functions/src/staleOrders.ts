@@ -1,4 +1,5 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { refreshStock, trackedDemand } from './stockHold.js';
 import { FieldValue, getFirestore, type Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, settleStaleOrder, shouldReturnSizes } from '@spsm/shared';
 import { CAPS, exclusive } from './rateLimit.js';
@@ -98,11 +99,14 @@ async function sweep(): Promise<void> {
         putBack?.();
         tx.update(doc.ref, {
           status: verdict,
+          ...(verdict !== 'paid' && order['stockHeld'] === true ? { stockHeld: false } : {}),
           ...(paymentId ? { squarePaymentId: paymentId } : {}),
           updatedAt: FieldValue.serverTimestamp(),
           updatedBy: null,
         });
       });
+      // Nothing was sold, so Square's unmoved count puts the held copies back.
+      if (verdict !== 'paid') await refreshStock(db, [...trackedDemand(doc.get('lineItems') ?? []).keys()]);
       console.info(`[stale] settled ${doc.id} as ${verdict} (payment ${paymentId ?? 'none'}).`);
     } catch (cause) {
       console.error(`[stale] could not settle ${doc.id}; will try again next run.`, cause);

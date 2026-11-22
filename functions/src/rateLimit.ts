@@ -157,6 +157,11 @@ export const BUDGETS = {
   /** Refunding. Money leaves the parish; nobody issues ten in a minute. */
   refund: 10,
   /**
+   * A volunteer ringing up cash sales at the table. A queue after Liturgy is
+   * a sale every few seconds at most; thirty a minute is that with room.
+   */
+  cashOrder: 30,
+  /**
    * Re-running a mirror or a rollup by hand. Each one is a full scan, so the
    * button is a button, not a poll. Paired with `exclusive()` below.
    */
@@ -228,6 +233,7 @@ export const CAPS = {
   /** Signed-in editing. A handful of volunteers, never a crowd. */
   bookstoreEdit: 10,
   refund: 5,
+  cashOrder: 5,
   /** Registering a phone. One tiny write; called once per app start. */
   pushRegister: 10,
   /** Deleting your own account. Rarer than a refund by a wide margin. */

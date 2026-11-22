@@ -153,8 +153,8 @@ describe('buildSquareOrder', () => {
       const reason = (line: object) => buildSquareOrder([{ slug: 'tee', quantity: 1, ...line }], clothes).rejected[0];
       expect(reason({})?.reason).toBe('no-size');
       expect(reason({ size: 'XS' })?.reason).toBe('no-size');
-      expect(reason({ size: 'L' })).toEqual({ slug: 'tee', reason: 'sold-out', size: 'L' });
-      expect(reason({ size: '2XL', quantity: 2 })).toEqual({ slug: 'tee', reason: 'not-enough', size: '2XL' });
+      expect(reason({ size: 'L' })).toEqual({ slug: 'tee', reason: 'sold-out', size: 'L', left: 0 });
+      expect(reason({ size: '2XL', quantity: 2 })).toEqual({ slug: 'tee', reason: 'not-enough', size: '2XL', left: 1 });
     });
 
     it('collapses a repeated product-and-size, but not two sizes', () => {

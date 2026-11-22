@@ -24,15 +24,20 @@ import {
   parseBookstoreConfig,
   shouldReturnSizes,
   sizeDemand,
+  stockRefusal,
   takeSizes,
   usableZip,
   verifyQuote,
   type BookstoreConfig,
+  type BuiltItem,
+  type Product,
+  type SquareOrderLine,
   type ShippingQuoteResponse,
 } from '@spsm/shared';
 import { callerOf } from './httpAuth.js';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { needsRetake, readSizeRetake, readSizeReturn } from './sizeStock.js';
+import { readStockHold, refreshStock, trackedDemand } from './stockHold.js';
 import {
   SQUARE_ACCESS_TOKEN,
   SQUARE_ENVIRONMENT,
@@ -102,7 +107,7 @@ const PARISH_EMAIL = defineString('PARISH_EMAIL', { default: '' });
  * with the page already showing the new figure. One extra document read on a
  * request that is already making two round trips to Square is not worth that.
  */
-async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<BookstoreConfig> {
+export async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<BookstoreConfig> {
   /*
    * The document wins outright when it exists; the deployed parameters are used
    * only when it does not.
@@ -151,6 +156,170 @@ async function bookstoreSettings(db: FirebaseFirestore.Firestore): Promise<Books
  */
 /** The one tax on an order, named so taxable lines can point at it. */
 const SALES_TAX_UID = 'sales-tax';
+
+/**
+ * The order lines with sales tax applied where the parish marked a product
+ * taxable, and the `taxes` to put on the order — empty when nothing is taxed.
+ * Which lines carry it is the product's flag, read from Firestore; the request
+ * has no say.
+ */
+export function withSalesTax(
+  lines: readonly SquareOrderLine[],
+  catalog: ReadonlyMap<string, Product>,
+  settings: BookstoreConfig,
+): { lines: SquareOrderLine[]; taxes: Record<string, unknown>[] } {
+  const byVariation = new Map(
+    [...catalog.values()].flatMap((product) =>
+      product.squareVariationId ? [[product.squareVariationId, product] as const] : [],
+    ),
+  );
+  const taxed = lines.map((line) =>
+    settings.taxRateBps > 0 && byVariation.get(line.catalog_object_id)?.taxable === true
+      ? { ...line, applied_taxes: [{ tax_uid: SALES_TAX_UID }] }
+      : line,
+  );
+  const taxing = taxed.some((line) => 'applied_taxes' in line);
+  return {
+    lines: taxed,
+    taxes: taxing
+      ? [
+          {
+            /*
+             * A real tax, not a fee, so it reaches Square's sales-tax reports.
+             * LINE_ITEM scope: it applies only to the lines that name it, which
+             * are the products marked taxable.
+             */
+            uid: SALES_TAX_UID,
+            name: 'Massachusetts sales tax',
+            percentage: taxPercentage(settings.taxRateBps),
+            type: 'ADDITIVE',
+            scope: 'LINE_ITEM',
+          },
+        ]
+      : [],
+  };
+}
+
+/** What a basket was short of when the hold was tried. `size` null: a tracked line. */
+export interface Held {
+  short: { slug: string; size: string | null; left: number }[];
+}
+
+/**
+ * Write the order — before any money moves — and take its stock, in one
+ * transaction.
+ *
+ * Clothing sizes come off the website's own counts; tracked lines come off the
+ * mirror of Square's (see stockHold.ts). Either running short refuses the
+ * whole basket and writes nothing, so two buyers cannot both pay for the last
+ * one: the second is told it has gone before their card or cash is taken.
+ *
+ * The same purchase arriving again — a double-tap, or a retry after a dropped
+ * connection — finds the order already written. Square hands back the same
+ * order id for the same key, so the document may already be paid, refunded,
+ * or marked ready by a volunteer; those are left exactly as they are, and only
+ * the buyer's details are refreshed. Stock already held is not held twice.
+ *
+ * Used by `squareCheckout` and `squareCashOrder`.
+ */
+export async function recordOrderAndHold(
+  db: FirebaseFirestore.Firestore,
+  orderRef: FirebaseFirestore.DocumentReference,
+  record: Record<string, unknown>,
+  items: readonly BuiltItem[],
+  { initial = {} }: { initial?: Record<string, unknown> } = {},
+): Promise<Held> {
+  const demand = sizeDemand(items);
+  const tracked = trackedDemand(items);
+  return db.runTransaction(async (tx) => {
+    const slugsWithSizes = [...new Set(demand.map((entry) => entry.slug))];
+    const productRefs = slugsWithSizes.map((slug) => db.collection(COLLECTIONS.products).doc(slug));
+    const [existing, ...productSnaps] = await Promise.all([
+      tx.get(orderRef),
+      ...productRefs.map((ref) => tx.get(ref)),
+    ]);
+
+    const status = existing.get('status');
+    const settled = existing.exists && status !== 'pending' && status !== 'failed' && status !== 'canceled';
+    const holdingSizes = existing.get('sizesCounted') === true;
+    const holdingStock = existing.get('stockHeld') === true;
+
+    // Read before any write: Firestore wants every read in a transaction first.
+    const stock =
+      tracked.size > 0 && !holdingStock && !settled ? await readStockHold(tx, db, tracked) : null;
+
+    const write: Record<string, unknown> = { ...record };
+    if (!existing.exists) {
+      write['status'] = 'pending';
+      write['fulfillment'] = 'unfulfilled';
+      // The webhook fills this as events arrive; starting it empty means
+      // the first one is never mistaken for a replay.
+      write['appliedEventIds'] = [];
+      write['createdAt'] = FieldValue.serverTimestamp();
+      Object.assign(write, initial);
+    } else if (!settled) {
+      write['status'] = 'pending';
+    }
+
+    const short: Held['short'] = [];
+    const sizeWrites: (() => void)[] = [];
+    if (demand.length > 0 && !holdingSizes && !settled) {
+      productSnaps.forEach((snap, index) => {
+        const slug = slugsWithSizes[index]!;
+        const sizes = snap.exists ? cleanSizes(snap.get('sizes')) : null;
+        if (!sizes) {
+          // No longer clothing at all — staff cleared its sizes after
+          // the basket was filled. Nothing to take from, so nothing sold.
+          for (const entry of demand.filter((one) => one.slug === slug)) {
+            short.push({ slug, size: entry.size, left: 0 });
+          }
+          return;
+        }
+        const taken = takeSizes(sizes, slug, demand);
+        short.push(...taken.short.map((one) => ({ slug, ...one })));
+        sizeWrites.push(() =>
+          tx.update(productRefs[index]!, { sizes: taken.next, updatedAt: FieldValue.serverTimestamp() }),
+        );
+      });
+    }
+    if (stock) short.push(...stock.short.map((one) => ({ slug: one.slug, size: null, left: one.left })));
+    if (short.length > 0) return { short };
+
+    if (sizeWrites.length > 0) {
+      sizeWrites.forEach((apply) => apply());
+      write['sizesCounted'] = true;
+    }
+    if (stock) {
+      stock.apply();
+      write['stockHeld'] = true;
+    }
+
+    tx.set(orderRef, write, { merge: true });
+    return { short };
+  });
+}
+
+/** The 409 body for a basket the hold refused. */
+export function shortAnswer(
+  short: Held['short'],
+  nameOf: (slug: string) => string | undefined,
+): { error: string; code: string; rejected: { slug: string; reason: string; size?: string }[] } {
+  const first = short[0]!;
+  const name = nameOf(first.slug) ?? 'That item';
+  const sized = first.size ? ` in size ${first.size}` : '';
+  return {
+    error:
+      first.left > 0
+        ? `Only ${first.left} of ${name}${sized} ${first.left === 1 ? 'is' : 'are'} left. Please change the basket and try again. Nothing was charged.`
+        : `${name}${sized} has just sold out. Please change the basket and try again. Nothing was charged.`,
+    code: first.size ? 'size-sold-out' : 'sold-out',
+    rejected: short.map((one) => ({
+      slug: one.slug,
+      reason: one.left > 0 ? 'not-enough' : 'sold-out',
+      ...(one.size ? { size: one.size } : {}),
+    })),
+  };
+}
 
 export const squareCheckout = onRequest(
   {
@@ -297,6 +466,11 @@ export const squareCheckout = onRequest(
     const catalog = await productsFor(db, slugs);
 
     const built = buildSquareOrder(cart, catalog);
+    const short = stockRefusal(built.rejected, (slug) => catalog.get(slug)?.name);
+    if (short) {
+      res.status(409).json({ error: short, code: 'sold-out', rejected: built.rejected });
+      return;
+    }
     if (built.lines.length === 0) {
       res.status(409).json({ error: 'Nothing in the basket is available.', rejected: built.rejected });
       return;
@@ -368,17 +542,8 @@ export const squareCheckout = onRequest(
      * otherwise), which is Massachusetts' rule for a separately stated,
      * avoidable delivery charge. See payments/salesTax.ts.
      */
-    const byVariation = new Map(
-      [...catalog.values()].flatMap((product) =>
-        product.squareVariationId ? [[product.squareVariationId, product] as const] : [],
-      ),
-    );
-    const taxedLines = built.lines.map((line) =>
-      settings.taxRateBps > 0 && byVariation.get(line.catalog_object_id)?.taxable === true
-        ? { ...line, applied_taxes: [{ tax_uid: SALES_TAX_UID }] }
-        : line,
-    );
-    const taxing = taxedLines.some((line) => 'applied_taxes' in line);
+    const { lines: taxedLines, taxes } = withSalesTax(built.lines, catalog, settings);
+    const taxing = taxes.length > 0;
 
     /*
      * Set the moment Square says the card was charged. The catch at the bottom
@@ -394,24 +559,7 @@ export const squareCheckout = onRequest(
         order: {
           location_id: locationId,
           line_items: taxedLines,
-          ...(taxing
-            ? {
-                /*
-                 * A real tax, not a fee, so it reaches Square's sales-tax
-                 * reports. LINE_ITEM scope: it applies only to the lines that
-                 * name it, which are the products marked taxable.
-                 */
-                taxes: [
-                  {
-                    uid: SALES_TAX_UID,
-                    name: 'Massachusetts sales tax',
-                    percentage: taxPercentage(settings.taxRateBps),
-                    type: 'ADDITIVE',
-                    scope: 'LINE_ITEM',
-                  },
-                ],
-              }
-            : {}),
+          ...(taxing ? { taxes } : {}),
           ...(shipping
             ? {
                 // Shipping as a service charge rather than a line item, so it
@@ -560,7 +708,6 @@ export const squareCheckout = onRequest(
        * ---------------------------------------------------------------------
        */
       const orderRef = db.collection(COLLECTIONS.orders).doc(orderId);
-      const demand = sizeDemand(built.items);
       const memberUid = (await callerOf(req))?.uid ?? null;
       const record = {
         squareOrderId: orderId,
@@ -634,67 +781,9 @@ export const squareCheckout = onRequest(
         updatedBy: null,
       };
 
-      let held: { short: { slug: string; size: string; left: number }[] };
+      let held: Held;
       try {
-        held = await db.runTransaction(async (tx) => {
-          const slugsWithSizes = [...new Set(demand.map((entry) => entry.slug))];
-          const productRefs = slugsWithSizes.map((slug) => db.collection(COLLECTIONS.products).doc(slug));
-          const [existing, ...productSnaps] = await Promise.all([
-            tx.get(orderRef),
-            ...productRefs.map((ref) => tx.get(ref)),
-          ]);
-
-          /*
-           * The same purchase arriving again — a double-tap, or the app
-           * retrying after a dropped connection. Square hands back the same
-           * order id for the same key, so this document may already be paid,
-           * refunded, or marked ready by a volunteer. Those are left exactly as
-           * they are: only the buyer's own details are refreshed.
-           */
-          const status = existing.get('status');
-          const settled = existing.exists && status !== 'pending' && status !== 'failed' && status !== 'canceled';
-          const holding = existing.get('sizesCounted') === true;
-
-          const write: Record<string, unknown> = { ...record };
-          if (!existing.exists) {
-            write['status'] = 'pending';
-            write['fulfillment'] = 'unfulfilled';
-            // The webhook fills this as events arrive; starting it empty means
-            // the first one is never mistaken for a replay.
-            write['appliedEventIds'] = [];
-            write['createdAt'] = FieldValue.serverTimestamp();
-          } else if (!settled) {
-            write['status'] = 'pending';
-          }
-
-          const short: { slug: string; size: string; left: number }[] = [];
-          const sizeWrites: (() => void)[] = [];
-          if (demand.length > 0 && !holding && !settled) {
-            productSnaps.forEach((snap, index) => {
-              const slug = slugsWithSizes[index]!;
-              const sizes = snap.exists ? cleanSizes(snap.get('sizes')) : null;
-              if (!sizes) {
-                // No longer clothing at all — staff cleared its sizes after
-                // the basket was filled. Nothing to take from, so nothing sold.
-                for (const entry of demand.filter((one) => one.slug === slug)) {
-                  short.push({ slug, size: entry.size, left: 0 });
-                }
-                return;
-              }
-              const taken = takeSizes(sizes, slug, demand);
-              short.push(...taken.short.map((one) => ({ slug, ...one })));
-              sizeWrites.push(() =>
-                tx.update(productRefs[index]!, { sizes: taken.next, updatedAt: FieldValue.serverTimestamp() }),
-              );
-            });
-            if (short.length > 0) return { short };
-            sizeWrites.forEach((apply) => apply());
-            write['sizesCounted'] = true;
-          }
-
-          tx.set(orderRef, write, { merge: true });
-          return { short };
-        });
+        held = await recordOrderAndHold(db, orderRef, record, built.items);
       } catch (cause) {
         // Before the card: true, and the buyer can simply try again.
         console.error(`[checkout] could not record ${orderId} before charging`, cause);
@@ -703,20 +792,7 @@ export const squareCheckout = onRequest(
       }
 
       if (held.short.length > 0) {
-        const first = held.short[0]!;
-        const name = catalog.get(first.slug)?.name ?? 'That item';
-        res.status(409).json({
-          error:
-            first.left > 0
-              ? `Only ${first.left} of ${name} in size ${first.size} ${first.left === 1 ? 'is' : 'are'} left. Please change the basket and try again. Nothing was charged.`
-              : `${name} in size ${first.size} has just sold out. Please change the basket and try again. Nothing was charged.`,
-          code: 'size-sold-out',
-          rejected: held.short.map((one) => ({
-            slug: one.slug,
-            reason: one.left > 0 ? 'not-enough' : 'sold-out',
-            size: one.size,
-          })),
-        });
+        res.status(409).json(shortAnswer(held.short, (slug) => catalog.get(slug)?.name));
         return;
       }
 
@@ -799,11 +875,17 @@ export const squareCheckout = onRequest(
               const order = snap.data() ?? {};
               const putBack = shouldReturnSizes('failed', order) ? await readSizeReturn(tx, db, orderRef, order) : null;
               putBack?.();
-              tx.update(orderRef, { status: 'failed', updatedAt: FieldValue.serverTimestamp() });
+              tx.update(orderRef, {
+                status: 'failed',
+                ...(order['stockHeld'] === true ? { stockHeld: false } : {}),
+                updatedAt: FieldValue.serverTimestamp(),
+              });
             });
           } catch (cause) {
             console.error(`[checkout] could not release ${orderId} after a decline`, cause);
           }
+          // Square never took these copies, so its count puts them back.
+          await refreshStock(db, [...trackedDemand(built.items).keys()]);
         }
         // Square's decline messages are written for buyers, so pass one
         // through rather than replacing it with something vaguer.
@@ -853,6 +935,12 @@ export const squareCheckout = onRequest(
           cause,
         );
       }
+      /*
+       * No refresh from Square here, deliberately. The hold already lowered the
+       * mirror by what was sold, and Square's own count can lag the payment by
+       * a moment — reading it now could put the copies back on the shop. The
+       * `inventory.count.updated` webhook and the sync bring it into line.
+       */
 
       /*
        * The parish's own confirmation, queued for the Trigger Email extension.

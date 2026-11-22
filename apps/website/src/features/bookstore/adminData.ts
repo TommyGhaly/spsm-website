@@ -36,6 +36,7 @@ import {
 import {
   CONFIG_DOC_BOOKSTORE,
   COLLECTIONS,
+  parseBookstoreConfig,
   parseSections,
   withStatsDefaults,
   type BookstoreSection,
@@ -356,6 +357,73 @@ export async function writeSections(sections: BookstoreSection[]): Promise<void>
     { sections, updatedAt: serverTimestamp(), updatedBy: uid },
     { merge: true },
   );
+}
+
+/** The sales tax rate the checkout charges, in basis points — for the cash sale's preview. */
+export async function readTaxRate(): Promise<number> {
+  const snapshot = await getDoc(doc(db(), COLLECTIONS.config, CONFIG_DOC_BOOKSTORE));
+  return parseBookstoreConfig(snapshot.exists() ? snapshot.data() : null).taxRateBps;
+}
+
+/** One line of a cash sale: what, how many, and the size for clothing. */
+export interface CashLine {
+  slug: string;
+  quantity: number;
+  size: string | null;
+}
+
+/**
+ * Record a sale paid in cash at the table.
+ *
+ * A Function, like a refund: it creates a real Square order paid with Square's
+ * CASH source — so Square takes its own stock and the takings sit in its
+ * reports beside the card sales — and takes clothing sizes off the site's
+ * counts in the same transaction checkout uses. A basket the counts cannot
+ * cover is refused with the sentence to show. See functions/src/cashOrder.ts.
+ */
+export async function recordCashSale(sale: {
+  lines: CashLine[];
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  tenderedCents: number | null;
+  idempotencyKey: string;
+}): Promise<{ orderId: string; total: number; change: number }> {
+  const user = auth().currentUser;
+  if (!user) throw new Error('Your session has expired. Sign in again.');
+
+  const response = await fetch('/api/square/cash-order', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`,
+    },
+    body: JSON.stringify({
+      cart: sale.lines.map((line) => ({
+        slug: line.slug,
+        quantity: line.quantity,
+        ...(line.size ? { size: line.size } : {}),
+      })),
+      firstName: sale.firstName,
+      lastName: sale.lastName,
+      email: sale.email,
+      phone: sale.phone,
+      ...(sale.tenderedCents !== null ? { tenderedCents: sale.tenderedCents } : {}),
+      idempotencyKey: sale.idempotencyKey,
+    }),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    orderId?: string;
+    total?: number;
+    change?: number;
+  };
+  if (!response.ok || !body.orderId) {
+    throw new Error(body.error ?? 'The sale could not be recorded.');
+  }
+  return { orderId: body.orderId, total: body.total ?? 0, change: body.change ?? 0 };
 }
 
 /** The sections as Firestore currently holds them. */

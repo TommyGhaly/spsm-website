@@ -70,7 +70,29 @@ export interface BuiltOrder {
   items: BuiltItem[];
   /** Slug → name, so the order document can denormalize what was bought. */
   names: Record<string, string>;
-  rejected: { slug: string; reason: RejectionReason; size?: string }[];
+  /** `left` is how many are on the shelf, on a `sold-out` or `not-enough`. */
+  rejected: { slug: string; reason: RejectionReason; size?: string; left?: number }[];
+}
+
+/**
+ * A sentence for the first line refused for stock, or null when none was.
+ *
+ * Checkout still charges the rest of a basket when a line is unknown or
+ * hidden, but a line short of stock stops the whole basket: somebody who asked
+ * for five should hear there are two, not find three missing on the receipt.
+ */
+export function stockRefusal(
+  rejected: BuiltOrder['rejected'],
+  nameOf: (slug: string) => string | undefined,
+): string | null {
+  const first = rejected.find((one) => one.reason === 'sold-out' || one.reason === 'not-enough');
+  if (!first) return null;
+  const name = nameOf(first.slug) ?? 'That item';
+  const sized = first.size ? ` in size ${first.size}` : '';
+  const left = first.left ?? 0;
+  return left > 0
+    ? `Only ${left} of ${name}${sized} ${left === 1 ? 'is' : 'are'} left. Please change the basket and try again. Nothing was charged.`
+    : `${name}${sized} is sold out. Please change the basket and try again. Nothing was charged.`;
 }
 
 export type RejectionReason =
@@ -154,11 +176,22 @@ export function buildSquareOrder(
         continue;
       }
       if (size.count < quantity) {
-        rejected.push({ slug, reason: size.count <= 0 ? 'sold-out' : 'not-enough', size: size.label });
+        rejected.push({
+          slug,
+          reason: size.count <= 0 ? 'sold-out' : 'not-enough',
+          size: size.label,
+          left: Math.max(0, size.count),
+        });
         continue;
       }
-    } else if (product.stockCount === 0) {
-      rejected.push({ slug, reason: 'sold-out' });
+    } else if (typeof product.stockCount === 'number' && product.stockCount < quantity) {
+      /*
+       * Tracked in Square, and fewer on the shelf than asked for. This used to
+       * refuse only at zero, so a basket of five against a count of two went
+       * through and Square's count went to minus three.
+       */
+      const left = Math.max(0, product.stockCount);
+      rejected.push({ slug, reason: left === 0 ? 'sold-out' : 'not-enough', left });
       continue;
     }
     // Without a variation id there is no way to have Square price this, and

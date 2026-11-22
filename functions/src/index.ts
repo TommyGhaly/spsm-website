@@ -2,7 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { BUDGETS, CAPS, throttled } from './rateLimit.js';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore, type DocumentSnapshot } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, type DocumentReference, type DocumentSnapshot } from 'firebase-admin/firestore';
 import {
   COLLECTIONS,
   interpretSquareWebhook,
@@ -58,10 +58,13 @@ export {
 export { syncSquareCatalog, refreshSquareCatalog } from './catalogSync.js';
 import { mirrorCatalog } from './catalogSync.js';
 import { needsRetake, readSizeRetake, readSizeReturn } from './sizeStock.js';
+import { refreshStock, refreshStockByVariation, restockIfDue, trackedDemand } from './stockHold.js';
 
 // Refunding an order in full. The parish publishes a no-returns policy; this is
 // the door for the exceptions to it, and it records who made one and why.
 export { squareRefund } from './refunds.js';
+// A volunteer recording a sale paid in cash, so the counts see it. See cashOrder.ts.
+export { squareCashOrder } from './cashOrder.js';
 
 /*
  * Parish forms.
@@ -365,6 +368,25 @@ export const squareWebhook = onRequest(
       return;
     }
 
+    /*
+     * A count changed in Square — a sale at the till, a recount, a delivery
+     * logged in the Square app, or one of this site's own sales landing. The
+     * event names the variations and their new counts; the mirror re-reads
+     * them, so the shop is right within seconds rather than the sync's fifteen
+     * minutes. Like the catalog event above, it does nothing until
+     * `inventory.count.updated` is added to the parish's webhook subscription.
+     */
+    if (envelope.type === 'inventory.count.updated') {
+      const counts = (payload as { data?: { object?: { inventory_counts?: { catalog_object_id?: string }[] } } })
+        .data?.object?.inventory_counts ?? [];
+      await refreshStockByVariation(
+        getFirestore(),
+        counts.map((count) => String(count.catalog_object_id ?? '')),
+      );
+      res.status(200).json({ ok: true, inventory: true });
+      return;
+    }
+
     const update = interpretSquareWebhook({
       verified: true,
       eventId: envelope.event_id ?? '',
@@ -379,7 +401,23 @@ export const squareWebhook = onRequest(
     }
 
     try {
-      const applied = await applyOrderUpdate(update);
+      const { applied, ref } = await applyOrderUpdate(update);
+      /*
+       * Stock that follows from the move, after the transaction and never
+       * failing the delivery. A failed or cancelled payment sold nothing, so
+       * Square's count — which never moved — puts the held copies back on the
+       * shop; a refund staff chose to restock goes back into Square's count.
+       */
+      if (applied && ref) {
+        if (update.status === 'failed' || update.status === 'canceled') {
+          const snap = await ref.get();
+          await refreshStock(getFirestore(), [...trackedDemand(snap.get('lineItems') ?? []).keys()]);
+        } else if (update.status === 'refunded') {
+          await restockIfDue(getFirestore(), ref).catch((cause) =>
+            console.error(`[square] restock of ${ref.id} failed`, cause),
+          );
+        }
+      }
       res.status(200).json({ ok: true, applied });
     } catch (error) {
       // A write failure is the one case where a retry genuinely helps.
@@ -401,7 +439,9 @@ export const squareWebhook = onRequest(
  * those payments arrive here too — inventing an order document for every
  * over-the-counter Bible would fill the collection with rows nobody ordered.
  */
-async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
+async function applyOrderUpdate(
+  update: OrderStatusUpdate,
+): Promise<{ applied: boolean; ref: DocumentReference | null }> {
   const db = getFirestore();
   const orders = db.collection(COLLECTIONS.orders);
 
@@ -453,11 +493,11 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
           (update.squarePaymentId ? ` / payment ${update.squarePaymentId}` : '') +
           ' — probably an in-person sale. Ignored.',
       );
-      return false;
+      return { applied: false, ref: null };
     }
 
     const applied: string[] = snapshot.get('appliedEventIds') ?? [];
-    if (applied.includes(update.eventId)) return false;
+    if (applied.includes(update.eventId)) return { applied: false, ref };
 
     /*
      * A failure for a payment that is not this order's payment any more.
@@ -476,7 +516,7 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
       current !== update.squarePaymentId
     ) {
       tx.update(ref, { appliedEventIds: [...applied, update.eventId].slice(-50) });
-      return false;
+      return { applied: false, ref };
     }
 
     /*
@@ -494,7 +534,7 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
      */
     if (!mayMoveOrder(snapshot.get('status'), update.status)) {
       tx.update(ref, { appliedEventIds: [...applied, update.eventId].slice(-50) });
-      return false;
+      return { applied: false, ref };
     }
 
     const order = snapshot.data() ?? {};
@@ -505,8 +545,10 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
         : null;
 
     moveSizes?.();
+    const releasing = (update.status === 'failed' || update.status === 'canceled') && order['stockHeld'] === true;
     tx.update(ref, {
       status: update.status,
+      ...(releasing ? { stockHeld: false } : {}),
       // Only when the event carried one. `interpretSquareWebhook` returns null
       // for a payment with no id, and writing that null over a good value would
       // erase the field the refund lookup above depends on — the failure would
@@ -518,7 +560,7 @@ async function applyOrderUpdate(update: OrderStatusUpdate): Promise<boolean> {
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: null,
     });
-    return true;
+    return { applied: true, ref };
   });
 }
 

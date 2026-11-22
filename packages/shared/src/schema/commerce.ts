@@ -278,6 +278,35 @@ export interface Order extends AuditFields {
    */
   sizesCounted?: boolean;
 
+  /**
+   * True once checkout has lowered the mirrored `stockCount` of this order's
+   * Square-tracked lines, ahead of Square.
+   *
+   * Square takes those copies off its own count when the payment completes,
+   * and the mirror then follows Square (see functions/src/stockHold.ts). The
+   * early hold is only so a second buyer in the same minute cannot be sold the
+   * last copy; a declined card refreshes the mirror from Square, which never
+   * moved, and so puts the copy back. Absent on orders with no tracked lines.
+   */
+  stockHeld?: boolean;
+
+  /**
+   * True once the tracked lines of a refund staff chose to restock have been
+   * put back in Square's count. Square does not restock a refund on its own,
+   * so without this a refunded book stayed sold. Set once, like `sizesCounted`.
+   */
+  stockRestocked?: boolean;
+
+  /**
+   * How it was paid. Absent means by card online — every order before cash
+   * could be recorded. `cash` is a sale a volunteer rang up at the table, still
+   * a real Square order paid with Square's CASH source, so it is in Square's
+   * reports and took Square's stock like any other.
+   */
+  paymentMethod?: 'card' | 'cash';
+  /** On a cash order, the staff member who recorded it. */
+  recordedBy?: OrderFulfilledBy | null;
+
   /** Raw webhook event ids we've already applied, newest last. */
   appliedEventIds: string[];
 

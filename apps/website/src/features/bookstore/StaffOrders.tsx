@@ -5,6 +5,7 @@ import {
   FLAT_SHIPPING_LABEL,
   splitOrderTotal, toDate, type DocOf, type FulfillmentStatus, type Order } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
+import { CashSaleDialog } from './CashSale';
 import { money } from './money';
 
 /**
@@ -47,6 +48,8 @@ export function StaffOrders() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<DocOf<Order> | null>(null);
+  /** The cash-sale dialog. Mounted only while open, so it starts empty each time. */
+  const [selling, setSelling] = useState(false);
   /*
    * Orders this screen has sent a refund for, so the row shows it at once.
    * The reload after a refund also brings back the `refund` record the
@@ -196,9 +199,14 @@ export function StaffOrders() {
           ))}
         </div>
 
-        <button type="button" className="button button--quiet" onClick={() => void load()}>
-          Reload
-        </button>
+        <span className="bkqueue__tools">
+          <button type="button" className="button" onClick={() => setSelling(true)}>
+            Record a cash sale
+          </button>
+          <button type="button" className="button button--quiet" onClick={() => void load()}>
+            Reload
+          </button>
+        </span>
       </div>
 
       {error && (
@@ -244,6 +252,18 @@ export function StaffOrders() {
           />
         ))}
       </ul>
+
+      {selling && (
+        <CashSaleDialog
+          onClose={() => setSelling(false)}
+          onDone={() => {
+            setSelling(false);
+            // The new order is the server's to describe, so it is read, not patched in.
+            setFilter('done');
+            void load();
+          }}
+        />
+      )}
 
       {refunding && (
         <RefundDialog
@@ -330,7 +350,7 @@ function OrderRow({
               ? placed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
               : 'no date'}
             {' · '}
-            {order.shipping ? 'Deliver' : 'Collect'}
+            {order.paymentMethod === 'cash' ? 'Cash at the table' : order.shipping ? 'Deliver' : 'Collect'}
             {' · '}
             {units} {units === 1 ? 'book' : 'books'}
             {' · '}
@@ -386,16 +406,22 @@ function OrderRow({
       )}
 
       <p className="bkorder__contact">
-        <a href={`mailto:${order.contactEmail}`}>{order.contactEmail}</a>
+        {order.contactEmail && <a href={`mailto:${order.contactEmail}`}>{order.contactEmail}</a>}
         {order.buyerPhone && <a href={`tel:${order.buyerPhone.replace(/[^\d+]/g, '')}`}>{order.buyerPhone}</a>}
         <span className="bkorder__ref">{order.id}</span>
       </p>
 
-      {order.fulfillment !== 'unfulfilled' && (
-        <StepBy label={order.shipping ? 'Packed' : 'Put aside'} stamp={order.readiedBy} />
-      )}
-      {order.fulfillment === 'collected' && (
-        <StepBy label={order.shipping ? 'Posted' : 'Handed over'} stamp={order.fulfilledBy} />
+      {order.paymentMethod === 'cash' ? (
+        <StepBy label="Cash sale recorded" stamp={order.recordedBy ?? order.fulfilledBy} />
+      ) : (
+        <>
+          {order.fulfillment !== 'unfulfilled' && (
+            <StepBy label={order.shipping ? 'Packed' : 'Put aside'} stamp={order.readiedBy} />
+          )}
+          {order.fulfillment === 'collected' && (
+            <StepBy label={order.shipping ? 'Posted' : 'Handed over'} stamp={order.fulfilledBy} />
+          )}
+        </>
       )}
 
       {actionable && (
@@ -489,10 +515,12 @@ function RefundDialog({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState('');
-  /* Asked only when there is clothing on the order. Ticked, because the usual
-     refund is for something never handed over; a worn shirt is unticked. */
-  const sized = (order.lineItems ?? []).some((line) => line.size);
-  const [restock, setRestock] = useState(true);
+  /* Ticked, because the usual refund is for something never handed over; a
+     worn shirt is unticked. Clothing sizes go back on the site's counts, and
+     anything Square counts goes back on Square's. A cash sale was handed over,
+     so it starts unticked. */
+  const cash = order.paymentMethod === 'cash';
+  const [restock, setRestock] = useState(!cash);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -502,7 +530,7 @@ function RefundDialog({
     setError(null);
     try {
       const { refundOrder } = await import('./adminData');
-      await refundOrder(order.id, reason.trim(), sized && restock);
+      await refundOrder(order.id, reason.trim(), restock);
       onDone();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The refund could not be sent.');
@@ -516,8 +544,10 @@ function RefundDialog({
         <h2 className="bkmodal__title">Refund {money(order.total?.amount ?? 0)}?</h2>
 
         <p className="bkmodal__note">
-          The whole order goes back to the card it was paid with, including delivery. The
-          church does not take returns, so this is an exception — say why, and your name
+          {cash
+            ? 'This was paid in cash, so Square records a cash refund: hand the money back yourself. '
+            : 'The whole order goes back to the card it was paid with, including delivery. '}
+          The church does not take returns, so this is an exception — say why, and your name
           is recorded against it.
         </p>
 
@@ -531,12 +561,10 @@ function RefundDialog({
           />
         </label>
 
-        {sized && (
-          <label className="bkmodal__check">
-            <input type="checkbox" checked={restock} onChange={(event) => setRestock(event.target.checked)} />
-            <span>Put the sizes back in stock once the refund goes through</span>
-          </label>
-        )}
+        <label className="bkmodal__check">
+          <input type="checkbox" checked={restock} onChange={(event) => setRestock(event.target.checked)} />
+          <span>Put the items back in stock once the refund goes through</span>
+        </label>
 
         {error && (
           <p className="bkmodal__error" role="alert">

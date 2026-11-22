@@ -211,6 +211,10 @@ if (process.env.NODE_ENV === 'development') {
         destination: `${origin}/${project}/${region}/squareRefund`,
       },
       {
+        source: '/api/square/cash-order',
+        destination: `${origin}/${project}/${region}/squareCashOrder`,
+      },
+      {
         source: '/api/square/product',
         destination: `${origin}/${project}/${region}/squareCreateProduct`,
       },

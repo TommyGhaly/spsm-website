@@ -66,6 +66,10 @@
         "function": "squareRefund"
       },
       {
+        "source": "/api/square/cash-order",
+        "function": "squareCashOrder"
+      },
+      {
         "source": "/api/square/product",
         "function": "squareCreateProduct"
       },
