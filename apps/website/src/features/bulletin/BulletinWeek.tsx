@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Bulletin, BulletinEvent } from '@spsm/shared';
 import { Icon } from '@/components/Icon';
 import { bulletinImageUrl } from './media';
@@ -130,7 +131,7 @@ export function BulletinWeek({ bulletin, today }: { bulletin: Bulletin; today: s
                           picture for this one", whereas a stand-in mark would
                           read as one that failed to load.
                         */}
-                        <Media url={image} className="week__thumb" />
+                        <ScheduleThumb url={image} />
 
                         <span className="week__time">
                           {describeTime(event) || <Icon name="clock" size={15} />}
@@ -181,6 +182,43 @@ function Media({ url, className }: { url: string | null; className: string }) {
       aria-hidden="true"
       style={url ? { backgroundImage: `url("${url}")` } : undefined}
     />
+  );
+}
+
+/**
+ * A schedule row's picture, at the picture's own shape.
+ *
+ * This used to be `Media` — a 3rem square background at `cover` — and the
+ * parish's pictures are not square: a real week runs from 0.48:1 icons to
+ * 1.83:1 flyers, so the square was cutting off half of most of them. The cell
+ * is still a fixed box, which is what keeps the times aligned down the week,
+ * but the picture is an `<img>` scaled to *fit* inside it, so the radius and
+ * hairline hug the picture rather than an invisible square around it.
+ *
+ * It keeps `Media`'s failure mode on purpose. That note argues a hotlinked
+ * cross-project image should fail to a blank cell, not a torn-page icon; an
+ * `<img>` only gets the latter by default, so `onError` removes it and leaves
+ * the empty cell — the same thing a service with no picture shows.
+ *
+ * `alt=""` for the reason `Media` is `aria-hidden`: the service's name is
+ * beside it in text, and an alt could only repeat it.
+ */
+function ScheduleThumb({ url }: { url: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const show = url && failed !== url;
+
+  return (
+    <span className="week__thumb">
+      {show && (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(url)}
+        />
+      )}
+    </span>
   );
 }
 

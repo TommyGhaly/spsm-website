@@ -7898,7 +7898,7 @@ main {
   /* Thumbnail, time, name. The thumbnail column is reserved on every row,
      including the ones with no picture, so the times stay in a column down the
      whole week rather than stepping in and out. */
-  grid-template-columns: 3rem 10.5rem 1fr;
+  grid-template-columns: 4rem 10.5rem 1fr;
   gap: var(--space-xs, 0.25rem) var(--space-md, 0.75rem);
   align-items: center;
   /* A hairline between services, so a day with five of them reads as five
@@ -7941,26 +7941,40 @@ main {
  * The service's picture from the announcements app.
  *
  * Two states, and the empty one is deliberate. `.week__thumb` on its own is an
- * invisible spacer holding the column open; `--filled` is added only when there
- * is a URL to show. A service with no picture therefore shows *nothing* rather
+ * invisible spacer holding the column open; the `<img>` inside it is rendered
+ * only when there is a URL to show. A service with no picture therefore shows *nothing* rather
  * than a placeholder mark — there is no picture, which is not a failure and
  * should not look like one.
  *
  * No `background-color` fallback: with the category colours gone there is
  * nothing meaningful to fall back to, so a dead Storage token degrades to the
- * same blank cell as "no picture attached". See the note on `Media`.
+ * same blank cell as "no picture attached" — `ScheduleThumb` drops the `<img>`
+ * on error. See the notes on `Media` and `ScheduleThumb`.
+ *
+ * The cell is a fixed box; the picture inside it is not. `ScheduleThumb` puts
+ * an `<img>` here that is scaled to *fit* — the parish's pictures run from tall
+ * icons to wide flyers, and the old 3rem square at `cover` cut most of them in
+ * half. 4rem rather than 3rem because a fitted picture only fills the box along
+ * one axis: at 3rem a wide flyer came out 26px tall, too small to read as
+ * anything. The box stays fixed so the times still line up down the week.
  */
 .week__thumb {
-  width: 3rem;
-  height: 3rem;
+  width: 4rem;
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.week__thumb--filled {
+.week__thumb img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   border-radius: var(--radius-sm, 5px);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  /* A hairline, so a pale photograph still has an edge against the card. */
+  /* A hairline, so a pale photograph still has an edge against the card. On
+     the image itself, so it traces the picture's real shape. */
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
 }
 
@@ -7972,7 +7986,7 @@ main {
    full width beneath them. */
 @media (max-width: 30rem) {
   .week__day ul li {
-    grid-template-columns: 3rem 1fr;
+    grid-template-columns: 4rem 1fr;
   }
 
   .week__name {
