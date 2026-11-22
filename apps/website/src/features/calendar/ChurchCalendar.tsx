@@ -84,7 +84,8 @@ export function ChurchCalendar({
   office: CalendarOffice;
 }) {
   /*
-   * Opens on the month.
+   * Opens on the month — except on a phone, which opens on the week (see the
+   * mount effect below).
    *
    * The month is the orienting view — it answers "what does this month look
    * like" and it is where somebody arriving without a specific question starts.
@@ -114,6 +115,15 @@ export function ChurchCalendar({
     const now = todayInParish();
     setAnchor(now);
     setToday(now);
+    /*
+     * On a phone, open on the week instead. A seven-column month grid at phone
+     * width is a wall of dots; the week is what somebody checking the schedule
+     * on their phone actually wants. Decided here, beside the date, for the
+     * same reason the date is: the prerendered HTML has no screen to ask, and
+     * deciding it in an initialiser would mismatch on hydration. 40rem is the
+     * site's phone breakpoint (see globals.css and the hero's <source media>).
+     */
+    if (window.matchMedia('(max-width: 40rem)').matches) setView('week');
   }, []);
 
   /* ---- who is reading ---------------------------------------------------- */
