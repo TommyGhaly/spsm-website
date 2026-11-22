@@ -12,7 +12,7 @@ import {
 import { getSnapshot, getServerSnapshot, signIn, subscribe } from '@/lib/authStore';
 import { useScreenGrants } from '@/lib/screenGrants';
 import {
-  getBulletinOccurrences,
+  getBulletinWeek,
   getSchedule,
   getStaffLayers,
   servantIdToken,
@@ -35,6 +35,13 @@ import { MonthView } from './MonthView';
  * the foot of the page drops whichever is missing rather than printing a blank
  * line or an empty `mailto:`.
  */
+/**
+ * How long the calendar waits for the bulletin before opening on today's week.
+ * Long enough for a normal load on a phone; short enough that a stalled
+ * request never leaves the page on a skeleton.
+ */
+const BULLETIN_WAIT_MS = 2500;
+
 export interface CalendarOffice {
   email: string;
   phone: string;
@@ -113,7 +120,6 @@ export function ChurchCalendar({
 
   useEffect(() => {
     const now = todayInParish();
-    setAnchor(now);
     setToday(now);
     /*
      * On a phone, open on the week instead. A seven-column month grid at phone
@@ -205,10 +211,44 @@ export function ChurchCalendar({
    */
   const [bulletin, setBulletin] = useState<CalendarOccurrence[]>([]);
 
+  /*
+   * The calendar opens on the bulletin's week, not today's.
+   *
+   * The bulletin is the week the parish is talking about. It is published ahead
+   * — by Sunday it is usually already next week's sheet — and a parishioner
+   * who has just read the announcements expects the calendar to show the same
+   * week. Today's week is one press of Today away.
+   *
+   * So the anchor waits for the bulletin rather than landing on today and then
+   * jumping, which would redraw the whole grid under the reader's thumb. The
+   * wait is capped: past BULLETIN_WAIT_MS the calendar opens on today and the
+   * bulletin, when it does arrive, only adds its entries. No bulletin, or one
+   * that fails to load, is the same as today.
+   *
+   * Which day of the week the wheel centres on needs nothing here: WeekView
+   * already centres on today when the range holds it, and on the first day
+   * (Monday) when it does not.
+   */
   useEffect(() => {
     const controller = new AbortController();
-    void getBulletinOccurrences(controller.signal).then(setBulletin);
-    return () => controller.abort();
+    let settled = false;
+    const settle = (week: string) => {
+      if (settled) return;
+      settled = true;
+      setAnchor(week);
+    };
+    const fallback = window.setTimeout(() => settle(todayInParish()), BULLETIN_WAIT_MS);
+
+    void getBulletinWeek(controller.signal).then(({ weekOf, occurrences }) => {
+      if (controller.signal.aborted) return;
+      setBulletin(occurrences);
+      settle(weekOf ?? todayInParish());
+    });
+
+    return () => {
+      window.clearTimeout(fallback);
+      controller.abort();
+    };
   }, []);
 
   /* ---- what staff have added and annotated -------------------------------- */

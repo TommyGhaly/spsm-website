@@ -140,8 +140,17 @@ export async function servantIdToken(): Promise<string | null> {
   }
 }
 
+/** The active bulletin: the Monday its week starts on, and its entries. */
+export interface BulletinWeek {
+  /** `YYYY-MM-DD`, or `null` when there is no bulletin to speak of. */
+  weekOf: string | null;
+  occurrences: CalendarOccurrence[];
+}
+
+const NO_BULLETIN: BulletinWeek = { weekOf: null, occurrences: [] };
+
 /**
- * This week's bulletin, as calendar occurrences.
+ * This week's bulletin, as calendar occurrences — and which week that is.
  *
  * ---------------------------------------------------------------------------
  * Why the calendar reads the bulletin at all
@@ -161,15 +170,13 @@ export async function servantIdToken(): Promise<string | null> {
  * that is working would be worse than the missing photographs.
  * ---------------------------------------------------------------------------
  */
-export async function getBulletinOccurrences(
-  signal?: AbortSignal,
-): Promise<CalendarOccurrence[]> {
+export async function getBulletinWeek(signal?: AbortSignal): Promise<BulletinWeek> {
   try {
     const response = await fetch('/api/bulletin', { signal: signal ?? null });
-    if (!response.ok) return [];
+    if (!response.ok) return NO_BULLETIN;
 
     const body = (await response.json()) as { bulletin?: BulletinLike | null };
-    if (!body.bulletin || !Array.isArray(body.bulletin.days)) return [];
+    if (!body.bulletin || !Array.isArray(body.bulletin.days)) return NO_BULLETIN;
 
     /*
      * The JSON is used as-is rather than through `reviveBulletin`. That helper
@@ -177,11 +184,20 @@ export async function getBulletinOccurrences(
      * `addedAt`, `publishedAt` — are ones nothing here reads. Everything the
      * schedule needs is already a string on the wire.
      */
-    return occurrencesOfBulletin(body.bulletin);
+    /*
+     * The week is read from `days[0]` rather than the transmitted `weekOf`, the
+     * same choice `reviveBulletin` makes: the days are what the sheet actually
+     * prints, and if the two ever disagree the days are the ones to believe.
+     */
+    const weekOf = body.bulletin.days[0]?.date ?? null;
+    return {
+      weekOf: typeof weekOf === 'string' ? weekOf : null,
+      occurrences: occurrencesOfBulletin(body.bulletin),
+    };
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') return [];
+    if (error instanceof DOMException && error.name === 'AbortError') return NO_BULLETIN;
     console.warn('[calendar] the bulletin could not be read; carrying on without it:', error);
-    return [];
+    return NO_BULLETIN;
   }
 }
 

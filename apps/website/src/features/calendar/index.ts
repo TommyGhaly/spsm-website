@@ -1,5 +1,5 @@
 export { ChurchCalendar } from './ChurchCalendar';
-export { getBulletinOccurrences, getSchedule, type ScheduleResult } from './data';
+export { getBulletinWeek, getSchedule, type BulletinWeek, type ScheduleResult } from './data';
 export {
   formatClock,
   monthRange,
