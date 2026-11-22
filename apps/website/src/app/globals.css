@@ -10246,6 +10246,37 @@ main {
   .sched-entry__end {
     font-size: 0.6875rem;
   }
+
+  /*
+   * The week view keeps its pictures on a phone.
+   *
+   * The phone is where the week view is the default, so hiding them here hid
+   * them from most of the people who see that view. A third column, sized to
+   * the picture: entries with no picture leave it empty and lose no width.
+   *
+   * Fitted rather than cropped, like the homepage schedule: the parish's
+   * pictures run from tall icons to wide flyers, and a square at `cover` cuts
+   * most of them in half. The hairline is on the image itself so it traces
+   * the picture's real shape, and there is no background, so a picture that
+   * does not fill the box does not draw a grey one around itself.
+   *
+   * Scoped to the wheel. The month view's day panel uses the same `Entry`
+   * and keeps the narrower layout.
+   */
+  .sched-wheel .sched-entry {
+    grid-template-columns: 5rem minmax(0, 1fr) auto;
+  }
+
+  .sched-wheel .sched-entry__thumb {
+    display: block;
+    align-self: start;
+    width: auto;
+    height: auto;
+    max-width: 2.75rem;
+    max-height: 2.75rem;
+    border-radius: var(--radius-sm, 4px);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
+  }
 }
 
 @media (min-width: 30rem) {
