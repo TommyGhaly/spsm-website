@@ -10260,8 +10260,8 @@ main {
    * the picture's real shape, and there is no background, so a picture that
    * does not fill the box does not draw a grey one around itself.
    *
-   * Scoped to the wheel. The month view's day panel uses the same `Entry`
-   * and keeps the narrower layout.
+   * Scoped to the wheel. The month view's day sheet uses the same `Entry`
+   * and gives its pictures more room — see `.sched-daysheet .sched-entry`.
    */
   .sched-wheel .sched-entry {
     grid-template-columns: 5rem minmax(0, 1fr) auto;
@@ -10644,7 +10644,13 @@ html:has(.sched-daysheet[open]) {
   inset: auto 0 0 0;
   width: 100%;
   max-width: 100%;
-  max-height: min(78dvh, 40rem);
+  /*
+   * Three quarters of the screen at least, so a light day does not come up as
+   * a strip; up to nine tenths for a heavy one. Enough of the grid stays
+   * visible above it to keep its place, and the strip is how you move.
+   */
+  min-height: min(74dvh, 46rem);
+  max-height: 90dvh;
   margin: 0;
   padding: 0;
   display: none;
@@ -10934,6 +10940,39 @@ html:has(.sched-daysheet[open]) {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/*
+ * The pictures, which every narrower list on a phone hides.
+ *
+ * The sheet has the room the wheel's cards and the old panel did not: the full
+ * width, and no neighbouring day to keep level with. So the picture gets a
+ * third column and a real size — fitted rather than cropped, for the reason the
+ * wheel gives (the parish's pictures run from tall icons to wide flyers), with
+ * the hairline on the image so it traces the picture's own shape.
+ *
+ * Later in the file than the `.sched-wheel` rule of the same specificity, and
+ * on every width the sheet appears at, so it wins over both the phone rule that
+ * hides the thumbnail and the wider rule that crops it to a 2rem square.
+ */
+.sched-daysheet .sched-entry {
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  align-items: start;
+  padding-block: 0.45rem;
+}
+
+.sched-daysheet .sched-entry__thumb {
+  display: block;
+  align-self: start;
+  width: auto;
+  height: auto;
+  max-width: 5.5rem;
+  max-height: 5.5rem;
+  object-fit: contain;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink, #1c1614) 12%, transparent);
 }
 
 .sched-daysheet__none {
