@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { kindOf, type CalendarOccurrence } from '@spsm/shared';
 import { dayParts, formatClock, type ViewRange } from './range';
-import { Entry } from './Entry';
+import { DaySheet } from './DaySheet';
 
 /**
  * A month, as a grid you scan by date.
@@ -89,13 +89,6 @@ export const WEEKDAYS = [
  * because they are cells in a table row.
  */
 
-/*
- * One panel on the page, so a fixed id is honest and `useId` would only make it
- * unreadable. The month grid is rendered once — `Grid` in ChurchCalendar.tsx
- * picks either this or the week view, never both.
- */
-const DAY_PANEL_ID = 'sched-month-day';
-
 export function MonthView({
   range,
   byDay,
@@ -117,13 +110,13 @@ export function MonthView({
   const [openWeek, setOpenWeek] = useState<number | null>(null);
 
   /**
-   * Which single day is selected, for the narrow-screen panel below the grid.
+   * Which single day is selected, for the narrow-screen day sheet.
    *
    * Held apart from `openWeek` rather than derived from it, because the two are
    * driven by different gestures and cleared by different things: the row opens
    * on hover and closes when the pointer leaves the grid, and the day is chosen
-   * by a tap and stays chosen until it is tapped again. A phone never fires the
-   * mouseleave that closes the row, and a pointer never needs the panel — so
+   * by a tap and stays chosen until the sheet is put away. A phone never fires the
+   * mouseleave that closes the row, and a pointer never needs the sheet — so
    * folding them into one piece of state means one of the two behaves wrongly.
    */
   const [picked, setPicked] = useState<string | null>(null);
@@ -190,7 +183,7 @@ export function MonthView({
                       isToday={day === today}
                       isOpen={isOpen}
                       /* `narrow &&`, so a window dragged wider does not leave
-                         a ring round a day whose panel is no longer there. */
+                         a ring round a day whose sheet is no longer there. */
                       isPicked={narrow && day === picked}
                       narrow={narrow}
                       /* Nothing at all when the cells are too narrow to hold
@@ -198,14 +191,7 @@ export function MonthView({
                          only turns its seven cells from buttons into boxes,
                          and takes the tap target for the day with them. */
                       onPoint={narrow ? undefined : () => setOpenWeek(index)}
-                      /* Tapping the day it is already on puts it away again,
-                         which is the only way to close the panel from the grid
-                         — there is no hovering out of it on a touch screen. */
-                      onPick={
-                        narrow
-                          ? () => setPicked((current) => (current === day ? null : day))
-                          : () => setOpenWeek(index)
-                      }
+                      onPick={narrow ? () => setPicked(day) : () => setOpenWeek(index)}
                       onOpen={onOpen}
                     />
                   ))}
@@ -217,22 +203,19 @@ export function MonthView({
       </div>
 
       {/*
-        The chosen day, at the full width of the page.
+        The chosen day, as a sheet over the lower half of the screen — see
+        DaySheet.tsx for why it is not a panel under the grid any more.
 
-        Outside `.sched-month-scroll` on purpose: that wrapper is
-        `overflow-x: auto`, which resolves the other axis to `auto` as well, so
-        anything of any height put inside it gets a scrollbar of its own rather
-        than pushing the page down.
-
-        Only below 64rem — see the note at the top of this file, and `useNarrow`
-        below for why asking the viewport is safe here.
+        Only below 64rem, where the cells cannot hold the entries; see
+        `useNarrow` below for why asking the viewport is safe here.
       */}
       {narrow && picked && (
-        <DayPanel
-          id={DAY_PANEL_ID}
+        <DaySheet
+          days={range.days}
           day={picked}
-          entries={byDay.get(picked) ?? []}
-          isToday={picked === today}
+          byDay={byDay}
+          today={today}
+          onPick={setPicked}
           onShut={() => setPicked(null)}
           onOpen={onOpen}
         />
@@ -278,69 +261,6 @@ function useNarrow(): boolean {
   }, []);
 
   return narrow;
-}
-
-/**
- * One day's entries, listed under the grid, for screens too narrow to hold them
- * in the cells.
- *
- * The week view's `Entry` rather than the month grid's own chip. The chip exists
- * to survive a 171px column — it drops the end time, the location, the note and
- * the contact to do it — and none of that is worth giving up here, where the
- * list has the whole width of the page. Two renderings of an entry is already
- * one more than ideal; a third, for a panel that has room for the real one,
- * would be indefensible.
- */
-function DayPanel({
-  id,
-  day,
-  entries,
-  isToday,
-  onShut,
-  onOpen,
-}: {
-  id: string;
-  day: string;
-  entries: CalendarOccurrence[];
-  isToday: boolean;
-  onShut: () => void;
-  onOpen: (occurrence: CalendarOccurrence, day: string) => void;
-}) {
-  const parts = dayParts(day);
-
-  return (
-    <section id={id} className="sched-month__day" aria-label={`${parts.weekday} ${parts.month} ${parts.dayOfMonth}`}>
-      <div className="sched-month__day-head">
-        <h3 className="sched-month__day-date">
-          {parts.weekday} {parts.month} {parts.dayOfMonth}
-          {isToday && <span className="sched-month__day-badge">Today</span>}
-        </h3>
-        {/*
-          A close button, because the other way out is tapping the same date a
-          second time and nothing on the grid says so. The grid keeps that
-          gesture; this is the one anybody finds.
-        */}
-        <button type="button" className="sched-month__day-shut" onClick={onShut}>
-          <span className="visually-hidden">Close {parts.weekday} {parts.month} {parts.dayOfMonth}</span>
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-
-      {/* Said, not left blank — an empty day and a day that failed to load look
-          the same if the answer is white space. */}
-      {entries.length === 0 ? (
-        <p className="sched-month__day-none">Nothing scheduled</p>
-      ) : (
-        <ul className="sched-month__day-list">
-          {entries.map((occurrence) => (
-            <li key={`${occurrence.source}:${occurrence.id}`}>
-              <Entry occurrence={occurrence} day={day} onOpen={() => onOpen(occurrence, day)} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
 }
 
 function DayCell({
@@ -435,13 +355,12 @@ function DayCell({
           className="sched-month__pick"
           aria-label={label}
           /*
-           * Only on a narrow screen is this a disclosure. On a wide one the
-           * button's action is "open this week in the grid", which is not the
-           * button expanding — and claiming otherwise would have a screen
-           * reader announce a collapsed state for something with no panel.
+           * Only on a narrow screen does this open a dialog — the day sheet.
+           * On a wide one its action is "open this week in the grid", and
+           * announcing a popup there would promise something that never
+           * appears.
            */
-          aria-expanded={narrow ? isPicked : undefined}
-          aria-controls={narrow && isPicked ? DAY_PANEL_ID : undefined}
+          aria-haspopup={narrow ? 'dialog' : undefined}
           onFocus={onPoint}
           onClick={onPick}
         >

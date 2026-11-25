@@ -10624,80 +10624,311 @@ main {
   overflow-wrap: normal;
 }
 
-/* ---- the day, under the grid, on a narrow screen ------------------------
+/* ---- the day, as a sheet, on a narrow screen ----------------------------
  *
  * The cells cannot hold an entry below about 64rem — see the note at the top of
- * MonthView.tsx, which has the measurements — so there the grid keeps its dots
- * and the day opens as a list beneath the table. Everything here is invisible
- * above that width; the panel is not rendered at all.
+ * MonthView.tsx — so there a tap on a day raises it as a sheet from the foot of
+ * the screen. DaySheet.tsx says why it is no longer a panel under the grid: on
+ * a phone that panel was a screen and a half below the date that opened it.
  */
 
-.sched-month__day {
-  margin-top: var(--space-sm, 0.75rem);
-  padding: var(--space-sm, 0.75rem);
-  border: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 35%, transparent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-paper-raised, #fdf7f4);
+/* The page behind a modal does not scroll on its own account; without this a
+   pull on the sheet's list that hits its end carries on into the page. */
+html:has(.sched-daysheet[open]) {
+  overflow: hidden;
 }
 
-.sched-month__day-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-xs, 0.35rem);
-  margin-bottom: var(--space-xs, 0.35rem);
-  padding-bottom: var(--space-xs, 0.35rem);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
-}
-
-.sched-month__day-date {
+.sched-daysheet {
+  /* Pinned to the foot and the full width, overriding the UA's centring. */
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(78dvh, 40rem);
   margin: 0;
-  font-family: var(--font-ui, system-ui, sans-serif);
-  font-size: var(--type-body, 1rem);
-  font-weight: 600;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  border: 0;
+  border-top: 3px solid var(--color-gold, #b08d43);
+  border-radius: var(--radius-lg, 16px) var(--radius-lg, 16px) 0 0;
+  background: var(--color-paper-raised, #fdf7f4);
   color: var(--color-ink, #1c1614);
+  box-shadow: 0 -12px 40px rgba(28, 22, 20, 0.22);
+  overflow: hidden;
+  animation: sched-daysheet-in 280ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform;
 }
 
-.sched-month__day-badge {
-  margin-left: var(--space-xs, 0.35rem);
-  padding: 0.1rem 0.4rem;
+.sched-daysheet[open] {
+  display: flex;
+}
+
+/* A tablet is narrow enough to get the sheet but too wide for it to span the
+   screen: a seven-day strip a metre across is no longer a strip. */
+@media (min-width: 40rem) {
+  .sched-daysheet {
+    width: min(40rem, 100%);
+    margin-inline: auto;
+  }
+}
+
+/* While a finger holds it, it follows the finger and nothing eases. */
+.sched-daysheet.is-dragging {
+  animation: none;
+  transition: none;
+}
+
+/* Let go short of closing, it settles back. */
+.sched-daysheet:not(.is-dragging) {
+  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* No `from`: it leaves from wherever the drag left it. */
+.sched-daysheet.is-leaving {
+  animation: sched-daysheet-out 200ms ease-in forwards;
+}
+
+.sched-daysheet::backdrop {
+  /* A literal colour: `::backdrop` does not inherit custom properties. */
+  background: rgba(28, 22, 20, 0.4);
+  animation: sched-daysheet-fade 280ms ease-out;
+}
+
+.sched-daysheet.is-leaving::backdrop {
+  animation: sched-daysheet-fade 200ms ease-in reverse forwards;
+}
+
+@keyframes sched-daysheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sched-daysheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sched-daysheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The grab area: the handle, the date and the week strip. It takes the
+   vertical pull itself rather than letting the browser scroll with it. */
+.sched-daysheet__top {
+  flex: none;
+  padding: 0.5rem var(--space-md, 1rem) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-gold, #b08d43) 30%, transparent);
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.sched-daysheet.is-dragging .sched-daysheet__top {
+  cursor: grabbing;
+}
+
+.sched-daysheet__handle {
+  display: block;
+  width: 2.5rem;
+  height: 0.3rem;
+  margin: 0 auto 0.5rem;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--color-ink, #1c1614) 22%, transparent);
+}
+
+.sched-daysheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 0.75rem);
+}
+
+.sched-daysheet__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.sched-daysheet__weekday {
+  font-family: var(--font-display, 'EB Garamond', Georgia, serif);
+  font-size: var(--type-heading, 1.5rem);
+  font-weight: 500;
+  line-height: var(--leading-tight, 1.2);
+  letter-spacing: var(--tracking-tight, -0.015em);
+}
+
+.sched-daysheet__date {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--type-small, 0.9375rem);
+  font-weight: 600;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.sched-daysheet__badge {
+  align-self: center;
+  padding: 0.1rem 0.45rem;
   border-radius: var(--radius-full, 999px);
   background: var(--color-accent, #992a21);
   color: var(--color-ink-inverse, #f9efec);
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-micro, 0.8125rem);
   letter-spacing: var(--tracking-wide, 0.06em);
   text-transform: uppercase;
 }
 
-/* A real 44px target, not a 16px glyph — this is the control a thumb reaches
-   for, on the only screens the panel exists on. */
-.sched-month__day-shut {
+/* A real 44px target. */
+.sched-daysheet__shut {
   flex: none;
   display: grid;
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
-  /* Pulled back out of the header's padding so the button's box can be big
-     without the × drifting away from the corner it belongs in. */
-  margin: -0.6rem -0.6rem -0.6rem 0;
+  margin-right: -0.6rem;
   appearance: none;
   -webkit-appearance: none;
   border: 0;
   border-radius: var(--radius-full, 999px);
   background: transparent;
   color: var(--color-ink-soft, #4b413e);
-  font: inherit;
-  font-size: 1.5rem;
-  line-height: 1;
   cursor: pointer;
 }
 
-.sched-month__day-shut:hover {
+.sched-daysheet__shut:hover {
   background: color-mix(in srgb, var(--color-gold, #b08d43) 14%, transparent);
   color: var(--color-ink, #1c1614);
 }
 
-.sched-month__day-list {
+/* ---- the week strip ---- */
+
+.sched-daysheet__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  padding: var(--space-sm, 0.6rem) 0;
+}
+
+.sched-daysheet__day {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 3.5rem;
+  padding: 0.3rem 0 0.35rem;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--radius-md, 10px);
+  background: transparent;
+  color: var(--color-ink, #1c1614);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sched-daysheet__day-name {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  text-transform: uppercase;
+  color: var(--color-ink-soft, #4b413e);
+}
+
+.sched-daysheet__day-num {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: var(--radius-full, 999px);
+  font-size: var(--type-body, 1rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.sched-daysheet__day-dots {
+  display: flex;
+  gap: 2px;
+  min-height: 0.375rem;
+}
+
+.sched-daysheet__day.is-outside {
+  opacity: 0.5;
+}
+
+/* Today, as on the grid: red numerals, so the picked disc can be the filled
+   thing without the two reading as one. */
+.sched-daysheet__day.is-today .sched-daysheet__day-num {
+  color: var(--color-accent, #992a21);
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.sched-daysheet__day.is-picked .sched-daysheet__day-num {
+  background: var(--color-deep, #481010);
+  color: var(--color-ink-inverse, #f9efec);
+  box-shadow: none;
+}
+
+.sched-daysheet__day.is-picked.is-today .sched-daysheet__day-num {
+  background: var(--color-accent, #992a21);
+}
+
+.sched-daysheet__day:not(.is-picked):active {
+  background: color-mix(in srgb, var(--color-gold, #b08d43) 14%, transparent);
+}
+
+.sched-daysheet__day:focus-visible {
+  outline: 2px solid var(--color-accent, #992a21);
+  outline-offset: -2px;
+}
+
+/* ---- the list ---- */
+
+.sched-daysheet__body {
+  flex: 1 1 auto;
+  min-height: 9rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Vertical scrolling is the browser's; sideways is the day swipe's. */
+  touch-action: pan-y;
+  padding: var(--space-md, 1rem) var(--space-md, 1rem)
+    calc(var(--space-lg, 1.5rem) + env(safe-area-inset-bottom, 0px));
+}
+
+.sched-daysheet__page.is-from-next {
+  animation: sched-daysheet-from-next 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.sched-daysheet__page.is-from-prev {
+  animation: sched-daysheet-from-prev 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes sched-daysheet-from-next {
+  from {
+    opacity: 0;
+    transform: translateX(2.5rem);
+  }
+}
+
+@keyframes sched-daysheet-from-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-2.5rem);
+  }
+}
+
+.sched-daysheet__list {
   display: grid;
   gap: var(--space-xs, 0.35rem);
   margin: 0;
@@ -10705,15 +10936,31 @@ main {
   list-style: none;
 }
 
-.sched-month__day-none {
+.sched-daysheet__none {
   margin: 0;
+  padding: var(--space-lg, 1.5rem) 0;
+  text-align: center;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-size: var(--type-small, 0.9375rem);
   color: var(--color-ink-soft, #4b413e);
 }
 
+/* Fades rather than slides, but still eases, so the sheet does not snap. */
+@media (prefers-reduced-motion: reduce) {
+  .sched-daysheet,
+  .sched-daysheet.is-leaving,
+  .sched-daysheet__page.is-from-next,
+  .sched-daysheet__page.is-from-prev {
+    animation-name: sched-daysheet-fade;
+  }
+
+  .sched-daysheet.is-leaving {
+    animation-direction: reverse;
+  }
+}
+
 /*
- * The day the panel is about, marked on the grid.
+ * The day the sheet is about, marked on the grid behind it.
  *
  * Outlined rather than filled: today is already a filled disc on this grid, and
  * a second filled thing would read as a second today. The ring is on the cell's
