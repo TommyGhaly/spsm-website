@@ -42,90 +42,12 @@ export default async function HomePage() {
           `alternatingBands`. */}
       <Welcome band={band()} />
 
-      {/* The ministries, directly under the welcome and above everything the
-          parish *does for* a visitor — the stream, the sheet, the shop.
+      {/* The bookstore, directly under the welcome.
 
-          Asked for directly, and the ordering is the point of it. The welcome
-          says who the parish is in three sentences; this says it in five
-          photographs, which is the better answer to the same question. It is a
-          preview of `/events` rather than a second copy of it: smaller plates,
-          no editing, and a link out at the foot. See `ActivitiesPreview`.
-
-          Takes a turn of `band()` like every other section — see
-          `alternatingBands`. **The turn is consumed even in the one case where
-          the section renders nothing**, which is the trade `band` being a prop
-          buys: the tint is dealt on the server, so a client-side read that comes
-          back empty cannot change the colour of the page under a reader. The
-          cost is two matching bands running together on a parish that publishes
-          no ministries at all, which is not a state this parish is in.
-
-          `band--tight-end`, at Tommy's direction, for the same reason the
-          bookstore carries it: the full `--space-section` under this section and
-          again over the schedule put two sections' worth of air into one seam.
-          The rail also brings its own — `.rail--programs .rail` pads its block
-          axis to make room for the plates standing off the page — so the gap
-          here was the widest on the homepage. See `.rail--activities` in
-          globals.css for the rest of it. */}
-      <ActivitiesPreview band={`${band()} band--tight-end`} />
-
-      {/* The player itself, not a link to it — someone at home on a Sunday
-          morning should not have to navigate to watch. Only when a stream is
-          actually configured: `LivestreamPlayer` renders an honest "not set up"
-          notice when it is not, which belongs on `/livestream` and would read
-          as a fault on the homepage.
-
-          Note it takes a fixed `band--deep` rather than a turn of `band()`,
-          and that is load-bearing. This section removes itself at *view* time
-          when nothing is being streamed (see `Livestream`), but `band()`
-          alternates at *build* time — so consuming a turn here would leave the
-          two sections either side of it with the same tint on every one of the
-          many hours the stream is off. A ground that is neither of the two
-          alternating tints sits correctly next to both, whether this section is
-          in the page or not, and a dark frame suits a video besides. */}
-      {config.livestream.enabled && (
-        <Livestream band="band band--deep" config={config.livestream} />
-      )}
-
-      {/* The parish's own weekly sheet — whichever bulletin the announcements
-          app has made active. Absent if the source is empty or the section is
-          switched off in config/integrations.
-
-          The week read at build time is the first paint, not the last word:
-          `BulletinLive` re-reads the source in the browser, so making a
-          different bulletin active reaches this page without a deploy. The
-          section and its band stay out here, so the alternation is still dealt
-          out at build time and nothing arrives late to move the page.
-
-          `band--tight-start`, at Tommy's direction: the activities above stop
-          close under their own last line and this starts close over its heading,
-          which are the two halves of one seam. Safe here because the ground
-          changes colour across it — see the note on the modifier. */}
-      {bulletin && (
-        <section
-          className={`${band()} band--tight-start`}
-          aria-labelledby="bulletin-heading"
-        >
-          <div className="wrap reveal">
-            <BulletinLive initial={bulletin} today={todayInParish()} />
-          </div>
-        </section>
-      )}
-
-      {/* The bookstore, under the week's sheet.
-
-          Here because of who is on this page: someone checking whether there is
-          a Liturgy this Saturday, who has no idea the parish sells books at
-          all. Below the stream so it never competes with a service in progress.
-
-          **It was above the sheet, and it moved below it at Tommy's direction.**
-          The old note argued the sheet is the errand most people came for and
-          the page should not interrupt it — which is the argument for putting
-          the shop *after* the sheet, not before. What it got wrong is how
-          reading works: a section above the thing you came for interrupts it by
-          definition, and a shelf of covers between the stream and the schedule
-          was a page saying "buy something" on the way to a service time. After
-          the sheet, the errand is done and the shelf is an offer rather than an
-          obstacle.
+          **It traded places with the ministries at Tommy's direction.** It used
+          to sit under the week's sheet, after the errand most visitors came for;
+          it now opens the page's run of sections, and the ministries close it
+          above the clergy.
 
           Takes a turn of `band()` like the other conditional sections — see
           `alternatingBands`. It removes itself when the catalog is empty, and a
@@ -166,6 +88,72 @@ export default async function HomePage() {
           </div>
         </section>
       )}
+
+      {/* The player itself, not a link to it — someone at home on a Sunday
+          morning should not have to navigate to watch. Only when a stream is
+          actually configured: `LivestreamPlayer` renders an honest "not set up"
+          notice when it is not, which belongs on `/livestream` and would read
+          as a fault on the homepage.
+
+          Note it takes a fixed `band--deep` rather than a turn of `band()`,
+          and that is load-bearing. This section removes itself at *view* time
+          when nothing is being streamed (see `Livestream`), but `band()`
+          alternates at *build* time — so consuming a turn here would leave the
+          two sections either side of it with the same tint on every one of the
+          many hours the stream is off. A ground that is neither of the two
+          alternating tints sits correctly next to both, whether this section is
+          in the page or not, and a dark frame suits a video besides. */}
+      {config.livestream.enabled && (
+        <Livestream band="band band--deep" config={config.livestream} />
+      )}
+
+      {/* The parish's own weekly sheet — whichever bulletin the announcements
+          app has made active. Absent if the source is empty or the section is
+          switched off in config/integrations.
+
+          The week read at build time is the first paint, not the last word:
+          `BulletinLive` re-reads the source in the browser, so making a
+          different bulletin active reaches this page without a deploy. The
+          section and its band stay out here, so the alternation is still dealt
+          out at build time and nothing arrives late to move the page.
+
+          `band--tight-start`, at Tommy's direction: the bookstore above (or the
+          stream, when one is live) stops close under its own last line and this
+          starts close over its heading, which are the two halves of one seam. Safe here because the ground
+          changes colour across it — see the note on the modifier. */}
+      {bulletin && (
+        <section
+          className={`${band()} band--tight-start`}
+          aria-labelledby="bulletin-heading"
+        >
+          <div className="wrap reveal">
+            <BulletinLive initial={bulletin} today={todayInParish()} />
+          </div>
+        </section>
+      )}
+
+      {/* The ministries, under the week's sheet and directly above the clergy.
+          They were directly under the welcome and traded places with the
+          bookstore at Tommy's direction. It is a
+          preview of `/events` rather than a second copy of it: smaller plates,
+          no editing, and a link out at the foot. See `ActivitiesPreview`.
+
+          Takes a turn of `band()` like every other section — see
+          `alternatingBands`. **The turn is consumed even in the one case where
+          the section renders nothing**, which is the trade `band` being a prop
+          buys: the tint is dealt on the server, so a client-side read that comes
+          back empty cannot change the colour of the page under a reader. The
+          cost is two matching bands running together on a parish that publishes
+          no ministries at all, which is not a state this parish is in.
+
+          `band--tight-end`, at Tommy's direction, for the same reason the
+          bookstore carries it: the full `--space-section` under this section and
+          again over the next one put two sections' worth of air into one seam.
+          The rail also brings its own — `.rail--programs .rail` pads its block
+          axis to make room for the plates standing off the page — so the gap
+          here was the widest on the homepage. See `.rail--activities` in
+          globals.css for the rest of it. */}
+      <ActivitiesPreview band={`${band()} band--tight-end`} />
 
       {/* The fathers, directly above the offering. Absent entirely when no
           clergy page is published, rather than an empty band with a heading
