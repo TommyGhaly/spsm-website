@@ -64,6 +64,8 @@ import {
  * it is fetched then rather than with the screen.
  */
 const packet = () => import('./packet');
+/** exceljs is larger still, and only needed for the tunic sizes sheet. */
+const sizeSheet = () => import('./sizeSheet');
 
 /** Opened synchronously in the click, so it is not a blocked pop-up. See `reserveTab` in ./packet. */
 function reserveTab(): Window | null {
@@ -133,6 +135,19 @@ export function NominationsScreen() {
   }, [session.canEdit]);
 
   const approved = (applications ?? []).filter((row) => row.status === 'approved');
+
+  async function downloadSizes() {
+    if (!ordination || !applications) return;
+    setBusy(true);
+    try {
+      const { buildSizeSheet, downloadSizeSheet, sizeSheetFilename } = await sizeSheet();
+      downloadSizeSheet(await buildSizeSheet(ordination, applications), sizeSheetFilename(ordination.date));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function printApplication(mode: 'open' | 'download') {
     if (!ordination || approved.length === 0) return;
@@ -220,6 +235,14 @@ export function NominationsScreen() {
                     }}
                   >
                     Print approval list
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    disabled={busy}
+                    onClick={() => void downloadSizes()}
+                  >
+                    Download tunic sizes (Excel)
                   </button>
                 </p>
               ) : null}
